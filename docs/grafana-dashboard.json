@@ -1,0 +1,21 @@
+{
+  "title": "Album Digitizer",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Request Latency",
+      "targets": [{ "expr": "http_request_duration_seconds_bucket" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Request Volume",
+      "targets": [{ "expr": "http_requests_total" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Processing Failures",
+      "targets": [{ "expr": "sum by (status) (http_requests_total{status=~\"5..\"})" }]
+    }
+  ]
+}
+
