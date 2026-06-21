@@ -30,7 +30,13 @@ async def main() -> None:
         await connection.run_sync(Base.metadata.drop_all)
         await connection.run_sync(Base.metadata.create_all)
 
-    source_images = sorted(Path("data/raw_album_pages").glob("*.jpg"))
+    source_dir = Path(os.environ.get("SMOKE_SOURCE_DIR", "data/raw_album_pages"))
+    if not source_dir.exists() or not any(source_dir.glob("*.jpg")):
+        source_dir = Path("PHOTOALBUM")
+    source_images = sorted(source_dir.glob("*.jpg"))
+    limit = int(os.environ.get("SMOKE_LIMIT", "0"))
+    if limit > 0:
+        source_images = source_images[:limit]
     async with get_session_factory()() as session:
         album = Album(name="real-data-smoke", description="Local smoke run over supplied album pages")
         session.add(album)
@@ -67,6 +73,7 @@ async def main() -> None:
     print(
         {
             "album": "real-data-smoke",
+            "source_dir": str(source_dir),
             "pages": len(results),
             "completed": completed,
             "review_needed": review,

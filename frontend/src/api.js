@@ -45,8 +45,26 @@ export async function analyzeAlbum(albumId, pageIds = null) {
   );
 }
 
+export async function analyzeAlbumNow(albumId, pageIds = null) {
+  return parseResponse(
+    await fetch(`/api/v1/albums/${albumId}/analyze-now`, {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ page_ids: pageIds }),
+    })
+  );
+}
+
 export async function getPhoto(photoId) {
   return parseResponse(await fetch(`/api/v1/photos/${photoId}`));
+}
+
+export async function getPresets() {
+  return parseResponse(await fetch("/api/v1/presets"));
+}
+
+export async function getPhotoVariants(photoId) {
+  return parseResponse(await fetch(`/api/v1/photos/${photoId}/variants`));
 }
 
 export async function getPageOcr(pageId) {
@@ -59,12 +77,13 @@ export async function getReviewQueue(albumId, type) {
   return parseResponse(await fetch(`/api/v1/review/queue?${params}`));
 }
 
-export async function patchBoundingBox(photoId, boundingBox) {
+export async function patchBoundingBox(photoId, boundingBox, segmentationMask = null) {
+  const body = segmentationMask ? { bounding_box: boundingBox, segmentation_mask: segmentationMask } : { bounding_box: boundingBox };
   return parseResponse(
     await fetch(`/api/v1/photos/${photoId}/bounding-box`, {
       method: "PATCH",
       headers: jsonHeaders,
-      body: JSON.stringify({ bounding_box: boundingBox }),
+      body: JSON.stringify(body),
     })
   );
 }
@@ -79,8 +98,9 @@ export async function patchOcr(ocrId, payload) {
   );
 }
 
-export async function reprocessPhoto(photoId) {
-  return parseResponse(await fetch(`/api/v1/photos/${photoId}/reprocess`, { method: "POST" }));
+export async function reprocessPhoto(photoId, preset = "auto") {
+  const params = new URLSearchParams({ preset });
+  return parseResponse(await fetch(`/api/v1/photos/${photoId}/reprocess?${params}`, { method: "POST" }));
 }
 
 export async function search(q) {
@@ -119,4 +139,3 @@ export async function uploadFileChunked(albumId, file, onProgress) {
   }
   return finalResponse;
 }
-

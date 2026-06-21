@@ -24,3 +24,5 @@ models/**/*.onnx
 models/paddleocr/**
 !models/paddleocr/.gitkeep
 *.log
+gfpgan/
+test_output/

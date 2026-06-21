@@ -13,10 +13,12 @@ import {
   Save,
   Search,
   Upload,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   analyzeAlbum,
+  analyzeAlbumNow,
   createAlbum,
   getPageOcr,
   getPhoto,
@@ -34,6 +36,7 @@ import {
 import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 
 const tabs = [
+  { id: "analyze", label: "Analyze", icon: Play },
   { id: "albums", label: "Albums", icon: GalleryHorizontal },
   { id: "pages", label: "Pages", icon: FileImage },
   { id: "review", label: "Review", icon: Pencil },
@@ -44,14 +47,20 @@ const tabs = [
 function StatusBadge({ status }) {
   const tone = {
     completed: "status status-green",
-    uploaded: "status status-blue",
     queued: "status status-blue",
     processing: "status status-blue",
+    uploading: "status status-blue",
+    analyzing: "status status-blue",
+    ready: "status status-blue",
     review_needed: "status status-yellow",
     failed: "status status-red",
     pending: "status status-blue",
+    waiting: "status",
+    selected: "status",
+    complete: "status status-green",
+    uploaded: "status status-green",
   }[status] || "status";
-  return <span className={tone}>{status?.replace("_", " ") || "unknown"}</span>;
+  return <span className={tone}>{status?.replaceAll("_", " ") || "unknown"}</span>;
 }
 
 function SafeText({ text, className = "" }) {
@@ -62,9 +71,374 @@ function EmptyState({ label }) {
   return <div className="empty-state">{label}</div>;
 }
 
-function AlbumList({ albums, selectedAlbumId, onSelect, onCreate, loading }) {
+function variantLabel(name) {
+  return name.replaceAll("_", " ");
+}
+
+function availableVariantEntries(detail) {
+  return Object.entries(detail?.urls || {}).filter(([, url]) => Boolean(url));
+}
+
+function comparisonUrls(detail) {
+  const before = detail?.urls?.original || detail?.urls?.perspective_corrected || detail?.urls?.enhanced;
+  const after = detail?.urls?.enhanced || detail?.urls?.premium || before;
+  return { before, after };
+}
+
+function fileSizeLabel(bytes) {
+  if (!bytes) return "0 B";
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function PhotoCompareModal({ detail, imageSrc, title = "Photo", onClose }) {
+  const [slider, setSlider] = useState(50);
+  const { before, after } = comparisonUrls(detail);
+  const canCompare = Boolean(before && after && before !== after);
+  const displaySrc = imageSrc || after || before;
+
+  useEffect(() => {
+    setSlider(50);
+  }, [detail?.id, imageSrc]);
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  if (!displaySrc && !canCompare) return null;
+
+  return (
+    <div className="fullscreen-overlay" onClick={onClose}>
+      <div className="photo-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="photo-modal-header">
+          <strong>{title}</strong>
+          <button className="icon-button" type="button" onClick={onClose} title="Close">
+            <X size={16} />
+          </button>
+        </div>
+        {canCompare ? (
+          <div className="compare-viewer" style={{ "--compare-position": `${slider}%` }}>
+            <img className="compare-image compare-before" src={before} alt="Before enhancement" />
+            <div className="compare-after-wrap">
+              <img className="compare-image compare-after" src={after} alt="After enhancement" />
+            </div>
+            <span className="compare-label compare-label-before">Before</span>
+            <span className="compare-label compare-label-after">After</span>
+            <span className="compare-divider" />
+          </div>
+        ) : (
+          <img className="single-photo-preview" src={displaySrc} alt="" />
+        )}
+        {canCompare && (
+          <label className="compare-control">
+            <span>Before</span>
+            <input
+              type="range"
+              min="1"
+              max="99"
+              value={slider}
+              onChange={(event) => setSlider(Number(event.target.value))}
+              aria-label="Before and after comparison"
+            />
+            <span>After</span>
+          </label>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OrderedAnalyzer({ onAlbumReady, onOpenPhoto = () => {} }) {
+  const [items, setItems] = useState([]);
+  const [albumId, setAlbumId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState("");
+  const [message, setMessage] = useState("");
+  const [previewSrc, setPreviewSrc] = useState(null);
+  const itemsRef = useRef([]);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => {
+    return () => {
+      itemsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+    };
+  }, []);
+
+  function addFiles(fileList) {
+    const nextItems = [...fileList].map((file) => ({
+      clientId: crypto.randomUUID(),
+      file,
+      name: file.name,
+      size: file.size,
+      previewUrl: URL.createObjectURL(file),
+      pageId: null,
+      uploadStatus: "selected",
+      analysisStatus: "waiting",
+      page: null,
+      photos: [],
+      ocrRows: [],
+      output: null,
+      error: null,
+    }));
+    setItems((current) => [...current, ...nextItems]);
+    setMessage("");
+  }
+
+  function removeItem(clientId) {
+    setItems((current) => {
+      const item = current.find((candidate) => candidate.clientId === clientId);
+      if (item) URL.revokeObjectURL(item.previewUrl);
+      return current.filter((candidate) => candidate.clientId !== clientId);
+    });
+  }
+
+  function clearRun() {
+    items.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+    setItems([]);
+    setAlbumId(null);
+    setPhase("");
+    setMessage("");
+  }
+
+  async function ensureAlbum() {
+    if (albumId) return albumId;
+    const now = new Date();
+    const album = await createAlbum({
+      name: `Local analysis ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`,
+      description: "Created from the local analyze workspace.",
+    });
+    setAlbumId(album.id);
+    onAlbumReady?.(album.id);
+    return album.id;
+  }
+
+  async function uploadPending(existingAlbumId = null, sourceItems = items) {
+    const targetAlbumId = existingAlbumId || (await ensureAlbum());
+    const pending = sourceItems.filter((item) => !item.pageId);
+    if (pending.length === 0) return { targetAlbumId, orderedItems: sourceItems };
+
+    setPhase("Uploading");
+    setItems((current) =>
+      current.map((item) => (pending.some((pendingItem) => pendingItem.clientId === item.clientId) ? { ...item, uploadStatus: "uploading" } : item))
+    );
+    const response = await uploadFiles(targetAlbumId, pending.map((item) => item.file));
+    const pageByClientId = new Map(pending.map((item, index) => [item.clientId, response.pages[index]]));
+    const orderedItems = sourceItems.map((item) => {
+      const page = pageByClientId.get(item.clientId);
+      if (!page) return item;
+      return { ...item, pageId: page.page_id, uploadStatus: "uploaded", analysisStatus: "ready" };
+    });
+    setItems(orderedItems);
+    return { targetAlbumId, orderedItems };
+  }
+
+  async function uploadOnly() {
+    if (items.length === 0 || busy) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await uploadPending();
+      setPhase("Uploaded");
+      setMessage("Upload complete.");
+    } catch (error) {
+      setMessage(error.message || "Upload failed.");
+      setItems((current) => current.map((item) => (item.uploadStatus === "uploading" ? { ...item, uploadStatus: "selected" } : item)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function analyzeInOrder() {
+    if (items.length === 0 || busy) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const targetAlbumId = await ensureAlbum();
+      const uploaded = await uploadPending(targetAlbumId);
+      const orderedItems = uploaded.orderedItems;
+      const pageIds = orderedItems.map((item) => item.pageId).filter(Boolean);
+      if (pageIds.length === 0) return;
+
+      setPhase("Analyzing");
+      setItems((current) =>
+        current.map((item) => (item.pageId ? { ...item, analysisStatus: "analyzing", error: null, output: null } : item))
+      );
+      const result = await analyzeAlbumNow(targetAlbumId, pageIds);
+      const [latestPages, latestPhotos, ocrResponses] = await Promise.all([
+        listPages(targetAlbumId),
+        listPhotos(targetAlbumId),
+        Promise.all(pageIds.map((pageId) => getPageOcr(pageId).catch(() => []))),
+      ]);
+
+      const pageById = new Map(latestPages.map((page) => [page.id, page]));
+      const resultByPageId = new Map((result.pages || []).map((pageResult) => [pageResult.page_id, pageResult]));
+      const ocrByPageId = new Map(pageIds.map((pageId, index) => [pageId, ocrResponses[index]]));
+
+      setItems(
+        orderedItems.map((item) => {
+          if (!item.pageId) return item;
+          const pageResult = resultByPageId.get(item.pageId);
+          return {
+            ...item,
+            uploadStatus: "uploaded",
+            analysisStatus: pageResult?.status || "completed",
+            page: pageById.get(item.pageId) || null,
+            photos: latestPhotos.filter((photo) => photo.page_id === item.pageId),
+            ocrRows: ocrByPageId.get(item.pageId) || [],
+            output: pageResult || null,
+            error: pageResult?.error || null,
+          };
+        })
+      );
+      await onAlbumReady?.(targetAlbumId);
+      setPhase("Complete");
+      setMessage("Analysis complete.");
+    } catch (error) {
+      setMessage(error.message || "Analysis failed.");
+      setItems((current) =>
+        current.map((item) =>
+          item.analysisStatus === "analyzing" || item.uploadStatus === "uploading"
+            ? { ...item, uploadStatus: item.pageId ? "uploaded" : "selected", analysisStatus: "failed", error: error.message }
+            : item
+        )
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="analyzer-layout">
+      <section className="analyzer-panel">
+        <div className="section-title">
+          <h2>Input</h2>
+          <div className="toolbar-row">
+            {phase && <StatusBadge status={phase.toLowerCase()} />}
+            <label className="icon-button text-button file-pick">
+              <Upload size={16} />
+              Select
+              <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => addFiles(event.target.files)} />
+            </label>
+          </div>
+        </div>
+        <div className="analyzer-actions">
+          <button className="icon-button text-button" type="button" disabled={busy || items.length === 0} onClick={uploadOnly}>
+            {busy && phase === "Uploading" ? <Loader2 className="spin-icon" size={16} /> : <Upload size={16} />}
+            Upload
+          </button>
+          <button className="primary-button" type="button" disabled={busy || items.length === 0} onClick={analyzeInOrder}>
+            {busy && phase === "Analyzing" ? <Loader2 className="spin-icon" size={16} /> : <Play size={16} />}
+            Analyze
+          </button>
+          <button className="icon-button" type="button" disabled={busy || items.length === 0} onClick={clearRun} title="Clear run">
+            <RefreshCw size={16} />
+          </button>
+        </div>
+        {message && <p className="run-message">{message}</p>}
+        {items.length === 0 ? (
+          <EmptyState label="No images selected." />
+        ) : (
+          <div className="ordered-list">
+            {items.map((item, index) => (
+              <div className="ordered-row" key={item.clientId}>
+                <span className="order-index">{index + 1}</span>
+                <img
+                  src={item.previewUrl}
+                  alt=""
+                  style={{ cursor: "pointer" }}
+                  onClick={() => setPreviewSrc(item.previewUrl)}
+                />
+                <div className="ordered-meta">
+                  <strong>{item.name}</strong>
+                  <span>{fileSizeLabel(item.size)}</span>
+                  <StatusBadge status={item.uploadStatus} />
+                </div>
+                <button className="icon-button" type="button" disabled={busy} onClick={() => removeItem(item.clientId)} title="Remove">
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="analyzer-panel">
+        <div className="section-title">
+          <h2>Output</h2>
+          <span className="muted-text">{items.length ? `${items.length} item${items.length === 1 ? "" : "s"}` : ""}</span>
+        </div>
+        {items.length === 0 ? (
+          <EmptyState label="No output yet." />
+        ) : (
+          <div className="ordered-list output-list">
+            {items.map((item, index) => (
+              <div className="output-row" key={`${item.clientId}-output`}>
+                <div className="output-heading">
+                  <span className="order-index">{index + 1}</span>
+                  <div>
+                    <strong>{item.name}</strong>
+                    <span>{item.page?.status || item.analysisStatus}</span>
+                  </div>
+                  <StatusBadge status={item.error ? "failed" : item.analysisStatus} />
+                </div>
+                {item.analysisStatus === "analyzing" && (
+                  <div className="output-waiting">
+                    <Loader2 className="spin-icon" size={18} />
+                    <span>Analyzing</span>
+                  </div>
+                )}
+                {item.error && <p className="error-text">{item.error}</p>}
+                {!item.output && !item.error && item.analysisStatus !== "analyzing" && <p className="muted-text">Waiting for analysis.</p>}
+                {item.output && !item.error && (
+                  <div className="output-details">
+                    <div className="stats-row">
+                      <span>{item.photos.length} photos</span>
+                      <span>{item.ocrRows.length} OCR rows</span>
+                      <span>{item.page?.blur_score ? `Blur ${item.page.blur_score.toFixed(1)}` : "Blur pending"}</span>
+                    </div>
+                    {item.ocrRows.length > 0 && (
+                      <div className="ocr-output">
+                        {item.ocrRows.map((row) => (
+                          <SafeText key={row.id} text={row.text_content} />
+                        ))}
+                      </div>
+                    )}
+                    {item.photos.length > 0 && (
+                      <div className="mini-photo-grid">
+                        {item.photos.map((photo) => (
+                          <img
+                            key={photo.id}
+                            src={`/api/v1/photos/${photo.id}/image`}
+                            alt=""
+                            style={{ cursor: "pointer" }}
+                            onClick={() => onOpenPhoto(photo)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+      {previewSrc && <PhotoCompareModal imageSrc={previewSrc} title="Input page" onClose={() => setPreviewSrc(null)} />}
+    </div>
+  );
+}
+
+function AlbumList({ albums, selectedAlbumId, pages = [], photos = [], onSelect, onCreate, onOpenPhoto = () => {}, loading }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const selectedAlbum = albums.find((album) => album.id === selectedAlbumId) || null;
 
   async function submit(event) {
     event.preventDefault();
@@ -110,6 +484,39 @@ function AlbumList({ albums, selectedAlbumId, onSelect, onCreate, loading }) {
                 </button>
               );
             })}
+          </div>
+        )}
+        {selectedAlbum && (
+          <div className="album-detail-panel">
+            <div className="section-title">
+              <h2>{selectedAlbum.name}</h2>
+              <StatusBadge status={selectedAlbum.status} />
+            </div>
+            {pages.length > 0 && (
+              <div className="album-page-strip">
+                {pages.map((page) => (
+                  <div className="album-page-thumb" key={page.id}>
+                    <img src={`/api/v1/pages/${page.id}/image`} alt="" />
+                    <span>{page.original_filename}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {photos.length > 0 ? (
+              <div className="album-photo-grid">
+                {photos.map((photo) => (
+                  <button type="button" className="photo-tile" key={photo.id} onClick={() => onOpenPhoto(photo)}>
+                    <img src={`/api/v1/photos/${photo.id}/image`} alt="" />
+                    <div>
+                      <StatusBadge status={photo.status} />
+                      <span>{photo.segmentation_confidence ? `${Math.round(photo.segmentation_confidence * 100)}%` : "manual"}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <EmptyState label="No extracted photos in this album yet." />
+            )}
           </div>
         )}
       </section>
@@ -195,14 +602,73 @@ function PageGrid({ albumId, pages, onAnalyze, onUpload, onSelectPage, selectedP
   );
 }
 
+function clampUnit(value) {
+  return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+}
+
+function boxToPolygon(box) {
+  return [
+    { x: clampUnit(box.x1), y: clampUnit(box.y1) },
+    { x: clampUnit(box.x2), y: clampUnit(box.y1) },
+    { x: clampUnit(box.x2), y: clampUnit(box.y2) },
+    { x: clampUnit(box.x1), y: clampUnit(box.y2) },
+  ];
+}
+
+function sanitizePolygon(polygon) {
+  if (!Array.isArray(polygon) || polygon.length < 4) return null;
+  const points = polygon.slice(0, 4).map((point) => ({ x: clampUnit(Number(point.x)), y: clampUnit(Number(point.y)) }));
+  return points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)) ? points : null;
+}
+
+function polygonFromPhoto(photo) {
+  return sanitizePolygon(photo.segmentation_mask?.polygon) || boxToPolygon(photo.bounding_box);
+}
+
+function boundingBoxFromPolygon(polygon) {
+  const xs = polygon.map((point) => point.x);
+  const ys = polygon.map((point) => point.y);
+  return {
+    x1: Math.min(...xs),
+    y1: Math.min(...ys),
+    x2: Math.max(...xs),
+    y2: Math.max(...ys),
+  };
+}
+
+function draftShapeFromPhoto(photo) {
+  const polygon = polygonFromPhoto(photo);
+  return { polygon, boundingBox: boundingBoxFromPolygon(polygon) };
+}
+
+function pointInPolygon(point, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+    const intersects = yi > point.y !== yj > point.y && point.x < ((xj - xi) * (point.y - yi)) / (yj - yi || 1) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function maskFromPolygon(polygon) {
+  return {
+    polygon: polygon.map((point) => ({ x: clampUnit(point.x), y: clampUnit(point.y) })),
+    source: "manual_quad",
+  };
+}
+
 function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto }) {
   const canvasRef = useRef(null);
   const imageRef = useRef(null);
-  const [draftBoxes, setDraftBoxes] = useState({});
+  const [draftShapes, setDraftShapes] = useState({});
   const dragRef = useRef(null);
 
   useEffect(() => {
-    setDraftBoxes(Object.fromEntries(photos.map((photo) => [photo.id, photo.bounding_box])));
+    setDraftShapes(Object.fromEntries(photos.map((photo) => [photo.id, draftShapeFromPhoto(photo)])));
   }, [photos]);
 
   const draw = useCallback(() => {
@@ -217,21 +683,28 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     photos.forEach((photo) => {
-      const box = draftBoxes[photo.id] || photo.bounding_box;
-      const x = box.x1 * canvas.width;
-      const y = box.y1 * canvas.height;
-      const width = (box.x2 - box.x1) * canvas.width;
-      const height = (box.y2 - box.y1) * canvas.height;
+      const shape = draftShapes[photo.id] || draftShapeFromPhoto(photo);
+      const points = shape.polygon.map((point) => ({ x: point.x * canvas.width, y: point.y * canvas.height }));
       context.strokeStyle = photo.id === selectedPhotoId ? "#0f766e" : "#f59e0b";
       context.lineWidth = photo.id === selectedPhotoId ? 4 : 2;
-      context.strokeRect(x, y, width, height);
+      context.beginPath();
+      points.forEach((point, index) => {
+        if (index === 0) context.moveTo(point.x, point.y);
+        else context.lineTo(point.x, point.y);
+      });
+      context.closePath();
+      context.stroke();
+      if (photo.id === selectedPhotoId) {
+        context.fillStyle = "rgba(15, 118, 110, 0.1)";
+        context.fill();
+      }
       context.fillStyle = "#ffffff";
-      [[x, y], [x + width, y], [x + width, y + height], [x, y + height]].forEach(([cx, cy]) => {
-        context.fillRect(cx - 5, cy - 5, 10, 10);
-        context.strokeRect(cx - 5, cy - 5, 10, 10);
+      points.forEach((point) => {
+        context.fillRect(point.x - 5, point.y - 5, 10, 10);
+        context.strokeRect(point.x - 5, point.y - 5, 10, 10);
       });
     });
-  }, [draftBoxes, page, photos, selectedPhotoId]);
+  }, [draftShapes, page, photos, selectedPhotoId]);
 
   useEffect(() => {
     draw();
@@ -254,23 +727,18 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
 
   function onPointerDown(event) {
     const point = pointToBox(event);
-    for (const photo of photos) {
-      const box = draftBoxes[photo.id] || photo.bounding_box;
-      const corners = [
-        ["x1", "y1", box.x1, box.y1],
-        ["x2", "y1", box.x2, box.y1],
-        ["x2", "y2", box.x2, box.y2],
-        ["x1", "y2", box.x1, box.y2],
-      ];
-      const corner = corners.find(([, , x, y]) => Math.hypot(point.x - x, point.y - y) < 0.035);
-      if (corner) {
+    for (const photo of [...photos].reverse()) {
+      const shape = draftShapes[photo.id] || draftShapeFromPhoto(photo);
+      const cornerIndex = shape.polygon.findIndex((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) < 0.035);
+      if (cornerIndex >= 0) {
         onSelectPhoto(photo.id);
-        dragRef.current = { photoId: photo.id, xKey: corner[0], yKey: corner[1] };
+        dragRef.current = { photoId: photo.id, pointIndex: cornerIndex };
         canvasRef.current.setPointerCapture(event.pointerId);
         return;
       }
-      if (point.x >= box.x1 && point.x <= box.x2 && point.y >= box.y1 && point.y <= box.y2) {
+      if (pointInPolygon(point, shape.polygon)) {
         onSelectPhoto(photo.id);
+        return;
       }
     }
   }
@@ -278,14 +746,15 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
   function onPointerMove(event) {
     if (!dragRef.current) return;
     const point = pointToBox(event);
-    const { photoId, xKey, yKey } = dragRef.current;
-    setDraftBoxes((current) => {
-      const next = { ...(current[photoId] || photos.find((photo) => photo.id === photoId)?.bounding_box) };
-      next[xKey] = Math.max(0, Math.min(1, point.x));
-      next[yKey] = Math.max(0, Math.min(1, point.y));
-      if (next.x1 > next.x2) [next.x1, next.x2] = [next.x2, next.x1];
-      if (next.y1 > next.y2) [next.y1, next.y2] = [next.y2, next.y1];
-      return { ...current, [photoId]: next };
+    const { photoId, pointIndex } = dragRef.current;
+    setDraftShapes((current) => {
+      const photo = photos.find((candidate) => candidate.id === photoId);
+      const currentShape = current[photoId] || (photo ? draftShapeFromPhoto(photo) : null);
+      if (!currentShape) return current;
+      const polygon = currentShape.polygon.map((corner, index) =>
+        index === pointIndex ? { x: clampUnit(point.x), y: clampUnit(point.y) } : corner
+      );
+      return { ...current, [photoId]: { polygon, boundingBox: boundingBoxFromPolygon(polygon) } };
     });
   }
 
@@ -297,8 +766,9 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
   }
 
   async function saveSelected() {
-    if (!selectedPhotoId || !draftBoxes[selectedPhotoId]) return;
-    await onSaveBox(selectedPhotoId, draftBoxes[selectedPhotoId]);
+    if (!selectedPhotoId || !draftShapes[selectedPhotoId]) return;
+    const shape = draftShapes[selectedPhotoId];
+    await onSaveBox(selectedPhotoId, shape.boundingBox, maskFromPolygon(shape.polygon));
   }
 
   if (!page) return <EmptyState label="Select a page to review." />;
@@ -314,7 +784,7 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
       />
       <button className="primary-button compact" type="button" disabled={!selectedPhotoId} onClick={saveSelected}>
         <Save size={16} />
-        Save Box
+        Save Corners
       </button>
     </div>
   );
@@ -352,8 +822,8 @@ function ReviewView({ albumId, pages, photos, selectedPageId, setSelectedPageId,
     await refresh();
   }
 
-  async function saveBox(photoId, box) {
-    await patchBoundingBox(photoId, box);
+  async function saveBox(photoId, box, segmentationMask = null) {
+    await patchBoundingBox(photoId, box, segmentationMask);
     await refresh();
   }
 
@@ -438,10 +908,22 @@ function ReviewView({ albumId, pages, photos, selectedPageId, setSelectedPageId,
   );
 }
 
-function GalleryView({ photos }) {
+function GalleryView({ photos, onOpenPhoto = () => {} }) {
   const [detail, setDetail] = useState(null);
+  const [selectedVariant, setSelectedVariant] = useState("enhanced");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
+
+  const variantEntries = availableVariantEntries(detail);
+  const selectedVariantUrl = detail?.urls?.[selectedVariant] || detail?.urls?.enhanced || detail?.urls?.original;
+  const selectedVariantRecord = detail?.enhancement_applied?.variants?.[selectedVariant];
+
+  useEffect(() => {
+    if (!detail) return;
+    const entries = availableVariantEntries(detail);
+    const preferred = entries.find(([name]) => name === "enhanced") || entries[0];
+    if (preferred) setSelectedVariant(preferred[0]);
+  }, [detail?.id]);
 
   async function runSearch(event) {
     event.preventDefault();
@@ -450,6 +932,12 @@ function GalleryView({ photos }) {
       return;
     }
     setResults(await search(query.trim()));
+  }
+
+  async function openGalleryPhoto(photoId) {
+    const nextDetail = await getPhoto(photoId);
+    setDetail(nextDetail);
+    onOpenPhoto(nextDetail);
   }
 
   return (
@@ -467,7 +955,7 @@ function GalleryView({ photos }) {
         {results.length > 0 && (
           <div className="search-results">
             {results.map((result) => (
-              <button type="button" key={`${result.page_id}-${result.text_content}`} onClick={() => result.photo_id && getPhoto(result.photo_id).then(setDetail)}>
+              <button type="button" key={`${result.page_id}-${result.text_content}`} onClick={() => result.photo_id && openGalleryPhoto(result.photo_id)}>
                 <SafeText text={result.highlight} />
               </button>
             ))}
@@ -475,7 +963,7 @@ function GalleryView({ photos }) {
         )}
         <div className="gallery-grid">
           {photos.map((photo) => (
-            <button type="button" className="photo-tile" key={photo.id} onClick={() => getPhoto(photo.id).then(setDetail)}>
+            <button type="button" className="photo-tile" key={photo.id} onClick={() => openGalleryPhoto(photo.id)}>
               <img src={`/api/v1/photos/${photo.id}/image`} alt="" />
               <div>
                 <StatusBadge status={photo.status} />
@@ -492,11 +980,47 @@ function GalleryView({ photos }) {
         </div>
         {detail ? (
           <div className="detail-list">
-            <img className="detail-image" src={`/api/v1/photos/${detail.id}/image`} alt="" />
+            {variantEntries.length > 0 && (
+              <div className="variant-tabs">
+                {variantEntries.map(([name]) => (
+                  <button
+                    type="button"
+                    key={name}
+                    className={selectedVariant === name ? "active" : ""}
+                    onClick={() => setSelectedVariant(name)}
+                  >
+                    {variantLabel(name)}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="variant-preview">
+              {detail.urls?.original && selectedVariant !== "original" && (
+                <button className="variant-preview-button" type="button" onClick={() => onOpenPhoto(detail)}>
+                  <img className="detail-image" src={detail.urls.original} alt="" />
+                </button>
+              )}
+              {selectedVariantUrl && (
+                <button className="variant-preview-button" type="button" onClick={() => onOpenPhoto(detail)}>
+                  <img className="detail-image" src={selectedVariantUrl} alt="" />
+                </button>
+              )}
+            </div>
             <span>ID {detail.id}</span>
             <span>pHash {detail.phash || "pending"}</span>
             <span>Duplicate {detail.is_duplicate_of || "no"}</span>
             <span>Aspect {detail.aspect_ratio?.toFixed(2) || "unknown"}</span>
+            {selectedVariantRecord?.metrics && (
+              <div className="variant-metrics">
+                <span>Blur {Math.round(selectedVariantRecord.metrics.blur_score || 0)}</span>
+                {typeof selectedVariantRecord.metrics.source_similarity === "number" && (
+                  <span>Similarity {Math.round(selectedVariantRecord.metrics.source_similarity * 100)}%</span>
+                )}
+                {selectedVariantRecord.warnings?.map((warning) => (
+                  <StatusBadge key={warning} status={warning} />
+                ))}
+              </div>
+            )}
             <pre>{JSON.stringify(detail.enhancement_applied, null, 2)}</pre>
             {detail.ocr_results?.map((ocr) => (
               <SafeText key={ocr.id} text={ocr.text_content} className="caption-line" />
@@ -623,7 +1147,7 @@ function CaptureView({ albumId, refresh }) {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("albums");
+  const [activeTab, setActiveTab] = useState("analyze");
   const [albums, setAlbums] = useState([]);
   const [selectedAlbumId, setSelectedAlbumId] = useState(null);
   const [pages, setPages] = useState([]);
@@ -631,6 +1155,7 @@ export default function App() {
   const [selectedPageId, setSelectedPageId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState("");
+  const [photoViewerDetail, setPhotoViewerDetail] = useState(null);
 
   const selectedAlbum = albums.find((album) => album.id === selectedAlbumId) || null;
 
@@ -679,6 +1204,15 @@ export default function App() {
     setTimeout(() => refreshAlbumData().catch(() => {}), 1500);
   }
 
+  async function openPhoto(photo) {
+    try {
+      const detail = photo.urls ? photo : await getPhoto(photo.id || photo);
+      setPhotoViewerDetail(detail);
+    } catch (error) {
+      setNotice(error.message || "Unable to open photo.");
+    }
+  }
+
   return (
     <main>
       <header className="app-header">
@@ -711,12 +1245,28 @@ export default function App() {
         </button>
       )}
 
+      {activeTab === "analyze" && (
+        <OrderedAnalyzer
+          onOpenPhoto={openPhoto}
+          onAlbumReady={async (albumId) => {
+            setSelectedAlbumId(albumId);
+            const [nextAlbums, nextPages, nextPhotos] = await Promise.all([listAlbums(), listPages(albumId), listPhotos(albumId)]);
+            setAlbums(nextAlbums);
+            setPages(nextPages);
+            setPhotos(nextPhotos);
+            if (nextPages.length > 0) setSelectedPageId(nextPages[0].id);
+          }}
+        />
+      )}
       {activeTab === "albums" && (
         <AlbumList
           albums={albums}
           loading={loading}
           selectedAlbumId={selectedAlbumId}
+          pages={pages}
+          photos={photos}
           onSelect={setSelectedAlbumId}
+          onOpenPhoto={openPhoto}
           onCreate={handleCreateAlbum}
         />
       )}
@@ -740,9 +1290,11 @@ export default function App() {
           refresh={refreshAlbumData}
         />
       )}
-      {activeTab === "gallery" && <GalleryView photos={photos} />}
+      {activeTab === "gallery" && <GalleryView photos={photos} onOpenPhoto={openPhoto} />}
       {activeTab === "capture" && <CaptureView albumId={selectedAlbumId} refresh={refreshAlbumData} />}
+      {photoViewerDetail && (
+        <PhotoCompareModal detail={photoViewerDetail} title={`Photo ${String(photoViewerDetail.id).slice(0, 8)}`} onClose={() => setPhotoViewerDetail(null)} />
+      )}
     </main>
   );
 }
-

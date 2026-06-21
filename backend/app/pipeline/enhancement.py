@@ -2,6 +2,25 @@ import cv2
 import numpy as np
 
 
+def prepare_for_cutout(image: np.ndarray) -> tuple[np.ndarray, dict]:
+    """Apply conservative, geometry-preserving cleanup before photo detection."""
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    lightness, channel_a, channel_b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=1.4, tileGridSize=(8, 8))
+    local_contrast = clahe.apply(lightness)
+    blended_lightness = cv2.addWeighted(lightness, 0.72, local_contrast, 0.28, 0)
+    prepared = cv2.cvtColor(cv2.merge((blended_lightness, channel_a, channel_b)), cv2.COLOR_LAB2BGR)
+    prepared = cv2.bilateralFilter(prepared, d=5, sigmaColor=12, sigmaSpace=5)
+    return prepared, {
+        "method": "conservative_cutout_prep",
+        "order": "before_segmentation_and_crop",
+        "geometry_preserved": prepared.shape[:2] == image.shape[:2],
+        "steps": ["luminance_clahe_blend", "edge_preserving_bilateral"],
+        "clahe_clip_limit": 1.4,
+        "clahe_blend_weight": 0.28,
+    }
+
+
 def recover_flash_highlights(image: np.ndarray) -> tuple[np.ndarray, dict]:
     blown_mask = cv2.inRange(image, np.array([250, 250, 250], dtype=np.uint8), np.array([255, 255, 255], dtype=np.uint8))
     blown_pixels = int(cv2.countNonZero(blown_mask))
@@ -37,4 +56,3 @@ def enhance_photo(image: np.ndarray) -> tuple[np.ndarray, dict]:
     recovered, flash_metadata = recover_flash_highlights(image)
     reduced, fold_metadata = reduce_fold_shadows(recovered)
     return reduced, {**flash_metadata, **fold_metadata}
-

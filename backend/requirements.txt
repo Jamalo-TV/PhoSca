@@ -19,3 +19,9 @@ imagehash>=4.3.0,<5.0.0
 piexif>=1.1.3,<2.0.0
 prometheus-fastapi-instrumentator>=7.0.0,<8.0.0
 paddleocr>=2.9.0,<3.0.0
+torch
+torchvision
+realesrgan
+facexlib
+gfpgan
+simple-lama-inpainting

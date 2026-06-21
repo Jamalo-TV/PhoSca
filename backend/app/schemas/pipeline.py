@@ -1,13 +1,14 @@
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models import OCRTextType, PageStatus, PhotoStatus
-from app.schemas.common import BoundingBox, StrictSchema
+from app.schemas.common import BoundingBox, SegmentationMask, StrictSchema
 
 
 class AnalyzeRequest(StrictSchema):
-    page_ids: list[UUID] | None = None
+    page_ids: list[Annotated[UUID, Field(strict=False)]] | None = None
 
 
 class PageRead(BaseModel):
@@ -78,6 +79,7 @@ class AlbumStats(BaseModel):
 
 class BoundingBoxUpdate(StrictSchema):
     bounding_box: BoundingBox
+    segmentation_mask: SegmentationMask | None = None
 
 
 class OCRUpdate(StrictSchema):
@@ -102,4 +104,3 @@ class SearchResult(BaseModel):
     text_type: OCRTextType | None
     confidence: float | None
     highlight: str
-

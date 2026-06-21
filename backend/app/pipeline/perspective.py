@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
+from app.pipeline.border_removal import remove_uniform_border
 
 
 def _points_from_mask(mask: dict | None, width: int, height: int) -> np.ndarray | None:
@@ -18,7 +19,17 @@ def _points_from_mask(mask: dict | None, width: int, height: int) -> np.ndarray 
     )
     if len(points) < 4:
         return None
-    rect = cv2.minAreaRect(points)
+    if len(points) == 4:
+        return points
+
+    hull = cv2.convexHull(points.reshape(-1, 1, 2)).reshape(-1, 2)
+    perimeter = cv2.arcLength(hull, True)
+    for epsilon_ratio in (0.01, 0.02, 0.035, 0.05, 0.08):
+        approx = cv2.approxPolyDP(hull, epsilon_ratio * perimeter, True).reshape(-1, 2)
+        if len(approx) == 4:
+            return approx.astype(np.float32)
+
+    rect = cv2.minAreaRect(hull)
     return cv2.boxPoints(rect).astype(np.float32)
 
 
@@ -33,7 +44,13 @@ def _order_points(points: np.ndarray) -> np.ndarray:
     return rect
 
 
-def crop_and_correct_photo(page_image: np.ndarray, bounding_box: dict, mask: dict | None = None) -> np.ndarray:
+def crop_and_correct_photo(
+    page_image: np.ndarray,
+    bounding_box: dict,
+    mask: dict | None = None,
+    *,
+    trim_border: bool = True,
+) -> np.ndarray:
     height, width = page_image.shape[:2]
     src_points = _points_from_mask(mask, width, height)
     if src_points is None:
@@ -51,10 +68,12 @@ def crop_and_correct_photo(page_image: np.ndarray, bounding_box: dict, mask: dic
         dtype=np.float32,
     )
     matrix = cv2.getPerspectiveTransform(src_points, destination)
-    return cv2.warpPerspective(page_image, matrix, (target_width, target_height))
+    corrected = cv2.warpPerspective(page_image, matrix, (target_width, target_height))
+    if trim_border:
+        corrected = remove_uniform_border(corrected)
+    return corrected
 
 
 def save_corrected_photo(page_image: np.ndarray, bounding_box: dict, mask: dict | None, output_path: Path) -> None:
     corrected = crop_and_correct_photo(page_image, bounding_box, mask)
     save_jpeg(output_path, corrected)
-

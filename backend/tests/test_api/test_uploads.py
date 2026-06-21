@@ -47,6 +47,29 @@ async def test_upload_accepts_valid_jpeg_and_stores_uuid_filename(client: AsyncC
     assert "album-page" not in stored_path.name
 
 
+async def test_analyze_accepts_uploaded_page_ids_as_json_strings(client: AsyncClient, monkeypatch) -> None:
+    album_id = await create_album(client)
+    upload_response = await client.post(
+        f"/api/v1/albums/{album_id}/pages/upload",
+        files=[("files", ("album-page.jpg", JPEG_BYTES, "image/jpeg"))],
+    )
+    assert upload_response.status_code == 201, upload_response.text
+    page_id = upload_response.json()["pages"][0]["page_id"]
+
+    from app.routers import albums as albums_router
+
+    async def fake_process_pages_pipeline(page_ids):
+        assert page_ids == [UUID(page_id)]
+        return {"pages": [{"page_id": str(page_ids[0]), "status": "completed"}]}
+
+    monkeypatch.setattr(albums_router, "process_pages_pipeline", fake_process_pages_pipeline)
+
+    response = await client.post(f"/api/v1/albums/{album_id}/analyze-now", json={"page_ids": [page_id]})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["pages"][0]["page_id"] == page_id
+
+
 async def test_upload_rejects_invalid_magic_mime(client: AsyncClient) -> None:
     album_id = await create_album(client)
 

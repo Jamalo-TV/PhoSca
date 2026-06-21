@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_async_session
 from app.models import Album, AlbumStatus, AuditLog, ExtractedPhoto, OCRResult, Page, PageStatus, PhotoStatus, OCRTextType
 from app.schemas import AlbumCreate, AlbumRead, AlbumStats, AnalyzeRequest, JobQueued, PageRead, PhotoRead
+from app.services.pipeline import process_pages_pipeline
 from app.tasks.pipeline import process_pages_task
 
 router = APIRouter(prefix="/api/v1/albums", tags=["albums"])
@@ -93,6 +94,36 @@ async def analyze_album(
     await session.commit()
     result = process_pages_task.delay([str(page_id) for page_id in page_ids])
     return JobQueued(job_id=result.id, status="queued", estimated_pages=len(page_ids))
+
+
+@router.post("/{album_id}/analyze-now")
+async def analyze_album_now(
+    album_id: UUID,
+    payload: AnalyzeRequest,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    album = await session.get(Album, album_id)
+    if album is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Album not found.")
+
+    if payload.page_ids is None:
+        page_ids = (
+            await session.scalars(
+                select(Page.id).where(
+                    Page.album_id == album_id,
+                    Page.status.in_([PageStatus.uploaded, PageStatus.queued, PageStatus.review_needed]),
+                )
+            )
+        ).all()
+    else:
+        page_ids = payload.page_ids
+        existing_count = await session.scalar(select(func.count(Page.id)).where(Page.album_id == album_id, Page.id.in_(page_ids)))
+        if existing_count != len(page_ids):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="One or more pages do not belong to this album.")
+
+    album.status = AlbumStatus.processing
+    await session.commit()
+    return await process_pages_pipeline(page_ids)
 
 
 @router.get("/{album_id}", response_model=AlbumStats)

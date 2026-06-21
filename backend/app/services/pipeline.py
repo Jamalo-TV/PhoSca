@@ -1,4 +1,5 @@
 import asyncio
+from copy import deepcopy
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -11,13 +12,16 @@ from app.config import Settings, get_settings
 from app.database import get_session_factory
 from app.models import Album, AlbumStatus, AuditLog, ExtractedPhoto, OCRResult, OCRTextType, Page, PageStatus, PhotoStatus
 from app.pipeline.dedup import compute_phash, hamming_distance
-from app.pipeline.enhancement import enhance_photo
+from app.pipeline.degradation import analyze_degradation
+from app.pipeline.dl_enhancement import dl_enhance_photo
+from app.pipeline.enhancement import prepare_for_cutout
 from app.pipeline.exif import write_caption_exif
 from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, sha256_file
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
 from app.pipeline.perspective import crop_and_correct_photo
 from app.pipeline.quality import segmentation_review_reasons
 from app.pipeline.segmentation import segment_album_page
+from app.pipeline.variants import build_variant_bundle
 from app.services.dlq import quarantine_page_failure
 
 
@@ -26,11 +30,13 @@ logger = structlog.get_logger(__name__)
 
 def _append_metadata(entity: Page | ExtractedPhoto, step: str, payload: dict) -> None:
     if isinstance(entity, Page):
-        metadata = dict(entity.processing_metadata or {})
-        metadata.setdefault("steps", {})[step] = payload
+        metadata = deepcopy(entity.processing_metadata or {})
+        steps = dict(metadata.get("steps") or {})
+        steps[step] = payload
+        metadata["steps"] = steps
         entity.processing_metadata = metadata
         return
-    metadata = dict(entity.enhancement_applied or {})
+    metadata = deepcopy(entity.enhancement_applied or {})
     metadata[step] = payload
     entity.enhancement_applied = metadata
 
@@ -78,7 +84,9 @@ async def segmentation_task_logic(session: AsyncSession, page_id: UUID, settings
 
     page.status = PageStatus.processing
     image = load_image(Path(page.storage_path))
-    result = segment_album_page(image, settings)
+    cutout_ready_image, cutout_prep_metadata = prepare_for_cutout(image)
+    _append_metadata(page, "pre_cutout_enhancement", cutout_prep_metadata)
+    result = segment_album_page(cutout_ready_image, settings)
     _append_metadata(page, "segmentation", result.metadata | {"detections": len(result.detections)})
 
     created_photo_ids: list[str] = []
@@ -183,22 +191,58 @@ async def ocr_task_logic(session: AsyncSession, page_id: UUID, settings: Setting
     return {"page_id": str(page.id), "ocr_blocks": len(classified_blocks)}
 
 
-async def enhancement_task_logic(session: AsyncSession, photo_id: UUID, settings: Settings) -> dict:
+async def enhancement_task_logic(session: AsyncSession, photo_id: UUID, settings: Settings, preset: str | None = "auto") -> dict:
     photo = await session.get(ExtractedPhoto, photo_id)
     if photo is None:
         raise ValueError(f"Photo not found: {photo_id}")
-    source_path = Path(photo.storage_path or photo.original_storage_path or "")
+    source_path = Path(photo.original_storage_path or photo.storage_path or "")
     if not source_path.exists():
         raise ValueError(f"Corrected source image missing for photo {photo_id}")
 
-    enhanced, metadata = enhance_photo(load_image(source_path))
+    from app.pipeline.diffusion_restoration import premium_enhance_photo
+
+    source_img = load_image(source_path)
+    degradation_report = analyze_degradation(source_img)
+    effective_preset = degradation_report.recommended_preset if preset in {None, "", "auto"} else preset
+
+    # 1. Standard Enhancement
+    enhanced, metadata = dl_enhance_photo(source_img, preset=effective_preset, degradation_report=degradation_report)
     enhanced_path = settings.storage_path / "processed" / str(photo.album_id) / "photos" / f"{photo.id}_enhanced.jpg"
     save_jpeg(enhanced_path, enhanced)
+
+    # 2. Premium Enhancement
+    premium, premium_metadata = premium_enhance_photo(
+        source_img,
+        base_restored=enhanced,
+        base_metadata=metadata,
+        preset=effective_preset,
+        degradation_report=degradation_report,
+    )
+    premium_path = settings.storage_path / "processed" / str(photo.album_id) / "photos" / f"{photo.id}_premium.jpg"
+    save_jpeg(premium_path, premium)
+
+    previous_metadata = dict(photo.enhancement_applied or {})
+    variant_bundle = build_variant_bundle(
+        original_path=Path(photo.original_storage_path or source_path),
+        original=source_img,
+        enhanced_path=enhanced_path,
+        enhanced=enhanced,
+        enhanced_metadata=metadata,
+        premium_path=premium_path,
+        premium=premium,
+        premium_metadata=premium_metadata,
+    )
+    if previous_metadata.get("review_reasons"):
+        variant_bundle["review_reasons"] = previous_metadata["review_reasons"]
+    variant_bundle["degradation"] = degradation_report.as_dict()
+    variant_bundle["standard"] = metadata
+    variant_bundle["premium"] = premium_metadata
+
     photo.storage_path = str(enhanced_path)
-    photo.enhancement_applied = metadata
-    session.add(AuditLog(entity_type="photo", entity_id=photo.id, action="enhanced", details=metadata | {"path": str(enhanced_path)}))
+    photo.enhancement_applied = variant_bundle
+    session.add(AuditLog(entity_type="photo", entity_id=photo.id, action="enhanced", details=photo.enhancement_applied | {"path": str(enhanced_path)}))
     await session.commit()
-    return {"photo_id": str(photo.id), "storage_path": str(enhanced_path), "metadata": metadata}
+    return {"photo_id": str(photo.id), "storage_path": str(enhanced_path), "metadata": photo.enhancement_applied}
 
 
 async def deduplication_task_logic(session: AsyncSession, photo_id: UUID) -> dict:
