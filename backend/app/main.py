@@ -12,7 +12,7 @@ from app.core.logging import configure_logging
 from app.core.rate_limit import limiter
 from app.database import get_session_factory
 from app.models import AuditLog
-from app.routers import albums, jobs, pages, photos, review, search
+from app.routers import albums, jobs, pages, photos, review, search, training
 
 
 def error_response(request: Request, status_code: int, error: str, detail: str) -> JSONResponse:
@@ -125,6 +125,7 @@ def create_app() -> FastAPI:
     app.include_router(photos.router)
     app.include_router(review.router)
     app.include_router(search.router)
+    app.include_router(training.router)
     try:
         from prometheus_fastapi_instrumentator import Instrumentator
 

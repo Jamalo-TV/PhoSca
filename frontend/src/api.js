@@ -139,3 +139,39 @@ export async function uploadFileChunked(albumId, file, onProgress) {
   }
   return finalResponse;
 }
+
+export async function listSegmentationTrainingImages() {
+  return parseResponse(await fetch("/api/v1/training/segmentation"));
+}
+
+export async function uploadSegmentationTrainingImages(files) {
+  const form = new FormData();
+  files.forEach((file) => form.append("files", file, file.name));
+  return parseResponse(await fetch("/api/v1/training/segmentation/images", { method: "POST", body: form }));
+}
+
+export async function deleteSegmentationTrainingImage(filename) {
+  return parseResponse(await fetch(`/api/v1/training/segmentation/images/${encodeURIComponent(filename)}`, { method: "DELETE" }));
+}
+
+export async function getSegmentationTrainingLabels(filename) {
+  return parseResponse(await fetch(`/api/v1/training/segmentation/images/${encodeURIComponent(filename)}/labels`));
+}
+
+export async function detectSegmentationTrainingLabels(filename) {
+  return parseResponse(await fetch(`/api/v1/training/segmentation/images/${encodeURIComponent(filename)}/detect`, { method: "POST" }));
+}
+
+export async function saveSegmentationTrainingLabels(filename, polygons) {
+  return parseResponse(
+    await fetch(`/api/v1/training/segmentation/images/${encodeURIComponent(filename)}/labels`, {
+      method: "PUT",
+      headers: jsonHeaders,
+      body: JSON.stringify({ polygons }),
+    })
+  );
+}
+
+export async function prepareSegmentationTrainingDataset() {
+  return parseResponse(await fetch("/api/v1/training/segmentation/prepare", { method: "POST" }));
+}

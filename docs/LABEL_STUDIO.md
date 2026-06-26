@@ -21,6 +21,29 @@ Create a project with this labeling interface:
 </View>
 ```
 
+## Recommended Workspace Flow
+
+Create the training workspace and editable preannotations:
+
+```powershell
+python scripts/setup_segmentation_training.py bootstrap
+```
+
+The command copies the existing example album pages into `data/segmentation_training/images/` when that folder is empty or missing images, then writes `data/segmentation_training/label_studio_tasks.json`. You can add more album page images to `data/segmentation_training/images/` at any time and rerun the command.
+
+Import `data/segmentation_training/label_studio_tasks.json` into Label Studio. Correct the polygons so each complete printed photo is one `photo` instance. Do not label internal regions inside a photo, handwriting, page borders, or album frames.
+
+Export the reviewed project as JSON to `data/segmentation_training/exports/label_studio_export.json`, then run:
+
+```powershell
+python scripts/convert_label_studio_to_yolo.py --input data/segmentation_training/exports/label_studio_export.json --output data/segmentation_training/labels
+python scripts/setup_segmentation_training.py train
+```
+
+The `train` command prepares the deterministic train/val/golden split, validates YOLO polygon labels, trains the one-class segmentation model, and exports `models/yolov8-seg-album.onnx`.
+
+## Lower-Level Commands
+
 Create import tasks from `data/raw_album_pages`:
 
 ```powershell

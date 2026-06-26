@@ -66,7 +66,8 @@ Tradeoffs:
 Repo support currently present:
 
 - YOLO-seg ONNX parser with prototype mask support.
-- Candidate rejection in the classical fallback.
+- Candidate rejection in the classical fallback, including nested partial-photo suppression after corner refinement.
+- `data/segmentation_training/` plus `scripts/setup_segmentation_training.py` for a low-friction manual image, Label Studio, dataset, validation, and training loop.
 - Deterministic train/val/golden split preparation.
 - Dataset validator for polygon labels and golden leakage.
 - Label Studio task export, Label Studio JSON conversion, and in-app reviewed-mask export.

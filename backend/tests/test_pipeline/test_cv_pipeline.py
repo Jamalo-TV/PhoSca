@@ -279,6 +279,46 @@ def test_classical_segmentation_rejects_smooth_saturated_sliver() -> None:
     assert result.metadata["rejected_candidates"]["smooth_contrast_false_positive"] == 1
 
 
+def test_classical_segmentation_rejects_nested_partial_photo_candidate() -> None:
+    from app.pipeline.segmentation import SegmentationDetection, _filter_nested_classical_detections
+
+    full_photo = SegmentationDetection(
+        bounding_box={"x1": 0.15, "y1": 0.18, "x2": 0.72, "y2": 0.76},
+        mask={
+            "polygon": [],
+            "scores": {
+                "area_ratio": 0.33,
+                "outline_supported_sides": 4.0,
+                "exterior_background_sides": 4.0,
+            },
+        },
+        confidence=0.82,
+        aspect_ratio=1.4,
+        geometry_valid=True,
+        review_reasons=[],
+    )
+    internal_crop = SegmentationDetection(
+        bounding_box={"x1": 0.19, "y1": 0.25, "x2": 0.39, "y2": 0.69},
+        mask={
+            "polygon": [],
+            "scores": {
+                "area_ratio": 0.09,
+                "outline_supported_sides": 3.0,
+                "exterior_background_sides": 0.0,
+            },
+        },
+        confidence=0.78,
+        aspect_ratio=0.7,
+        geometry_valid=True,
+        review_reasons=[],
+    )
+
+    kept, rejected = _filter_nested_classical_detections([full_photo, internal_crop])
+
+    assert kept == [full_photo]
+    assert rejected == {"partial_photo_inside_larger_candidate": 1}
+
+
 def test_classical_segmentation_preserves_rotated_photo_geometry() -> None:
     from app.pipeline.perspective import crop_and_correct_photo
     from app.pipeline.segmentation import detect_photos_classical

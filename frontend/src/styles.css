@@ -95,6 +95,13 @@ nav button.active,
   padding: 18px 24px 28px;
 }
 
+.training-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 18px;
+  padding: 18px 24px 28px;
+}
+
 .work-surface,
 .side-surface {
   min-width: 0;
@@ -301,6 +308,126 @@ select {
   border-radius: 8px;
   background: #e6eeeb;
   touch-action: none;
+}
+
+.training-canvas-wrap {
+  width: 100%;
+  min-height: 340px;
+}
+
+.training-canvas-wrap canvas {
+  width: 100%;
+  border: 1px solid #cbd8d4;
+  border-radius: 8px;
+  background: #e6eeeb;
+  touch-action: none;
+  display: block;
+}
+
+.training-status-row {
+  min-height: 48px;
+  border-bottom: 1px solid #d7e3df;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+}
+
+.training-status-row > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.training-status-row strong,
+.training-image-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training-status-row span,
+.training-image-row small,
+.polygon-row small {
+  color: #64706c;
+  font-size: 12px;
+}
+
+.training-image-list,
+.training-polygon-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.training-image-row {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid #d7e3df;
+  background: #ffffff;
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  text-align: left;
+}
+
+.training-image-row.selected,
+.polygon-row.selected {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.14);
+}
+
+.training-image-row img {
+  width: 72px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #e6eeeb;
+}
+
+.training-image-row > span {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.polygon-row {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #d7e3df;
+  border-radius: 8px;
+  background: #ffffff;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  text-align: left;
+}
+
+.polygon-row > span:first-child {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: #17201d;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.compact-title {
+  min-height: 36px;
+  margin-bottom: 4px;
+}
+
+.file-pick.icon-button {
+  display: inline-flex;
 }
 
 .segmented-control {
@@ -679,6 +806,7 @@ pre {
 
   .content-grid,
   .review-layout,
+  .training-layout,
   .analyzer-layout {
     grid-template-columns: 1fr;
     padding: 14px;

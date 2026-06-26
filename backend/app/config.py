@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     segmentation_min_aspect_ratio: float = Field(default=0.5, alias="SEGMENTATION_MIN_ASPECT_RATIO")
     segmentation_max_aspect_ratio: float = Field(default=3.0, alias="SEGMENTATION_MAX_ASPECT_RATIO")
     yolo_model_path: Path = Field(default=Path("/app/models/yolov8-seg-album.onnx"), alias="YOLO_MODEL_PATH")
+    segmentation_training_workspace: Path = Field(default=Path("data/segmentation_training"), alias="SEGMENTATION_TRAINING_WORKSPACE")
     enable_photo_orientation_correction: bool = Field(default=True, alias="ENABLE_PHOTO_ORIENTATION_CORRECTION")
     photo_orientation_model_path: Path = Field(default=Path("/app/models/photo-orientation.onnx"), alias="PHOTO_ORIENTATION_MODEL_PATH")
     paddleocr_model_path: Path = Field(default=Path("/app/models/paddleocr/"), alias="PADDLEOCR_MODEL_PATH")

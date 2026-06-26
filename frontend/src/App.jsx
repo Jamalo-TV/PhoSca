@@ -20,16 +20,23 @@ import {
   analyzeAlbum,
   analyzeAlbumNow,
   createAlbum,
+  deleteSegmentationTrainingImage,
+  detectSegmentationTrainingLabels,
   getPageOcr,
   getPhoto,
   getReviewQueue,
+  getSegmentationTrainingLabels,
   listAlbums,
   listPages,
   listPhotos,
+  listSegmentationTrainingImages,
   patchBoundingBox,
   patchOcr,
+  prepareSegmentationTrainingDataset,
   reprocessPhoto,
+  saveSegmentationTrainingLabels,
   search,
+  uploadSegmentationTrainingImages,
   uploadFileChunked,
   uploadFiles,
 } from "./api.js";
@@ -40,6 +47,7 @@ const tabs = [
   { id: "albums", label: "Albums", icon: GalleryHorizontal },
   { id: "pages", label: "Pages", icon: FileImage },
   { id: "review", label: "Review", icon: Pencil },
+  { id: "training", label: "Training", icon: FolderPlus },
   { id: "gallery", label: "Gallery", icon: Aperture },
   { id: "capture", label: "Capture", icon: Camera },
 ];
@@ -675,6 +683,426 @@ function maskFromPolygon(polygon) {
   };
 }
 
+function trainingImageSrc(image) {
+  return image ? `/api/v1/training/segmentation/images/${encodeURIComponent(image.name)}` : "";
+}
+
+function normalizeTrainingPolygon(polygon, index = 0) {
+  const rawPoints = polygon?.points || polygon?.polygon || polygon;
+  if (!Array.isArray(rawPoints) || rawPoints.length < 4) return null;
+  const points = rawPoints.map((point) => ({ x: clampUnit(Number(point.x)), y: clampUnit(Number(point.y)) }));
+  return {
+    id: polygon?.id || `poly-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+    points,
+    source: polygon?.source || "manual",
+    confidence: typeof polygon?.confidence === "number" ? polygon.confidence : null,
+  };
+}
+
+function defaultTrainingPolygon() {
+  return {
+    id: `poly-${Date.now()}`,
+    points: [
+      { x: 0.22, y: 0.22 },
+      { x: 0.78, y: 0.22 },
+      { x: 0.78, y: 0.72 },
+      { x: 0.22, y: 0.72 },
+    ],
+    source: "manual",
+    confidence: null,
+  };
+}
+
+function TrainingCanvas({ image, polygons, selectedPolygonId, onSelectPolygon, onChangePolygons }) {
+  const canvasRef = useRef(null);
+  const imageRef = useRef(null);
+  const dragRef = useRef(null);
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    const loadedImage = imageRef.current;
+    if (!canvas || !loadedImage || !image) return;
+    const context = canvas.getContext("2d");
+    const maxWidth = canvas.parentElement?.clientWidth || 900;
+    const ratio = loadedImage.naturalHeight / loadedImage.naturalWidth || 0.75;
+    canvas.width = maxWidth;
+    canvas.height = Math.max(280, Math.round(maxWidth * ratio));
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(loadedImage, 0, 0, canvas.width, canvas.height);
+
+    polygons.forEach((polygon, index) => {
+      const selected = polygon.id === selectedPolygonId;
+      const points = polygon.points.map((point) => ({ x: point.x * canvas.width, y: point.y * canvas.height }));
+      context.beginPath();
+      points.forEach((point, pointIndex) => {
+        if (pointIndex === 0) context.moveTo(point.x, point.y);
+        else context.lineTo(point.x, point.y);
+      });
+      context.closePath();
+      context.fillStyle = selected ? "rgba(15, 118, 110, 0.16)" : "rgba(245, 158, 11, 0.12)";
+      context.strokeStyle = selected ? "#0f766e" : "#f59e0b";
+      context.lineWidth = selected ? 4 : 2;
+      context.fill();
+      context.stroke();
+
+      context.fillStyle = selected ? "#0f766e" : "#17201d";
+      context.font = "700 13px Inter, sans-serif";
+      context.fillText(String(index + 1), points[0].x + 8, points[0].y + 18);
+
+      points.forEach((point) => {
+        context.fillStyle = "#ffffff";
+        context.strokeStyle = selected ? "#0f766e" : "#17201d";
+        context.lineWidth = 2;
+        context.fillRect(point.x - 5, point.y - 5, 10, 10);
+        context.strokeRect(point.x - 5, point.y - 5, 10, 10);
+      });
+    });
+  }, [image, polygons, selectedPolygonId]);
+
+  useEffect(() => {
+    draw();
+  }, [draw]);
+
+  useEffect(() => {
+    if (!image) {
+      imageRef.current = null;
+      return;
+    }
+    const loadedImage = new Image();
+    loadedImage.onload = () => {
+      imageRef.current = loadedImage;
+      draw();
+    };
+    loadedImage.src = trainingImageSrc(image);
+  }, [draw, image]);
+
+  useEffect(() => {
+    window.addEventListener("resize", draw);
+    return () => window.removeEventListener("resize", draw);
+  }, [draw]);
+
+  function pointFromEvent(event) {
+    const rect = canvasRef.current.getBoundingClientRect();
+    return { x: clampUnit((event.clientX - rect.left) / rect.width), y: clampUnit((event.clientY - rect.top) / rect.height) };
+  }
+
+  function onPointerDown(event) {
+    if (!canvasRef.current) return;
+    const point = pointFromEvent(event);
+    for (const polygon of [...polygons].reverse()) {
+      const pointIndex = polygon.points.findIndex((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) < 0.035);
+      if (pointIndex >= 0) {
+        onSelectPolygon(polygon.id);
+        dragRef.current = { polygonId: polygon.id, pointIndex };
+        canvasRef.current.setPointerCapture(event.pointerId);
+        return;
+      }
+      if (pointInPolygon(point, polygon.points)) {
+        onSelectPolygon(polygon.id);
+        return;
+      }
+    }
+  }
+
+  function onPointerMove(event) {
+    if (!dragRef.current) return;
+    const point = pointFromEvent(event);
+    const { polygonId, pointIndex } = dragRef.current;
+    onChangePolygons((current) =>
+      current.map((polygon) =>
+        polygon.id === polygonId
+          ? {
+              ...polygon,
+              source: polygon.source === "manual_yolo" ? "manual" : polygon.source,
+              points: polygon.points.map((corner, index) => (index === pointIndex ? point : corner)),
+            }
+          : polygon
+      )
+    );
+  }
+
+  function onPointerUp(event) {
+    if (dragRef.current && canvasRef.current) {
+      canvasRef.current.releasePointerCapture(event.pointerId);
+    }
+    dragRef.current = null;
+  }
+
+  if (!image) return <EmptyState label="No training image selected." />;
+
+  return (
+    <div className="training-canvas-wrap">
+      <canvas
+        ref={canvasRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        aria-label="Training annotation canvas"
+      />
+    </div>
+  );
+}
+
+function TrainingAnnotationView() {
+  const [workspace, setWorkspace] = useState(null);
+  const [selectedName, setSelectedName] = useState(null);
+  const [polygons, setPolygons] = useState([]);
+  const [selectedPolygonId, setSelectedPolygonId] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState("");
+  const [dirty, setDirty] = useState(false);
+
+  const images = workspace?.images || [];
+  const selectedImage = images.find((image) => image.name === selectedName) || images[0] || null;
+  const selectedPolygon = polygons.find((polygon) => polygon.id === selectedPolygonId) || polygons[0] || null;
+
+  const refreshWorkspace = useCallback(async (preferredName = null) => {
+    const next = await listSegmentationTrainingImages();
+    setWorkspace(next);
+    const nextName = preferredName || (next.images.some((image) => image.name === selectedName) ? selectedName : next.images[0]?.name || null);
+    setSelectedName(nextName);
+    return next;
+  }, [selectedName]);
+
+  useEffect(() => {
+    refreshWorkspace().catch((error) => setMessage(error.message));
+  }, [refreshWorkspace]);
+
+  useEffect(() => {
+    if (!selectedImage) {
+      setPolygons([]);
+      setSelectedPolygonId(null);
+      return;
+    }
+    let cancelled = false;
+    async function loadLabels() {
+      setBusy("loading");
+      setMessage("");
+      try {
+        const payload = await getSegmentationTrainingLabels(selectedImage.name);
+        let nextPolygons = (payload.polygons || []).map(normalizeTrainingPolygon).filter(Boolean);
+        let loadedSuggestions = false;
+        if (nextPolygons.length === 0) {
+          const detected = await detectSegmentationTrainingLabels(selectedImage.name);
+          nextPolygons = (detected.polygons || []).map(normalizeTrainingPolygon).filter(Boolean);
+          loadedSuggestions = nextPolygons.length > 0;
+        }
+        if (!cancelled) {
+          setPolygons(nextPolygons);
+          setSelectedPolygonId(nextPolygons[0]?.id || null);
+          setDirty(loadedSuggestions);
+        }
+      } catch (error) {
+        if (!cancelled) setMessage(error.message || "Unable to load labels.");
+      } finally {
+        if (!cancelled) setBusy("");
+      }
+    }
+    loadLabels();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedImage?.name]);
+
+  function updatePolygons(updater) {
+    setPolygons((current) => (typeof updater === "function" ? updater(current) : updater));
+    setDirty(true);
+  }
+
+  async function uploadImages(fileList) {
+    const files = [...fileList];
+    if (files.length === 0) return;
+    setBusy("uploading");
+    try {
+      const response = await uploadSegmentationTrainingImages(files);
+      await refreshWorkspace(response.images?.[0]?.name || null);
+      setMessage(`${files.length} image${files.length === 1 ? "" : "s"} uploaded.`);
+    } catch (error) {
+      setMessage(error.message || "Upload failed.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function runAutoDetect() {
+    if (!selectedImage) return;
+    setBusy("detecting");
+    try {
+      const detected = await detectSegmentationTrainingLabels(selectedImage.name);
+      const nextPolygons = (detected.polygons || []).map(normalizeTrainingPolygon).filter(Boolean);
+      updatePolygons(nextPolygons);
+      setSelectedPolygonId(nextPolygons[0]?.id || null);
+      setMessage(`${nextPolygons.length} suggestion${nextPolygons.length === 1 ? "" : "s"} loaded.`);
+    } catch (error) {
+      setMessage(error.message || "Detection failed.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function addPolygon() {
+    const polygon = defaultTrainingPolygon();
+    updatePolygons((current) => [...current, polygon]);
+    setSelectedPolygonId(polygon.id);
+  }
+
+  function deleteSelectedPolygon() {
+    if (!selectedPolygon) return;
+    updatePolygons((current) => current.filter((polygon) => polygon.id !== selectedPolygon.id));
+    setSelectedPolygonId(polygons.find((polygon) => polygon.id !== selectedPolygon.id)?.id || null);
+  }
+
+  async function saveLabels() {
+    if (!selectedImage) return;
+    setBusy("saving");
+    try {
+      const payload = polygons.map((polygon) => ({
+        points: polygon.points.map((point) => ({ x: clampUnit(point.x), y: clampUnit(point.y) })),
+        source: "manual",
+      }));
+      const response = await saveSegmentationTrainingLabels(selectedImage.name, payload);
+      const nextPolygons = (response.polygons || []).map(normalizeTrainingPolygon).filter(Boolean);
+      setPolygons(nextPolygons);
+      setSelectedPolygonId(nextPolygons[0]?.id || null);
+      setDirty(false);
+      await refreshWorkspace(selectedImage.name);
+      setMessage("Labels saved.");
+    } catch (error) {
+      setMessage(error.message || "Save failed.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function deleteSelectedImage() {
+    if (!selectedImage) return;
+    setBusy("deleting");
+    try {
+      await deleteSegmentationTrainingImage(selectedImage.name);
+      setPolygons([]);
+      setSelectedPolygonId(null);
+      await refreshWorkspace(null);
+      setMessage("Image removed.");
+    } catch (error) {
+      setMessage(error.message || "Delete failed.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function prepareDataset() {
+    setBusy("preparing");
+    try {
+      const result = await prepareSegmentationTrainingDataset();
+      const valid = result.validation?.valid ? "valid" : "needs review";
+      setMessage(`Dataset ${valid}: ${result.validation?.images_train || 0} train, ${result.validation?.images_val || 0} val.`);
+    } catch (error) {
+      setMessage(error.message || "Dataset preparation failed.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <div className="training-layout">
+      <section className="work-surface">
+        <div className="section-title">
+          <h2>Training Labels</h2>
+          <div className="toolbar-row">
+            <button className="icon-button" type="button" disabled={!selectedImage || Boolean(busy)} onClick={runAutoDetect} title="Auto detect">
+              {busy === "detecting" ? <Loader2 className="spin-icon" size={16} /> : <RefreshCw size={16} />}
+            </button>
+            <button className="icon-button" type="button" disabled={!selectedImage || Boolean(busy)} onClick={addPolygon} title="Add polygon">
+              <FolderPlus size={16} />
+            </button>
+            <button className="icon-button" type="button" disabled={!selectedPolygon || Boolean(busy)} onClick={deleteSelectedPolygon} title="Delete polygon">
+              <X size={16} />
+            </button>
+            <button className="primary-button" type="button" disabled={!selectedImage || Boolean(busy)} onClick={saveLabels}>
+              {busy === "saving" ? <Loader2 className="spin-icon" size={16} /> : <Save size={16} />}
+              Save
+            </button>
+          </div>
+        </div>
+        <TrainingCanvas
+          image={selectedImage}
+          polygons={polygons}
+          selectedPolygonId={selectedPolygonId}
+          onSelectPolygon={setSelectedPolygonId}
+          onChangePolygons={updatePolygons}
+        />
+        <div className="training-status-row">
+          <div>
+            <strong>{selectedImage?.name || "No image"}</strong>
+            <span>{selectedImage ? `${selectedImage.width || "?"} x ${selectedImage.height || "?"} px` : ""}</span>
+          </div>
+          <div className="toolbar-row">
+            <StatusBadge status={dirty ? "review_needed" : selectedImage?.has_label ? "completed" : "pending"} />
+            <button className="icon-button" type="button" disabled={!selectedImage || busy === "deleting"} onClick={deleteSelectedImage} title="Delete image">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      </section>
+      <section className="side-surface">
+        <div className="section-title">
+          <h2>Workspace</h2>
+          <StatusBadge status={busy || "ready"} />
+        </div>
+        <div className="stack">
+          <label className="file-pick icon-button text-button">
+            <Upload size={16} />
+            Upload Images
+            <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => uploadImages(event.target.files)} />
+          </label>
+          <button className="icon-button text-button" type="button" disabled={busy === "preparing"} onClick={prepareDataset}>
+            {busy === "preparing" ? <Loader2 className="spin-icon" size={16} /> : <Check size={16} />}
+            Prepare Dataset
+          </button>
+          {message && <p className="run-message">{message}</p>}
+        </div>
+        <div className="training-image-list">
+          {images.map((image) => (
+            <button
+              type="button"
+              key={image.name}
+              className={`training-image-row ${selectedImage?.name === image.name ? "selected" : ""}`}
+              onClick={() => setSelectedName(image.name)}
+            >
+              <img src={trainingImageSrc(image)} alt="" />
+              <span>
+                <strong>{image.name}</strong>
+                <small>{image.labels} labels</small>
+              </span>
+              <StatusBadge status={image.has_label ? "completed" : "pending"} />
+            </button>
+          ))}
+          {images.length === 0 && <EmptyState label="No training images." />}
+        </div>
+        <div className="training-polygon-list">
+          <div className="section-title compact-title">
+            <h2>Polygons</h2>
+            <span className="muted-text">{polygons.length}</span>
+          </div>
+          {polygons.map((polygon, index) => (
+            <button
+              type="button"
+              key={polygon.id}
+              className={`polygon-row ${polygon.id === selectedPolygonId ? "selected" : ""}`}
+              onClick={() => setSelectedPolygonId(polygon.id)}
+            >
+              <span>{index + 1}</span>
+              <strong>{polygon.source || "manual"}</strong>
+              <small>{polygon.points.length} pts</small>
+            </button>
+          ))}
+          {polygons.length === 0 && <EmptyState label="No polygons." />}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto }) {
   const canvasRef = useRef(null);
   const imageRef = useRef(null);
@@ -1251,7 +1679,10 @@ export default function App() {
                 type="button"
                 key={tab.id}
                 className={activeTab === tab.id ? "active" : ""}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  if (tab.id === "training") setNotice("");
+                }}
                 title={tab.label}
               >
                 <Icon size={18} />
@@ -1262,7 +1693,7 @@ export default function App() {
         </nav>
       </header>
 
-      {notice && (
+      {notice && activeTab !== "training" && (
         <button type="button" className="notice" onClick={() => setNotice("")}>
           {notice}
         </button>
@@ -1313,6 +1744,7 @@ export default function App() {
           refresh={refreshAlbumData}
         />
       )}
+      {activeTab === "training" && <TrainingAnnotationView />}
       {activeTab === "gallery" && <GalleryView photos={photos} onOpenPhoto={openPhoto} />}
       {activeTab === "capture" && <CaptureView albumId={selectedAlbumId} refresh={refreshAlbumData} />}
       {photoViewerDetail && (

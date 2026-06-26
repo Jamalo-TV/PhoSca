@@ -51,6 +51,10 @@ class _CandidateAssessment:
     area_ratio: float
     rectangularity: float
     interior_texture: float
+    edge_supported_sides: int
+    outline_supported_sides: int
+    exterior_background_support: float
+    exterior_background_sides: int
     rejected: bool
     rejection_reasons: list[str]
 
@@ -367,7 +371,11 @@ def _refine_quadrilateral_with_lines(image: np.ndarray, points: np.ndarray) -> t
     return refined, True
 
 
-def _edge_support_score(edge_map: np.ndarray, points: np.ndarray) -> float:
+def _mean_score(scores: list[float]) -> float:
+    return float(np.mean(scores)) if scores else 0.0
+
+
+def _edge_support_scores(edge_map: np.ndarray, points: np.ndarray) -> list[float]:
     height, width = edge_map.shape[:2]
     ordered = _order_points(points.astype(np.float32))
     side_scores: list[float] = []
@@ -384,10 +392,10 @@ def _edge_support_score(edge_map: np.ndarray, points: np.ndarray) -> float:
             if 0 <= x < width and 0 <= y < height and edge_map[y, x] > 0:
                 hits += 1
         side_scores.append(hits / samples)
-    return float(np.mean(side_scores)) if side_scores else 0.0
+    return side_scores
 
 
-def _border_contrast_score(image: np.ndarray, points: np.ndarray) -> float:
+def _border_contrast_scores(image: np.ndarray, points: np.ndarray) -> list[float]:
     height, width = image.shape[:2]
     lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB).astype(np.float32)
     ordered = _order_points(points.astype(np.float32))
@@ -418,8 +426,63 @@ def _border_contrast_score(image: np.ndarray, points: np.ndarray) -> float:
             distances.append(float(np.linalg.norm(lab[iy, ix] - lab[oy, ox])))
         if distances:
             side_scores.append(min(1.0, float(np.median(distances)) / 30.0))
-    return float(np.mean(side_scores)) if side_scores else 0.0
+        else:
+            side_scores.append(0.0)
+    return side_scores
 
+
+def _frame_background_lab_model(image: np.ndarray) -> tuple[np.ndarray, float]:
+    height, width = image.shape[:2]
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB).astype(np.float32)
+    frame_width = max(6, min(width, height) // 24)
+    frame = _frame_pixels(lab, frame_width)
+    background = np.median(frame, axis=0)
+    distances = np.linalg.norm(frame - background, axis=1)
+    median_distance = float(np.median(distances))
+    mad = float(np.median(np.abs(distances - median_distance)))
+    threshold = median_distance + max(12.0, 2.6 * mad)
+    return background.astype(np.float32), threshold
+
+
+def _exterior_background_scores(image: np.ndarray, points: np.ndarray) -> list[float]:
+    height, width = image.shape[:2]
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB).astype(np.float32)
+    background, threshold = _frame_background_lab_model(image)
+    ordered = _order_points(points.astype(np.float32))
+    centroid = np.mean(ordered, axis=0)
+    min_dimension = min(width, height)
+    offsets = (max(4.0, min_dimension * 0.008), max(8.0, min_dimension * 0.018))
+    side_scores: list[float] = []
+
+    for index in range(4):
+        start = ordered[index]
+        end = ordered[(index + 1) % 4]
+        edge = end - start
+        length = float(np.linalg.norm(edge))
+        if length <= 0:
+            side_scores.append(0.0)
+            continue
+
+        normal = np.array([-edge[1], edge[0]], dtype=np.float32) / length
+        middle = start + edge * 0.5
+        first = middle + normal * offsets[0]
+        second = middle - normal * offsets[0]
+        outside_direction = normal if np.linalg.norm(first - centroid) > np.linalg.norm(second - centroid) else -normal
+        hits = 0
+        samples = 0
+        for t in np.linspace(0.14, 0.86, max(10, min(70, int(length / 12)))):
+            midpoint = start + edge * float(t)
+            for offset in offsets:
+                outside = midpoint + outside_direction * offset
+                x = int(round(float(outside[0])))
+                y = int(round(float(outside[1])))
+                if not (0 <= x < width and 0 <= y < height):
+                    continue
+                samples += 1
+                if float(np.linalg.norm(lab[y, x] - background)) <= threshold:
+                    hits += 1
+        side_scores.append(hits / samples if samples else 0.0)
+    return side_scores
 
 def _rectangularity_score(points: np.ndarray) -> float:
     contour = points.reshape(-1, 1, 2).astype(np.float32)
@@ -459,10 +522,20 @@ def _assess_candidate(
     detector_source: str,
     refined_by_lines: bool,
 ) -> _CandidateAssessment:
-    edge_support = _edge_support_score(edge_map, points)
-    border_contrast = _border_contrast_score(image, points)
+    edge_scores = _edge_support_scores(edge_map, points)
+    border_scores = _border_contrast_scores(image, points)
+    exterior_scores = _exterior_background_scores(image, points)
+    edge_support = _mean_score(edge_scores)
+    border_contrast = _mean_score(border_scores)
+    exterior_background_support = _mean_score(exterior_scores)
     rectangularity = _rectangularity_score(points)
     interior_texture = _interior_texture_score(image, points)
+    edge_supported_sides = sum(score >= 0.10 for score in edge_scores)
+    outline_supported_sides = sum(
+        max(edge_score, border_score, exterior_score * 0.6) >= 0.16
+        for edge_score, border_score, exterior_score in zip(edge_scores, border_scores, exterior_scores, strict=False)
+    )
+    exterior_background_sides = sum(score >= 0.55 for score in exterior_scores)
     confidence = _candidate_confidence(
         edge_support=edge_support,
         border_contrast=border_contrast,
@@ -490,6 +563,8 @@ def _assess_candidate(
         rejection_reasons.append("frame_touching_container_candidate")
     if edge_support < 0.08 and border_contrast < 0.16 and interior_texture < 0.32:
         rejection_reasons.append("weak_photo_boundary")
+    if area_ratio < 0.16 and outline_supported_sides <= 2 and exterior_background_sides <= 1:
+        rejection_reasons.append("incomplete_photo_outline")
     if detector_source == "contrast_region" and edge_support < 0.12 and border_contrast < 0.22 and interior_texture < 0.16:
         rejection_reasons.append("smooth_contrast_false_positive")
     contour_width, contour_height = _quadrilateral_geometry_dimensions(points, 0, 0)
@@ -498,6 +573,8 @@ def _assess_candidate(
         rejection_reasons.append("smooth_extreme_aspect_false_positive")
     if polygon_source == "classical_min_area_rect" and edge_support < 0.16 and border_contrast < 0.24:
         rejection_reasons.append("unsupported_min_area_rectangle")
+    if detector_source in {"edge_contour", "line_pairs"} and area_ratio < 0.12 and exterior_background_support < 0.18 and exterior_background_sides == 0:
+        rejection_reasons.append("internal_edge_without_album_background")
 
     if rejection_reasons:
         confidence = round(max(0.25, confidence - 0.18), 3)
@@ -509,6 +586,10 @@ def _assess_candidate(
         area_ratio=area_ratio,
         rectangularity=rectangularity,
         interior_texture=interior_texture,
+        edge_supported_sides=edge_supported_sides,
+        outline_supported_sides=outline_supported_sides,
+        exterior_background_support=exterior_background_support,
+        exterior_background_sides=exterior_background_sides,
         rejected=bool(rejection_reasons),
         rejection_reasons=rejection_reasons,
     )
@@ -827,6 +908,98 @@ def _discard_container_candidates(candidates: list[_ContourCandidate]) -> list[_
     return filtered
 
 
+def _normalized_box_area(box: dict[str, float]) -> float:
+    return max(0.0, box["x2"] - box["x1"]) * max(0.0, box["y2"] - box["y1"])
+
+
+def _normalized_box_overlap(a: dict[str, float], b: dict[str, float]) -> tuple[float, float, float, float]:
+    left = max(a["x1"], b["x1"])
+    top = max(a["y1"], b["y1"])
+    right = min(a["x2"], b["x2"])
+    bottom = min(a["y2"], b["y2"])
+    if right <= left or bottom <= top:
+        return 0.0, 0.0, 0.0, 0.0
+    intersection = (right - left) * (bottom - top)
+    area_a = _normalized_box_area(a)
+    area_b = _normalized_box_area(b)
+    union = area_a + area_b - intersection
+    return (
+        intersection / union if union > 0 else 0.0,
+        intersection / min(area_a, area_b) if min(area_a, area_b) > 0 else 0.0,
+        intersection / area_a if area_a > 0 else 0.0,
+        intersection / area_b if area_b > 0 else 0.0,
+    )
+
+
+def _score_value(detection: SegmentationDetection, key: str, default: float = 0.0) -> float:
+    scores = detection.mask.get("scores", {}) if detection.mask else {}
+    try:
+        return float(scores.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _distinct_nested_children(parent_index: int, detections: list[SegmentationDetection], areas: list[float]) -> list[int]:
+    parent = detections[parent_index]
+    children: list[int] = []
+    for index, detection in enumerate(detections):
+        if index == parent_index or areas[index] >= areas[parent_index] * 0.72:
+            continue
+        _, _, child_inside_parent, _ = _normalized_box_overlap(detection.bounding_box, parent.bounding_box)
+        if child_inside_parent < 0.82:
+            continue
+        if any(_normalized_box_overlap(detection.bounding_box, detections[child].bounding_box)[1] > 0.55 for child in children):
+            continue
+        children.append(index)
+    return children
+
+
+def _is_photo_like_parent(detection: SegmentationDetection) -> bool:
+    area_ratio = _score_value(detection, "area_ratio", _normalized_box_area(detection.bounding_box))
+    outline_sides = _score_value(detection, "outline_supported_sides")
+    exterior_sides = _score_value(detection, "exterior_background_sides")
+    return area_ratio <= 0.62 and (outline_sides >= 3 or exterior_sides >= 2 or detection.confidence >= 0.56)
+
+
+def _filter_nested_classical_detections(detections: list[SegmentationDetection]) -> tuple[list[SegmentationDetection], dict[str, int]]:
+    if len(detections) < 2:
+        return detections, {}
+
+    rejected: dict[int, str] = {}
+    areas = [_normalized_box_area(detection.bounding_box) for detection in detections]
+
+    for index, detection in enumerate(detections):
+        children = _distinct_nested_children(index, detections, areas)
+        child_area_ratio = sum(areas[child] for child in children) / max(areas[index], 1e-9)
+        if areas[index] > 0.18 and len(children) >= 2 and child_area_ratio > 0.24:
+            rejected[index] = "container_detection_with_multiple_photo_regions"
+
+    for index, detection in enumerate(detections):
+        if index in rejected:
+            continue
+        for parent_index, parent in enumerate(detections):
+            if parent_index == index or parent_index in rejected or areas[index] >= areas[parent_index] * 0.78:
+                continue
+            if not _is_photo_like_parent(parent):
+                continue
+            _, overlap_min, child_inside_parent, _ = _normalized_box_overlap(detection.bounding_box, parent.bounding_box)
+            if child_inside_parent < 0.72 and overlap_min < 0.86:
+                continue
+            child_area_fraction = areas[index] / max(areas[parent_index], 1e-9)
+            parent_outline = _score_value(parent, "outline_supported_sides")
+            child_outline = _score_value(detection, "outline_supported_sides")
+            child_exterior_sides = _score_value(detection, "exterior_background_sides")
+            parent_is_at_least_as_plausible = parent.confidence >= detection.confidence - 0.15 or parent_outline >= child_outline
+            if child_area_fraction < 0.78 and (parent_is_at_least_as_plausible or child_exterior_sides <= 1):
+                rejected[index] = "partial_photo_inside_larger_candidate"
+                break
+
+    rejection_counts: dict[str, int] = {}
+    for reason in rejected.values():
+        rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
+    return [detection for index, detection in enumerate(detections) if index not in rejected], rejection_counts
+
+
 def detect_photos_classical(image: np.ndarray, *, min_area_ratio: float = 0.02) -> SegmentationResult:
     height, width = image.shape[:2]
     image_area = width * height
@@ -877,6 +1050,10 @@ def detect_photos_classical(image: np.ndarray, *, min_area_ratio: float = 0.02) 
                         "area_ratio": round(float(assessment.area_ratio), 4),
                         "rectangularity": round(assessment.rectangularity, 3),
                         "interior_texture": round(assessment.interior_texture, 3),
+                        "edge_supported_sides": float(assessment.edge_supported_sides),
+                        "outline_supported_sides": float(assessment.outline_supported_sides),
+                        "exterior_background_support": round(assessment.exterior_background_support, 3),
+                        "exterior_background_sides": float(assessment.exterior_background_sides),
                     },
                 },
                 confidence=assessment.confidence,
@@ -886,6 +1063,9 @@ def detect_photos_classical(image: np.ndarray, *, min_area_ratio: float = 0.02) 
             )
         )
 
+    detections, nested_rejections = _filter_nested_classical_detections(detections)
+    for reason, count in nested_rejections.items():
+        rejected_counts[reason] = rejected_counts.get(reason, 0) + count
     detections.sort(key=lambda detection: (detection.bounding_box["y1"], detection.bounding_box["x1"]))
     return SegmentationResult(
         detections=detections,
