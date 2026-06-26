@@ -1,6 +1,7 @@
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -66,6 +67,16 @@ def perspective_album_page() -> tuple[np.ndarray, np.ndarray]:
     cv2.line(image, tuple(inner[0]), tuple(inner[2]), (220, 235, 250), 3)
     cv2.polylines(image, [points], True, (35, 35, 35), 5)
     return image, points
+
+
+def upright_portrait_photo() -> np.ndarray:
+    image = np.full((220, 160, 3), 230, dtype=np.uint8)
+    cv2.circle(image, (80, 55), 28, (70, 90, 130), -1)
+    cv2.circle(image, (70, 48), 4, (250, 250, 250), -1)
+    cv2.circle(image, (90, 48), 4, (250, 250, 250), -1)
+    cv2.rectangle(image, (58, 88), (102, 170), (80, 120, 170), -1)
+    cv2.line(image, (62, 118), (98, 118), (245, 245, 245), 2)
+    return image
 
 
 def low_contrast_album_page() -> tuple[np.ndarray, tuple[int, int, int, int]]:
@@ -150,6 +161,124 @@ def test_classical_segmentation_detects_low_contrast_photo_region() -> None:
     assert _pixel_iou(expected_xyxy, detected_boxes[0]) > 0.85
 
 
+def test_yolo_segmentation_parser_uses_proto_mask_polygon() -> None:
+    from app.pipeline.segmentation import _parse_simple_box_outputs
+
+    settings = SimpleNamespace(
+        yolo_confidence_threshold=0.25,
+        segmentation_min_aspect_ratio=0.2,
+        segmentation_max_aspect_ratio=5.0,
+    )
+    prediction = np.array([[[8.0, 8.0, 8.0, 8.0, 0.91, 1.0]]], dtype=np.float32)
+    proto = np.full((1, 1, 16, 16), -8.0, dtype=np.float32)
+    proto[0, 0, 4:12, 5:11] = 8.0
+
+    detections = _parse_simple_box_outputs(
+        [prediction, proto],
+        width=4000,
+        height=3000,
+        settings=settings,
+        input_width=16,
+        input_height=16,
+    )
+
+    assert len(detections) == 1
+    detection = detections[0]
+    assert detection.mask["source"] == "yolo_seg_mask"
+    assert detection.mask["scores"]["mask_channels"] == 1.0
+    assert 0.30 < detection.bounding_box["x1"] < 0.33
+    assert 0.67 < detection.bounding_box["x2"] < 0.70
+
+
+def test_yolo_box_parser_normalizes_coordinates_against_model_input() -> None:
+    from app.pipeline.segmentation import _parse_simple_box_outputs
+
+    settings = SimpleNamespace(
+        yolo_confidence_threshold=0.25,
+        segmentation_min_aspect_ratio=0.2,
+        segmentation_max_aspect_ratio=5.0,
+    )
+    prediction = np.array([[[160.0, 96.0, 480.0, 384.0, 0.93]]], dtype=np.float32)
+
+    detections = _parse_simple_box_outputs(
+        [prediction],
+        width=4000,
+        height=3000,
+        settings=settings,
+        input_width=640,
+        input_height=480,
+    )
+
+    assert len(detections) == 1
+    box = detections[0].bounding_box
+    assert 0.24 < box["x1"] < 0.26
+    assert 0.79 < box["y2"] < 0.81
+
+
+
+
+def test_yolo_box_parser_undoes_letterbox_padding() -> None:
+    from app.pipeline.segmentation import _parse_simple_box_outputs
+
+    settings = SimpleNamespace(
+        yolo_confidence_threshold=0.25,
+        segmentation_min_aspect_ratio=0.2,
+        segmentation_max_aspect_ratio=5.0,
+    )
+    prediction = np.array([[[160.0, 240.0, 480.0, 400.0, 0.93]]], dtype=np.float32)
+
+    detections = _parse_simple_box_outputs(
+        [prediction],
+        width=4000,
+        height=2000,
+        settings=settings,
+        input_width=640,
+        input_height=640,
+    )
+
+    assert len(detections) == 1
+    box = detections[0].bounding_box
+    assert 0.24 < box["x1"] < 0.26
+    assert 0.24 < box["y1"] < 0.26
+    assert 0.74 < box["y2"] < 0.76
+
+def test_yolo_segmentation_parser_accepts_channels_last_proto() -> None:
+    from app.pipeline.segmentation import _parse_simple_box_outputs
+
+    settings = SimpleNamespace(
+        yolo_confidence_threshold=0.25,
+        segmentation_min_aspect_ratio=0.2,
+        segmentation_max_aspect_ratio=5.0,
+    )
+    prediction = np.array([[[8.0, 8.0, 8.0, 8.0, 0.91, 1.0]]], dtype=np.float32)
+    proto = np.full((1, 16, 16, 1), -8.0, dtype=np.float32)
+    proto[0, 4:12, 5:11, 0] = 8.0
+
+    detections = _parse_simple_box_outputs(
+        [prediction, proto],
+        width=4000,
+        height=3000,
+        settings=settings,
+        input_width=16,
+        input_height=16,
+    )
+
+    assert len(detections) == 1
+    assert detections[0].mask["source"] == "yolo_seg_mask"
+
+
+def test_classical_segmentation_rejects_smooth_saturated_sliver() -> None:
+    from app.pipeline.segmentation import detect_photos_classical
+
+    image = np.full((600, 900, 3), 242, dtype=np.uint8)
+    cv2.rectangle(image, (360, 120), (560, 570), (210, 135, 40), -1)
+
+    result = detect_photos_classical(image)
+
+    assert result.detections == []
+    assert result.metadata["rejected_candidates"]["smooth_contrast_false_positive"] == 1
+
+
 def test_classical_segmentation_preserves_rotated_photo_geometry() -> None:
     from app.pipeline.perspective import crop_and_correct_photo
     from app.pipeline.segmentation import detect_photos_classical
@@ -187,6 +316,16 @@ def test_classical_segmentation_detects_perspective_photo_corners() -> None:
     height, width = crop.shape[:2]
     assert width > height
     assert 1.45 < width / height < 1.85
+
+
+def test_photo_orientation_correction_rotates_confident_sideways_portrait() -> None:
+    from app.pipeline.orientation import correct_photo_orientation, rotate_image
+
+    sideways = rotate_image(upright_portrait_photo(), 90)
+    corrected, metadata = correct_photo_orientation(sideways)
+
+    assert metadata["rotation_degrees"] == 270
+    assert corrected.shape[:2] == (220, 160)
 
 
 def test_uniform_border_removal_trims_page_margin() -> None:
@@ -419,7 +558,7 @@ def test_exif_caption_write_strips_sensitive_tags(tmp_path: Path) -> None:
 async def test_full_synthetic_page_pipeline(client) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
-    from app.models import Album, ExtractedPhoto, OCRResult, Page
+    from app.models import Album, AlbumStatus, ExtractedPhoto, OCRResult, Page
     from app.services.pipeline import process_page_pipeline
 
     settings = get_settings()
@@ -464,10 +603,14 @@ async def test_full_synthetic_page_pipeline(client) -> None:
     assert result["status"] in {"completed", "review_needed"}
     async with get_session_factory()() as session:
         page = await session.get(Page, page_id)
+        album = await session.get(Album, page.album_id) if page is not None else None
         photos = (await session.scalars(select(ExtractedPhoto).where(ExtractedPhoto.page_id == page_id))).all()
         ocr_rows = (await session.scalars(select(OCRResult).where(OCRResult.page_id == page_id))).all()
 
     assert page is not None
+    assert album is not None
+    assert album.status == AlbumStatus.completed
+    assert album.processed_pages == album.total_pages == 1
     assert page.blur_score is not None
     assert page.processing_metadata["steps"]["pre_cutout_enhancement"]["order"] == "before_segmentation_and_crop"
     assert photos

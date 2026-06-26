@@ -117,6 +117,43 @@ async def test_upload_rejects_claimed_mime_mismatch(client: AsyncClient) -> None
     assert response.status_code == 400
 
 
+async def test_upload_rejects_duplicate_file_within_same_album(client: AsyncClient) -> None:
+    album_id = await create_album(client)
+
+    first = await client.post(
+        f"/api/v1/albums/{album_id}/pages/upload",
+        files=[("files", ("album-page.jpg", JPEG_BYTES, "image/jpeg"))],
+    )
+    assert first.status_code == 201, first.text
+
+    duplicate = await client.post(
+        f"/api/v1/albums/{album_id}/pages/upload",
+        files=[("files", ("album-page-copy.jpg", JPEG_BYTES, "image/jpeg"))],
+    )
+
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"] == "File was already uploaded."
+
+
+async def test_upload_allows_same_file_in_different_albums(client: AsyncClient) -> None:
+    first_album_id = await create_album(client)
+    second_album_id = await create_album(client)
+
+    first = await client.post(
+        f"/api/v1/albums/{first_album_id}/pages/upload",
+        files=[("files", ("album-page.jpg", JPEG_BYTES, "image/jpeg"))],
+    )
+    assert first.status_code == 201, first.text
+
+    second = await client.post(
+        f"/api/v1/albums/{second_album_id}/pages/upload",
+        files=[("files", ("album-page-again.jpg", JPEG_BYTES, "image/jpeg"))],
+    )
+
+    assert second.status_code == 201, second.text
+    assert second.json()["pages"][0]["filename"] == "album-page-again.jpg"
+
+
 async def test_chunked_upload_assembles_and_validates_image(client: AsyncClient) -> None:
     album_id = await create_album(client)
     first = JPEG_BYTES[:8]

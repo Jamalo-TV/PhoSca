@@ -16,9 +16,15 @@ storage/failed/**
 PHOTOALBUM/
 data/load_dataset/**
 data/raw_album_pages/**
+data/orientation_photos/**
+data/label_exports/**
+data/label_studio_tasks*.json
+data/label_studio_export*.json
 data/yolo_dataset/images/**
 !data/load_dataset/.gitkeep
 !data/raw_album_pages/.gitkeep
+!data/orientation_photos/.gitkeep
+!data/label_exports/yolo/.gitkeep
 !data/yolo_dataset/images/.gitkeep
 models/**/*.onnx
 models/paddleocr/**

@@ -1,7 +1,7 @@
 from enum import Enum
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, Enum as SAEnum, Float, ForeignKey, Index, Integer, String, Text, false, text, true
+from sqlalchemy import BigInteger, Boolean, Enum as SAEnum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, false, text, true
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -75,6 +75,7 @@ class Page(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_pages_album_id_status", "album_id", "status"),
         Index("ix_pages_file_hash_sha256", "file_hash_sha256"),
+        UniqueConstraint("album_id", "file_hash_sha256", name="uq_pages_album_file_hash_sha256"),
     )
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True, default=uuid4)
@@ -82,7 +83,7 @@ class Page(Base, TimestampMixin):
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
     file_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
-    file_hash_sha256: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    file_hash_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     blur_score: Mapped[float | None] = mapped_column(Float)
     status: Mapped[PageStatus] = mapped_column(
         enum_column(PageStatus, "page_status"),

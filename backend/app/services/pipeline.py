@@ -4,7 +4,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,7 +18,7 @@ from app.pipeline.enhancement import prepare_for_cutout
 from app.pipeline.exif import write_caption_exif
 from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, sha256_file
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
-from app.pipeline.perspective import crop_and_correct_photo
+from app.pipeline.perspective import crop_and_correct_photo_with_metadata
 from app.pipeline.quality import segmentation_review_reasons
 from app.pipeline.segmentation import segment_album_page
 from app.pipeline.variants import build_variant_bundle
@@ -147,12 +147,19 @@ async def perspective_correction_task_logic(session: AsyncSession, photo_id: UUI
         raise ValueError(f"Photo not found: {photo_id}")
 
     page_image = load_image(Path(photo.page.storage_path))
-    corrected = crop_and_correct_photo(page_image, photo.bounding_box, photo.segmentation_mask)
+    corrected, correction_metadata = crop_and_correct_photo_with_metadata(
+        page_image,
+        photo.bounding_box,
+        photo.segmentation_mask,
+        auto_orient=settings.enable_photo_orientation_correction,
+        orientation_model_path=settings.photo_orientation_model_path,
+    )
     original_path = settings.storage_path / "processed" / str(photo.album_id) / "photos" / f"{photo.id}_original.jpg"
     save_jpeg(original_path, corrected)
     photo.original_storage_path = str(original_path)
     photo.storage_path = str(original_path)
-    session.add(AuditLog(entity_type="photo", entity_id=photo.id, action="corrected", details={"path": str(original_path)}))
+    _append_metadata(photo, "correction", correction_metadata)
+    session.add(AuditLog(entity_type="photo", entity_id=photo.id, action="corrected", details={"path": str(original_path), **correction_metadata}))
     await session.commit()
     return {"photo_id": str(photo.id), "storage_path": str(original_path)}
 
@@ -171,6 +178,7 @@ async def ocr_task_logic(session: AsyncSession, page_id: UUID, settings: Setting
 
     photos = [{"id": str(photo.id), "bounding_box": photo.bounding_box} for photo in page.photos]
     classified_blocks = classify_ocr_blocks(blocks, photos)
+    await session.execute(delete(OCRResult).where(OCRResult.page_id == page.id, OCRResult.is_verified.is_(False)))
     for block in classified_blocks:
         session.add(
             OCRResult(
@@ -185,7 +193,7 @@ async def ocr_task_logic(session: AsyncSession, page_id: UUID, settings: Setting
             )
         )
 
-    _append_metadata(page, "ocr", ocr_metadata | {"blocks": len(classified_blocks)})
+    _append_metadata(page, "ocr", ocr_metadata | {"blocks": len(classified_blocks), "replaced_unverified_rows": True})
     session.add(AuditLog(entity_type="page", entity_id=page.id, action="ocr_extracted", details={"blocks": len(classified_blocks)}))
     await session.commit()
     return {"page_id": str(page.id), "ocr_blocks": len(classified_blocks)}
@@ -232,8 +240,9 @@ async def enhancement_task_logic(session: AsyncSession, photo_id: UUID, settings
         premium=premium,
         premium_metadata=premium_metadata,
     )
-    if previous_metadata.get("review_reasons"):
-        variant_bundle["review_reasons"] = previous_metadata["review_reasons"]
+    for preserved_key in ("review_reasons", "correction"):
+        if previous_metadata.get(preserved_key):
+            variant_bundle[preserved_key] = previous_metadata[preserved_key]
     variant_bundle["degradation"] = degradation_report.as_dict()
     variant_bundle["standard"] = metadata
     variant_bundle["premium"] = premium_metadata
@@ -333,11 +342,13 @@ async def process_page_pipeline(page_id: UUID, settings: Settings | None = None)
             page.status = PageStatus.completed
         if page.status in {PageStatus.completed, PageStatus.review_needed}:
             page.album.processed_pages += 1
+        await session.flush()
         remaining = await session.scalar(
             select(Page.id).where(Page.album_id == page.album_id, Page.status.in_([PageStatus.uploaded, PageStatus.queued, PageStatus.processing])).limit(1)
         )
         if remaining is None:
-            page.album.status = AlbumStatus.completed if page.status != PageStatus.failed else AlbumStatus.failed
+            failed_page = await session.scalar(select(Page.id).where(Page.album_id == page.album_id, Page.status == PageStatus.failed).limit(1))
+            page.album.status = AlbumStatus.failed if failed_page is not None else AlbumStatus.completed
         session.add(AuditLog(entity_type="page", entity_id=page.id, action="completed", details={"status": page.status.value}))
         await session.commit()
         return {"page_id": str(page_id), "status": page.status.value, "photos": photo_results}

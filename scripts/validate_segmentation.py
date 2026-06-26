@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
 
+import cv2
+import numpy as np
 from sqlalchemy import create_engine, text
 
 
@@ -19,41 +21,64 @@ class Box:
     y2: float
 
 
-def polygon_to_box(points: list[tuple[float, float]]) -> Box:
-    xs = [point[0] for point in points]
-    ys = [point[1] for point in points]
-    return Box(min(xs), min(ys), max(xs), max(ys))
+Polygon = list[tuple[float, float]]
 
 
-def box_iou(a: Box, b: Box) -> float:
-    x_left = max(a.x1, b.x1)
-    y_top = max(a.y1, b.y1)
-    x_right = min(a.x2, b.x2)
-    y_bottom = min(a.y2, b.y2)
-    if x_right <= x_left or y_bottom <= y_top:
+def box_to_polygon(box: Box) -> Polygon:
+    return [(box.x1, box.y1), (box.x2, box.y1), (box.x2, box.y2), (box.x1, box.y2)]
+
+
+def polygon_iou(a: Polygon, b: Polygon, *, canvas_size: int = 1024) -> float:
+    if len(a) < 3 or len(b) < 3:
         return 0.0
-    intersection = (x_right - x_left) * (y_bottom - y_top)
-    area_a = (a.x2 - a.x1) * (a.y2 - a.y1)
-    area_b = (b.x2 - b.x1) * (b.y2 - b.y1)
-    return intersection / (area_a + area_b - intersection)
+    a_mask = np.zeros((canvas_size, canvas_size), dtype=np.uint8)
+    b_mask = np.zeros_like(a_mask)
+    a_points = np.array(
+        [[int(round(max(0.0, min(1.0, x)) * (canvas_size - 1))), int(round(max(0.0, min(1.0, y)) * (canvas_size - 1)))] for x, y in a],
+        dtype=np.int32,
+    )
+    b_points = np.array(
+        [[int(round(max(0.0, min(1.0, x)) * (canvas_size - 1))), int(round(max(0.0, min(1.0, y)) * (canvas_size - 1)))] for x, y in b],
+        dtype=np.int32,
+    )
+    cv2.fillPoly(a_mask, [a_points], 1)
+    cv2.fillPoly(b_mask, [b_points], 1)
+    intersection = int(np.logical_and(a_mask, b_mask).sum())
+    union = int(np.logical_or(a_mask, b_mask).sum())
+    return intersection / union if union else 0.0
 
 
-def read_yolo_segmentation(label_path: Path) -> list[Box]:
-    boxes: list[Box] = []
+def read_yolo_segmentation(label_path: Path) -> list[Polygon]:
+    polygons: list[Polygon] = []
     if not label_path.exists():
-        return boxes
+        return polygons
     for line in label_path.read_text(encoding="utf-8").splitlines():
         parts = line.split()
         if len(parts) < 7:
             continue
         coords = [float(value) for value in parts[1:]]
         points = list(zip(coords[0::2], coords[1::2]))
-        boxes.append(polygon_to_box(points))
-    return boxes
+        polygons.append(points)
+    return polygons
 
 
-def best_match_iou(expected: Box, detected: list[Box]) -> float:
-    return max((box_iou(expected, candidate) for candidate in detected), default=0.0)
+def best_match_iou(expected: Polygon, detected: list[Polygon]) -> float:
+    return max((polygon_iou(expected, candidate) for candidate in detected), default=0.0)
+
+
+def detected_polygon(bounding_box: dict, segmentation_mask: dict | None) -> Polygon:
+    if segmentation_mask and segmentation_mask.get("polygon"):
+        points = segmentation_mask["polygon"]
+        if len(points) >= 3:
+            return [(float(point["x"]), float(point["y"])) for point in points]
+    return box_to_polygon(
+        Box(
+            float(bounding_box["x1"]),
+            float(bounding_box["y1"]),
+            float(bounding_box["x2"]),
+            float(bounding_box["y2"]),
+        )
+    )
 
 
 def main() -> None:
@@ -72,7 +97,7 @@ def main() -> None:
         rows = connection.execute(
             text(
                 """
-                SELECT p.original_filename, ep.bounding_box
+                SELECT p.original_filename, ep.bounding_box, ep.segmentation_mask
                 FROM pages p
                 JOIN extracted_photos ep ON ep.page_id = p.id
                 WHERE p.album_id = :album_id
@@ -81,14 +106,15 @@ def main() -> None:
             {"album_id": str(UUID(args.album_id))},
         ).mappings().all()
 
-    detected_by_file: dict[str, list[Box]] = {}
+    detected_by_file: dict[str, list[Polygon]] = {}
     for row in rows:
         box = row["bounding_box"]
         if isinstance(box, str):
             box = json.loads(box)
-        detected_by_file.setdefault(row["original_filename"], []).append(
-            Box(float(box["x1"]), float(box["y1"]), float(box["x2"]), float(box["y2"]))
-        )
+        mask = row["segmentation_mask"]
+        if isinstance(mask, str):
+            mask = json.loads(mask)
+        detected_by_file.setdefault(row["original_filename"], []).append(detected_polygon(box, mask))
 
     fixture_reports = []
     all_ious: list[float] = []

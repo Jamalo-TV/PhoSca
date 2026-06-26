@@ -58,7 +58,7 @@ def upgrade() -> None:
         *timestamps(),
         sa.ForeignKeyConstraint(["album_id"], ["albums.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("file_hash_sha256"),
+        sa.UniqueConstraint("album_id", "file_hash_sha256", name="uq_pages_album_file_hash_sha256"),
     )
     op.create_index("ix_pages_album_id_status", "pages", ["album_id", "status"])
     op.create_index("ix_pages_file_hash_sha256", "pages", ["file_hash_sha256"])

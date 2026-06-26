@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from time import perf_counter
 
@@ -42,6 +43,38 @@ class _AxisLine:
     length: float
 
 
+@dataclass(frozen=True)
+class _CandidateAssessment:
+    confidence: float
+    edge_support: float
+    border_contrast: float
+    area_ratio: float
+    rectangularity: float
+    interior_texture: float
+    rejected: bool
+    rejection_reasons: list[str]
+
+
+@dataclass(frozen=True)
+class _LetterboxTransform:
+    source_width: int
+    source_height: int
+    input_width: int
+    input_height: int
+    scale: float
+    resized_width: int
+    resized_height: int
+    pad_x: float
+    pad_y: float
+
+
+@lru_cache(maxsize=4)
+def _cached_onnx_session(model_path: str, modified_ns: int):
+    import onnxruntime as ort
+
+    return ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+
+
 def _frame_pixels(image: np.ndarray, frame_width: int) -> np.ndarray:
     top = image[:frame_width, :, :]
     bottom = image[-frame_width:, :, :]
@@ -73,6 +106,61 @@ def _normalized_polygon(points: np.ndarray, width: int, height: int) -> list[dic
         }
         for x, y in points
     ]
+
+
+def _build_letterbox_transform(source_width: int, source_height: int, input_width: int, input_height: int) -> _LetterboxTransform:
+    if source_width <= 0 or source_height <= 0:
+        raise ValueError("Source image dimensions must be positive for YOLO letterboxing.")
+    scale = min(input_width / source_width, input_height / source_height)
+    resized_width = max(1, int(round(source_width * scale)))
+    resized_height = max(1, int(round(source_height * scale)))
+    pad_x = float((input_width - resized_width) // 2)
+    pad_y = float((input_height - resized_height) // 2)
+    return _LetterboxTransform(
+        source_width=source_width,
+        source_height=source_height,
+        input_width=input_width,
+        input_height=input_height,
+        scale=scale,
+        resized_width=resized_width,
+        resized_height=resized_height,
+        pad_x=pad_x,
+        pad_y=pad_y,
+    )
+
+
+def _letterbox_image(image: np.ndarray, input_width: int, input_height: int) -> tuple[np.ndarray, _LetterboxTransform]:
+    source_height, source_width = image.shape[:2]
+    transform = _build_letterbox_transform(source_width, source_height, input_width, input_height)
+    resized = cv2.resize(
+        image,
+        (transform.resized_width, transform.resized_height),
+        interpolation=cv2.INTER_AREA if transform.scale < 1.0 else cv2.INTER_LINEAR,
+    )
+    canvas = np.full((input_height, input_width, image.shape[2]), 114, dtype=image.dtype)
+    left = int(transform.pad_x)
+    top = int(transform.pad_y)
+    canvas[top : top + transform.resized_height, left : left + transform.resized_width] = resized
+    return canvas, transform
+
+
+def _model_points_to_source(points: np.ndarray, transform: _LetterboxTransform) -> np.ndarray:
+    mapped = points.astype(np.float32).copy()
+    scale = max(transform.scale, 1e-6)
+    mapped[:, 0] = (mapped[:, 0] - transform.pad_x) / scale
+    mapped[:, 1] = (mapped[:, 1] - transform.pad_y) / scale
+    return _clamp_points(mapped, transform.source_width, transform.source_height)
+
+
+def _source_box_from_input_box(input_box: dict[str, float], transform: _LetterboxTransform) -> dict[str, float] | None:
+    scale = max(transform.scale, 1e-6)
+    source_box = {
+        "x1": ((input_box["x1"] * transform.input_width) - transform.pad_x) / scale / transform.source_width,
+        "y1": ((input_box["y1"] * transform.input_height) - transform.pad_y) / scale / transform.source_height,
+        "x2": ((input_box["x2"] * transform.input_width) - transform.pad_x) / scale / transform.source_width,
+        "y2": ((input_box["y2"] * transform.input_height) - transform.pad_y) / scale / transform.source_height,
+    }
+    return _clip_normalized_box(source_box)
 
 
 def _order_points(points: np.ndarray) -> np.ndarray:
@@ -331,6 +419,99 @@ def _border_contrast_score(image: np.ndarray, points: np.ndarray) -> float:
         if distances:
             side_scores.append(min(1.0, float(np.median(distances)) / 30.0))
     return float(np.mean(side_scores)) if side_scores else 0.0
+
+
+def _rectangularity_score(points: np.ndarray) -> float:
+    contour = points.reshape(-1, 1, 2).astype(np.float32)
+    area = float(cv2.contourArea(contour))
+    rect = cv2.minAreaRect(contour)
+    box_area = float(rect[1][0] * rect[1][1])
+    if box_area <= 0:
+        return 0.0
+    return float(max(0.0, min(1.0, area / box_area)))
+
+
+def _interior_texture_score(image: np.ndarray, points: np.ndarray) -> float:
+    height, width = image.shape[:2]
+    mask = np.zeros((height, width), dtype=np.uint8)
+    cv2.fillConvexPoly(mask, _clamp_points(points, width, height).astype(np.int32), 255)
+    if cv2.countNonZero(mask) < max(64, int(width * height * 0.002)):
+        return 0.0
+    _, _, box_width, box_height = cv2.boundingRect(points.astype(np.int32))
+    inset = max(3, min(21, int(round(min(box_width, box_height) * 0.06))))
+    kernel = np.ones((inset | 1, inset | 1), dtype=np.uint8)
+    eroded = cv2.erode(mask, kernel, iterations=1)
+    if cv2.countNonZero(eroded) > 0:
+        mask = eroded
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    laplacian = cv2.Laplacian(gray, cv2.CV_32F, ksize=3)
+    texture = float(np.std(laplacian[mask > 0]))
+    return float(max(0.0, min(1.0, texture / 42.0)))
+
+
+def _assess_candidate(
+    image: np.ndarray,
+    edge_map: np.ndarray,
+    points: np.ndarray,
+    *,
+    area_ratio: float,
+    polygon_source: str,
+    detector_source: str,
+    refined_by_lines: bool,
+) -> _CandidateAssessment:
+    edge_support = _edge_support_score(edge_map, points)
+    border_contrast = _border_contrast_score(image, points)
+    rectangularity = _rectangularity_score(points)
+    interior_texture = _interior_texture_score(image, points)
+    confidence = _candidate_confidence(
+        edge_support=edge_support,
+        border_contrast=border_contrast,
+        area_ratio=area_ratio,
+        polygon_source=polygon_source,
+        refined_by_lines=refined_by_lines,
+    )
+
+    rejection_reasons: list[str] = []
+    if rectangularity < 0.62:
+        rejection_reasons.append("candidate_not_rectangular_enough")
+    if area_ratio > 0.62:
+        rejection_reasons.append("candidate_too_large_for_single_photo")
+    image_height, image_width = image.shape[:2]
+    x, y, box_width, box_height = cv2.boundingRect(points.astype(np.int32))
+    touches_frame = sum(
+        [
+            x <= 2,
+            y <= 2,
+            x + box_width >= image_width - 2,
+            y + box_height >= image_height - 2,
+        ]
+    )
+    if area_ratio > 0.18 and touches_frame >= 1 and (box_width / image_width > 0.62 or box_height / image_height > 0.62):
+        rejection_reasons.append("frame_touching_container_candidate")
+    if edge_support < 0.08 and border_contrast < 0.16 and interior_texture < 0.32:
+        rejection_reasons.append("weak_photo_boundary")
+    if detector_source == "contrast_region" and edge_support < 0.12 and border_contrast < 0.22 and interior_texture < 0.16:
+        rejection_reasons.append("smooth_contrast_false_positive")
+    contour_width, contour_height = _quadrilateral_geometry_dimensions(points, 0, 0)
+    aspect_ratio = contour_width / contour_height if contour_height > 0 else 0.0
+    if detector_source == "contrast_region" and interior_texture < 0.08 and (aspect_ratio < 0.55 or aspect_ratio > 2.1):
+        rejection_reasons.append("smooth_extreme_aspect_false_positive")
+    if polygon_source == "classical_min_area_rect" and edge_support < 0.16 and border_contrast < 0.24:
+        rejection_reasons.append("unsupported_min_area_rectangle")
+
+    if rejection_reasons:
+        confidence = round(max(0.25, confidence - 0.18), 3)
+
+    return _CandidateAssessment(
+        confidence=confidence,
+        edge_support=edge_support,
+        border_contrast=border_contrast,
+        area_ratio=area_ratio,
+        rectangularity=rectangularity,
+        interior_texture=interior_texture,
+        rejected=bool(rejection_reasons),
+        rejection_reasons=rejection_reasons,
+    )
 
 
 def _candidate_confidence(
@@ -640,6 +821,8 @@ def _discard_container_candidates(candidates: list[_ContourCandidate]) -> list[_
         child_area_ratio = sum(_box_area(child.box) for child in distinct_children) / max(1, _box_area(candidate.box))
         if candidate.area_ratio > 0.18 and len(distinct_children) >= 3 and child_area_ratio > 0.35:
             continue
+        if candidate.area_ratio > 0.24 and len(distinct_children) >= 2 and child_area_ratio > 0.28:
+            continue
         filtered.append(candidate)
     return filtered
 
@@ -652,6 +835,7 @@ def detect_photos_classical(image: np.ndarray, *, min_area_ratio: float = 0.02) 
 
     detections: list[SegmentationDetection] = []
     source_counts: dict[str, int] = {}
+    rejected_counts: dict[str, int] = {}
     for candidate in filtered_contours:
         polygon_points, polygon_source = _quadrilateral_from_contour(candidate.contour)
         polygon_points, refined_by_lines = _refine_quadrilateral_with_lines(image, polygon_points)
@@ -664,17 +848,21 @@ def detect_photos_classical(image: np.ndarray, *, min_area_ratio: float = 0.02) 
             min_aspect_ratio=0.5,
             max_aspect_ratio=3.0,
         )
-        edge_support = _edge_support_score(edge_map, polygon_points)
-        border_contrast = _border_contrast_score(image, polygon_points)
         quad_area_ratio = cv2.contourArea(polygon_points.reshape(-1, 1, 2)) / image_area
-        confidence = _candidate_confidence(
-            edge_support=edge_support,
-            border_contrast=border_contrast,
+        assessment = _assess_candidate(
+            image,
+            edge_map,
+            polygon_points,
             area_ratio=max(candidate.area_ratio, quad_area_ratio),
             polygon_source=polygon_source,
+            detector_source=candidate.source,
             refined_by_lines=refined_by_lines,
         )
         source_counts[candidate.source] = source_counts.get(candidate.source, 0) + 1
+        if assessment.rejected:
+            for reason in assessment.rejection_reasons:
+                rejected_counts[reason] = rejected_counts.get(reason, 0) + 1
+            continue
         detections.append(
             SegmentationDetection(
                 bounding_box=pixel_box_to_normalized(x, y, w, h, width, height),
@@ -684,12 +872,14 @@ def detect_photos_classical(image: np.ndarray, *, min_area_ratio: float = 0.02) 
                     "detector_source": candidate.source,
                     "corner_refinement": "line_segments" if refined_by_lines else "contour",
                     "scores": {
-                        "edge_support": round(edge_support, 3),
-                        "border_contrast": round(border_contrast, 3),
-                        "area_ratio": round(float(max(candidate.area_ratio, quad_area_ratio)), 4),
+                        "edge_support": round(assessment.edge_support, 3),
+                        "border_contrast": round(assessment.border_contrast, 3),
+                        "area_ratio": round(float(assessment.area_ratio), 4),
+                        "rectangularity": round(assessment.rectangularity, 3),
+                        "interior_texture": round(assessment.interior_texture, 3),
                     },
                 },
-                confidence=confidence,
+                confidence=assessment.confidence,
                 aspect_ratio=quality.aspect_ratio,
                 geometry_valid=quality.geometry_valid,
                 review_reasons=quality.review_reasons,
@@ -704,84 +894,374 @@ def detect_photos_classical(image: np.ndarray, *, min_area_ratio: float = 0.02) 
             "inference_time_ms": 0.0,
             "fallback_used": True,
             "candidate_sources": source_counts,
+            "rejected_candidates": rejected_counts,
         },
     )
 
 
-def _parse_simple_box_outputs(outputs: list[np.ndarray], width: int, height: int, settings: Settings) -> list[SegmentationDetection]:
-    detections: list[SegmentationDetection] = []
+def _sigmoid(values: np.ndarray) -> np.ndarray:
+    return 1.0 / (1.0 + np.exp(-values))
+
+
+def _find_proto_output(outputs: list[np.ndarray]) -> np.ndarray | None:
     for output in outputs:
         array = np.asarray(output)
+        if array.ndim != 4:
+            continue
+        if array.shape[0] == 1:
+            array = array[0]
+        if array.ndim != 3:
+            continue
+        if array.shape[-1] <= 64 and array.shape[-1] <= min(array.shape[0], array.shape[1]):
+            return array.transpose(2, 0, 1).astype(np.float32)
+        if array.shape[0] <= 64:
+            return array.astype(np.float32)
+        if array.shape[0] <= 256 and array.shape[0] <= min(array.shape[1], array.shape[2]):
+            return array.astype(np.float32)
+    return None
+
+
+def _prediction_rows(outputs: list[np.ndarray]) -> list[np.ndarray]:
+    rows: list[np.ndarray] = []
+    for output in outputs:
+        array = np.asarray(output)
+        if array.ndim == 4:
+            continue
         if array.ndim == 3 and array.shape[0] == 1:
             array = array[0]
-        if array.ndim != 2 or array.shape[-1] < 5:
+        if array.ndim != 2:
             continue
+        if array.shape[0] <= 256 and array.shape[1] > 256 and array.shape[1] > array.shape[0]:
+            array = array.T
+        if array.shape[-1] >= 5:
+            rows.append(array.astype(np.float32))
+    return rows
+
+
+def _clip_normalized_box(box: dict[str, float]) -> dict[str, float] | None:
+    clipped = {
+        "x1": max(0.0, min(1.0, box["x1"])),
+        "y1": max(0.0, min(1.0, box["y1"])),
+        "x2": max(0.0, min(1.0, box["x2"])),
+        "y2": max(0.0, min(1.0, box["y2"])),
+    }
+    if clipped["x2"] <= clipped["x1"] or clipped["y2"] <= clipped["y1"]:
+        return None
+    return clipped
+
+
+def _normalize_xyxy(
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    *,
+    transform: _LetterboxTransform,
+) -> tuple[dict[str, float], dict[str, float]] | None:
+    if max(abs(x1), abs(y1), abs(x2), abs(y2)) > 1.5:
+        input_box = {
+            "x1": x1 / transform.input_width,
+            "y1": y1 / transform.input_height,
+            "x2": x2 / transform.input_width,
+            "y2": y2 / transform.input_height,
+        }
+    else:
+        input_box = {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
+    clipped_input_box = _clip_normalized_box(input_box)
+    if clipped_input_box is None:
+        return None
+    source_box = _source_box_from_input_box(clipped_input_box, transform)
+    if source_box is None:
+        return None
+    return source_box, clipped_input_box
+
+
+def _normalize_cxcywh(
+    cx: float,
+    cy: float,
+    box_width: float,
+    box_height: float,
+    *,
+    transform: _LetterboxTransform,
+) -> tuple[dict[str, float], dict[str, float]] | None:
+    x1 = cx - box_width / 2.0
+    y1 = cy - box_height / 2.0
+    x2 = cx + box_width / 2.0
+    y2 = cy + box_height / 2.0
+    return _normalize_xyxy(x1, y1, x2, y2, transform=transform)
+
+
+def _box_to_points(box: dict[str, float], width: int, height: int) -> np.ndarray:
+    return np.array(
+        [
+            [box["x1"] * width, box["y1"] * height],
+            [box["x2"] * width, box["y1"] * height],
+            [box["x2"] * width, box["y2"] * height],
+            [box["x1"] * width, box["y2"] * height],
+        ],
+        dtype=np.float32,
+    )
+
+
+def _expand_mask_polygon_to_pixel_edges(points: np.ndarray, mask_width: int, mask_height: int) -> np.ndarray:
+    expanded = points.astype(np.float32).copy()
+    if expanded.size == 0:
+        return expanded
+    max_x = float(np.max(expanded[:, 0]))
+    max_y = float(np.max(expanded[:, 1]))
+    expanded[np.isclose(expanded[:, 0], max_x), 0] = np.minimum(mask_width, expanded[np.isclose(expanded[:, 0], max_x), 0] + 1.0)
+    expanded[np.isclose(expanded[:, 1], max_y), 1] = np.minimum(mask_height, expanded[np.isclose(expanded[:, 1], max_y), 1] + 1.0)
+    return expanded
+
+
+def _polygon_from_binary_mask(binary_mask: np.ndarray) -> np.ndarray | None:
+    contours, _ = cv2.findContours(binary_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+    contour = max(contours, key=cv2.contourArea)
+    if cv2.contourArea(contour) < 8:
+        return None
+    perimeter = cv2.arcLength(contour, True)
+    for epsilon_ratio in (0.004, 0.008, 0.012, 0.02, 0.035, 0.05):
+        approx = cv2.approxPolyDP(contour, epsilon_ratio * perimeter, True).reshape(-1, 2)
+        if 4 <= len(approx) <= 48:
+            return _expand_mask_polygon_to_pixel_edges(approx, binary_mask.shape[1], binary_mask.shape[0])
+    hull = cv2.convexHull(contour).reshape(-1, 2)
+    if len(hull) >= 4:
+        return _expand_mask_polygon_to_pixel_edges(hull, binary_mask.shape[1], binary_mask.shape[0])
+    return None
+
+
+def _polygon_from_proto_mask(
+    proto: np.ndarray,
+    coefficients: np.ndarray,
+    box: dict[str, float],
+    *,
+    input_width: int,
+    input_height: int,
+) -> np.ndarray | None:
+    channels, mask_height, mask_width = proto.shape
+    if coefficients.size != channels:
+        return None
+    logits = np.matmul(coefficients.astype(np.float32), proto.reshape(channels, -1)).reshape(mask_height, mask_width)
+    mask = _sigmoid(logits)
+    resized = cv2.resize(mask, (input_width, input_height), interpolation=cv2.INTER_LINEAR)
+    binary = (resized > 0.5).astype(np.uint8) * 255
+
+    x1 = int(round(box["x1"] * input_width))
+    y1 = int(round(box["y1"] * input_height))
+    x2 = int(round(box["x2"] * input_width))
+    y2 = int(round(box["y2"] * input_height))
+    crop_mask = np.zeros_like(binary)
+    crop_mask[max(0, y1) : min(input_height, y2), max(0, x1) : min(input_width, x2)] = binary[
+        max(0, y1) : min(input_height, y2),
+        max(0, x1) : min(input_width, x2),
+    ]
+    return _polygon_from_binary_mask(crop_mask)
+
+
+def _make_detection(
+    *,
+    box: dict[str, float],
+    points: np.ndarray,
+    confidence: float,
+    image_width: int,
+    image_height: int,
+    settings: Settings,
+    source: str,
+    detector_source: str,
+    scores: dict[str, float] | None = None,
+) -> SegmentationDetection | None:
+    points = _clamp_points(points, image_width, image_height)
+    x, y, w, h = cv2.boundingRect(points.astype(np.int32))
+    if w <= 0 or h <= 0:
+        return None
+    contour_width, contour_height = _quadrilateral_geometry_dimensions(points, w, h)
+    quality = evaluate_segmentation_geometry(
+        contour_width,
+        contour_height,
+        min_aspect_ratio=settings.segmentation_min_aspect_ratio,
+        max_aspect_ratio=settings.segmentation_max_aspect_ratio,
+    )
+    normalized_box = pixel_box_to_normalized(x, y, w, h, image_width, image_height)
+    clipped_box = _clip_normalized_box(normalized_box) or box
+    mask_scores = dict(scores or {})
+    mask_scores.setdefault("area_ratio", round(float(cv2.contourArea(points.reshape(-1, 1, 2)) / max(1, image_width * image_height)), 4))
+    return SegmentationDetection(
+        bounding_box=clipped_box,
+        mask={
+            "polygon": _normalized_polygon(points, image_width, image_height),
+            "source": source,
+            "detector_source": detector_source,
+            "scores": mask_scores,
+        },
+        confidence=round(float(confidence), 3),
+        aspect_ratio=quality.aspect_ratio,
+        geometry_valid=quality.geometry_valid,
+        review_reasons=quality.review_reasons,
+    )
+
+
+def _nms_detections(detections: list[SegmentationDetection], threshold: float = 0.45) -> list[SegmentationDetection]:
+    selected: list[SegmentationDetection] = []
+    for detection in sorted(detections, key=lambda item: item.confidence, reverse=True):
+        candidate_box = detection.bounding_box
+        candidate_pixel = (
+            int(candidate_box["x1"] * 10000),
+            int(candidate_box["y1"] * 10000),
+            int((candidate_box["x2"] - candidate_box["x1"]) * 10000),
+            int((candidate_box["y2"] - candidate_box["y1"]) * 10000),
+        )
+        if any(
+            _box_overlap_ratio(
+                candidate_pixel,
+                (
+                    int(kept.bounding_box["x1"] * 10000),
+                    int(kept.bounding_box["y1"] * 10000),
+                    int((kept.bounding_box["x2"] - kept.bounding_box["x1"]) * 10000),
+                    int((kept.bounding_box["y2"] - kept.bounding_box["y1"]) * 10000),
+                ),
+            )[0]
+            > threshold
+            for kept in selected
+        ):
+            continue
+        selected.append(detection)
+    return sorted(selected, key=lambda detection: (detection.bounding_box["y1"], detection.bounding_box["x1"]))
+
+
+def _parse_simple_box_outputs(
+    outputs: list[np.ndarray],
+    width: int,
+    height: int,
+    settings: Settings,
+    *,
+    input_width: int | None = None,
+    input_height: int | None = None,
+) -> list[SegmentationDetection]:
+    input_width = input_width or width
+    input_height = input_height or height
+    transform = _build_letterbox_transform(width, height, input_width, input_height)
+    proto = _find_proto_output(outputs)
+    mask_channels = int(proto.shape[0]) if proto is not None else 0
+    detections: list[SegmentationDetection] = []
+    for array in _prediction_rows(outputs):
         for row in array:
-            confidence = float(row[4])
+            row = row.reshape(-1)
+            normalized_boxes: tuple[dict[str, float], dict[str, float]] | None = None
+            mask_coefficients: np.ndarray | None = None
+            source = "yolo_box"
+            if proto is not None and row.size >= 4 + mask_channels + 1:
+                class_count = int(row.size - 4 - mask_channels)
+                if class_count < 1:
+                    continue
+                class_scores = row[4 : 4 + class_count]
+                confidence = float(np.max(class_scores))
+                normalized_boxes = _normalize_cxcywh(
+                    float(row[0]),
+                    float(row[1]),
+                    float(row[2]),
+                    float(row[3]),
+                    transform=transform,
+                )
+                mask_coefficients = row[4 + class_count : 4 + class_count + mask_channels]
+                source = "yolo_seg_mask"
+            elif row.size <= 7:
+                confidence = float(row[4])
+                normalized_boxes = _normalize_xyxy(
+                    float(row[0]),
+                    float(row[1]),
+                    float(row[2]),
+                    float(row[3]),
+                    transform=transform,
+                )
+            else:
+                class_scores = row[4:]
+                confidence = float(np.max(class_scores))
+                normalized_boxes = _normalize_cxcywh(
+                    float(row[0]),
+                    float(row[1]),
+                    float(row[2]),
+                    float(row[3]),
+                    transform=transform,
+                )
             if confidence < settings.yolo_confidence_threshold:
                 continue
-            x1, y1, x2, y2 = [float(value) for value in row[:4]]
-            if max(x1, y1, x2, y2) > 1.5:
-                x1, x2 = x1 / width, x2 / width
-                y1, y2 = y1 / height, y2 / height
-            w = max(0.0, x2 - x1)
-            h = max(0.0, y2 - y1)
-            if w <= 0 or h <= 0:
+            if normalized_boxes is None:
                 continue
-            quality = evaluate_segmentation_geometry(
-                w,
-                h,
-                min_aspect_ratio=settings.segmentation_min_aspect_ratio,
-                max_aspect_ratio=settings.segmentation_max_aspect_ratio,
-            )
-            box = {
-                "x1": max(0.0, min(1.0, x1)),
-                "y1": max(0.0, min(1.0, y1)),
-                "x2": max(0.0, min(1.0, x2)),
-                "y2": max(0.0, min(1.0, y2)),
-            }
-            detections.append(
-                SegmentationDetection(
-                    bounding_box=box,
-                    mask={"polygon": [
-                        {"x": box["x1"], "y": box["y1"]},
-                        {"x": box["x2"], "y": box["y1"]},
-                        {"x": box["x2"], "y": box["y2"]},
-                        {"x": box["x1"], "y": box["y2"]},
-                    ]},
-                    confidence=confidence,
-                    aspect_ratio=quality.aspect_ratio,
-                    geometry_valid=quality.geometry_valid,
-                    review_reasons=quality.review_reasons,
+            source_box, input_box = normalized_boxes
+            points = None
+            if proto is not None and mask_coefficients is not None:
+                points = _polygon_from_proto_mask(
+                    proto,
+                    mask_coefficients,
+                    input_box,
+                    input_width=input_width,
+                    input_height=input_height,
                 )
+                if points is not None:
+                    points = _model_points_to_source(points, transform)
+            if points is None:
+                points = _box_to_points(source_box, width, height)
+            detection = _make_detection(
+                box=source_box,
+                points=points,
+                confidence=confidence,
+                image_width=width,
+                image_height=height,
+                settings=settings,
+                source=source,
+                detector_source="yolo_onnx",
+                scores={"mask_channels": float(mask_channels)} if mask_channels else None,
             )
-    return detections
+            if detection is not None:
+                detections.append(detection)
+    return _nms_detections(detections)
 
 
 def segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationResult:
+    model_path = Path(settings.yolo_model_path)
     metadata: dict = {
-        "model_path": str(settings.yolo_model_path),
+        "model_path": str(model_path),
         "confidence_threshold": settings.yolo_confidence_threshold,
     }
-    if Path(settings.yolo_model_path).exists():
+    if model_path.exists():
         try:
             import onnxruntime as ort
 
             started = perf_counter()
-            session = ort.InferenceSession(str(settings.yolo_model_path), providers=["CPUExecutionProvider"])
-            input_name = session.get_inputs()[0].name
-            input_shape = session.get_inputs()[0].shape
+            session = _cached_onnx_session(str(model_path), model_path.stat().st_mtime_ns)
+            input_meta = session.get_inputs()[0]
+            input_shape = input_meta.shape
             target_height = int(input_shape[2] if isinstance(input_shape[2], int) else 640)
             target_width = int(input_shape[3] if isinstance(input_shape[3], int) else 640)
-            resized = cv2.resize(image, (target_width, target_height))
-            tensor = resized[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
-            outputs = session.run(None, {input_name: tensor[np.newaxis, ...]})
-            detections = _parse_simple_box_outputs(outputs, image.shape[1], image.shape[0], settings)
+            letterboxed, transform = _letterbox_image(image, target_width, target_height)
+            tensor = letterboxed[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
+            outputs = session.run(None, {input_meta.name: tensor[np.newaxis, ...]})
+            detections = _parse_simple_box_outputs(
+                outputs,
+                image.shape[1],
+                image.shape[0],
+                settings,
+                input_width=target_width,
+                input_height=target_height,
+            )
+            cache_info = _cached_onnx_session.cache_info()
             metadata.update(
                 {
                     "model": "yolov8_seg_onnx",
                     "onnxruntime_version": ort.__version__,
+                    "providers": session.get_providers(),
+                    "session_cache": {"strategy": "path_mtime_lru", "size": cache_info.currsize},
                     "inference_time_ms": round((perf_counter() - started) * 1000, 2),
+                    "input_size": {"width": target_width, "height": target_height},
+                    "letterbox": {
+                        "scale": round(transform.scale, 6),
+                        "resized": {"width": transform.resized_width, "height": transform.resized_height},
+                        "pad": {"x": transform.pad_x, "y": transform.pad_y},
+                        "source": {"width": transform.source_width, "height": transform.source_height},
+                    },
+                    "output_tensors": [list(np.asarray(output).shape) for output in outputs],
                     "fallback_used": False,
                 }
             )

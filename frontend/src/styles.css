@@ -206,6 +206,11 @@ nav button.active,
   background: #dbeafe;
 }
 
+.open-chip {
+  color: #0f766e;
+  font-weight: 700;
+}
+
 .side-surface {
   border-left: 1px solid #d7e3df;
   padding-left: 18px;

@@ -69,7 +69,9 @@ async def save_validated_page_uploads(
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Duplicate file in upload request.")
             seen_hashes.add(file_hash)
 
-            existing_page_id = await session.scalar(select(Page.id).where(Page.file_hash_sha256 == file_hash))
+            existing_page_id = await session.scalar(
+                select(Page.id).where(Page.album_id == album.id, Page.file_hash_sha256 == file_hash)
+            )
             if existing_page_id is not None:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="File was already uploaded.")
 
@@ -125,4 +127,3 @@ async def save_validated_page_uploads(
             for page in created_pages
         ]
     )
-

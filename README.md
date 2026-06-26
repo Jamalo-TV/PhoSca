@@ -53,9 +53,10 @@ npm run dev
 Place local-only model files under `models/`:
 
 - `models/yolov8-seg-album.onnx`
+- `models/photo-orientation.onnx` (optional 0/90/180/270 classifier)
 - `models/paddleocr/`
 
-If ONNX weights are absent, the pipeline records that fact and uses the classical contour fallback when enabled. PaddleOCR is loaded lazily; OCR can also be tested with `.ocr.json` sidecars next to uploaded page images.
+The segmentation ONNX parser supports YOLO-style box outputs and segmentation prototype masks, including channels-first and channels-last prototype tensors. If ONNX weights are absent, the pipeline records that fact and uses the classical contour fallback when enabled. Photo orientation correction is enabled by default; it uses `models/photo-orientation.onnx` when present, otherwise it falls back to a conservative face/detail heuristic. Train the optional orientation model from manually reviewed upright crops with `scripts/train_orientation_model.py`. PaddleOCR is loaded lazily; OCR can also be tested with `.ocr.json` sidecars next to uploaded page images.
 
 ## Tests And Scans
 
@@ -76,6 +77,14 @@ Current validation snapshot:
 
 Docker Desktop note: containers were observed running inside the `docker-desktop` WSL VM, but the Windows Docker API/port proxy returned HTTP 500 and did not publish ports to `localhost`. Logs showed Docker Desktop waiting on the VM init control API. Restart Docker Desktop fully if `docker ps` returns API 500, then rerun `docker compose up --build -d`.
 
+Fast segmentation-only smoke check:
+
+```powershell
+$env:SMOKE_LIMIT='3'
+$env:SMOKE_SEGMENTATION_ONLY='true'
+python scripts/run_real_data_smoke.py
+```
+
 Load-test scaffold:
 
 ```bash
@@ -88,11 +97,19 @@ See `docs/OPERATIONS.md` and `scripts/backup.sh`. Backups include PostgreSQL dum
 
 ## Annotation And Regression
 
-Use `docs/LABEL_STUDIO.md` to create YOLO polygon annotations. The golden regression tests remain skipped until `data/golden_fixtures/labels/*.txt` contains 10 locked labels. After processing the golden album, run:
+See `docs/SEGMENTATION_STRATEGY.md` for the failure analysis, researched options, and selected segmentation/orientation architecture. Use `docs/LABEL_STUDIO.md` to create YOLO polygon annotations. The golden regression tests remain skipped until `data/golden_fixtures/labels/*.txt` contains 10 locked labels. After processing the golden album, run:
 
 ```bash
+python scripts/export_label_studio_tasks.py --source-images data/raw_album_pages --output data/label_studio_tasks.json --preannotate
+python scripts/convert_label_studio_to_yolo.py --input data/label_studio_export.json --output data/label_exports/yolo
+# Or export masks reviewed inside PhoSca directly:
+python scripts/export_reviewed_yolo_labels.py --album-id <album-id> --output data/label_exports/yolo --manual-only --require-complete
+python scripts/prepare_yolo_dataset.py --source-images data/raw_album_pages --source-labels data/label_exports/yolo
+python scripts/validate_yolo_dataset.py --data data/data.yaml
+python scripts/train_segmentation_model.py --data data/data.yaml --export models/yolov8-seg-album.onnx
+python scripts/train_orientation_model.py --images data/orientation_photos --output models/photo-orientation.onnx
 python scripts/validate_segmentation.py --album-id <album-id>
 python scripts/validate_ocr.py --album-id <album-id>
 ```
 
-Production sign-off requires mean IoU `> 0.85` and mean CER `< 0.10`.
+`scripts/export_label_studio_tasks.py` creates Label Studio import JSON and can seed editable polygon predictions from the classical detector. `scripts/convert_label_studio_to_yolo.py` converts reviewed Label Studio JSON exports into YOLO segmentation labels. `scripts/export_reviewed_yolo_labels.py` exports masks corrected in the PhoSca review canvas into the same YOLO label directory. `scripts/prepare_yolo_dataset.py` recreates deterministic train/val/golden splits from raw images plus exported YOLO labels. `scripts/validate_yolo_dataset.py` checks label completeness, polygon validity, and golden leakage before training. `scripts/train_segmentation_model.py` lazily imports Ultralytics; install it only in the training environment if it is not already available. `scripts/train_orientation_model.py` requires PyTorch plus `onnx`, uses manually upright crops under `data/orientation_photos`, and exports a 0/90/180/270 correction classifier. `scripts/validate_segmentation.py` measures polygon IoU from saved segmentation masks and falls back to boxes only for legacy rows without masks. Production sign-off requires mean IoU `> 0.85` and mean CER `< 0.10`.

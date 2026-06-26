@@ -1,6 +1,6 @@
 # Validation Report
 
-Date: 2026-06-20
+Date: 2026-06-22
 
 ## Docker End-To-End
 
@@ -47,6 +47,8 @@ Result:
 
 This validates deterministic local pipeline behavior on the supplied real pages, using classical segmentation fallback.
 
+Segmentation-only smoke (`SMOKE_LIMIT=3`, `SMOKE_SEGMENTATION_ONLY=true`) completed quickly with 3 pages, 9 extracted photos, and 0 failed pages.
+
 ## Load Dataset
 
 Command:
@@ -59,7 +61,7 @@ Result: 400 JPEG variants generated.
 
 ## Security And Tests
 
-- `python -m pytest`: 12 passed, 2 skipped pending golden labels.
+- `python -m pytest -q`: 44 passed, 2 skipped pending golden labels.
 - `pytest --cov=backend/app --cov-report=term-missing`: 74% coverage.
 - `python -m bandit -r backend/app`: no issues.
 - `npm audit --audit-level=high`: 0 vulnerabilities.
@@ -67,8 +69,8 @@ Result: 400 JPEG variants generated.
 ## Remaining Gates
 
 - Docker Desktop API/port publishing must be healthy enough for `docker compose`, `docker exec`, and nginx `http://localhost` validation.
-- Label Studio annotation is required for YOLO training and golden IoU regression.
+- Label Studio annotation is required for YOLO training and golden IoU regression. `scripts/export_label_studio_tasks.py` now creates import tasks with optional classical preannotations, `scripts/convert_label_studio_to_yolo.py` converts reviewed Label Studio JSON exports to YOLO labels, and `scripts/export_reviewed_yolo_labels.py` exports masks corrected inside PhoSca to `data/label_exports/yolo/`. Then run `scripts/prepare_yolo_dataset.py` to recreate train/val/golden splits. `python scripts/validate_yolo_dataset.py --data data/data.yaml` currently reports 25 train images, 5 validation images, 0 train labels, 0 validation labels, and missing golden labels.
 - PaddleOCR model files are not present under `models/paddleocr/`.
-- `models/yolov8-seg-album.onnx` is not present, so ONNX segmentation quality cannot be measured yet.
+- `models/yolov8-seg-album.onnx` is not present, so ONNX segmentation quality cannot be measured yet. `scripts/train_segmentation_model.py` now provides the reproducible train/export path once labels exist.
+- `models/photo-orientation.onnx` is not present. `scripts/train_orientation_model.py` now provides the reproducible train/export path once curated upright crops exist under `data/orientation_photos/`.
 - Golden OCR transcripts in `data/golden_fixtures/ocr_ground_truth.json` are placeholders and need manual text.
-

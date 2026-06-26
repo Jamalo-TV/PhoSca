@@ -1,6 +1,5 @@
-path: /app/data/yolo_dataset
+path: data/yolo_dataset
 train: images/train
 val: images/val
 nc: 1
 names: ['photo']
-

@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path("backend").resolve()))
 from app.config import get_settings
 from app.database import Base, get_engine, get_session_factory
 from app.models import Album, ExtractedPhoto, Page
-from app.services.pipeline import process_page_pipeline
+from app.services.pipeline import ingestion_task_logic, process_page_pipeline, segmentation_task_logic
 
 
 async def main() -> None:
@@ -60,21 +60,31 @@ async def main() -> None:
         album.total_pages = len(page_ids)
         await session.commit()
 
+    segmentation_only = os.environ.get("SMOKE_SEGMENTATION_ONLY", "").lower() in {"1", "true", "yes"}
     results = []
-    for page_id in page_ids:
-        results.append(await process_page_pipeline(page_id, settings))
+    if segmentation_only:
+        async with get_session_factory()() as session:
+            for page_id in page_ids:
+                await ingestion_task_logic(session, page_id, settings)
+                results.append(await segmentation_task_logic(session, page_id, settings))
+    else:
+        for page_id in page_ids:
+            results.append(await process_page_pipeline(page_id, settings))
 
     async with get_session_factory()() as session:
         photo_count = await session.scalar(select(func.count(ExtractedPhoto.id)))
+        page_statuses = (await session.scalars(select(Page.status))).all()
 
-    completed = sum(1 for result in results if result["status"] == "completed")
-    review = sum(1 for result in results if result["status"] == "review_needed")
-    failed = [result for result in results if result["status"] == "failed"]
+    status_values = [status.value if hasattr(status, "value") else str(status) for status in page_statuses]
+    completed = sum(1 for status in status_values if status == "completed")
+    review = sum(1 for status in status_values if status == "review_needed")
+    failed = [status for status in status_values if status == "failed"]
     print(
         {
             "album": "real-data-smoke",
             "source_dir": str(source_dir),
             "pages": len(results),
+            "segmentation_only": segmentation_only,
             "completed": completed,
             "review_needed": review,
             "failed": failed,

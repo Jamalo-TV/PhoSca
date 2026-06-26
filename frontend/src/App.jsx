@@ -435,7 +435,7 @@ function OrderedAnalyzer({ onAlbumReady, onOpenPhoto = () => {} }) {
   );
 }
 
-function AlbumList({ albums, selectedAlbumId, pages = [], photos = [], onSelect, onCreate, onOpenPhoto = () => {}, loading }) {
+function AlbumList({ albums, selectedAlbumId, pages = [], photos = [], onOpen, onCreate, onOpenPhoto = () => {}, loading }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const selectedAlbum = albums.find((album) => album.id === selectedAlbumId) || null;
@@ -466,7 +466,9 @@ function AlbumList({ albums, selectedAlbumId, pages = [], photos = [], onSelect,
                   type="button"
                   key={album.id}
                   className={`album-card ${selectedAlbumId === album.id ? "selected" : ""}`}
-                  onClick={() => onSelect(album.id)}
+                  onClick={() => onOpen(album.id)}
+                  onDoubleClick={() => onOpen(album.id)}
+                  title={`Open ${album.name}`}
                 >
                   <div className="album-card-row">
                     <strong>{album.name}</strong>
@@ -546,11 +548,22 @@ function AlbumList({ albums, selectedAlbumId, pages = [], photos = [], onSelect,
 
 function PageGrid({ albumId, pages, onAnalyze, onUpload, onSelectPage, selectedPageId }) {
   const [files, setFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState("");
 
   async function uploadSelected() {
-    if (!albumId || files.length === 0) return;
-    await onUpload(files);
-    setFiles([]);
+    if (!albumId || files.length === 0 || uploading) return;
+    setUploading(true);
+    setMessage("");
+    try {
+      await onUpload(files);
+      setFiles([]);
+      setMessage("Upload complete.");
+    } catch (error) {
+      setMessage(error.message || "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
   }
 
   return (
@@ -592,10 +605,11 @@ function PageGrid({ albumId, pages, onAnalyze, onUpload, onSelectPage, selectedP
         </div>
         <div className="stack">
           <input type="file" accept="image/jpeg,image/png" multiple onChange={(event) => setFiles([...event.target.files])} />
-          <button className="primary-button" type="button" disabled={!albumId || files.length === 0} onClick={uploadSelected}>
-            <Upload size={16} />
+          <button className="primary-button" type="button" disabled={!albumId || files.length === 0 || uploading} onClick={uploadSelected}>
+            {uploading ? <Loader2 className="spin-icon" size={16} /> : <Upload size={16} />}
             Upload {files.length || ""}
           </button>
+          {message && <p className="run-message">{message}</p>}
         </div>
       </section>
     </div>
@@ -1159,12 +1173,20 @@ export default function App() {
 
   const selectedAlbum = albums.find((album) => album.id === selectedAlbumId) || null;
 
+  function selectAlbum(albumId, nextTab = activeTab) {
+    setSelectedAlbumId(albumId);
+    setSelectedPageId(null);
+    setPages([]);
+    setPhotos([]);
+    setActiveTab(nextTab);
+  }
+
   const refreshAlbums = useCallback(async () => {
     setLoading(true);
     try {
       const nextAlbums = await listAlbums();
       setAlbums(nextAlbums);
-      if (!selectedAlbumId && nextAlbums.length > 0) setSelectedAlbumId(nextAlbums[0].id);
+      if (!selectedAlbumId && nextAlbums.length > 0) selectAlbum(nextAlbums[0].id);
     } finally {
       setLoading(false);
     }
@@ -1176,7 +1198,8 @@ export default function App() {
     setPages(nextPages);
     setPhotos(nextPhotos);
     setAlbums(nextAlbums);
-    if (!selectedPageId && nextPages.length > 0) setSelectedPageId(nextPages[0].id);
+    const nextSelectedPageId = nextPages.some((page) => page.id === selectedPageId) ? selectedPageId : nextPages[0]?.id || null;
+    setSelectedPageId(nextSelectedPageId);
   }, [selectedAlbumId, selectedPageId]);
 
   useEffect(() => {
@@ -1189,8 +1212,8 @@ export default function App() {
 
   async function handleCreateAlbum(payload) {
     const album = await createAlbum(payload);
-    setSelectedAlbumId(album.id);
-    await refreshAlbums();
+    selectAlbum(album.id, "pages");
+    setAlbums(await listAlbums());
   }
 
   async function handleUpload(files) {
@@ -1265,7 +1288,7 @@ export default function App() {
           selectedAlbumId={selectedAlbumId}
           pages={pages}
           photos={photos}
-          onSelect={setSelectedAlbumId}
+          onOpen={(albumId) => selectAlbum(albumId, "albums")}
           onOpenPhoto={openPhoto}
           onCreate={handleCreateAlbum}
         />

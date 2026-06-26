@@ -5,6 +5,7 @@ import numpy as np
 
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.border_removal import remove_uniform_border
+from app.pipeline.orientation import correct_photo_orientation
 
 
 def _points_from_mask(mask: dict | None, width: int, height: int) -> np.ndarray | None:
@@ -50,7 +51,29 @@ def crop_and_correct_photo(
     mask: dict | None = None,
     *,
     trim_border: bool = True,
+    auto_orient: bool = True,
+    orientation_model_path: Path | None = None,
 ) -> np.ndarray:
+    corrected, _ = crop_and_correct_photo_with_metadata(
+        page_image,
+        bounding_box,
+        mask,
+        trim_border=trim_border,
+        auto_orient=auto_orient,
+        orientation_model_path=orientation_model_path,
+    )
+    return corrected
+
+
+def crop_and_correct_photo_with_metadata(
+    page_image: np.ndarray,
+    bounding_box: dict,
+    mask: dict | None = None,
+    *,
+    trim_border: bool = True,
+    auto_orient: bool = True,
+    orientation_model_path: Path | None = None,
+) -> tuple[np.ndarray, dict]:
     height, width = page_image.shape[:2]
     src_points = _points_from_mask(mask, width, height)
     if src_points is None:
@@ -69,9 +92,27 @@ def crop_and_correct_photo(
     )
     matrix = cv2.getPerspectiveTransform(src_points, destination)
     corrected = cv2.warpPerspective(page_image, matrix, (target_width, target_height))
+    metadata = {
+        "source": mask.get("source") if mask else "bounding_box",
+        "target_width": target_width,
+        "target_height": target_height,
+        "trim_border": trim_border,
+        "auto_orient": auto_orient,
+    }
     if trim_border:
+        before_shape = corrected.shape[:2]
         corrected = remove_uniform_border(corrected)
-    return corrected
+        metadata["border_trim"] = {
+            "before": {"height": before_shape[0], "width": before_shape[1]},
+            "after": {"height": corrected.shape[0], "width": corrected.shape[1]},
+        }
+    if auto_orient:
+        corrected, orientation_metadata = correct_photo_orientation(
+            corrected,
+            model_path=orientation_model_path,
+        )
+        metadata["orientation"] = orientation_metadata
+    return corrected, metadata
 
 
 def save_corrected_photo(page_image: np.ndarray, bounding_box: dict, mask: dict | None, output_path: Path) -> None:

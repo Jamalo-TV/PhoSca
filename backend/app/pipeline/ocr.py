@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from functools import lru_cache
 from math import hypot
 from pathlib import Path
 
@@ -28,6 +29,13 @@ class ClassifiedOCRBlock:
     reason: str
 
 
+@lru_cache(maxsize=2)
+def _cached_paddle_ocr(model_dir: str, language: str):
+    from paddleocr import PaddleOCR
+
+    return PaddleOCR(use_angle_cls=True, lang=language, show_log=False, det_model_dir=model_dir)
+
+
 def _normalize_paddle_box(points: list, width: int, height: int) -> dict[str, float]:
     xs = [float(point[0]) for point in points]
     ys = [float(point[1]) for point in points]
@@ -40,13 +48,14 @@ def _normalize_paddle_box(points: list, width: int, height: int) -> dict[str, fl
 
 
 def run_paddle_ocr(image: np.ndarray, settings: Settings) -> tuple[list[OCRBlock], dict]:
+    model_dir = str(settings.paddleocr_model_path)
+    language = getattr(settings, "paddleocr_language", "en")
     try:
-        from paddleocr import PaddleOCR
+        ocr = _cached_paddle_ocr(model_dir, language)
     except Exception as exc:  # noqa: BLE001 - dependency is optional until installed in runtime image.
-        return [], {"ocr_engine": "paddleocr", "available": False, "error": str(exc)}
+        return [], {"ocr_engine": "paddleocr", "available": False, "error": str(exc), "language": language}
 
     height, width = image.shape[:2]
-    ocr = PaddleOCR(use_angle_cls=True, lang="en", show_log=False, det_model_dir=str(settings.paddleocr_model_path))
     result = ocr.ocr(image[:, :, ::-1], cls=True)
     blocks: list[OCRBlock] = []
     for line in result or []:
@@ -61,7 +70,15 @@ def run_paddle_ocr(image: np.ndarray, settings: Settings) -> tuple[list[OCRBlock
                     engine="paddleocr",
                 )
             )
-    return blocks, {"ocr_engine": "paddleocr", "available": True, "block_count": len(blocks)}
+    cache_info = _cached_paddle_ocr.cache_info()
+    return blocks, {
+        "ocr_engine": "paddleocr",
+        "available": True,
+        "block_count": len(blocks),
+        "language": language,
+        "model_dir": model_dir,
+        "session_cache": {"strategy": "path_language_lru", "size": cache_info.currsize},
+    }
 
 
 def run_sidecar_ocr(image_path: Path) -> tuple[list[OCRBlock], dict]:
