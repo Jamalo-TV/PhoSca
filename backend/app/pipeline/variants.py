@@ -55,6 +55,23 @@ def _warnings(name: str, metadata: dict, metrics: dict) -> list[str]:
     return warnings
 
 
+def select_safe_variant(variants: dict[str, dict[str, Any]]) -> str:
+    """Return the only variant that is safe to expose by default.
+
+    Derived images are opt-in until a later quality critic can explicitly mark
+    them as auto-releasable.  This makes the original crop the stable fallback
+    for model errors, incomplete stages, and unreviewed experimental output.
+    """
+    enhanced = variants.get("enhanced")
+    if (
+        isinstance(enhanced, dict)
+        and not enhanced.get("warnings")
+        and enhanced.get("metadata", {}).get("auto_release") is True
+    ):
+        return "enhanced"
+    return "original"
+
+
 def variant_record(
     name: str,
     path: Path,
@@ -80,39 +97,44 @@ def variant_record(
 def build_variant_bundle(
     original_path: Path,
     original: np.ndarray,
-    enhanced_path: Path,
-    enhanced: np.ndarray,
-    enhanced_metadata: dict,
-    premium_path: Path,
-    premium: np.ndarray,
-    premium_metadata: dict,
-    selected_variant: str = "enhanced",
+    enhanced_path: Path | None = None,
+    enhanced: np.ndarray | None = None,
+    enhanced_metadata: dict | None = None,
+    premium_path: Path | None = None,
+    premium: np.ndarray | None = None,
+    premium_metadata: dict | None = None,
+    selected_variant: str | None = None,
 ) -> dict[str, Any]:
-    variants = {
+    variants: dict[str, dict[str, Any]] = {
         "original": variant_record(
             "original",
             original_path,
             original,
             metadata={"method": "source"},
-            selected=selected_variant == "original",
+            selected=False,
         ),
-        "enhanced": variant_record(
+    }
+    if enhanced_path is not None and enhanced is not None:
+        variants["enhanced"] = variant_record(
             "enhanced",
             enhanced_path,
             enhanced,
             metadata=enhanced_metadata,
             source_image=original,
-            selected=selected_variant == "enhanced",
-        ),
-        "premium": variant_record(
+            selected=False,
+        )
+    if premium_path is not None and premium is not None:
+        variants["premium"] = variant_record(
             "premium",
             premium_path,
             premium,
             metadata=premium_metadata,
             source_image=original,
-            selected=selected_variant == "premium",
-        ),
-    }
+            selected=False,
+        )
+    selected_variant = selected_variant if selected_variant in variants else select_safe_variant(variants)
+    for name, variant in variants.items():
+        variant["selected"] = name == selected_variant
     return {
         "variant_schema_version": 1,
         "selected_variant": selected_variant,
@@ -136,10 +158,6 @@ def variant_path_from_photo(photo: Any, variant: str) -> str | None:
     if isinstance(record, dict) and record.get("path"):
         return str(record["path"])
 
-    if variant == "enhanced":
-        return photo.storage_path
-    if variant == "premium" and photo.storage_path:
-        return str(photo.storage_path).replace("_enhanced.jpg", "_premium.jpg")
     return None
 
 

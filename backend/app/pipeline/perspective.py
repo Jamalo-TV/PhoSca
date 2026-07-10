@@ -35,14 +35,39 @@ def _points_from_mask(mask: dict | None, width: int, height: int) -> np.ndarray 
 
 
 def _order_points(points: np.ndarray) -> np.ndarray:
-    rect = np.zeros((4, 2), dtype=np.float32)
-    summed = points.sum(axis=1)
-    diff = np.diff(points, axis=1)
-    rect[0] = points[np.argmin(summed)]
-    rect[2] = points[np.argmax(summed)]
-    rect[1] = points[np.argmin(diff)]
-    rect[3] = points[np.argmax(diff)]
-    return rect
+    """Order a quadrilateral clockwise from its top-left corner.
+
+    Sum/difference ordering can assign one point to two corners for rotated or
+    symmetric quads.  A centroid-based cyclic order is unambiguous once the
+    geometry has been validated.
+    """
+    if points.shape != (4, 2):
+        raise ValueError("Perspective correction requires exactly four points.")
+    center = points.mean(axis=0)
+    angles = np.arctan2(points[:, 1] - center[1], points[:, 0] - center[0])
+    ordered = points[np.argsort(angles)].astype(np.float32)
+    top_left_index = int(np.argmin(ordered[:, 0] + ordered[:, 1]))
+    return np.roll(ordered, -top_left_index, axis=0)
+
+
+def _validate_quad(points: np.ndarray, width: int, height: int) -> dict[str, float]:
+    if points.shape != (4, 2) or not np.isfinite(points).all():
+        raise ValueError("invalid_perspective_quad")
+    if len(np.unique(np.round(points, decimals=3), axis=0)) != 4:
+        raise ValueError("duplicate_perspective_corners")
+    if (points[:, 0] < 0).any() or (points[:, 0] >= width).any() or (points[:, 1] < 0).any() or (points[:, 1] >= height).any():
+        raise ValueError("perspective_corners_outside_page")
+    contour = points.reshape(-1, 1, 2).astype(np.float32)
+    if not cv2.isContourConvex(contour):
+        raise ValueError("non_convex_perspective_quad")
+    area = abs(float(cv2.contourArea(contour)))
+    min_area = max(16.0, width * height * 0.0001)
+    if area < min_area:
+        raise ValueError("degenerate_perspective_quad")
+    side_lengths = [float(np.linalg.norm(points[(index + 1) % 4] - points[index])) for index in range(4)]
+    if min(side_lengths) < 2.0:
+        raise ValueError("perspective_quad_side_too_short")
+    return {"area": area, "min_side": min(side_lengths), "max_side": max(side_lengths)}
 
 
 def crop_and_correct_photo(
@@ -80,6 +105,7 @@ def crop_and_correct_photo_with_metadata(
         x1, y1, x2, y2 = normalized_box_to_pixels(bounding_box, width, height)
         src_points = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=np.float32)
     src_points = _order_points(src_points)
+    quad_metrics = _validate_quad(src_points, width, height)
     top_width = np.linalg.norm(src_points[1] - src_points[0])
     bottom_width = np.linalg.norm(src_points[2] - src_points[3])
     left_height = np.linalg.norm(src_points[3] - src_points[0])
@@ -91,13 +117,19 @@ def crop_and_correct_photo_with_metadata(
         dtype=np.float32,
     )
     matrix = cv2.getPerspectiveTransform(src_points, destination)
-    corrected = cv2.warpPerspective(page_image, matrix, (target_width, target_height))
+    condition_number = float(np.linalg.cond(matrix))
+    if not np.isfinite(condition_number) or condition_number > 1e7:
+        raise ValueError("unstable_perspective_transform")
+    corrected = cv2.warpPerspective(page_image, matrix, (target_width, target_height), borderMode=cv2.BORDER_REPLICATE)
+    if corrected.size == 0 or min(corrected.shape[:2]) < 2:
+        raise ValueError("empty_perspective_output")
     metadata = {
         "source": mask.get("source") if mask else "bounding_box",
         "target_width": target_width,
         "target_height": target_height,
         "trim_border": trim_border,
         "auto_orient": auto_orient,
+        "quad_validation": {**quad_metrics, "transform_condition_number": condition_number},
     }
     if trim_border:
         before_shape = corrected.shape[:2]

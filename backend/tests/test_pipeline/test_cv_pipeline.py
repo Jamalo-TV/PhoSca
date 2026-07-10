@@ -515,10 +515,44 @@ def test_variant_bundle_records_paths_metrics_and_selection(tmp_path: Path) -> N
         {"method": "premium_preservation_restoration", "models": ["mock"]},
     )
 
-    assert bundle["selected_variant"] == "enhanced"
+    assert bundle["selected_variant"] == "original"
     assert set(bundle["variants"]) == {"original", "enhanced", "premium"}
-    assert bundle["variants"]["enhanced"]["selected"] is True
+    assert bundle["variants"]["original"]["selected"] is True
     assert bundle["variants"]["premium"]["metrics"]["shape"]["width"] == original.shape[1] * 2
+
+
+def test_variant_selector_requires_explicit_auto_release(tmp_path: Path) -> None:
+    from app.pipeline.variants import build_variant_bundle
+
+    original = synthetic_album_page()
+    enhanced = cv2.resize(original, (original.shape[1] * 2, original.shape[0] * 2), interpolation=cv2.INTER_CUBIC)
+    bundle = build_variant_bundle(
+        tmp_path / "original.jpg",
+        original,
+        tmp_path / "enhanced.jpg",
+        enhanced,
+        {"method": "deep_learning", "auto_release": True},
+    )
+
+    assert bundle["selected_variant"] == "enhanced"
+
+
+def test_perspective_rejects_duplicate_quad_corners() -> None:
+    import pytest
+
+    from app.pipeline.perspective import crop_and_correct_photo
+
+    image = synthetic_album_page()
+    duplicate_corner_mask = {
+        "polygon": [
+            {"x": 0.2, "y": 0.2},
+            {"x": 0.8, "y": 0.2},
+            {"x": 0.8, "y": 0.2},
+            {"x": 0.2, "y": 0.8},
+        ]
+    }
+    with pytest.raises(ValueError, match="duplicate_perspective_corners"):
+        crop_and_correct_photo(image, {"x1": 0.2, "y1": 0.2, "x2": 0.8, "y2": 0.8}, duplicate_corner_mask)
 
 
 def test_scratch_mask_does_not_target_normal_photo_edges() -> None:

@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     celery_task_always_eager: bool = Field(default=False, alias="CELERY_TASK_ALWAYS_EAGER")
     enable_classical_segmentation_fallback: bool = Field(default=True, alias="ENABLE_CLASSICAL_SEGMENTATION_FALLBACK")
+    enable_border_trim: bool = Field(default=False, alias="ENABLE_BORDER_TRIM")
+    enable_deep_enhancement: bool = Field(default=False, alias="ENABLE_DEEP_ENHANCEMENT")
+    enable_premium_enhancement: bool = Field(default=False, alias="ENABLE_PREMIUM_ENHANCEMENT")
     cors_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:5173",

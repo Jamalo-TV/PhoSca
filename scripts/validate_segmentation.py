@@ -66,6 +66,41 @@ def best_match_iou(expected: Polygon, detected: list[Polygon]) -> float:
     return max((polygon_iou(expected, candidate) for candidate in detected), default=0.0)
 
 
+def match_detections(expected: list[Polygon], detected: list[Polygon], *, iou_threshold: float = 0.85) -> dict[str, int]:
+    """Greedily match each ground-truth/detection pair at most once.
+
+    Mean best-IoU alone lets one prediction satisfy several labels and ignores
+    false positives.  The returned counts are the release-facing metrics.
+    """
+    pairs = sorted(
+        ((polygon_iou(truth, prediction), truth_index, detection_index)
+         for truth_index, truth in enumerate(expected)
+         for detection_index, prediction in enumerate(detected)),
+        reverse=True,
+    )
+    matched_truth: set[int] = set()
+    matched_detections: set[int] = set()
+    for iou, truth_index, detection_index in pairs:
+        if iou < iou_threshold:
+            break
+        if truth_index not in matched_truth and detection_index not in matched_detections:
+            matched_truth.add(truth_index)
+            matched_detections.add(detection_index)
+    true_positive = len(matched_truth)
+    duplicate_detections = {
+        detection_index
+        for detection_index, prediction in enumerate(detected)
+        if detection_index not in matched_detections
+        and any(polygon_iou(truth, prediction) >= iou_threshold for truth in expected)
+    }
+    return {
+        "true_positive": true_positive,
+        "false_negative": len(expected) - true_positive,
+        "false_positive": len(detected) - true_positive,
+        "duplicates": len(duplicate_detections),
+    }
+
+
 def detected_polygon(bounding_box: dict, segmentation_mask: dict | None) -> Polygon:
     if segmentation_mask and segmentation_mask.get("polygon"):
         points = segmentation_mask["polygon"]
@@ -118,15 +153,21 @@ def main() -> None:
 
     fixture_reports = []
     all_ious: list[float] = []
+    totals = {"true_positive": 0, "false_positive": 0, "false_negative": 0, "duplicates": 0}
     for label_path in sorted(args.labels.glob("*.txt")):
         expected = read_yolo_segmentation(label_path)
         detected = detected_by_file.get(label_path.with_suffix(".jpg").name, [])
         ious = [best_match_iou(box, detected) for box in expected]
+        counts = match_detections(expected, detected)
+        for name in totals:
+            totals[name] += counts[name]
         all_ious.extend(ious)
-        fixture_reports.append({"fixture": label_path.stem, "ious": ious, "mean_iou": sum(ious) / len(ious) if ious else math.nan})
+        fixture_reports.append({"fixture": label_path.stem, "ious": ious, "mean_iou": sum(ious) / len(ious) if ious else math.nan, **counts})
 
     mean_iou = sum(all_ious) / len(all_ious) if all_ious else 0.0
-    payload = {"mean_iou": mean_iou, "fixtures": fixture_reports}
+    precision = totals["true_positive"] / (totals["true_positive"] + totals["false_positive"]) if totals["true_positive"] + totals["false_positive"] else 0.0
+    recall = totals["true_positive"] / (totals["true_positive"] + totals["false_negative"]) if totals["true_positive"] + totals["false_negative"] else 0.0
+    payload = {"mean_iou": mean_iou, "precision": precision, "recall": recall, **totals, "fixtures": fixture_reports}
     args.output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(json.dumps(payload, indent=2))
     if mean_iou < 0.85:

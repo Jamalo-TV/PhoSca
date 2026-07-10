@@ -82,6 +82,7 @@ async def segmentation_task_logic(session: AsyncSession, page_id: UUID, settings
     if page is None:
         raise ValueError(f"Page not found: {page_id}")
 
+    prior_review_required = page.status == PageStatus.review_needed
     page.status = PageStatus.processing
     image = load_image(Path(page.storage_path))
     cutout_ready_image, cutout_prep_metadata = prepare_for_cutout(image)
@@ -122,7 +123,9 @@ async def segmentation_task_logic(session: AsyncSession, page_id: UUID, settings
         page.error_message = "No photos detected; manual review required."
         session.add(AuditLog(entity_type="page", entity_id=page.id, action="review_flagged", details={"reason": page.error_message}))
     else:
-        page.status = PageStatus.queued
+        # Ingestion and segmentation reasons are cumulative: a blur warning
+        # must not be erased simply because later stages produced detections.
+        page.status = PageStatus.review_needed if prior_review_required else PageStatus.queued
         details = {"photo_ids": created_photo_ids, "review_reasons_by_photo": review_reasons_by_photo}
         session.add(AuditLog(entity_type="page", entity_id=page.id, action="segmented", details=details))
         logger.info(
@@ -147,13 +150,22 @@ async def perspective_correction_task_logic(session: AsyncSession, photo_id: UUI
         raise ValueError(f"Photo not found: {photo_id}")
 
     page_image = load_image(Path(photo.page.storage_path))
-    corrected, correction_metadata = crop_and_correct_photo_with_metadata(
-        page_image,
-        photo.bounding_box,
-        photo.segmentation_mask,
-        auto_orient=settings.enable_photo_orientation_correction,
-        orientation_model_path=settings.photo_orientation_model_path,
-    )
+    try:
+        corrected, correction_metadata = crop_and_correct_photo_with_metadata(
+            page_image,
+            photo.bounding_box,
+            photo.segmentation_mask,
+            trim_border=settings.enable_border_trim,
+            auto_orient=settings.enable_photo_orientation_correction,
+            orientation_model_path=settings.photo_orientation_model_path,
+        )
+    except ValueError as exc:
+        reason = str(exc)
+        photo.status = PhotoStatus.review_needed
+        _append_metadata(photo, "correction", {"status": "rejected", "reason": reason})
+        session.add(AuditLog(entity_type="photo", entity_id=photo.id, action="correction_rejected", details={"reason": reason}))
+        await session.commit()
+        return {"photo_id": str(photo.id), "storage_path": None, "review_required": True, "reason": reason}
     original_path = settings.storage_path / "processed" / str(photo.album_id) / "photos" / f"{photo.id}_original.jpg"
     save_jpeg(original_path, corrected)
     photo.original_storage_path = str(original_path)
@@ -213,21 +225,27 @@ async def enhancement_task_logic(session: AsyncSession, photo_id: UUID, settings
     degradation_report = analyze_degradation(source_img)
     effective_preset = degradation_report.recommended_preset if preset in {None, "", "auto"} else preset
 
-    # 1. Standard Enhancement
-    enhanced, metadata = dl_enhance_photo(source_img, preset=effective_preset, degradation_report=degradation_report)
-    enhanced_path = settings.storage_path / "processed" / str(photo.album_id) / "photos" / f"{photo.id}_enhanced.jpg"
-    save_jpeg(enhanced_path, enhanced)
+    enhanced = None
+    enhanced_path = None
+    metadata: dict = {"method": "disabled", "reason": "deep_enhancement_feature_flag_disabled", "models": []}
+    if settings.enable_deep_enhancement:
+        enhanced, metadata = dl_enhance_photo(source_img, preset=effective_preset, degradation_report=degradation_report)
+        enhanced_path = settings.storage_path / "processed" / str(photo.album_id) / "photos" / f"{photo.id}_enhanced.jpg"
+        save_jpeg(enhanced_path, enhanced)
 
-    # 2. Premium Enhancement
-    premium, premium_metadata = premium_enhance_photo(
-        source_img,
-        base_restored=enhanced,
-        base_metadata=metadata,
-        preset=effective_preset,
-        degradation_report=degradation_report,
-    )
-    premium_path = settings.storage_path / "processed" / str(photo.album_id) / "photos" / f"{photo.id}_premium.jpg"
-    save_jpeg(premium_path, premium)
+    premium = None
+    premium_path = None
+    premium_metadata: dict = {"method": "disabled", "reason": "premium_enhancement_feature_flag_disabled", "models": []}
+    if settings.enable_premium_enhancement:
+        premium, premium_metadata = premium_enhance_photo(
+            source_img,
+            base_restored=enhanced,
+            base_metadata=metadata,
+            preset=effective_preset,
+            degradation_report=degradation_report,
+        )
+        premium_path = settings.storage_path / "processed" / str(photo.album_id) / "photos" / f"{photo.id}_premium.jpg"
+        save_jpeg(premium_path, premium)
 
     previous_metadata = dict(photo.enhancement_applied or {})
     variant_bundle = build_variant_bundle(
@@ -247,11 +265,12 @@ async def enhancement_task_logic(session: AsyncSession, photo_id: UUID, settings
     variant_bundle["standard"] = metadata
     variant_bundle["premium"] = premium_metadata
 
-    photo.storage_path = str(enhanced_path)
+    photo.storage_path = str(source_path)
     photo.enhancement_applied = variant_bundle
-    session.add(AuditLog(entity_type="photo", entity_id=photo.id, action="enhanced", details=photo.enhancement_applied | {"path": str(enhanced_path)}))
+    selected_path = photo.storage_path
+    session.add(AuditLog(entity_type="photo", entity_id=photo.id, action="enhanced", details=photo.enhancement_applied | {"path": selected_path}))
     await session.commit()
-    return {"photo_id": str(photo.id), "storage_path": str(enhanced_path), "metadata": photo.enhancement_applied}
+    return {"photo_id": str(photo.id), "storage_path": selected_path, "metadata": photo.enhancement_applied}
 
 
 async def deduplication_task_logic(session: AsyncSession, photo_id: UUID) -> dict:
@@ -313,7 +332,9 @@ async def persistence_task_logic(session: AsyncSession, photo_id: UUID) -> dict:
 
 
 async def process_single_photo(session: AsyncSession, photo_id: UUID, settings: Settings) -> dict:
-    await perspective_correction_task_logic(session, photo_id, settings)
+    correction = await perspective_correction_task_logic(session, photo_id, settings)
+    if correction.get("review_required"):
+        return {"photo_id": str(photo_id), "status": PhotoStatus.review_needed.value, "reason": correction["reason"]}
     await enhancement_task_logic(session, photo_id, settings)
     await deduplication_task_logic(session, photo_id)
     return await persistence_task_logic(session, photo_id)

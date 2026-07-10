@@ -58,13 +58,14 @@ async def get_photo(photo_id: UUID, session: AsyncSession = Depends(get_async_se
 @router.get("/photos/{photo_id}/image")
 async def get_photo_image(
     photo_id: UUID,
-    variant: str = Query(default="enhanced", pattern="^[a-zA-Z0-9_-]+$"),
+    variant: str | None = Query(default=None, pattern="^[a-zA-Z0-9_-]+$"),
     session: AsyncSession = Depends(get_async_session),
 ) -> FileResponse:
     photo = await session.get(ExtractedPhoto, photo_id)
     if photo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.")
-    selected_path = variant_path_from_photo(photo, variant)
+    selected_variant = variant or (photo.enhancement_applied or {}).get("selected_variant", "original")
+    selected_path = variant_path_from_photo(photo, selected_variant)
     if not selected_path or not Path(selected_path).exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
     return FileResponse(
@@ -81,7 +82,7 @@ async def get_photo_variants(photo_id: UUID, session: AsyncSession = Depends(get
     if photo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.")
     return {
-        "selected_variant": (photo.enhancement_applied or {}).get("selected_variant", "enhanced"),
+        "selected_variant": (photo.enhancement_applied or {}).get("selected_variant", "original"),
         "variants": variants_from_metadata(photo.enhancement_applied),
         "urls": _photo_urls(photo),
     }
@@ -134,7 +135,9 @@ async def update_photo_bounding_box(
         )
     )
     await session.commit()
-    await perspective_correction_task_logic(session, photo.id, settings)
+    correction = await perspective_correction_task_logic(session, photo.id, settings)
+    if correction.get("review_required"):
+        return await session.get(ExtractedPhoto, photo_id)
     await enhancement_task_logic(session, photo.id, settings)
     await deduplication_task_logic(session, photo.id)
     await persistence_task_logic(session, photo.id)
@@ -171,7 +174,9 @@ async def reprocess_photo(
     photo = await session.get(ExtractedPhoto, photo_id)
     if photo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.")
-    await perspective_correction_task_logic(session, photo.id, settings)
+    correction = await perspective_correction_task_logic(session, photo.id, settings)
+    if correction.get("review_required"):
+        return await session.get(ExtractedPhoto, photo_id)
     await enhancement_task_logic(session, photo.id, settings, preset=preset)
     await deduplication_task_logic(session, photo.id)
     await persistence_task_logic(session, photo.id)

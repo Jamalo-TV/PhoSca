@@ -17,7 +17,7 @@ def test_golden_fixture_annotations_are_locked() -> None:
 
 
 def test_segmentation_validator_uses_polygon_iou() -> None:
-    from scripts.validate_segmentation import detected_polygon, polygon_iou
+    from scripts.validate_segmentation import detected_polygon, match_detections, polygon_iou
 
     expected = [(0.1, 0.1), (0.6, 0.1), (0.6, 0.6), (0.1, 0.6)]
     smaller = [(0.2, 0.2), (0.5, 0.2), (0.5, 0.5), (0.2, 0.5)]
@@ -27,6 +27,9 @@ def test_segmentation_validator_uses_polygon_iou() -> None:
     assert polygon_iou(expected, expected) == 1.0
     assert polygon_iou(expected, smaller) < 0.5
     assert detected_polygon(box, mask) == smaller
+    counts = match_detections([expected], [expected, expected, smaller], iou_threshold=0.85)
+    assert counts["true_positive"] == 1
+    assert counts["false_positive"] == 2
 
 
 def test_prepare_yolo_dataset_creates_non_overlapping_splits(tmp_path: Path) -> None:
