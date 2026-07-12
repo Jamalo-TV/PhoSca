@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+import os
+import tempfile
 from pathlib import Path
 
 import cv2
@@ -9,7 +11,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
-from app.pipeline.segmentation import detect_photos_classical
+from app.core.auth import require_admin_principal
+from app.pipeline.segmentation import segment_album_page
 from app.utils.file_security import read_and_validate_upload, validate_original_filename
 
 
@@ -22,7 +25,11 @@ IMAGE_MEDIA_TYPES = {
 }
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-router = APIRouter(prefix="/api/v1/training/segmentation", tags=["training"])
+router = APIRouter(
+    prefix="/api/v1/training/segmentation",
+    tags=["training"],
+    dependencies=[Depends(require_admin_principal)],
+)
 
 
 class TrainingPoint(BaseModel):
@@ -154,7 +161,27 @@ def _write_yolo_label(path: Path, polygons: list[TrainingPolygon]) -> None:
         coords = " ".join(f"{point.x:.6f} {point.y:.6f}" for point in polygon.points)
         lines.append(f"0 {coords}")
     if lines:
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        # Write beside the target and replace it only after the complete file
+        # has been flushed.  A browser save can therefore never leave a
+        # truncated YOLO label behind after an interrupted write.
+        temporary_name: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary:
+                temporary_name = temporary.name
+                temporary.write("\n".join(lines) + "\n")
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            Path(temporary_name).replace(path)
+        finally:
+            if temporary_name:
+                Path(temporary_name).unlink(missing_ok=True)
     elif path.exists():
         path.unlink()
 
@@ -249,7 +276,7 @@ async def detect_training_labels(filename: str, settings: Settings = Depends(get
     image = cv2.imread(str(image_path))
     if image is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image could not be read.")
-    result = detect_photos_classical(image)
+    result = segment_album_page(image, settings)
     polygons = [
         {
             "points": detection.mask["polygon"],

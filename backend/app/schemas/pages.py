@@ -11,8 +11,9 @@ class PageUploadItem(BaseModel):
     page_id: UUID
     filename: str
     status: PageStatus
+    sha256: str | None = None
+    verified: bool = True
 
 
 class PageUploadResponse(BaseModel):
     pages: list[PageUploadItem]
-

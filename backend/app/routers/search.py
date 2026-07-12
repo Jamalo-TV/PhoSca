@@ -3,7 +3,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_async_session
-from app.models import OCRResult
+from app.core.auth import Principal, get_principal
+from app.models import OCRResult, Page
 from app.schemas import SearchResult
 
 router = APIRouter(prefix="/api/v1/search", tags=["search"])
@@ -24,6 +25,7 @@ async def search_ocr(
     q: str = Query(min_length=1, max_length=200),
     limit: int = Query(default=50, ge=1, le=100),
     session: AsyncSession = Depends(get_async_session),
+    principal: Principal | None = Depends(get_principal),
 ) -> list[SearchResult]:
     dialect = session.get_bind().dialect.name
     query = select(OCRResult)
@@ -33,6 +35,8 @@ async def search_ocr(
         query = query.where(vector.op("@@")(ts_query)).order_by(func.ts_rank(vector, ts_query).desc())
     else:
         query = query.where(OCRResult.text_content.ilike(f"%{q}%")).order_by(OCRResult.created_at.desc())
+    if principal is not None:
+        query = query.join(Page, Page.id == OCRResult.page_id).where(Page.album.has(tenant_id=principal.tenant_id))
     rows = (await session.scalars(query.limit(limit))).all()
     return [
         SearchResult(

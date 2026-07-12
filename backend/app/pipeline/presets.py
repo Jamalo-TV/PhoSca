@@ -12,11 +12,15 @@ class EnhancementConfig:
     yellowing_removal_strength: float = 0.55
     fading_recovery_strength: float = 0.35
     auto_white_balance: bool = True
-    scratch_removal_enabled: bool = True
+    scratch_removal_enabled: bool = False
     scratch_sensitivity: float = 0.5
-    face_enhancement_enabled: bool = True
+    face_enhancement_enabled: bool = False
     face_weight: float = 0.32
     upscale_factor: int = 2
+    super_resolution_enabled: bool = False
+    # Generative/model-based operations are research-only until an independent
+    # release critic has been calibrated on a labelled safety holdout.
+    unsafe_models_enabled: bool = False
     reference_blend: float = 0.14
     sharpen_amount: float = 0.14
     sr_model: str = "realesrgan"

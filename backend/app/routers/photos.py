@@ -8,10 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import Settings, get_settings
+from app.core.auth import Principal, get_principal, require_write_principal
 from app.database import get_async_session
 from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PhotoStatus
 from app.pipeline.presets import available_presets
-from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
+from app.pipeline.variants import released_variant_from_photo, variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import BoundingBoxUpdate, OCRRead, OCRUpdate, PhotoDetail, PhotoRead
 from app.services.pipeline import (
     deduplication_task_logic,
@@ -21,6 +22,26 @@ from app.services.pipeline import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["photos"])
+
+
+async def _photo_for_principal(session: AsyncSession, photo_id: UUID, principal: Principal | None) -> ExtractedPhoto:
+    query = select(ExtractedPhoto).where(ExtractedPhoto.id == photo_id)
+    if principal is not None:
+        query = query.where(ExtractedPhoto.album.has(tenant_id=principal.tenant_id))
+    photo = await session.scalar(query)
+    if photo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.")
+    return photo
+
+
+async def _page_for_principal(session: AsyncSession, page_id: UUID, principal: Principal | None) -> Page:
+    query = select(Page).where(Page.id == page_id)
+    if principal is not None:
+        query = query.where(Page.album.has(tenant_id=principal.tenant_id))
+    page = await session.scalar(query)
+    if page is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Page not found.")
+    return page
 
 
 def _photo_urls(photo: ExtractedPhoto) -> dict[str, str | None]:
@@ -45,10 +66,13 @@ async def get_presets() -> dict[str, dict]:
 
 
 @router.get("/photos/{photo_id}", response_model=PhotoDetail)
-async def get_photo(photo_id: UUID, session: AsyncSession = Depends(get_async_session)) -> PhotoDetail:
-    photo = await session.get(ExtractedPhoto, photo_id, options=[selectinload(ExtractedPhoto.ocr_results)])
-    if photo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.")
+async def get_photo(
+    photo_id: UUID,
+    session: AsyncSession = Depends(get_async_session),
+    principal: Principal | None = Depends(get_principal),
+) -> PhotoDetail:
+    photo = await _photo_for_principal(session, photo_id, principal)
+    await session.refresh(photo, attribute_names=["ocr_results"])
     data = PhotoDetail.model_validate(photo)
     data.ocr_results = [OCRRead.model_validate(result) for result in photo.ocr_results]
     data.urls = _photo_urls(photo)
@@ -60,11 +84,10 @@ async def get_photo_image(
     photo_id: UUID,
     variant: str | None = Query(default=None, pattern="^[a-zA-Z0-9_-]+$"),
     session: AsyncSession = Depends(get_async_session),
+    principal: Principal | None = Depends(get_principal),
 ) -> FileResponse:
-    photo = await session.get(ExtractedPhoto, photo_id)
-    if photo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.")
-    selected_variant = variant or (photo.enhancement_applied or {}).get("selected_variant", "original")
+    photo = await _photo_for_principal(session, photo_id, principal)
+    selected_variant = variant or released_variant_from_photo(photo)
     selected_path = variant_path_from_photo(photo, selected_variant)
     if not selected_path or not Path(selected_path).exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
@@ -77,22 +100,26 @@ async def get_photo_image(
 
 
 @router.get("/photos/{photo_id}/variants")
-async def get_photo_variants(photo_id: UUID, session: AsyncSession = Depends(get_async_session)) -> dict:
-    photo = await session.get(ExtractedPhoto, photo_id)
-    if photo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.")
+async def get_photo_variants(
+    photo_id: UUID,
+    session: AsyncSession = Depends(get_async_session),
+    principal: Principal | None = Depends(get_principal),
+) -> dict:
+    photo = await _photo_for_principal(session, photo_id, principal)
     return {
-        "selected_variant": (photo.enhancement_applied or {}).get("selected_variant", "original"),
+        "selected_variant": released_variant_from_photo(photo),
         "variants": variants_from_metadata(photo.enhancement_applied),
         "urls": _photo_urls(photo),
     }
 
 
 @router.get("/pages/{page_id}/image")
-async def get_page_image(page_id: UUID, session: AsyncSession = Depends(get_async_session)) -> FileResponse:
-    page = await session.get(Page, page_id)
-    if page is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Page not found.")
+async def get_page_image(
+    page_id: UUID,
+    session: AsyncSession = Depends(get_async_session),
+    principal: Principal | None = Depends(get_principal),
+) -> FileResponse:
+    page = await _page_for_principal(session, page_id, principal)
     path = Path(page.storage_path)
     if not path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
@@ -105,7 +132,12 @@ async def get_page_image(page_id: UUID, session: AsyncSession = Depends(get_asyn
 
 
 @router.get("/pages/{page_id}/ocr", response_model=list[OCRRead])
-async def get_page_ocr(page_id: UUID, session: AsyncSession = Depends(get_async_session)) -> list[OCRResult]:
+async def get_page_ocr(
+    page_id: UUID,
+    session: AsyncSession = Depends(get_async_session),
+    principal: Principal | None = Depends(get_principal),
+) -> list[OCRResult]:
+    await _page_for_principal(session, page_id, principal)
     return (await session.scalars(select(OCRResult).where(OCRResult.page_id == page_id).order_by(OCRResult.created_at.asc()))).all()
 
 
@@ -115,10 +147,9 @@ async def update_photo_bounding_box(
     payload: BoundingBoxUpdate,
     session: AsyncSession = Depends(get_async_session),
     settings: Settings = Depends(get_settings),
+    principal: Principal | None = Depends(require_write_principal),
 ) -> ExtractedPhoto:
-    photo = await session.get(ExtractedPhoto, photo_id)
-    if photo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.")
+    photo = await _photo_for_principal(session, photo_id, principal)
     box = payload.bounding_box.as_dict()
     if box["x2"] <= box["x1"] or box["y2"] <= box["y1"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bounding box must have positive area.")
@@ -139,8 +170,8 @@ async def update_photo_bounding_box(
     if correction.get("review_required"):
         return await session.get(ExtractedPhoto, photo_id)
     await enhancement_task_logic(session, photo.id, settings)
-    await deduplication_task_logic(session, photo.id)
-    await persistence_task_logic(session, photo.id)
+    await deduplication_task_logic(session, photo.id, settings)
+    await persistence_task_logic(session, photo.id, settings)
     return await session.get(ExtractedPhoto, photo_id)
 
 
@@ -149,8 +180,12 @@ async def update_ocr_result(
     ocr_id: UUID,
     payload: OCRUpdate,
     session: AsyncSession = Depends(get_async_session),
+    principal: Principal | None = Depends(require_write_principal),
 ) -> OCRResult:
-    ocr = await session.get(OCRResult, ocr_id)
+    query = select(OCRResult).join(Page, Page.id == OCRResult.page_id).where(OCRResult.id == ocr_id)
+    if principal is not None:
+        query = query.where(Page.album.has(tenant_id=principal.tenant_id))
+    ocr = await session.scalar(query)
     if ocr is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OCR result not found.")
     ocr.text_content = payload.text_content
@@ -170,15 +205,14 @@ async def reprocess_photo(
     preset: str | None = Query(default="auto"),
     session: AsyncSession = Depends(get_async_session),
     settings: Settings = Depends(get_settings),
+    principal: Principal | None = Depends(require_write_principal),
 ) -> ExtractedPhoto:
-    photo = await session.get(ExtractedPhoto, photo_id)
-    if photo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.")
+    photo = await _photo_for_principal(session, photo_id, principal)
     correction = await perspective_correction_task_logic(session, photo.id, settings)
     if correction.get("review_required"):
         return await session.get(ExtractedPhoto, photo_id)
     await enhancement_task_logic(session, photo.id, settings, preset=preset)
-    await deduplication_task_logic(session, photo.id)
-    await persistence_task_logic(session, photo.id)
+    await deduplication_task_logic(session, photo.id, settings)
+    await persistence_task_logic(session, photo.id, settings)
     refreshed = await session.get(ExtractedPhoto, photo_id)
     return refreshed

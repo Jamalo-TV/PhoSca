@@ -77,6 +77,18 @@ export async function getReviewQueue(albumId, type) {
   return parseResponse(await fetch(`/api/v1/review/queue?${params}`));
 }
 
+export async function submitReviewEvent(payload) {
+  return parseResponse(await fetch("/api/v1/review/events", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(payload),
+  }));
+}
+
+export async function getReviewProgress() {
+  return parseResponse(await fetch("/api/v1/review/progress"));
+}
+
 export async function patchBoundingBox(photoId, boundingBox, segmentationMask = null) {
   const body = segmentationMask ? { bounding_box: boundingBox, segmentation_mask: segmentationMask } : { bounding_box: boundingBox };
   return parseResponse(
@@ -110,7 +122,7 @@ export async function search(q) {
 export async function uploadFiles(albumId, files) {
   const form = new FormData();
   files.forEach((file) => form.append("files", file, file.name));
-  return parseResponse(await fetch(`/api/v1/albums/${albumId}/pages/upload`, { method: "POST", body: form }));
+  return parseResponse(await fetch(`/api/v1/albums/${albumId}/pages/upload`, { method: "POST", headers: { "X-Upload-Retry": "1" }, body: form }));
 }
 
 export async function uploadFileChunked(albumId, file, onProgress) {
@@ -130,6 +142,7 @@ export async function uploadFileChunked(albumId, file, onProgress) {
           "Content-Range": `bytes ${offset}-${end}/${file.size}`,
           "X-Upload-ID": uploadId,
           "X-Filename": file.name,
+          "X-Upload-Retry": "1",
         },
         body: form,
       })

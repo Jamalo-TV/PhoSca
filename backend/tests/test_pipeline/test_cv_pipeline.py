@@ -166,6 +166,7 @@ def test_yolo_segmentation_parser_uses_proto_mask_polygon() -> None:
 
     settings = SimpleNamespace(
         yolo_confidence_threshold=0.25,
+        yolo_proposal_threshold=0.25,
         segmentation_min_aspect_ratio=0.2,
         segmentation_max_aspect_ratio=5.0,
     )
@@ -195,6 +196,7 @@ def test_yolo_box_parser_normalizes_coordinates_against_model_input() -> None:
 
     settings = SimpleNamespace(
         yolo_confidence_threshold=0.25,
+        yolo_proposal_threshold=0.25,
         segmentation_min_aspect_ratio=0.2,
         segmentation_max_aspect_ratio=5.0,
     )
@@ -222,6 +224,7 @@ def test_yolo_box_parser_undoes_letterbox_padding() -> None:
 
     settings = SimpleNamespace(
         yolo_confidence_threshold=0.25,
+        yolo_proposal_threshold=0.25,
         segmentation_min_aspect_ratio=0.2,
         segmentation_max_aspect_ratio=5.0,
     )
@@ -247,6 +250,7 @@ def test_yolo_segmentation_parser_accepts_channels_last_proto() -> None:
 
     settings = SimpleNamespace(
         yolo_confidence_threshold=0.25,
+        yolo_proposal_threshold=0.25,
         segmentation_min_aspect_ratio=0.2,
         segmentation_max_aspect_ratio=5.0,
     )
@@ -438,7 +442,7 @@ def test_ocr_spatial_classification_links_caption_to_photo() -> None:
     assert classified[1].text_type.value == "directory_name"
 
 
-def test_enhancement_and_phash_primitives(tmp_path: Path) -> None:
+def test_enhancement_defaults_to_safe_no_model_path_and_phash_primitives(tmp_path: Path) -> None:
     from app.pipeline.dedup import compute_phash, hamming_distance
     from app.pipeline.dl_enhancement import dl_enhance_photo
     from app.pipeline.image_ops import save_jpeg
@@ -462,7 +466,10 @@ def test_enhancement_and_phash_primitives(tmp_path: Path) -> None:
 
         enhanced, metadata = dl_enhance_photo(image)
         assert enhanced.shape == image.shape
-        assert "LaMa" in metadata["models"]
+        assert metadata["planner"]["unsafe_models_enabled"] is False
+        assert metadata["auto_release"] is False
+        mock_models.assert_not_called()
+        mock_inpaint.assert_not_called()
 
     first = tmp_path / "first.jpg"
     second = tmp_path / "second.jpg"
@@ -620,19 +627,25 @@ def test_exif_caption_write_strips_sensitive_tags(tmp_path: Path) -> None:
     }
     piexif.insert(piexif.dump(exif), str(path))
 
-    metadata = write_caption_exif(path, "Summer picnic")
+    released_path = tmp_path / "released.jpg"
+    metadata = write_caption_exif(path, "Summer picnic", output_path=released_path)
     loaded = piexif.load(str(path))
 
+    released = piexif.load(str(released_path))
+
     assert metadata["gps_stripped"] is True
-    assert loaded["GPS"] == {}
-    assert piexif.ImageIFD.Make not in loaded["0th"]
-    assert loaded["0th"][piexif.ImageIFD.ImageDescription] == b"Summer picnic"
+    assert metadata["output_path"] == str(released_path)
+    # The canonical asset stays immutable; sanitization creates a release copy.
+    assert loaded["GPS"] != {}
+    assert released["GPS"] == {}
+    assert piexif.ImageIFD.Make not in released["0th"]
+    assert released["0th"][piexif.ImageIFD.ImageDescription] == b"Summer picnic"
 
 
 async def test_full_synthetic_page_pipeline(client) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
-    from app.models import Album, AlbumStatus, ExtractedPhoto, OCRResult, Page
+    from app.models import Album, AlbumStatus, Asset, ExtractedPhoto, OCRResult, Page, ProcessingRun, RunStatus, StageRun
     from app.services.pipeline import process_page_pipeline
 
     settings = get_settings()
@@ -673,13 +686,18 @@ async def test_full_synthetic_page_pipeline(client) -> None:
         page_id = page.id
 
     result = await process_page_pipeline(page_id, settings)
+    replay = await process_page_pipeline(page_id, settings)
 
     assert result["status"] in {"completed", "review_needed"}
+    assert replay["idempotent_replay"] is True
     async with get_session_factory()() as session:
         page = await session.get(Page, page_id)
         album = await session.get(Album, page.album_id) if page is not None else None
         photos = (await session.scalars(select(ExtractedPhoto).where(ExtractedPhoto.page_id == page_id))).all()
         ocr_rows = (await session.scalars(select(OCRResult).where(OCRResult.page_id == page_id))).all()
+        runs = (await session.scalars(select(ProcessingRun).where(ProcessingRun.page_id == page_id))).all()
+        stages = (await session.scalars(select(StageRun).where(StageRun.processing_run_id == runs[0].id))).all()
+        assets = (await session.scalars(select(Asset).where(Asset.processing_run_id == runs[0].id))).all()
 
     assert page is not None
     assert album is not None
@@ -691,6 +709,23 @@ async def test_full_synthetic_page_pipeline(client) -> None:
     assert Path(photos[0].storage_path).exists()
     assert photos[0].phash
     assert ocr_rows
+    assert len(runs) == 1
+    assert runs[0].status in {RunStatus.completed, RunStatus.review_needed}
+    assert {stage.stage for stage in stages} >= {
+        "ingestion", "segmentation", "perspective_correction", "ocr", "enhancement", "deduplication", "persistence"
+    }
+    assert all(stage.attempt == 1 for stage in stages)
+    assert {asset.role for asset in assets} >= {"page_original", "corrected_print", "released_variant"}
+    corrected_asset = next(asset for asset in assets if asset.role == "corrected_print")
+    released_asset = next(asset for asset in assets if asset.role == "released_variant")
+    assert corrected_asset.parent_asset_id is not None
+    assert released_asset.parent_asset_id == corrected_asset.id
+
+    run_response = await client.get(f"/api/v1/pages/{page_id}/runs")
+    assert run_response.status_code == 200, run_response.text
+    run_payload = run_response.json()[0]
+    assert run_payload["id"] == str(runs[0].id)
+    assert {asset["role"] for asset in run_payload["assets"]} >= {"page_original", "corrected_print", "released_variant"}
 
 
 async def test_photo_image_serves_variant_metadata_path(client) -> None:
@@ -759,7 +794,7 @@ async def test_photo_image_serves_variant_metadata_path(client) -> None:
 async def test_failed_page_pipeline_writes_dlq_manifest(client) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
-    from app.models import Album, AuditLog, Page, PageStatus
+    from app.models import Album, AuditLog, Page, PageStatus, ProcessingRun, RunStatus
     from app.services.dlq import failed_page_dlq_path
     from app.services.pipeline import process_pages_pipeline
 
@@ -796,8 +831,10 @@ async def test_failed_page_pipeline_writes_dlq_manifest(client) -> None:
     async with get_session_factory()() as session:
         page = await session.get(Page, page_id)
         audit_rows = (await session.scalars(select(AuditLog).where(AuditLog.entity_id == page_id))).all()
+        run = await session.scalar(select(ProcessingRun).where(ProcessingRun.page_id == page_id))
 
     assert page is not None
     assert page.status == PageStatus.failed
     assert page.processing_metadata["steps"]["ingestion"]["dlq_manifest_path"] == str(dlq_dir / "manifest.json")
     assert any(row.action == "failed" and row.details.get("dlq_manifest_path") for row in audit_rows)
+    assert run is not None and run.status == RunStatus.failed

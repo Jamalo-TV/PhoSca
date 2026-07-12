@@ -1,11 +1,19 @@
+from io import BytesIO
 from pathlib import Path
 from uuid import UUID
 
 from httpx import AsyncClient
 from sqlalchemy import select
+from PIL import Image
 
 
-JPEG_BYTES = b"\xff\xd8\xff\xe0" + b"jpeg-data" + b"\xff\xd9"
+def _valid_jpeg_bytes() -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (16, 12), (120, 130, 140)).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+JPEG_BYTES = _valid_jpeg_bytes()
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"png-data"
 
 

@@ -1,13 +1,16 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_async_session
+from app.core.auth import Principal, album_for_principal, get_principal, require_write_principal
+from app.config import Settings, get_settings
 from app.models import Album, AlbumStatus, AuditLog, ExtractedPhoto, OCRResult, Page, PageStatus, PhotoStatus, OCRTextType
 from app.schemas import AlbumCreate, AlbumRead, AlbumStats, AnalyzeRequest, JobQueued, PageRead, PhotoRead
 from app.services.pipeline import process_pages_pipeline
+from app.services.deletion import delete_album_with_assets
 from app.tasks.pipeline import process_pages_task
 
 router = APIRouter(prefix="/api/v1/albums", tags=["albums"])
@@ -17,8 +20,9 @@ router = APIRouter(prefix="/api/v1/albums", tags=["albums"])
 async def create_album(
     payload: AlbumCreate,
     session: AsyncSession = Depends(get_async_session),
+    principal: Principal | None = Depends(require_write_principal),
 ) -> Album:
-    album = Album(name=payload.name, description=payload.description)
+    album = Album(name=payload.name, description=payload.description, tenant_id=principal.tenant_id if principal else None)
     session.add(album)
     await session.flush()
     session.add(
@@ -35,8 +39,14 @@ async def create_album(
 
 
 @router.get("", response_model=list[AlbumStats])
-async def list_albums(session: AsyncSession = Depends(get_async_session)) -> list[AlbumStats]:
-    albums = (await session.scalars(select(Album).order_by(Album.created_at.desc()))).all()
+async def list_albums(
+    session: AsyncSession = Depends(get_async_session),
+    principal: Principal | None = Depends(get_principal),
+) -> list[AlbumStats]:
+    query = select(Album)
+    if principal is not None:
+        query = query.where(Album.tenant_id == principal.tenant_id)
+    albums = (await session.scalars(query.order_by(Album.created_at.desc()))).all()
     results: list[AlbumStats] = []
     for album in albums:
         photos_extracted = await session.scalar(select(func.count(ExtractedPhoto.id)).where(ExtractedPhoto.album_id == album.id))
@@ -70,10 +80,9 @@ async def analyze_album(
     album_id: UUID,
     payload: AnalyzeRequest,
     session: AsyncSession = Depends(get_async_session),
+    principal: Principal | None = Depends(require_write_principal),
 ) -> JobQueued:
-    album = await session.get(Album, album_id)
-    if album is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Album not found.")
+    album = await album_for_principal(session, album_id, principal)
 
     if payload.page_ids is None:
         page_ids = (
@@ -101,10 +110,9 @@ async def analyze_album_now(
     album_id: UUID,
     payload: AnalyzeRequest,
     session: AsyncSession = Depends(get_async_session),
+    principal: Principal | None = Depends(require_write_principal),
 ) -> dict:
-    album = await session.get(Album, album_id)
-    if album is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Album not found.")
+    album = await album_for_principal(session, album_id, principal)
 
     if payload.page_ids is None:
         page_ids = (
@@ -127,10 +135,12 @@ async def analyze_album_now(
 
 
 @router.get("/{album_id}", response_model=AlbumStats)
-async def get_album(album_id: UUID, session: AsyncSession = Depends(get_async_session)) -> AlbumStats:
-    album = await session.get(Album, album_id)
-    if album is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Album not found.")
+async def get_album(
+    album_id: UUID,
+    session: AsyncSession = Depends(get_async_session),
+    principal: Principal | None = Depends(get_principal),
+) -> AlbumStats:
+    album = await album_for_principal(session, album_id, principal)
     photos_extracted = await session.scalar(select(func.count(ExtractedPhoto.id)).where(ExtractedPhoto.album_id == album.id))
     review_pages = await session.scalar(select(func.count(Page.id)).where(Page.album_id == album.id, Page.status == PageStatus.review_needed))
     review_photos = await session.scalar(
@@ -149,8 +159,25 @@ async def get_album(album_id: UUID, session: AsyncSession = Depends(get_async_se
     )
 
 
+@router.delete("/{album_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_album(
+    album_id: UUID,
+    session: AsyncSession = Depends(get_async_session),
+    settings: Settings = Depends(get_settings),
+    principal: Principal | None = Depends(require_write_principal),
+) -> Response:
+    album = await album_for_principal(session, album_id, principal)
+    await delete_album_with_assets(session, album, settings)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/{album_id}/pages", response_model=list[PageRead])
-async def list_album_pages(album_id: UUID, session: AsyncSession = Depends(get_async_session)) -> list[Page]:
+async def list_album_pages(
+    album_id: UUID,
+    session: AsyncSession = Depends(get_async_session),
+    principal: Principal | None = Depends(get_principal),
+) -> list[Page]:
+    await album_for_principal(session, album_id, principal)
     return (
         await session.scalars(select(Page).where(Page.album_id == album_id).order_by(Page.created_at.asc()))
     ).all()
@@ -163,7 +190,9 @@ async def list_album_photos(
     needs_review: bool | None = None,
     has_caption: bool | None = None,
     session: AsyncSession = Depends(get_async_session),
+    principal: Principal | None = Depends(get_principal),
 ) -> list[ExtractedPhoto]:
+    await album_for_principal(session, album_id, principal)
     query = select(ExtractedPhoto).where(ExtractedPhoto.album_id == album_id)
     if status_filter is not None:
         query = query.where(ExtractedPhoto.status == status_filter)

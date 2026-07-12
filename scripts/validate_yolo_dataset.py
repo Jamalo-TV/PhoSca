@@ -165,7 +165,7 @@ def validate_dataset(data_yaml: Path, *, root: Path | None = None, golden_dir: P
         issues.append(DatasetIssue("error", stem, "golden fixture must not appear in train or val splits"))
     golden_label_stems = {path.stem for path in golden_labels}
     for stem in sorted(golden_stems - golden_label_stems):
-        issues.append(DatasetIssue("warning", str(golden_dir / "labels" / f"{stem}.txt"), "golden label missing"))
+        issues.append(DatasetIssue("error", str(golden_dir / "labels" / f"{stem}.txt"), "golden label missing"))
 
     return DatasetReport(
         images_train=len(train_images),

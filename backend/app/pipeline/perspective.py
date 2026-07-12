@@ -6,6 +6,7 @@ import numpy as np
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.border_removal import remove_uniform_border
 from app.pipeline.orientation import correct_photo_orientation
+from app.pipeline.protected_regions import detect_protected_regions, validate_protected_regions
 
 
 def _points_from_mask(mask: dict | None, width: int, height: int) -> np.ndarray | None:
@@ -67,7 +68,15 @@ def _validate_quad(points: np.ndarray, width: int, height: int) -> dict[str, flo
     side_lengths = [float(np.linalg.norm(points[(index + 1) % 4] - points[index])) for index in range(4)]
     if min(side_lengths) < 2.0:
         raise ValueError("perspective_quad_side_too_short")
-    return {"area": area, "min_side": min(side_lengths), "max_side": max(side_lengths)}
+    angles: list[float] = []
+    for index in range(4):
+        previous = points[(index - 1) % 4] - points[index]
+        following = points[(index + 1) % 4] - points[index]
+        cosine = float(np.dot(previous, following) / max(np.linalg.norm(previous) * np.linalg.norm(following), 1e-9))
+        angles.append(float(np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))))
+    if min(angles) < 8.0 or max(angles) > 172.0:
+        raise ValueError("perspective_quad_angle_unstable")
+    return {"area": area, "min_side": min(side_lengths), "max_side": max(side_lengths), "min_angle": min(angles)}
 
 
 def crop_and_correct_photo(
@@ -78,6 +87,8 @@ def crop_and_correct_photo(
     trim_border: bool = True,
     auto_orient: bool = True,
     orientation_model_path: Path | None = None,
+    protected_regions: list[dict] | None = None,
+    protect_regions: bool = True,
 ) -> np.ndarray:
     corrected, _ = crop_and_correct_photo_with_metadata(
         page_image,
@@ -86,6 +97,8 @@ def crop_and_correct_photo(
         trim_border=trim_border,
         auto_orient=auto_orient,
         orientation_model_path=orientation_model_path,
+        protected_regions=protected_regions,
+        protect_regions=protect_regions,
     )
     return corrected
 
@@ -98,6 +111,8 @@ def crop_and_correct_photo_with_metadata(
     trim_border: bool = True,
     auto_orient: bool = True,
     orientation_model_path: Path | None = None,
+    protected_regions: list[dict] | None = None,
+    protect_regions: bool = True,
 ) -> tuple[np.ndarray, dict]:
     height, width = page_image.shape[:2]
     src_points = _points_from_mask(mask, width, height)
@@ -106,6 +121,10 @@ def crop_and_correct_photo_with_metadata(
         src_points = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=np.float32)
     src_points = _order_points(src_points)
     quad_metrics = _validate_quad(src_points, width, height)
+    regions = protected_regions if protected_regions is not None else detect_protected_regions(page_image)
+    protection = validate_protected_regions(src_points, regions, width=width, height=height) if protect_regions else {"passed": True, "regions_checked": 0, "violations": []}
+    if not protection["passed"]:
+        raise ValueError("protected_region_cut")
     top_width = np.linalg.norm(src_points[1] - src_points[0])
     bottom_width = np.linalg.norm(src_points[2] - src_points[3])
     left_height = np.linalg.norm(src_points[3] - src_points[0])
@@ -117,19 +136,37 @@ def crop_and_correct_photo_with_metadata(
         dtype=np.float32,
     )
     matrix = cv2.getPerspectiveTransform(src_points, destination)
+    # The condition number of a pixel-coordinate homography grows with source
+    # resolution and rejected valid 12 MP mobile captures. Evaluate the same
+    # transform in normalized coordinates so the gate measures geometry rather
+    # than pixel scale.
+    normalized_source = src_points / np.array([max(width - 1, 1), max(height - 1, 1)], dtype=np.float32)
+    normalized_destination = destination / np.array([max(target_width - 1, 1), max(target_height - 1, 1)], dtype=np.float32)
+    normalized_matrix = cv2.getPerspectiveTransform(normalized_source.astype(np.float32), normalized_destination.astype(np.float32))
     condition_number = float(np.linalg.cond(matrix))
-    if not np.isfinite(condition_number) or condition_number > 1e7:
+    normalized_condition_number = float(np.linalg.cond(normalized_matrix))
+    if not np.isfinite(normalized_condition_number) or normalized_condition_number > 1e4:
         raise ValueError("unstable_perspective_transform")
     corrected = cv2.warpPerspective(page_image, matrix, (target_width, target_height), borderMode=cv2.BORDER_REPLICATE)
     if corrected.size == 0 or min(corrected.shape[:2]) < 2:
         raise ValueError("empty_perspective_output")
+    projected = cv2.perspectiveTransform(src_points.reshape(-1, 1, 2), matrix).reshape(-1, 2)
+    reprojection_error = float(np.max(np.linalg.norm(projected - destination, axis=1)))
+    if not np.isfinite(reprojection_error) or reprojection_error > 0.05:
+        raise ValueError("perspective_reprojection_error")
     metadata = {
         "source": mask.get("source") if mask else "bounding_box",
         "target_width": target_width,
         "target_height": target_height,
         "trim_border": trim_border,
         "auto_orient": auto_orient,
-        "quad_validation": {**quad_metrics, "transform_condition_number": condition_number},
+        "quad_validation": {
+            **quad_metrics,
+            "transform_condition_number": condition_number,
+            "normalized_transform_condition_number": normalized_condition_number,
+            "reprojection_error": reprojection_error,
+        },
+        "protected_regions": protection,
     }
     if trim_border:
         before_shape = corrected.shape[:2]

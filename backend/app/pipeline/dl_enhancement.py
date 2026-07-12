@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import logging
 import gc
+from pathlib import Path
 import torch
 from app.pipeline.color_correction import apply_color_corrections
 from app.pipeline.degradation import DegradationReport, analyze_degradation
@@ -22,13 +23,24 @@ def _blend_with_reference(enhanced: np.ndarray, reference: np.ndarray, reference
     return cv2.addWeighted(enhanced, 1.0 - reference_weight, reference, reference_weight, 0)
 
 
-def get_dl_models(load_faces: bool = True, tile_size: int | None = None, tile_pad: int = 10):
+def get_dl_models(
+    load_faces: bool = True,
+    tile_size: int | None = None,
+    tile_pad: int = 10,
+    realesrgan_model_path: Path | None = None,
+    gfpgan_model_path: Path | None = None,
+):
     """Lazy load models to avoid slowing down backend startup if not used."""
     global _enhancer, _face_enhancer
     if _enhancer is not None and (_face_enhancer is not None or not load_faces):
         return _enhancer, _face_enhancer
 
     device = get_best_device()
+
+    if realesrgan_model_path is None or not realesrgan_model_path.is_file():
+        raise RuntimeError("Local, verified Real-ESRGAN weights are required; runtime model downloads are disabled.")
+    if load_faces and (gfpgan_model_path is None or not gfpgan_model_path.is_file()):
+        raise RuntimeError("Local, verified GFPGAN weights are required; runtime model downloads are disabled.")
 
     try:
         import torchvision.transforms.functional as F
@@ -44,7 +56,7 @@ def get_dl_models(load_faces: bool = True, tile_size: int | None = None, tile_pa
             model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=2)
             _enhancer = RealESRGANer(
                 scale=2,
-                model_path='https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth',
+                model_path=str(realesrgan_model_path),
                 model=model,
                 tile=resolved_tile_size,
                 tile_pad=tile_pad,
@@ -58,7 +70,7 @@ def get_dl_models(load_faces: bool = True, tile_size: int | None = None, tile_pa
 
             logger.info("Initializing GFPGAN...")
             _face_enhancer = GFPGANer(
-                model_path='https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth',
+                model_path=str(gfpgan_model_path),
                 upscale=2,
                 arch='clean',
                 channel_multiplier=2,
@@ -142,12 +154,20 @@ def _should_revert_step(step_name: str, delta: QualityDelta, config: Enhancement
     return QualityAssessor().should_revert(delta, config.min_quality_delta)
 
 
-def _run_upscale_or_faces(image: np.ndarray, config: EnhancementConfig) -> tuple[np.ndarray, list[str], dict]:
+def _run_upscale_or_faces(
+    image: np.ndarray,
+    config: EnhancementConfig,
+    model_paths: dict[str, Path] | None = None,
+) -> tuple[np.ndarray, list[str], dict]:
+    if not config.super_resolution_enabled or not config.unsafe_models_enabled:
+        return image.copy(), [], {"sr": False, "reason": "model_restoration_disabled_by_safety_policy"}
     tile_size = config.tile_size or get_optimal_tile_size(config.sr_model)
     enhancer, face_enhancer = get_dl_models(
         load_faces=config.face_enhancement_enabled,
         tile_size=tile_size,
         tile_pad=config.tile_pad,
+        realesrgan_model_path=(model_paths or {}).get("realesrgan"),
+        gfpgan_model_path=(model_paths or {}).get("gfpgan"),
     )
     if config.face_enhancement_enabled:
         _, _, output = face_enhancer.enhance(
@@ -167,6 +187,7 @@ def dl_enhance_photo(
     image: np.ndarray,
     preset: str | None = "balanced",
     degradation_report: DegradationReport | None = None,
+    model_paths: dict[str, Path] | None = None,
 ) -> tuple[np.ndarray, dict]:
     """
     Enhances a photo using LaMa (inpainting), Real-ESRGAN and GFPGAN.
@@ -190,7 +211,7 @@ def dl_enhance_photo(
         else:
             color_metadata = {"color_correction": False, "reason": "not_recommended"}
 
-        if config.scratch_removal_enabled and report.should_inpaint:
+        if config.unsafe_models_enabled and config.scratch_removal_enabled and report.should_inpaint:
             candidate, inpaint_metadata = inpaint_scratches(
                 working,
                 sensitivity=config.scratch_sensitivity,
@@ -199,17 +220,18 @@ def dl_enhance_photo(
             inpainted_image, inpaint_metadata = _quality_gate_step(working, candidate, config, "scratch", inpaint_metadata, assessor)
         else:
             inpainted_image = working
-            reason = "disabled" if not config.scratch_removal_enabled else "not_recommended"
+            reason = "disabled_by_safety_policy" if not config.unsafe_models_enabled else ("disabled" if not config.scratch_removal_enabled else "not_recommended")
             inpaint_metadata = {"scratch_removal": False, "method": reason, "mask_pixels": 0}
 
-        output, model_chain, model_metadata = _run_upscale_or_faces(inpainted_image, config)
-        output = _blend_with_reference(output, inpainted_image, reference_weight=config.reference_blend)
+        output, model_chain, model_metadata = _run_upscale_or_faces(inpainted_image, config, model_paths=model_paths)
+        if model_chain:
+            output = _blend_with_reference(output, inpainted_image, reference_weight=config.reference_blend)
 
         metadata = {
             "method": "deep_learning",
             "preset": config.preset,
             "config": config.as_dict(),
-            "models": ["LaMa", *model_chain],
+            "models": model_chain,
             "device": str(get_best_device()),
             "reference_blend": config.reference_blend,
             "degradation_report": report.as_dict(),
@@ -223,6 +245,17 @@ def dl_enhance_photo(
             "scratch_mask_pixels": inpaint_metadata.get("mask_pixels", 0),
             **model_metadata,
         }
+        metadata["planner"] = {
+            "no_op": bool(np.array_equal(output, image)),
+            "allowed_steps": [
+                name for name, step in metadata["steps"].items()
+                if step.get(name if name != "scratch" else "scratch_removal", False)
+            ],
+            "unsafe_models_enabled": config.unsafe_models_enabled,
+        }
+        # A producer can never auto-release itself.  The release service is
+        # intentionally the only component allowed to change this later.
+        metadata["auto_release"] = False
         return output, metadata
     except Exception as e:
         logger.error(f"DL enhancement failed: {e}. Falling back to original image.")

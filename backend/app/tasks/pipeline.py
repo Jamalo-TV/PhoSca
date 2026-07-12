@@ -66,7 +66,7 @@ def enhancement_task(photo_id: str) -> dict:
 def deduplication_task(photo_id: str) -> dict:
     async def _run() -> dict:
         async with get_session_factory()() as session:
-            return await deduplication_task_logic(session, UUID(photo_id))
+            return await deduplication_task_logic(session, UUID(photo_id), get_settings())
 
     return run_async(_run())
 
@@ -75,7 +75,7 @@ def deduplication_task(photo_id: str) -> dict:
 def persistence_task(photo_id: str) -> dict:
     async def _run() -> dict:
         async with get_session_factory()() as session:
-            return await persistence_task_logic(session, UUID(photo_id))
+            return await persistence_task_logic(session, UUID(photo_id), get_settings())
 
     return run_async(_run())
 
@@ -88,4 +88,3 @@ def process_page_task(page_id: str) -> dict:
 @celery_app.task(name="pipeline.process_pages")
 def process_pages_task(page_ids: list[str]) -> dict:
     return run_async(process_pages_pipeline([UUID(page_id) for page_id in page_ids], get_settings()))
-

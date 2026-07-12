@@ -1,3 +1,3 @@
-from app.routers import albums, jobs, pages, photos, review, search
+from app.routers import albums, health, jobs, pages, photos, review, runs, search
 
-__all__ = ["albums", "jobs", "pages", "photos", "review", "search"]
+__all__ = ["albums", "health", "jobs", "pages", "photos", "review", "runs", "search"]

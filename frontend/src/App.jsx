@@ -41,6 +41,7 @@ import {
   uploadFiles,
 } from "./api.js";
 import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
+import MobileApp from "./MobileApp.jsx";
 
 const tabs = [
   { id: "analyze", label: "Analyze", icon: Play },
@@ -717,6 +718,7 @@ function TrainingCanvas({ image, polygons, selectedPolygonId, onSelectPolygon, o
   const canvasRef = useRef(null);
   const imageRef = useRef(null);
   const dragRef = useRef(null);
+  const magnifierRef = useRef(null);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -757,28 +759,127 @@ function TrainingCanvas({ image, polygons, selectedPolygonId, onSelectPolygon, o
         context.strokeRect(point.x - 5, point.y - 5, 10, 10);
       });
     });
+
+    const magnifier = magnifierRef.current;
+    if (magnifier) {
+      const radius = 58;
+      const zoom = 3;
+      const edgeGap = 14;
+      // Polygon points are stored as proportions of the canvas. Convert them
+      // before placing the lens; canvas drawing APIs use pixels.
+      const point = {
+        x: magnifier.point.x * canvas.width,
+        y: magnifier.point.y * canvas.height,
+      };
+      const preferredY = point.y - radius - edgeGap;
+      const lensX = Math.min(Math.max(point.x, radius + 8), canvas.width - radius - 8);
+      const lensY = preferredY - radius >= 8
+        ? preferredY
+        : Math.min(point.y + radius + edgeGap, canvas.height - radius - 8);
+      const sourceRadiusX = (radius / zoom) * (loadedImage.naturalWidth / canvas.width);
+      const sourceRadiusY = (radius / zoom) * (loadedImage.naturalHeight / canvas.height);
+      const sourceX = point.x * (loadedImage.naturalWidth / canvas.width);
+      const sourceY = point.y * (loadedImage.naturalHeight / canvas.height);
+      const sourceWidth = sourceRadiusX * 2;
+      const sourceHeight = sourceRadiusY * 2;
+      // Keep the sampled area on the image at its borders. This avoids a
+      // transparent/blank lens when a corner is dragged right to an edge.
+      const sourceLeft = Math.min(Math.max(sourceX - sourceRadiusX, 0), Math.max(0, loadedImage.naturalWidth - sourceWidth));
+      const sourceTop = Math.min(Math.max(sourceY - sourceRadiusY, 0), Math.max(0, loadedImage.naturalHeight - sourceHeight));
+      const focusX = lensX - radius + ((sourceX - sourceLeft) / sourceWidth) * radius * 2;
+      const focusY = lensY - radius + ((sourceY - sourceTop) / sourceHeight) * radius * 2;
+
+      context.save();
+      context.beginPath();
+      context.arc(lensX, lensY, radius, 0, Math.PI * 2);
+      context.clip();
+      context.drawImage(
+        loadedImage,
+        sourceLeft,
+        sourceTop,
+        sourceWidth,
+        sourceHeight,
+        lensX - radius,
+        lensY - radius,
+        radius * 2,
+        radius * 2
+      );
+      context.strokeStyle = "rgba(15, 118, 110, 0.9)";
+      context.lineWidth = 1;
+      context.beginPath();
+      context.moveTo(lensX - radius, focusY);
+      context.lineTo(lensX + radius, focusY);
+      context.moveTo(focusX, lensY - radius);
+      context.lineTo(focusX, lensY + radius);
+      context.stroke();
+      context.restore();
+
+      context.strokeStyle = "#ffffff";
+      context.lineWidth = 5;
+      context.beginPath();
+      context.arc(lensX, lensY, radius + 2, 0, Math.PI * 2);
+      context.stroke();
+      context.strokeStyle = "#0f766e";
+      context.lineWidth = 3;
+      context.beginPath();
+      context.arc(lensX, lensY, radius + 2, 0, Math.PI * 2);
+      context.stroke();
+    }
   }, [image, polygons, selectedPolygonId]);
 
   useEffect(() => {
     draw();
   }, [draw]);
 
+  const drawRef = useRef(draw);
   useEffect(() => {
-    if (!image) {
-      imageRef.current = null;
-      return;
+    drawRef.current = draw;
+  }, [draw]);
+
+  useEffect(() => {
+    let cancelled = false;
+    imageRef.current = null;
+
+    // Clear the old page immediately. Without this, a late image load from a
+    // previous selection can redraw over the newly selected page and leave a
+    // partially blank canvas in Chromium.
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const context = canvas.getContext("2d");
+      context.clearRect(0, 0, canvas.width, canvas.height);
     }
+
+    if (!image) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const loadedImage = new Image();
+    loadedImage.decoding = "async";
     loadedImage.onload = () => {
+      if (cancelled) return;
       imageRef.current = loadedImage;
-      draw();
+      drawRef.current();
     };
     loadedImage.src = trainingImageSrc(image);
-  }, [draw, image]);
+
+    return () => {
+      cancelled = true;
+      loadedImage.onload = null;
+      if (imageRef.current === loadedImage) imageRef.current = null;
+    };
+  }, [image?.name]);
 
   useEffect(() => {
     window.addEventListener("resize", draw);
-    return () => window.removeEventListener("resize", draw);
+    const container = canvasRef.current?.parentElement;
+    const observer = container && typeof ResizeObserver !== "undefined" ? new ResizeObserver(draw) : null;
+    observer?.observe(container);
+    return () => {
+      window.removeEventListener("resize", draw);
+      observer?.disconnect();
+    };
   }, [draw]);
 
   function pointFromEvent(event) {
@@ -794,7 +895,9 @@ function TrainingCanvas({ image, polygons, selectedPolygonId, onSelectPolygon, o
       if (pointIndex >= 0) {
         onSelectPolygon(polygon.id);
         dragRef.current = { polygonId: polygon.id, pointIndex };
+        magnifierRef.current = { point };
         canvasRef.current.setPointerCapture(event.pointerId);
+        draw();
         return;
       }
       if (pointInPolygon(point, polygon.points)) {
@@ -808,6 +911,8 @@ function TrainingCanvas({ image, polygons, selectedPolygonId, onSelectPolygon, o
     if (!dragRef.current) return;
     const point = pointFromEvent(event);
     const { polygonId, pointIndex } = dragRef.current;
+    magnifierRef.current = { point };
+    draw();
     onChangePolygons((current) =>
       current.map((polygon) =>
         polygon.id === polygonId
@@ -826,6 +931,8 @@ function TrainingCanvas({ image, polygons, selectedPolygonId, onSelectPolygon, o
       canvasRef.current.releasePointerCapture(event.pointerId);
     }
     dragRef.current = null;
+    magnifierRef.current = null;
+    draw();
   }
 
   if (!image) return <EmptyState label="No training image selected." />;
@@ -837,6 +944,7 @@ function TrainingCanvas({ image, polygons, selectedPolygonId, onSelectPolygon, o
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         aria-label="Training annotation canvas"
       />
     </div>
@@ -853,16 +961,21 @@ function TrainingAnnotationView() {
   const [dirty, setDirty] = useState(false);
 
   const images = workspace?.images || [];
-  const selectedImage = images.find((image) => image.name === selectedName) || images[0] || null;
+  const selectedImage = images.find((image) => image.name === selectedName) || null;
   const selectedPolygon = polygons.find((polygon) => polygon.id === selectedPolygonId) || polygons[0] || null;
+  const completedCount = images.filter((image) => image.has_label).length;
+  const progressPercent = images.length ? Math.round((completedCount / images.length) * 100) : 0;
 
   const refreshWorkspace = useCallback(async (preferredName = null) => {
     const next = await listSegmentationTrainingImages();
     setWorkspace(next);
-    const nextName = preferredName || (next.images.some((image) => image.name === selectedName) ? selectedName : next.images[0]?.name || null);
-    setSelectedName(nextName);
+    setSelectedName((currentName) => {
+      if (preferredName && next.images.some((image) => image.name === preferredName)) return preferredName;
+      if (currentName && next.images.some((image) => image.name === currentName)) return currentName;
+      return next.images[0]?.name || null;
+    });
     return next;
-  }, [selectedName]);
+  }, []);
 
   useEffect(() => {
     refreshWorkspace().catch((error) => setMessage(error.message));
@@ -965,13 +1078,26 @@ function TrainingAnnotationView() {
       setPolygons(nextPolygons);
       setSelectedPolygonId(nextPolygons[0]?.id || null);
       setDirty(false);
-      await refreshWorkspace(selectedImage.name);
-      setMessage("Labels saved.");
+      const refreshed = await refreshWorkspace(selectedImage.name);
+      setMessage(`Saved ${selectedImage.name}. ${refreshed.images.filter((image) => image.has_label).length}/${refreshed.images.length} pages completed.`);
     } catch (error) {
       setMessage(error.message || "Save failed.");
     } finally {
       setBusy("");
     }
+  }
+
+  function selectNextPending() {
+    if (images.length === 0) return;
+    const start = Math.max(0, images.findIndex((image) => image.name === selectedImage?.name));
+    for (let offset = 1; offset <= images.length; offset += 1) {
+      const candidate = images[(start + offset) % images.length];
+      if (!candidate.has_label) {
+        setSelectedName(candidate.name);
+        return;
+      }
+    }
+    setMessage("All pages have saved labels.");
   }
 
   async function deleteSelectedImage() {
@@ -1043,6 +1169,9 @@ function TrainingAnnotationView() {
             </button>
           </div>
         </div>
+        <div className="annotation-help">
+          Mark each physical print with one polygon. Drag its corners to the print edges; a magnifier appears while dragging for precise placement. Then click Save. Suggestions are only a starting point and are not saved until you save them.
+        </div>
       </section>
       <section className="side-surface">
         <div className="section-title">
@@ -1050,6 +1179,16 @@ function TrainingAnnotationView() {
           <StatusBadge status={busy || "ready"} />
         </div>
         <div className="stack">
+          <div className="annotation-progress" aria-label={`${completedCount} of ${images.length} pages saved`}>
+            <div className="annotation-progress-heading">
+              <strong>Progress</strong>
+              <span>{completedCount}/{images.length} saved ({progressPercent}%)</span>
+            </div>
+            <div className="annotation-progress-track"><span style={{ width: `${progressPercent}%` }} /></div>
+          </div>
+          <button className="icon-button text-button" type="button" disabled={!selectedImage || Boolean(busy)} onClick={selectNextPending}>
+            Next unlabelled page
+          </button>
           <label className="file-pick icon-button text-button">
             <Upload size={16} />
             Upload Images
@@ -1352,18 +1491,19 @@ function ReviewView({ albumId, pages, photos, selectedPageId, setSelectedPageId,
 
 function GalleryView({ photos, onOpenPhoto = () => {} }) {
   const [detail, setDetail] = useState(null);
-  const [selectedVariant, setSelectedVariant] = useState("enhanced");
+  const [selectedVariant, setSelectedVariant] = useState("original");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
 
   const variantEntries = availableVariantEntries(detail);
-  const selectedVariantUrl = detail?.urls?.[selectedVariant] || detail?.urls?.enhanced || detail?.urls?.original;
+  const selectedVariantUrl = detail?.urls?.[selectedVariant] || detail?.urls?.original;
   const selectedVariantRecord = detail?.enhancement_applied?.variants?.[selectedVariant];
 
   useEffect(() => {
     if (!detail) return;
     const entries = availableVariantEntries(detail);
-    const preferred = entries.find(([name]) => name === "enhanced") || entries[0];
+    const preferred = entries.find(([name]) => name === detail?.enhancement_applied?.selected_variant)
+      || entries.find(([name]) => name === "original") || entries[0];
     if (preferred) setSelectedVariant(preferred[0]);
   }, [detail?.id]);
 
@@ -1589,6 +1729,7 @@ function CaptureView({ albumId, refresh }) {
 }
 
 export default function App() {
+  if (window.location.pathname.startsWith("/mobile")) return <MobileApp />;
   const [activeTab, setActiveTab] = useState("analyze");
   const [albums, setAlbums] = useState([]);
   const [selectedAlbumId, setSelectedAlbumId] = useState(null);

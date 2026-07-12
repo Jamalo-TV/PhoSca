@@ -44,6 +44,20 @@ class PhotoStatus(str, Enum):
     failed = "failed"
 
 
+class RunStatus(str, Enum):
+    pending = "pending"
+    running = "running"
+    review_needed = "review_needed"
+    completed = "completed"
+    failed = "failed"
+
+
+class ApiRole(str, Enum):
+    viewer = "viewer"
+    editor = "editor"
+    admin = "admin"
+
+
 class OCRTextType(str, Enum):
     caption = "caption"
     directory_name = "directory_name"
@@ -54,6 +68,7 @@ class Album(Base, TimestampMixin):
     __tablename__ = "albums"
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID | None] = mapped_column(GUID(), ForeignKey("tenants.id", ondelete="RESTRICT"))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     directory_path: Mapped[str | None] = mapped_column(String(512))
@@ -68,6 +83,7 @@ class Album(Base, TimestampMixin):
 
     pages: Mapped[list["Page"]] = relationship(back_populates="album", cascade="all, delete-orphan")
     photos: Mapped[list["ExtractedPhoto"]] = relationship(back_populates="album", cascade="all, delete-orphan")
+    tenant: Mapped["Tenant | None"] = relationship(back_populates="albums")
 
 
 class Page(Base, TimestampMixin):
@@ -97,6 +113,7 @@ class Page(Base, TimestampMixin):
     album: Mapped[Album] = relationship(back_populates="pages")
     photos: Mapped[list["ExtractedPhoto"]] = relationship(back_populates="page", cascade="all, delete-orphan")
     ocr_results: Mapped[list["OCRResult"]] = relationship(back_populates="page", cascade="all, delete-orphan")
+    processing_runs: Mapped[list["ProcessingRun"]] = relationship(back_populates="page", cascade="all, delete-orphan")
 
 
 class ExtractedPhoto(Base, TimestampMixin):
@@ -167,3 +184,121 @@ class AuditLog(Base, TimestampMixin):
     entity_id: Mapped[UUID] = mapped_column(GUID(), nullable=False)
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     details: Mapped[dict] = mapped_column(JSONType, default=dict, server_default=text("'{}'"), nullable=False)
+
+
+class Tenant(Base, TimestampMixin):
+    __tablename__ = "tenants"
+
+    id: Mapped[UUID] = mapped_column(GUID(), primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
+
+    albums: Mapped[list[Album]] = relationship(back_populates="tenant")
+    api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
+
+
+class ApiKey(Base, TimestampMixin):
+    __tablename__ = "api_keys"
+    __table_args__ = (
+        UniqueConstraint("key_hash", name="uq_api_keys_key_hash"),
+        Index("ix_api_keys_tenant_id_active", "tenant_id", "is_active"),
+    )
+
+    id: Mapped[UUID] = mapped_column(GUID(), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    role: Mapped[ApiRole] = mapped_column(enum_column(ApiRole, "api_role"), nullable=False, default=ApiRole.viewer)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
+
+    tenant: Mapped[Tenant] = relationship(back_populates="api_keys")
+
+
+class ProcessingRun(Base, TimestampMixin):
+    """Immutable configuration/input identity for one page-processing run."""
+
+    __tablename__ = "processing_runs"
+    __table_args__ = (
+        UniqueConstraint("page_id", "input_sha256", "pipeline_version", "config_fingerprint", name="uq_processing_run_identity"),
+        Index("ix_processing_runs_page_id_status", "page_id", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(GUID(), primary_key=True, default=uuid4)
+    page_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("pages.id", ondelete="CASCADE"), nullable=False)
+    input_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    pipeline_version: Mapped[str] = mapped_column(String(120), nullable=False)
+    config_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[RunStatus] = mapped_column(enum_column(RunStatus, "run_status"), default=RunStatus.pending, server_default=RunStatus.pending.value, nullable=False)
+    manifest: Mapped[dict] = mapped_column(JSONType, default=dict, server_default=text("'{}'"), nullable=False)
+
+    page: Mapped[Page] = relationship(back_populates="processing_runs")
+    stages: Mapped[list["StageRun"]] = relationship(back_populates="run", cascade="all, delete-orphan")
+    assets: Mapped[list["Asset"]] = relationship(back_populates="run", cascade="all, delete-orphan")
+
+
+class StageRun(Base, TimestampMixin):
+    """Append-only stage evidence; retries are represented by ``attempt``."""
+
+    __tablename__ = "stage_runs"
+    __table_args__ = (
+        UniqueConstraint("processing_run_id", "stage", "attempt", name="uq_stage_run_attempt"),
+        Index("ix_stage_runs_run_stage", "processing_run_id", "stage"),
+    )
+
+    id: Mapped[UUID] = mapped_column(GUID(), primary_key=True, default=uuid4)
+    processing_run_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("processing_runs.id", ondelete="CASCADE"), nullable=False)
+    stage: Mapped[str] = mapped_column(String(80), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
+    status: Mapped[RunStatus] = mapped_column(enum_column(RunStatus, "stage_run_status"), nullable=False, default=RunStatus.pending)
+    input_asset_sha256: Mapped[str | None] = mapped_column(String(64))
+    output_asset_sha256: Mapped[str | None] = mapped_column(String(64))
+    details: Mapped[dict] = mapped_column(JSONType, default=dict, server_default=text("'{}'"), nullable=False)
+
+    run: Mapped[ProcessingRun] = relationship(back_populates="stages")
+    assets: Mapped[list["Asset"]] = relationship(back_populates="stage", cascade="all, delete-orphan")
+
+
+class Asset(Base, TimestampMixin):
+    """Immutable file artifact produced or consumed by a processing run."""
+
+    __tablename__ = "assets"
+    __table_args__ = (
+        UniqueConstraint("storage_path", name="uq_assets_storage_path"),
+        Index("ix_assets_content_sha256", "content_sha256"),
+        Index("ix_assets_processing_run_id", "processing_run_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(GUID(), primary_key=True, default=uuid4)
+    processing_run_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("processing_runs.id", ondelete="CASCADE"), nullable=False)
+    stage_run_id: Mapped[UUID | None] = mapped_column(GUID(), ForeignKey("stage_runs.id", ondelete="SET NULL"))
+    parent_asset_id: Mapped[UUID | None] = mapped_column(GUID(), ForeignKey("assets.id", ondelete="SET NULL"))
+    role: Mapped[str] = mapped_column(String(80), nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(100), nullable=False, default="image/jpeg", server_default="image/jpeg")
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    asset_metadata: Mapped[dict] = mapped_column("metadata", JSONType, default=dict, server_default=text("'{}'"), nullable=False)
+
+    run: Mapped[ProcessingRun] = relationship(back_populates="assets")
+    stage: Mapped[StageRun | None] = relationship(back_populates="assets")
+    parent_asset: Mapped["Asset | None"] = relationship(remote_side=[id])
+
+
+class ReviewEvent(Base, TimestampMixin):
+    """Append-only mobile review decision; corrections create a new event."""
+
+    __tablename__ = "review_events"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_review_events_idempotency_key"),
+        Index("ix_review_events_task_created", "task_type", "task_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(GUID(), primary_key=True, default=uuid4)
+    task_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    task_id: Mapped[UUID] = mapped_column(GUID(), nullable=False)
+    answer: Mapped[str] = mapped_column(String(120), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(120))
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    reviewer: Mapped[str] = mapped_column(String(120), default="local-mobile", nullable=False)
+    event_metadata: Mapped[dict] = mapped_column("metadata", JSONType, default=dict, server_default=text("'{}'"), nullable=False)

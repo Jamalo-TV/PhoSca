@@ -21,6 +21,8 @@ album_status = sa.Enum("pending", "processing", "completed", "failed", name="alb
 page_status = sa.Enum("uploaded", "queued", "processing", "review_needed", "completed", "failed", name="page_status")
 photo_status = sa.Enum("pending", "review_needed", "completed", "failed", name="photo_status")
 ocr_text_type = sa.Enum("caption", "directory_name", "unknown", name="ocr_text_type")
+uuid_type = sa.String(length=36).with_variant(postgresql.UUID(as_uuid=True), "postgresql")
+json_type = sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql")
 
 
 def timestamps() -> list[sa.Column]:
@@ -33,7 +35,7 @@ def timestamps() -> list[sa.Column]:
 def upgrade() -> None:
     op.create_table(
         "albums",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", uuid_type, nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("directory_path", sa.String(length=512), nullable=True),
@@ -45,8 +47,8 @@ def upgrade() -> None:
     )
     op.create_table(
         "pages",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("album_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", uuid_type, nullable=False),
+        sa.Column("album_id", uuid_type, nullable=False),
         sa.Column("original_filename", sa.String(length=255), nullable=False),
         sa.Column("storage_path", sa.String(length=512), nullable=False),
         sa.Column("file_size_bytes", sa.BigInteger(), nullable=True),
@@ -54,7 +56,7 @@ def upgrade() -> None:
         sa.Column("blur_score", sa.Float(), nullable=True),
         sa.Column("status", page_status, server_default="uploaded", nullable=False),
         sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("processing_metadata", postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'::jsonb"), nullable=False),
+        sa.Column("processing_metadata", json_type, server_default=sa.text("'{}'"), nullable=False),
         *timestamps(),
         sa.ForeignKeyConstraint(["album_id"], ["albums.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -65,19 +67,19 @@ def upgrade() -> None:
 
     op.create_table(
         "extracted_photos",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("page_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("album_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", uuid_type, nullable=False),
+        sa.Column("page_id", uuid_type, nullable=False),
+        sa.Column("album_id", uuid_type, nullable=False),
         sa.Column("storage_path", sa.String(length=512), nullable=False),
         sa.Column("original_storage_path", sa.String(length=512), nullable=True),
-        sa.Column("bounding_box", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("segmentation_mask", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("bounding_box", json_type, nullable=False),
+        sa.Column("segmentation_mask", json_type, nullable=True),
         sa.Column("segmentation_confidence", sa.Float(), nullable=True),
         sa.Column("aspect_ratio", sa.Float(), nullable=True),
         sa.Column("geometry_valid", sa.Boolean(), server_default=sa.true(), nullable=False),
         sa.Column("phash", sa.String(length=64), nullable=True),
-        sa.Column("is_duplicate_of", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("enhancement_applied", postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'::jsonb"), nullable=False),
+        sa.Column("is_duplicate_of", uuid_type, nullable=True),
+        sa.Column("enhancement_applied", json_type, server_default=sa.text("'{}'"), nullable=False),
         sa.Column("status", photo_status, server_default="pending", nullable=False),
         *timestamps(),
         sa.ForeignKeyConstraint(["album_id"], ["albums.id"], ondelete="CASCADE"),
@@ -90,12 +92,12 @@ def upgrade() -> None:
 
     op.create_table(
         "ocr_results",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("page_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("photo_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("id", uuid_type, nullable=False),
+        sa.Column("page_id", uuid_type, nullable=False),
+        sa.Column("photo_id", uuid_type, nullable=True),
         sa.Column("text_content", sa.Text(), nullable=False),
         sa.Column("text_type", ocr_text_type, nullable=True),
-        sa.Column("bounding_box", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("bounding_box", json_type, nullable=True),
         sa.Column("ocr_engine", sa.String(length=50), nullable=False),
         sa.Column("confidence", sa.Float(), nullable=True),
         sa.Column("spatial_classification_reason", sa.Text(), nullable=True),
@@ -106,20 +108,21 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_ocr_results_page_id_photo_id", "ocr_results", ["page_id", "photo_id"])
-    op.create_index(
-        "ix_ocr_results_text_content_fts",
-        "ocr_results",
-        [sa.text("to_tsvector('english', text_content)")],
-        postgresql_using="gin",
-    )
+    if op.get_bind().dialect.name == "postgresql":
+        op.create_index(
+            "ix_ocr_results_text_content_fts",
+            "ocr_results",
+            [sa.text("to_tsvector('english', text_content)")],
+            postgresql_using="gin",
+        )
 
     op.create_table(
         "audit_logs",
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
         sa.Column("entity_type", sa.String(length=50), nullable=False),
-        sa.Column("entity_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("entity_id", uuid_type, nullable=False),
         sa.Column("action", sa.String(length=100), nullable=False),
-        sa.Column("details", postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'::jsonb"), nullable=False),
+        sa.Column("details", json_type, server_default=sa.text("'{}'"), nullable=False),
         *timestamps(),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -133,7 +136,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_audit_logs_entity_type_entity_id_created_at", table_name="audit_logs")
     op.drop_table("audit_logs")
-    op.drop_index("ix_ocr_results_text_content_fts", table_name="ocr_results")
+    if op.get_bind().dialect.name == "postgresql":
+        op.drop_index("ix_ocr_results_text_content_fts", table_name="ocr_results")
     op.drop_index("ix_ocr_results_page_id_photo_id", table_name="ocr_results")
     op.drop_table("ocr_results")
     op.drop_index("ix_extracted_photos_phash", table_name="extracted_photos")

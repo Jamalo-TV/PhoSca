@@ -30,6 +30,7 @@ async def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncGenera
     monkeypatch.setenv("MAX_REQUEST_SIZE", "8192")
     monkeypatch.setenv("LOG_LEVEL", "WARNING")
     monkeypatch.setenv("SEGMENTATION_TRAINING_WORKSPACE", str(tmp_path / "segmentation_training"))
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "false")
 
     from app.config import get_settings
     from app.database import Base, dispose_engine, get_engine

@@ -22,5 +22,9 @@ else
 fi
 
 rm -rf "${WORKDIR}"
-echo "Encrypted backup written under ${BACKUP_ROOT}"
-
+ENCRYPTED_ARCHIVE="${WORKDIR}.tar.gz.gpg"
+ARCHIVE_SHA256="$(sha256sum "${ENCRYPTED_ARCHIVE}" | awk '{print $1}')"
+ARCHIVE_BYTES="$(stat -c '%s' "${ENCRYPTED_ARCHIVE}")"
+printf '{"schema_version":1,"created_at":"%s","archive":"%s","sha256":"%s","bytes":%s,"restore_tested":false}\n' \
+  "${TIMESTAMP}" "$(basename "${ENCRYPTED_ARCHIVE}")" "${ARCHIVE_SHA256}" "${ARCHIVE_BYTES}" > "${ENCRYPTED_ARCHIVE}.evidence.json"
+echo "Encrypted backup and evidence written under ${BACKUP_ROOT}"

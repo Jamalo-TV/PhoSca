@@ -1,6 +1,9 @@
 from app.models.entities import (
     Album,
     AlbumStatus,
+    ApiKey,
+    ApiRole,
+    Asset,
     AuditLog,
     ExtractedPhoto,
     OCRResult,
@@ -8,11 +11,19 @@ from app.models.entities import (
     Page,
     PageStatus,
     PhotoStatus,
+    ProcessingRun,
+    ReviewEvent,
+    RunStatus,
+    StageRun,
+    Tenant,
 )
 
 __all__ = [
     "Album",
     "AlbumStatus",
+    "ApiKey",
+    "ApiRole",
+    "Asset",
     "AuditLog",
     "ExtractedPhoto",
     "OCRResult",
@@ -20,5 +31,9 @@ __all__ = [
     "Page",
     "PageStatus",
     "PhotoStatus",
+    "ProcessingRun",
+    "ReviewEvent",
+    "RunStatus",
+    "StageRun",
+    "Tenant",
 ]
-

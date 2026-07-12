@@ -56,7 +56,11 @@ def main() -> None:
             device=args.device,
             task="segment",
         )
-        best_weights = args.project / args.name / "weights" / "best.pt"
+        # Ultralytics may normalize a relative --project path beneath its
+        # task-specific run directory.  The returned save_dir is the only
+        # authoritative location of the checkpoint for this invocation.
+        save_dir = Path(getattr(train_result, "save_dir", args.project / args.name))
+        best_weights = save_dir / "weights" / "best.pt"
         export_model = YOLO(str(best_weights)) if best_weights.exists() else model
 
     args.export.parent.mkdir(parents=True, exist_ok=True)
@@ -65,10 +69,27 @@ def main() -> None:
     if exported.resolve() != args.export.resolve():
         args.export.write_bytes(exported.read_bytes())
 
+    metric_keys = (
+        "metrics/precision(B)",
+        "metrics/recall(B)",
+        "metrics/mAP50(B)",
+        "metrics/mAP50-95(B)",
+        "metrics/precision(M)",
+        "metrics/recall(M)",
+        "metrics/mAP50(M)",
+        "metrics/mAP50-95(M)",
+        "fitness",
+    )
+    result_metrics = getattr(train_result, "results_dict", {})
+    metrics = {
+        key: float(result_metrics[key])
+        for key in metric_keys
+        if isinstance(result_metrics, dict) and key in result_metrics
+    }
     report = {
         "data": str(args.data),
         "base_model": args.base_model,
-        "training": str(train_result),
+        "training": {"skipped": args.skip_train, "metrics": metrics},
         "export_weights": str(getattr(export_model, "ckpt_path", "") or args.weights or "in_memory_model"),
         "onnx_export": str(args.export),
         "imgsz": args.imgsz,

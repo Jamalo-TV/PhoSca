@@ -1,0 +1,9 @@
+{
+  "models": {
+    "yolov8-seg-album.onnx": {
+      "sha256": "replace-with-the-verified-64-character-sha256-before-deployment",
+      "license": "SPDX-License-Identifier-or-approved-internal-license",
+      "input": {"layout": "NCHW", "width": 1024, "height": 1024}
+    }
+  }
+}

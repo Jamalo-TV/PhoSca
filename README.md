@@ -17,6 +17,9 @@ Services:
 - Frontend dashboard: `http://localhost:5173`
 - Backend API: `http://localhost:8000`
 - Metrics: `http://localhost:8000/metrics`
+- CPU worker queue: decode, geometry, hashing, persistence
+- Analysis queue: segmentation/OCR, one resident process per accelerator
+- Restoration queue: optional enhancement, one resident process per accelerator
 
 The backend and worker run as UID `1000`, containers use `no-new-privileges`, and the storage volume is configured with `noexec,nosuid,nodev`.
 
@@ -38,7 +41,7 @@ For a lightweight SQLite-backed dev run:
 $env:DATABASE_URL='sqlite+aiosqlite:///./dev.db'
 $env:REDIS_URL='redis://localhost:6379/0'
 $env:STORAGE_PATH='C:\Users\gabri\Documents\Projects\PhoSca\storage'
-python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 ```
 
 In another terminal:
@@ -47,6 +50,17 @@ In another terminal:
 cd frontend
 npm run dev
 ```
+
+The development servers listen on all network interfaces. Open
+`https://<PC-IP>:5173/mobile` on a phone in the same WLAN (for example,
+`https://192.168.1.20:5173/mobile`). HTTPS is required for the live in-browser
+camera. Trust the local certificate on the phone once; otherwise the browser
+will block `getUserMedia`. The desktop interface remains available at the root
+URL. Windows Firewall may ask once for permission on private networks.
+
+Original mobile captures are stored unchanged below
+`storage/uploads/<album-id>/`. The database keeps the original filename,
+SHA-256 hash and the generated page ID. Derived photos are stored separately.
 
 ## ML Models
 
@@ -120,6 +134,16 @@ python scripts/train_segmentation_model.py --data data/data.yaml --export models
 python scripts/train_orientation_model.py --images data/orientation_photos --output models/photo-orientation.onnx
 python scripts/validate_segmentation.py --album-id <album-id>
 python scripts/validate_ocr.py --album-id <album-id>
+```
+
+Safety and operations evidence:
+
+```bash
+python scripts/evaluate_onnx_segmentation.py --model models/yolov8-seg-album.onnx --manifest models/manifest.json
+python scripts/fit_confidence_calibration.py labelled-predictions.json --holdout-id <independent-holdout-id>
+python scripts/evaluate_shadow_drift.py stable.json shadow.json --output evidence/shadow-drift.json
+python scripts/run_retention.py
+python scripts/verify_launch_gates.py evidence/launch-gates.json
 ```
 
 `scripts/setup_segmentation_training.py` orchestrates the normal bootstrap/prepare/train loop. `scripts/export_label_studio_tasks.py` creates Label Studio import JSON and can seed editable polygon predictions from the classical detector. `scripts/convert_label_studio_to_yolo.py` converts reviewed Label Studio JSON exports into YOLO segmentation labels. `scripts/export_reviewed_yolo_labels.py` exports masks corrected in the PhoSca review canvas into the same YOLO label directory. `scripts/prepare_yolo_dataset.py` recreates deterministic train/val/golden splits from raw images plus exported YOLO labels. `scripts/validate_yolo_dataset.py` checks label completeness, polygon validity, and golden leakage before training. `scripts/train_segmentation_model.py` lazily imports Ultralytics; install it only in the training environment if it is not already available. `scripts/train_orientation_model.py` requires PyTorch plus `onnx`, uses manually upright crops under `data/orientation_photos`, and exports a 0/90/180/270 correction classifier. `scripts/validate_segmentation.py` measures polygon IoU from saved segmentation masks and falls back to boxes only for legacy rows without masks. Production sign-off requires mean IoU `> 0.85` and mean CER `< 0.10`.

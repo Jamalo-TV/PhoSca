@@ -1,14 +1,16 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
+from app.core.auth import Principal, album_for_principal, require_write_principal
 from app.core.rate_limit import limiter
 from app.database import get_async_session
 from app.schemas import PageUploadResponse
 from app.services.chunked_uploads import receive_upload_chunk
 from app.services.uploads import save_page_uploads
+from app.services.pipeline import process_pages_serialized
 
 router = APIRouter(prefix="/api/v1/albums/{album_id}/pages", tags=["pages"])
 
@@ -17,28 +19,43 @@ router = APIRouter(prefix="/api/v1/albums/{album_id}/pages", tags=["pages"])
 @limiter.limit("10/minute")
 async def upload_pages(
     request: Request,
+    background_tasks: BackgroundTasks,
     album_id: UUID,
     files: list[UploadFile] | None = File(default=None),
     file: list[UploadFile] | None = File(default=None),
     session: AsyncSession = Depends(get_async_session),
     settings: Settings = Depends(get_settings),
+    principal: Principal | None = Depends(require_write_principal),
 ) -> PageUploadResponse:
     uploaded_files = (files or []) + (file or [])
     if not uploaded_files:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one file is required.")
-    return await save_page_uploads(session=session, settings=settings, album_id=album_id, files=uploaded_files)
+    await album_for_principal(session, album_id, principal)
+    response = await save_page_uploads(
+        session=session,
+        settings=settings,
+        album_id=album_id,
+        files=uploaded_files,
+        idempotent_retry=request.headers.get("X-Upload-Retry") == "1",
+    )
+    if settings.auto_analyze_uploads:
+        background_tasks.add_task(process_pages_serialized, [item.page_id for item in response.pages], settings)
+    return response
 
 
 @router.post("/upload/chunk")
 @limiter.limit("30/minute")
 async def upload_page_chunk(
     request: Request,
+    background_tasks: BackgroundTasks,
     album_id: UUID,
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_async_session),
     settings: Settings = Depends(get_settings),
+    principal: Principal | None = Depends(require_write_principal),
 ):
-    return await receive_upload_chunk(
+    await album_for_principal(session, album_id, principal)
+    response = await receive_upload_chunk(
         session=session,
         settings=settings,
         album_id=album_id,
@@ -46,4 +63,8 @@ async def upload_page_chunk(
         original_filename=request.headers.get("X-Filename"),
         content_range=request.headers.get("Content-Range"),
         chunk=file,
+        idempotent_retry=request.headers.get("X-Upload-Retry") == "1",
     )
+    if settings.auto_analyze_uploads and hasattr(response, "pages"):
+        background_tasks.add_task(process_pages_serialized, [item.page_id for item in response.pages], settings)
+    return response

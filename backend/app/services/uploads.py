@@ -18,6 +18,7 @@ async def save_page_uploads(
     settings: Settings,
     album_id: UUID,
     files: list[UploadFile],
+    idempotent_retry: bool = False,
 ) -> PageUploadResponse:
     if not files:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one file is required.")
@@ -34,6 +35,8 @@ async def save_page_uploads(
             max_file_size=settings.max_upload_size,
             max_request_size=settings.max_request_size,
             current_request_size=request_size,
+            max_image_pixels=settings.max_image_pixels,
+            max_image_frames=settings.max_image_frames,
         )
         validated_uploads.append(validated_upload)
 
@@ -42,6 +45,7 @@ async def save_page_uploads(
         settings=settings,
         album_id=album_id,
         validated_uploads=validated_uploads,
+        idempotent_retry=idempotent_retry,
     )
 
 
@@ -51,6 +55,7 @@ async def save_validated_page_uploads(
     settings: Settings,
     album_id: UUID,
     validated_uploads: list[ValidatedUpload],
+    idempotent_retry: bool = False,
 ) -> PageUploadResponse:
     album = await session.get(Album, album_id)
     if album is None:
@@ -69,10 +74,15 @@ async def save_validated_page_uploads(
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Duplicate file in upload request.")
             seen_hashes.add(file_hash)
 
-            existing_page_id = await session.scalar(
-                select(Page.id).where(Page.album_id == album.id, Page.file_hash_sha256 == file_hash)
+            existing_page = await session.scalar(
+                select(Page).where(Page.album_id == album.id, Page.file_hash_sha256 == file_hash)
             )
-            if existing_page_id is not None:
+            # Mobile retries are intentionally idempotent. Returning the original,
+            # hash-verified page lets the client safely remove its offline copy.
+            if existing_page is not None:
+                if idempotent_retry:
+                    created_pages.append(existing_page)
+                    continue
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="File was already uploaded.")
 
             page_id = uuid4()
@@ -92,6 +102,7 @@ async def save_validated_page_uploads(
                     "upload": {
                         "mime_type": validated_upload.mime_type,
                         "stored_extension": validated_upload.extension,
+                        "decode": validated_upload.decode_metadata,
                     }
                 },
             )
@@ -112,7 +123,7 @@ async def save_validated_page_uploads(
             )
             created_pages.append(page)
 
-        album.total_pages += len(created_pages)
+        album.total_pages += len(saved_paths)
         await session.commit()
     except Exception:
         await session.rollback()
@@ -123,7 +134,13 @@ async def save_validated_page_uploads(
 
     return PageUploadResponse(
         pages=[
-            PageUploadItem(page_id=page.id, filename=page.original_filename, status=page.status)
+            PageUploadItem(
+                page_id=page.id,
+                filename=page.original_filename,
+                status=page.status,
+                sha256=page.file_hash_sha256,
+                verified=True,
+            )
             for page in created_pages
         ]
     )

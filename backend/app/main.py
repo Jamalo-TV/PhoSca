@@ -12,7 +12,7 @@ from app.core.logging import configure_logging
 from app.core.rate_limit import limiter
 from app.database import get_session_factory
 from app.models import AuditLog
-from app.routers import albums, jobs, pages, photos, review, search, training
+from app.routers import albums, health, jobs, pages, photos, review, runs, search, training
 
 
 def error_response(request: Request, status_code: int, error: str, detail: str) -> JSONResponse:
@@ -34,7 +34,7 @@ def create_app() -> FastAPI:
         allow_origins=settings.cors_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],
+        allow_headers=["Content-Type", "Authorization", "X-CSRF-Token", "X-Upload-Retry", "Content-Range", "X-Upload-ID", "X-Filename"],
     )
 
     @app.middleware("http")
@@ -124,8 +124,10 @@ def create_app() -> FastAPI:
     app.include_router(jobs.router)
     app.include_router(photos.router)
     app.include_router(review.router)
+    app.include_router(runs.router)
     app.include_router(search.router)
     app.include_router(training.router)
+    app.include_router(health.router)
     try:
         from prometheus_fastapi_instrumentator import Instrumentator
 

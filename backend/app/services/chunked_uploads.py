@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.schemas.pages import PageUploadResponse
 from app.services.uploads import save_validated_page_uploads
-from app.utils.file_security import detect_mime_type, validate_original_filename, ALLOWED_MIME_TYPES, ValidatedUpload
+from app.utils.file_security import ALLOWED_MIME_TYPES, ValidatedUpload, detect_mime_type, inspect_image_content, validate_original_filename
 
 
 CONTENT_RANGE_PATTERN = re.compile(r"^bytes (?P<start>\d+)-(?P<end>\d+)/(?P<total>\d+)$")
@@ -23,6 +23,7 @@ async def receive_upload_chunk(
     original_filename: str | None,
     content_range: str | None,
     chunk: UploadFile,
+    idempotent_retry: bool = False,
 ) -> dict | PageUploadResponse:
     if not content_range:
         raise HTTPException(status_code=status.HTTP_411_LENGTH_REQUIRED, detail="Content-Range header is required.")
@@ -73,6 +74,11 @@ async def receive_upload_chunk(
     detected_mime_type = detect_mime_type(content)
     if detected_mime_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only JPEG and PNG uploads are allowed.")
+    decode_metadata = inspect_image_content(
+        content,
+        max_image_pixels=settings.max_image_pixels,
+        max_image_frames=settings.max_image_frames,
+    )
 
     return await save_validated_page_uploads(
         session=session,
@@ -84,6 +90,8 @@ async def receive_upload_chunk(
                 content=content,
                 mime_type=detected_mime_type,
                 extension=ALLOWED_MIME_TYPES[detected_mime_type],
+                decode_metadata=decode_metadata,
             )
         ],
+        idempotent_retry=idempotent_retry,
     )

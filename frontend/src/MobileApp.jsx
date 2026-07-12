@@ -1,0 +1,274 @@
+import { Camera, Check, ChevronLeft, CircleHelp, CloudOff, Images, ListChecks, RefreshCw, Save, Upload, WandSparkles, ZoomIn } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createAlbum, getReviewProgress, getReviewQueue, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
+import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
+
+const cropAnswers = {
+  segmentation: [
+    ["correct", "Alle Prints gefunden"], ["missing_print", "Print fehlt"],
+    ["too_many", "Zu viele Erkennungen"], ["unsure", "Unsicher"],
+  ],
+  geometry: [
+    ["correct", "Korrekt & vollständig"], ["too_tight", "Zu eng"],
+    ["too_wide", "Zu weit"], ["wrong_object", "Falsches Objekt"],
+    ["split_print", "Print geteilt"], ["merged_prints", "Prints zusammen"],
+    ["protected_cut", "Motiv abgeschnitten"], ["unsure", "Unsicher"],
+  ],
+};
+
+function OnlineBadge() {
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    addEventListener("online", update); addEventListener("offline", update);
+    return () => { removeEventListener("online", update); removeEventListener("offline", update); };
+  }, []);
+  return <span className={`mobile-status ${online ? "online" : "offline"}`}>{online ? "Online · synchronisiert" : "Offline · lokal gesichert"}</span>;
+}
+
+function MobileHeader({ title, onBack }) {
+  return <header className="mobile-header"><div>{onBack && <button className="mobile-icon" onClick={onBack} aria-label="Zurück"><ChevronLeft /></button>}<span className="mobile-mark">P</span><strong>{title}</strong></div><OnlineBadge /></header>;
+}
+
+function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome }) {
+  const [queue, setQueue] = useState([]); const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false);
+  const [streaming, setStreaming] = useState(false); const [cameraError, setCameraError] = useState(""); const [lastCapture, setLastCapture] = useState("");
+  const videoRef = useRef(null); const streamRef = useRef(null);
+  const refreshQueue = useCallback(() => listQueuedUploads().then(setQueue), []);
+  useEffect(() => { refreshQueue(); }, [refreshQueue]);
+  useEffect(() => () => streamRef.current?.getTracks().forEach(track => track.stop()), []);
+
+  async function startCamera() {
+    setCameraError("");
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) return setCameraError("Die Live-Kamera benötigt die HTTPS-Adresse dieser Seite.");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 4096 }, height: { ideal: 3072 } }, audio: false });
+      streamRef.current?.getTracks().forEach(track => track.stop()); streamRef.current = stream;
+      videoRef.current.srcObject = stream; await videoRef.current.play(); setStreaming(true);
+    } catch (error) {
+      setCameraError(error.name === "NotAllowedError" ? "Kamerazugriff wurde nicht erlaubt." : `Kamera konnte nicht gestartet werden: ${error.message}`);
+    }
+  }
+
+  function captureInBrowser() {
+    const video = videoRef.current; if (!video?.videoWidth || busy) return;
+    const canvas = document.createElement("canvas"); canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    canvas.getContext("2d", { alpha: false }).drawImage(video, 0, 0);
+    canvas.toBlob(blob => {
+      if (!blob) return; if (lastCapture) URL.revokeObjectURL(lastCapture); setLastCapture(URL.createObjectURL(blob));
+      receive([new File([blob], `capture-${new Date().toISOString().replaceAll(":", "-")}.jpg`, { type: "image/jpeg", lastModified: Date.now() })]);
+      navigator.vibrate?.(35);
+    }, "image/jpeg", 0.96);
+  }
+
+  async function addBatch() {
+    const name = prompt("Name des neuen Aufnahme-Batches", `Album ${new Date().toLocaleDateString("de-CH")}`);
+    if (!name) return; const album = await createAlbum({ name, description: "Mobiler Capture-Batch" }); setActiveAlbumId(album.id); await reload();
+  }
+
+  async function receive(files) {
+    if (!activeAlbumId || !files.length) return; setBusy(true); setMessage("");
+    for (const file of files) {
+      try {
+        if (!navigator.onLine) throw new Error("offline");
+        const result = file.size > 20 * 1024 * 1024 ? await uploadFileChunked(activeAlbumId, file) : await uploadFiles(activeAlbumId, [file]);
+        if (!result?.pages?.[0]?.verified) throw new Error("Serverbestätigung fehlt");
+        setMessage("Auf PC gespeichert, geprüft und zur Analyse eingeplant.");
+      } catch {
+        await queueUpload(activeAlbumId, [file]); setMessage("Lokal gesichert – wartet auf Upload.");
+      }
+    }
+    await refreshQueue(); await reload(); setBusy(false);
+  }
+
+  async function retry() { setBusy(true); await retryQueuedUploads(setMessage); await refreshQueue(); await reload(); setBusy(false); }
+
+  return <div className="mobile-shell"><MobileHeader title="Seiten aufnehmen" onBack={goHome} /><main className="mobile-content">
+    <section className="mobile-card batch-picker"><label>Album / Batch</label><div><select value={activeAlbumId || ""} onChange={e => setActiveAlbumId(e.target.value)}><option value="" disabled>Batch auswählen</option>{albums.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select><button className="mobile-icon light" onClick={addBatch}>+</button></div></section>
+    <section className="capture-stage"><div className={`live-camera ${streaming ? "streaming" : ""}`}><video ref={videoRef} autoPlay playsInline muted />{!streaming && <div className="page-guide"><Camera size={44}/><strong>Kamera direkt im Browser</strong><span>Die Aufnahme landet automatisch auf deinem PC.</span></div>}{streaming && <div className="camera-guide"><span>Ganze Albumseite mit etwas Rand ausrichten</span></div>}{lastCapture && <img className="last-capture" src={lastCapture} alt="Letzte Aufnahme" />}</div>
+      {!streaming ? <button className="capture-button" disabled={!activeAlbumId} onClick={startCamera}><Camera/><span>Kamera starten</span></button> : <button className={`shutter-button ${busy ? "busy" : ""}`} disabled={busy || !activeAlbumId} onClick={captureInBrowser} aria-label="Foto jetzt aufnehmen"><span /></button>}
+      {cameraError && <p className="camera-error">{cameraError}</p>}<label className="secondary-capture"><Images size={19}/> Aus Galerie wählen<input type="file" accept="image/*" multiple disabled={!activeAlbumId} onChange={e => receive([...e.target.files])}/></label>
+    </section>{message && <div className="mobile-message"><Check size={18}/>{message}</div>}
+    <section className="queue-card"><div><strong>Upload-Warteschlange</strong><span>{queue.length ? `${queue.length} ausstehend` : "Alles auf dem PC gespeichert"}</span></div>{queue.length > 0 && <button onClick={retry} disabled={busy}><RefreshCw size={18}/> Erneut versuchen</button>}{queue.map(item => <div className="queue-row" key={item.id}><CloudOff/><span><b>{item.file.name}</b><small>{item.status} · Versuch {item.attempts || 0}</small></span><button onClick={() => removeQueuedUpload(item.id).then(refreshQueue)}>×</button></div>)}</section>
+  </main></div>;
+}
+
+function DetectionOverlay({ item, editable = false, onSaved }) {
+  const sourceBox = item.payload?.bounding_box;
+  const detections = sourceBox ? [{ bounding_box: sourceBox, photo_id: item.payload?.photo_id }] : (item.payload?.detections || []);
+  const [quad, setQuad] = useState(() => initialQuad(item.payload?.polygon, sourceBox)); const [saving, setSaving] = useState(false);
+  const [savedCropUrl, setSavedCropUrl] = useState(""); const [saveError, setSaveError] = useState("");
+  const [magnifierEnabled, setMagnifierEnabled] = useState(true);
+  const [magnifier, setMagnifier] = useState({ visible: false, x: 0, y: 0 });
+  useEffect(() => { setQuad(initialQuad(item.payload?.polygon, sourceBox)); setSavedCropUrl(""); setSaveError(""); }, [item.id]);
+  const box = quadToBox(quad);
+  const validQuad = isValidQuad(quad);
+  function moveCorner(event, cornerIndex) {
+    if (!editable || !quad) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId);
+    const svg = event.currentTarget.ownerSVGElement; const rect = svg.getBoundingClientRect();
+    const move = e => {
+      e.preventDefault();
+      const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)); const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+      setMagnifier({ visible: magnifierEnabled, x, y });
+      setSavedCropUrl(""); setSaveError("");
+      setQuad(current => current.map((point,index) => index === cornerIndex ? { x, y } : point));
+    };
+    const initialX = quad[cornerIndex].x; const initialY = quad[cornerIndex].y;
+    setMagnifier({ visible: magnifierEnabled, x: initialX, y: initialY });
+    const up = () => { setMagnifier(current => ({ ...current, visible: false })); removeEventListener("pointermove", move); removeEventListener("pointerup", up); };
+    addEventListener("pointermove", move); addEventListener("pointerup", up, { once: true });
+  }
+  async function save() {
+    if (!validQuad) return; setSaving(true); setSaveError("");
+    try {
+      await patchBoundingBox(item.payload.photo_id, box, { polygon: quad, source: "manual_mobile_quad" });
+      const nextUrl=`/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`;
+      setSavedCropUrl(nextUrl); await onSaved?.({ bounding_box: box, polygon: quad });
+    } catch (error) { setSaveError(error.message || "Ausschnitt konnte nicht gespeichert werden."); }
+    finally { setSaving(false); }
+  }
+  const shown = box ? [{ bounding_box: box, photo_id: item.payload?.photo_id }] : detections;
+  const overlayLabel = item.payload?.detection_count == null ? "1 Crop" : `${item.payload.detection_count} ${item.payload.detection_count === 1 ? "Print" : "Prints"}`;
+  const lensPosition = value => ((0.5 - 3.6 * value) / (1 - 3.6)) * 100;
+  const lensX=Math.max(20,Math.min(80,magnifier.x*100+(magnifier.x>0.5?-24:24)));
+  const lensY=Math.max(20,Math.min(80,magnifier.y*100+(magnifier.y<0.3?25:-25)));
+  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g><polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>{editable && <><div className="quad-hint">Vier nummerierte Ecken frei verschieben · danach wird das Foto geradegerichtet</div><button className={`magnifier-toggle ${magnifierEnabled ? "active" : ""}`} onClick={()=>setMagnifierEnabled(value=>!value)}><ZoomIn size={18}/>{magnifierEnabled ? "Lupe beim Ziehen aktiv" : "Lupe einschalten"}</button><button className="save-crop" onClick={save} disabled={saving || !validQuad}><Save size={18}/>{saving ? "Richtet das Bild …" : "Viereck speichern & geraderichten"}</button>{saveError && <p className="crop-save-error">{saveError}</p>}{quad && <LiveCropPreview src={item.preview_url} quad={quad} savedCropUrl={savedCropUrl}/>}</>}</>;
+}
+
+function initialQuad(polygon, box) {
+  const points=Array.isArray(polygon) ? polygon.filter(point=>Number.isFinite(point?.x)&&Number.isFinite(point?.y)) : [];
+  if(points.length>=4){
+    const tl=points.reduce((a,b)=>a.x+a.y<=b.x+b.y?a:b); const br=points.reduce((a,b)=>a.x+a.y>=b.x+b.y?a:b);
+    const tr=points.reduce((a,b)=>a.x-a.y>=b.x-b.y?a:b); const bl=points.reduce((a,b)=>a.x-a.y<=b.x-b.y?a:b);
+    const candidate=[tl,tr,br,bl].map(point=>({x:Number(point.x),y:Number(point.y)}));
+    if(new Set(candidate.map(point=>`${point.x.toFixed(6)}:${point.y.toFixed(6)}`)).size===4 && isValidQuad(candidate)) return candidate;
+  }
+  if(!box) return null;
+  return [{x:box.x1,y:box.y1},{x:box.x2,y:box.y1},{x:box.x2,y:box.y2},{x:box.x1,y:box.y2}];
+}
+
+function quadToBox(quad) {
+  if(!quad) return null; const xs=quad.map(point=>point.x), ys=quad.map(point=>point.y);
+  return {x1:Math.min(...xs),y1:Math.min(...ys),x2:Math.max(...xs),y2:Math.max(...ys)};
+}
+
+function isValidQuad(quad) {
+  if(!quad || quad.length!==4) return false;
+  const crosses=quad.map((point,index)=>{const next=quad[(index+1)%4],after=quad[(index+2)%4];return (next.x-point.x)*(after.y-next.y)-(next.y-point.y)*(after.x-next.x);});
+  const sameDirection=crosses.every(value=>value>0)||crosses.every(value=>value<0);
+  const area=Math.abs(quad.reduce((sum,point,index)=>sum+point.x*quad[(index+1)%4].y-quad[(index+1)%4].x*point.y,0)/2);
+  return sameDirection && area>0.001;
+}
+
+function drawMappedTriangle(context, image, source, destination) {
+  const [s0,s1,s2]=source, [d0,d1,d2]=destination;
+  const denominator=s0.x*(s1.y-s2.y)+s1.x*(s2.y-s0.y)+s2.x*(s0.y-s1.y);
+  if(Math.abs(denominator)<1e-8) return;
+  const a=(d0.x*(s1.y-s2.y)+d1.x*(s2.y-s0.y)+d2.x*(s0.y-s1.y))/denominator;
+  const c=(d0.x*(s2.x-s1.x)+d1.x*(s0.x-s2.x)+d2.x*(s1.x-s0.x))/denominator;
+  const e=(d0.x*(s1.x*s2.y-s2.x*s1.y)+d1.x*(s2.x*s0.y-s0.x*s2.y)+d2.x*(s0.x*s1.y-s1.x*s0.y))/denominator;
+  const b=(d0.y*(s1.y-s2.y)+d1.y*(s2.y-s0.y)+d2.y*(s0.y-s1.y))/denominator;
+  const d=(d0.y*(s2.x-s1.x)+d1.y*(s0.x-s2.x)+d2.y*(s1.x-s0.x))/denominator;
+  const f=(d0.y*(s1.x*s2.y-s2.x*s1.y)+d1.y*(s2.x*s0.y-s0.x*s2.y)+d2.y*(s0.x*s1.y-s1.x*s0.y))/denominator;
+  context.save(); context.beginPath(); context.moveTo(d0.x,d0.y); context.lineTo(d1.x,d1.y); context.lineTo(d2.x,d2.y); context.closePath(); context.clip();
+  context.setTransform(a,b,c,d,e,f); context.drawImage(image,0,0); context.restore();
+}
+
+function drawQuadPreview(canvas, image, quad) {
+  const source=quad.map(point=>({x:point.x*image.naturalWidth,y:point.y*image.naturalHeight}));
+  const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+  const rawWidth=Math.max(distance(source[0],source[1]),distance(source[3],source[2]),1);
+  const rawHeight=Math.max(distance(source[0],source[3]),distance(source[1],source[2]),1);
+  const width=Math.min(1000,Math.max(240,Math.round(rawWidth))); const height=Math.max(1,Math.round(width*rawHeight/rawWidth));
+  canvas.width=width; canvas.height=height;
+  const destination=[{x:0,y:0},{x:width,y:0},{x:width,y:height},{x:0,y:height}];
+  const context=canvas.getContext("2d",{alpha:false}); context.fillStyle="#071b18"; context.fillRect(0,0,width,height);
+  drawMappedTriangle(context,image,[source[0],source[1],source[2]],[destination[0],destination[1],destination[2]]);
+  drawMappedTriangle(context,image,[source[0],source[2],source[3]],[destination[0],destination[2],destination[3]]);
+}
+
+function LiveCropPreview({ src, quad, savedCropUrl }) {
+  const canvasRef = useRef(null); const [image,setImage]=useState(null);
+  useEffect(() => {
+    let cancelled = false; const nextImage = new Image();
+    nextImage.onload = () => { if(!cancelled) setImage(nextImage); };
+    nextImage.src=src; return () => { cancelled=true; };
+  }, [src]);
+  useEffect(() => { if(image && canvasRef.current && isValidQuad(quad)) drawQuadPreview(canvasRef.current,image,quad); },[image,quad]);
+  return <section className={`live-crop-preview ${savedCropUrl ? "rectified" : ""}`}><header><ZoomIn size={17}/><div><strong>{savedCropUrl ? "Gerichteter Ausschnitt" : "Live-Ausschnitt"}</strong><span>{savedCropUrl ? "Perspektive wurde aus den vier Ecken korrigiert" : "Vorschau folgt allen vier Ecken live"}</span></div></header>{savedCropUrl ? <img src={savedCropUrl} alt="Perspektivisch gerichteter Ausschnitt"/> : <canvas ref={canvasRef}/>}</section>;
+}
+
+function CropReview({ albumId, goHome }) {
+  const [type, setType] = useState("segmentation"); const [items, setItems] = useState([]); const [index, setIndex] = useState(0); const [message, setMessage] = useState("");
+  const leavingRef=useRef(false); const goHomeRef=useRef(goHome);
+  const load = useCallback(async () => { setItems(await getReviewQueue(albumId || undefined, type)); setIndex(0); }, [albumId, type]);
+  useEffect(() => { load().catch(e => setMessage(e.message)); }, [load]); const item = items[index];
+  useEffect(()=>{ goHomeRef.current=goHome; },[goHome]);
+  useEffect(() => {
+    if(!history.state?.phoscaCropGuard){
+      const guardState={...(history.state || {}),phoscaCropGuard:true}; history.pushState(guardState,"",location.href);
+    }
+    const keepReviewOpen=event=>{
+      if(event.state?.phoscaCropGuard) return;
+      if(leavingRef.current){ leavingRef.current=false; goHomeRef.current(); return; }
+      history.forward();
+    };
+    addEventListener("popstate",keepReviewOpen);
+    return ()=>removeEventListener("popstate",keepReviewOpen);
+  },[]);
+  function leaveReview(){ leavingRef.current=true; history.back(); }
+  async function record(value, metadata = {}) {
+    if (!item) return; await submitReviewEvent({ task_type: type, task_id: item.id, answer: value, reason_code: value === "correct" ? null : value, idempotency_key: crypto.randomUUID(), metadata: { page_id: item.page_id, ui: "mobile-v2", ...metadata } }); setMessage("Antwort gespeichert"); setIndex(i => i + 1);
+  }
+  return <div className="mobile-shell crop-review-shell"><MobileHeader title="Cropping prüfen" onBack={leaveReview}/><main className="mobile-content"><div className="review-top"><div><span>Kurze Sitzung</span><strong>{Math.min(index + 1, items.length || 5)} / {Math.min(items.length, 5) || 5}</strong></div><div className="review-progress"><i style={{width:`${Math.min(100, index / Math.max(1, Math.min(items.length,5)) * 100)}%`}}/></div></div>
+    <div className="task-switch"><button className={type === "segmentation" ? "active" : ""} onClick={() => setType("segmentation")}>Printanzahl</button><button className={type === "geometry" ? "active" : ""} onClick={() => setType("geometry")}>Crop-Qualität</button></div>
+    {item ? <><DetectionOverlay item={item} editable={type === "geometry"} onSaved={() => setMessage("Vier Ecken gespeichert und Perspektive korrigiert")}/><section className="answer-grid">{cropAnswers[type].map(([value,label]) => <button key={value} className={value === "correct" ? "good" : ""} onClick={() => record(value)}>{label}</button>)}</section></> : <section className="review-done"><Check size={48}/><h2>{message || "Keine Aufgaben offen"}</h2><p>Neue Aufgaben erscheinen nach der Bildanalyse automatisch.</p><button onClick={load}><RefreshCw/> Neu laden</button></section>}{item && <button className="skip-task" onClick={() => setIndex(i => i + 1)}>Überspringen</button>}
+  </main></div>;
+}
+
+function EnhancementReview({ albumId, goHome }) {
+  const [items, setItems] = useState([]); const [index, setIndex] = useState(0); const [message, setMessage] = useState(""); const [reason, setReason] = useState("");
+  const load = useCallback(async () => { setItems(await getReviewQueue(albumId || undefined, "enhancement")); setIndex(0); }, [albumId]);
+  useEffect(() => { load().catch(e => setMessage(e.message)); }, [load]); const item = items[index];
+  const candidateLeft = useMemo(() => item ? [...item.id].reduce((n,c)=>n+c.charCodeAt(0),0)%2===0 : false, [item]);
+  async function answer(side) {
+    const semantic = side === "equal" || side === "both_bad" || side === "unsure" ? side : ((side === "left") === candidateLeft ? "candidate" : "original");
+    await submitReviewEvent({ task_type: "enhancement", task_id: item.id, answer: side, reason_code: reason || null, idempotency_key: crypto.randomUUID(), metadata: { ui: "mobile-v2", blind_choice: semantic, candidate_name: item.payload.candidate_name } }); setReason(""); setMessage("Vergleich gespeichert"); setIndex(i=>i+1);
+  }
+  const left = item && (candidateLeft ? item.payload.candidate_url : item.payload.original_url); const right = item && (candidateLeft ? item.payload.original_url : item.payload.candidate_url);
+  return <div className="mobile-shell"><MobileHeader title="Enhancement vergleichen" onBack={goHome}/><main className="mobile-content"><div className="review-top"><div><span>Verblindeter Vergleich</span><strong>{Math.min(index+1,items.length||5)} / {Math.min(items.length,5)||5}</strong></div></div>
+    {item ? <><div className="blind-compare"><figure><figcaption>A</figcaption><img src={left} alt="Variante A"/></figure><figure><figcaption>B</figcaption><img src={right} alt="Variante B"/></figure></div><div className="reason-chips">{[["","Kein Schaden"],["unnatural","Unnatürlich"],["too_smooth","Zu glatt"],["halo","Halo/überschärft"],["color","Falsche Farbe"],["identity","Gesicht verändert"],["text","Text verändert"]].map(([v,l])=><button className={reason===v?"active":""} key={l} onClick={()=>setReason(v)}>{l}</button>)}</div><section className="answer-grid enhancement-answers"><button onClick={()=>answer("left")}>A besser</button><button onClick={()=>answer("right")}>B besser</button><button className="good" onClick={()=>answer("equal")}>Gleich gut / No-op</button><button onClick={()=>answer("both_bad")}>Beide schlecht</button><button onClick={()=>answer("unsure")}>Unsicher</button></section></> : <section className="review-done"><Check size={48}/><h2>{message || "Noch keine Vergleichspaare"}</h2><p>Sie werden aus bestätigten Crops automatisch vorbereitet.</p><button onClick={load}><RefreshCw/> Neu laden</button></section>}
+  </main></div>;
+}
+
+function BatchGallery({ albums, goHome }) {
+  const [batches, setBatches] = useState([]); const [loading, setLoading] = useState(true);
+  useEffect(() => { Promise.all(albums.map(async album => ({ album, pages: await listPages(album.id) }))).then(setBatches).finally(() => setLoading(false)); }, [albums]);
+  return <div className="mobile-shell"><MobileHeader title="Bilder nach Batch" onBack={goHome}/><main className="mobile-content"><div className="gallery-heading"><div><span>LOKALE ABLAGE</span><h2>Aufgenommene Seiten</h2></div><strong>{batches.reduce((sum,b)=>sum+b.pages.length,0)}</strong></div>{loading && <div className="gallery-empty">Bilder werden geladen …</div>}<div className="batch-gallery">{batches.map(({album,pages}) => <section className="batch-section" key={album.id}><header><div><strong>{album.name}</strong><span>{pages.length} {pages.length === 1 ? "Bild" : "Bilder"}</span></div><small>{album.status}</small></header>{pages.length ? <div className="batch-images">{pages.map((page,index) => <a href={`/api/v1/pages/${page.id}/image`} target="_blank" rel="noreferrer" key={page.id}><img src={`/api/v1/pages/${page.id}/image`} loading="lazy" alt={`${album.name}, Seite ${index+1}`}/><span>{index+1}</span></a>)}</div> : <p>Noch keine Aufnahmen.</p>}</section>)}</div></main></div>;
+}
+
+function Progress({ albums, goHome }) {
+  const [progress, setProgress] = useState({completed:0,by_type:{}}); const [pages, setPages] = useState(0); const [photos, setPhotos] = useState(0);
+  useEffect(() => { Promise.all([getReviewProgress(), ...albums.flatMap(a => [listPages(a.id), listPhotos(a.id)])]).then(([p,...lists]) => { setProgress(p); setPages(lists.filter((_,i)=>i%2===0).reduce((n,x)=>n+x.length,0)); setPhotos(lists.filter((_,i)=>i%2===1).reduce((n,x)=>n+x.length,0)); }); }, [albums]);
+  return <div className="mobile-shell"><MobileHeader title="Fortschritt" onBack={goHome}/><main className="mobile-content"><h2 className="mobile-title">Dein lokaler Fortschritt</h2><div className="metric-grid"><div><strong>{pages}</strong><span>Seiten gespeichert</span></div><div><strong>{photos}</strong><span>Prints erkannt</span></div><div><strong>{progress.completed}</strong><span>Reviews erledigt</span></div><div><strong>{progress.by_type?.enhancement || 0}</strong><span>A/B-Vergleiche</span></div></div><section className="mobile-card"><strong>Daten bleiben lokal</strong><p>Originale bleiben unverändert. Feedback wird versioniert; neue Modelle werden erst nach Tests aktiviert.</p></section></main></div>;
+}
+
+export default function MobileApp() {
+  const route = location.pathname; const [view,setView] = useState(route.includes("/capture") ? "capture" : route.includes("/batches") ? "batches" : route.includes("/progress") ? "progress" : route.includes("/enhancement") ? "enhancement" : route.includes("/review") ? "review" : "home");
+  const [albums,setAlbums] = useState([]); const [albumId,setAlbumId] = useState(localStorage.getItem("phosca-batch") || "");
+  const reload = useCallback(async () => { const next = await listAlbums(); setAlbums(next); if (!albumId && next[0]) setAlbumId(next[0].id); }, [albumId]);
+  useEffect(() => { reload(); }, [reload]); useEffect(() => { if(albumId) localStorage.setItem("phosca-batch",albumId); },[albumId]);
+  const nav = v => { setView(v); history.replaceState({},"", v === "home" ? "/mobile" : `/mobile/${v}`); };
+  if(view === "capture") return <Capture albums={albums} activeAlbumId={albumId} setActiveAlbumId={setAlbumId} reload={reload} goHome={()=>nav("home")}/>;
+  if(view === "batches") return <BatchGallery albums={albums} goHome={()=>nav("home")}/>;
+  if(view === "review") return <CropReview albumId={albumId} goHome={()=>nav("home")}/>;
+  if(view === "enhancement") return <EnhancementReview albumId={albumId} goHome={()=>nav("home")}/>;
+  if(view === "progress") return <Progress albums={albums} goHome={()=>nav("home")}/>;
+  return <div className="mobile-shell"><MobileHeader title="PhoSca"/><main className="mobile-content home"><p className="eyebrow">FÜNF MINUTEN FREI?</p><h1>Was möchtest du tun?</h1><p>Seiten aufnehmen oder mit kurzen Aufgaben die Erkennung verbessern.</p>
+    <button className="home-action capture" onClick={()=>nav("capture")}><span><Camera/></span><div><strong>Albumseiten aufnehmen</strong><small>Direkt, geprüft und automatisch analysiert</small></div></button>
+    <button className="home-action review" onClick={()=>nav("review")}><span><ListChecks/></span><div><strong>Cropping prüfen</strong><small>Printanzahl und Crop-Grenzen</small></div></button>
+    <button className="home-action enhancement" onClick={()=>nav("enhancement")}><span><WandSparkles/></span><div><strong>Enhancement vergleichen</strong><small>Verblindete A/B-Aufgaben und No-op</small></div></button>
+    <button className="home-action batches" onClick={()=>nav("batches")}><span><Images/></span><div><strong>Bilder nach Batch</strong><small>Alle Aufnahmen geordnet ansehen</small></div></button>
+    <button className="home-action progress" onClick={()=>nav("progress")}><span><Upload/></span><div><strong>Fortschritt ansehen</strong><small>Daten, Reviews und Abdeckung</small></div></button>
+    <div className="privacy-note"><CircleHelp/><span><strong>Alles bleibt auf deinem PC.</strong><small>Keine Cloud, keine automatische Modellfreigabe.</small></span></div></main></div>;
+}

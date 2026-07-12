@@ -1,4 +1,6 @@
 .env
+.cert/
+.codex-remote-attachments/
 .venv/
 frontend/node_modules/
 __pycache__/
@@ -38,5 +40,9 @@ models/**/*.onnx
 models/paddleocr/**
 !models/paddleocr/.gitkeep
 *.log
+*.err
+*.pt
+data/*_mobile_review.json
+data/yolo_dataset/labels/*.cache
 gfpgan/
 test_output/

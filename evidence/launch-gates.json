@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "release": "consumer-v1",
+  "gates": [
+    {"id": "representative_data", "status": "blocked", "evidence": "", "sha256": "", "approved_by": "", "approved_at": ""},
+    {"id": "double_review", "status": "blocked", "evidence": "", "sha256": "", "approved_by": "", "approved_at": ""},
+    {"id": "independent_safety_holdout", "status": "blocked", "evidence": "", "sha256": "", "approved_by": "", "approved_at": ""},
+    {"id": "crop_safety", "status": "blocked", "evidence": "", "sha256": "", "approved_by": "", "approved_at": ""},
+    {"id": "confidence_calibration", "status": "blocked", "evidence": "", "sha256": "", "approved_by": "", "approved_at": ""},
+    {"id": "enhancement_safety", "status": "blocked", "evidence": "", "sha256": "", "approved_by": "", "approved_at": ""},
+    {"id": "human_ab", "status": "blocked", "evidence": "", "sha256": "", "approved_by": "", "approved_at": ""},
+    {"id": "security", "status": "blocked", "evidence": "", "sha256": "", "approved_by": "", "approved_at": ""},
+    {"id": "privacy_dpia", "status": "blocked", "evidence": "", "sha256": "", "approved_by": "", "approved_at": ""},
+    {"id": "model_and_data_licenses", "status": "blocked", "evidence": "", "sha256": "", "approved_by": "", "approved_at": ""},
+    {"id": "retention_and_backup_restore", "status": "blocked", "evidence": "", "sha256": "", "approved_by": "", "approved_at": ""},
+    {"id": "slo_load_chaos", "status": "blocked", "evidence": "", "sha256": "", "approved_by": "", "approved_at": ""},
+    {"id": "canary_rollback", "status": "blocked", "evidence": "", "sha256": "", "approved_by": "", "approved_at": ""}
+  ]
+}

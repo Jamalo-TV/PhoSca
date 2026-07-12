@@ -96,6 +96,7 @@ class ReviewItem(BaseModel):
     status: str
     reason: str | None = None
     preview_url: str | None = None
+    payload: dict = Field(default_factory=dict)
 
 class SearchResult(BaseModel):
     photo_id: UUID | None

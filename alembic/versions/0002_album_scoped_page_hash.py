@@ -16,10 +16,11 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.drop_constraint("pages_file_hash_sha256_key", "pages", type_="unique")
-    op.create_unique_constraint("uq_pages_album_file_hash_sha256", "pages", ["album_id", "file_hash_sha256"])
+    # The initial migration already defines the album-scoped constraint.  The
+    # historical migration is retained as a no-op so both SQLite and existing
+    # PostgreSQL deployments can advance deterministically.
+    return None
 
 
 def downgrade() -> None:
-    op.drop_constraint("uq_pages_album_file_hash_sha256", "pages", type_="unique")
-    op.create_unique_constraint("pages_file_hash_sha256_key", "pages", ["file_hash_sha256"])
+    return None

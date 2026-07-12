@@ -52,13 +52,57 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  worker:
+  worker-cpu:
     build:
       context: .
       dockerfile: backend/Dockerfile
     env_file:
       - .env
-    command: ["celery", "-A", "app.tasks.celery_app.celery_app", "worker", "--loglevel=INFO"]
+    command: ["celery", "-A", "app.tasks.celery_app.celery_app", "worker", "--loglevel=INFO", "--queues=cpu", "--concurrency=2", "--hostname=cpu@%h"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - app-storage:/app/storage
+      - ./models:/app/models:ro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+
+  worker-analysis:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env
+    command: ["celery", "-A", "app.tasks.celery_app.celery_app", "worker", "--loglevel=INFO", "--queues=analysis_gpu", "--pool=solo", "--concurrency=1", "--hostname=analysis@%h"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - app-storage:/app/storage
+      - ./models:/app/models:ro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+
+  worker-restoration:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env
+    command: ["celery", "-A", "app.tasks.celery_app.celery_app", "worker", "--loglevel=INFO", "--queues=restoration_gpu", "--pool=solo", "--concurrency=1", "--hostname=restoration@%h"]
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,8 +1,10 @@
 import hashlib
+from io import BytesIO
 from pathlib import Path
 
 import cv2
 import numpy as np
+from PIL import Image, ImageCms, ImageOps
 
 
 def sha256_file(path: Path) -> str:
@@ -14,10 +16,36 @@ def sha256_file(path: Path) -> str:
 
 
 def load_image(path: Path) -> np.ndarray:
-    image = cv2.imread(str(path), cv2.IMREAD_COLOR)
-    if image is None:
+    """Decode one canonical, orientation-corrected sRGB working image.
+
+    The original bytes remain immutable in storage; this function only defines
+    the pixel contract used by legacy OpenCV stages.  ICC conversion is
+    explicit so camera profiles do not silently alter segmentation metrics.
+    """
+    try:
+        with Image.open(path) as source:
+            if int(getattr(source, "n_frames", 1)) != 1:
+                raise ValueError("Multi-frame images require an explicit frame-selection policy.")
+            image = ImageOps.exif_transpose(source)
+            icc_profile = image.info.get("icc_profile")
+            if icc_profile:
+                try:
+                    image = ImageCms.profileToProfile(
+                        image,
+                        ImageCms.ImageCmsProfile(BytesIO(icc_profile)),
+                        ImageCms.createProfile("sRGB"),
+                        outputMode="RGB",
+                    )
+                except (ImageCms.PyCMSError, OSError, ValueError):
+                    image = image.convert("RGB")
+            else:
+                image = image.convert("RGB")
+            rgb = np.asarray(image)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Could not read image: {path}") from exc
+    if rgb.size == 0:
         raise ValueError(f"Could not read image: {path}")
-    return image
+    return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
 
 def save_jpeg(path: Path, image: np.ndarray, quality: int = 92) -> None:
@@ -66,4 +94,3 @@ def box_iou(a: dict[str, float], b: dict[str, float]) -> float:
     area_b = (float(b["x2"]) - float(b["x1"])) * (float(b["y2"]) - float(b["y1"]))
     union = area_a + area_b - intersection
     return intersection / union if union > 0 else 0.0
-

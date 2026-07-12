@@ -66,38 +66,86 @@ def best_match_iou(expected: Polygon, detected: list[Polygon]) -> float:
     return max((polygon_iou(expected, candidate) for candidate in detected), default=0.0)
 
 
-def match_detections(expected: list[Polygon], detected: list[Polygon], *, iou_threshold: float = 0.85) -> dict[str, int]:
-    """Greedily match each ground-truth/detection pair at most once.
+def _hungarian_assignment(cost: list[list[float]]) -> list[int]:
+    """Return a minimum-cost one-to-one assignment for a square cost matrix."""
+    size = len(cost)
+    u = [0.0] * (size + 1)
+    v = [0.0] * (size + 1)
+    parent = [0] * (size + 1)
+    way = [0] * (size + 1)
+    for row in range(1, size + 1):
+        parent[0] = row
+        column = 0
+        min_values = [float("inf")] * (size + 1)
+        used = [False] * (size + 1)
+        while True:
+            used[column] = True
+            current_row = parent[column]
+            delta = float("inf")
+            next_column = 0
+            for candidate_column in range(1, size + 1):
+                if used[candidate_column]:
+                    continue
+                current = cost[current_row - 1][candidate_column - 1] - u[current_row] - v[candidate_column]
+                if current < min_values[candidate_column]:
+                    min_values[candidate_column] = current
+                    way[candidate_column] = column
+                if min_values[candidate_column] < delta:
+                    delta = min_values[candidate_column]
+                    next_column = candidate_column
+            for index in range(size + 1):
+                if used[index]:
+                    u[parent[index]] += delta
+                    v[index] -= delta
+                else:
+                    min_values[index] -= delta
+            column = next_column
+            if parent[column] == 0:
+                break
+        while True:
+            previous_column = way[column]
+            parent[column] = parent[previous_column]
+            column = previous_column
+            if column == 0:
+                break
+    assignment = [-1] * size
+    for column in range(1, size + 1):
+        if parent[column]:
+            assignment[parent[column] - 1] = column - 1
+    return assignment
 
-    Mean best-IoU alone lets one prediction satisfy several labels and ignores
-    false positives.  The returned counts are the release-facing metrics.
-    """
-    pairs = sorted(
-        ((polygon_iou(truth, prediction), truth_index, detection_index)
-         for truth_index, truth in enumerate(expected)
-         for detection_index, prediction in enumerate(detected)),
-        reverse=True,
-    )
+
+def match_detections(expected: list[Polygon], detected: list[Polygon], *, iou_threshold: float = 0.85) -> dict[str, int]:
+    """Hungarian one-to-one matching with explicit false-positive accounting."""
+    size = max(len(expected), len(detected))
+    if not size:
+        return {"true_positive": 0, "false_negative": 0, "false_positive": 0, "duplicates": 0}
+    ious = [[polygon_iou(truth, prediction) for prediction in detected] for truth in expected]
+    # Dummy and below-threshold pairs have equal cost.  The optimizer first
+    # maximizes the number of valid matches and then maximizes their IoU.
+    cost = [[1.0] * size for _ in range(size)]
+    for truth_index, row in enumerate(ious):
+        for detection_index, iou in enumerate(row):
+            if iou >= iou_threshold:
+                cost[truth_index][detection_index] = 1.0 - iou
+    assignment = _hungarian_assignment(cost)
     matched_truth: set[int] = set()
     matched_detections: set[int] = set()
-    for iou, truth_index, detection_index in pairs:
-        if iou < iou_threshold:
-            break
-        if truth_index not in matched_truth and detection_index not in matched_detections:
+    for truth_index, detection_index in enumerate(assignment[:len(expected)]):
+        if detection_index < len(detected) and ious[truth_index][detection_index] >= iou_threshold:
             matched_truth.add(truth_index)
             matched_detections.add(detection_index)
-    true_positive = len(matched_truth)
-    duplicate_detections = {
+    eligible_detections = {
         detection_index
-        for detection_index, prediction in enumerate(detected)
-        if detection_index not in matched_detections
-        and any(polygon_iou(truth, prediction) >= iou_threshold for truth in expected)
+        for detection_index in range(len(detected))
+        if any(row[detection_index] >= iou_threshold for row in ious)
     }
+    true_positive = len(matched_truth)
     return {
         "true_positive": true_positive,
         "false_negative": len(expected) - true_positive,
         "false_positive": len(detected) - true_positive,
-        "duplicates": len(duplicate_detections),
+        "duplicates": len(eligible_detections - matched_detections),
     }
 
 
@@ -162,12 +210,13 @@ def main() -> None:
         for name in totals:
             totals[name] += counts[name]
         all_ious.extend(ious)
-        fixture_reports.append({"fixture": label_path.stem, "ious": ious, "mean_iou": sum(ious) / len(ious) if ious else math.nan, **counts})
+        fixture_reports.append({"fixture": label_path.stem, "ious": ious, "mean_iou": sum(ious) / len(ious) if ious else math.nan, "page_perfect": counts["false_positive"] == 0 and counts["false_negative"] == 0, **counts})
 
     mean_iou = sum(all_ious) / len(all_ious) if all_ious else 0.0
     precision = totals["true_positive"] / (totals["true_positive"] + totals["false_positive"]) if totals["true_positive"] + totals["false_positive"] else 0.0
     recall = totals["true_positive"] / (totals["true_positive"] + totals["false_negative"]) if totals["true_positive"] + totals["false_negative"] else 0.0
-    payload = {"mean_iou": mean_iou, "precision": precision, "recall": recall, **totals, "fixtures": fixture_reports}
+    page_perfect = sum(1 for report in fixture_reports if report["page_perfect"])
+    payload = {"mean_iou": mean_iou, "precision": precision, "recall": recall, "page_perfect": page_perfect, "page_count": len(fixture_reports), **totals, "fixtures": fixture_reports}
     args.output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(json.dumps(payload, indent=2))
     if mean_iou < 0.85:

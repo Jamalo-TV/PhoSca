@@ -76,7 +76,17 @@ class _LetterboxTransform:
 def _cached_onnx_session(model_path: str, modified_ns: int):
     import onnxruntime as ort
 
-    return ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+    available = set(ort.get_available_providers())
+    if "CUDAExecutionProvider" in available and hasattr(ort, "preload_dlls"):
+        # On Windows the CUDA DLLs bundled with PyTorch are not necessarily on
+        # PATH.  ONNX Runtime can preload them before the CUDA provider is
+        # created; failures still fall back safely to the CPU provider.
+        try:
+            ort.preload_dlls()
+        except Exception:  # pragma: no cover - environment-specific DLL setup
+            pass
+    providers = [provider for provider in ("CUDAExecutionProvider", "CPUExecutionProvider") if provider in available]
+    return ort.InferenceSession(model_path, providers=providers or ["CPUExecutionProvider"])
 
 
 def _frame_pixels(image: np.ndarray, frame_width: int) -> np.ndarray:
@@ -1000,11 +1010,33 @@ def _filter_nested_classical_detections(detections: list[SegmentationDetection])
     return [detection for index, detection in enumerate(detections) if index not in rejected], rejection_counts
 
 
+def select_candidate_set(detections: list[SegmentationDetection]) -> tuple[list[SegmentationDetection], dict[str, int]]:
+    """Perform duplicate suppression only after every proposal was assessed.
+
+    This intentionally differs from the historical contour-area-first NMS:
+    a large page/container can no longer suppress a smaller valid print before
+    it has a chance to fail the geometry and boundary gates.
+    """
+    filtered, rejected = _filter_nested_classical_detections(detections)
+    selected: list[SegmentationDetection] = []
+    duplicate_count = 0
+    for candidate in sorted(filtered, key=lambda item: item.confidence, reverse=True):
+        if any(_normalized_box_overlap(candidate.bounding_box, kept.bounding_box)[0] > 0.82 for kept in selected):
+            duplicate_count += 1
+            continue
+        selected.append(candidate)
+    if duplicate_count:
+        rejected["near_duplicate_after_scoring"] = duplicate_count
+    return selected, rejected
+
+
 def detect_photos_classical(image: np.ndarray, *, min_area_ratio: float = 0.02) -> SegmentationResult:
     height, width = image.shape[:2]
     image_area = width * height
     edge_map = _edge_support_map(image)
-    filtered_contours = _consolidate_candidates(_find_contour_candidates(image, min_area_ratio))
+    # Do not consolidate by area before candidate assessment.  Containers are
+    # frequently larger than the true prints and used to erase them here.
+    filtered_contours = _find_contour_candidates(image, min_area_ratio)
 
     detections: list[SegmentationDetection] = []
     source_counts: dict[str, int] = {}
@@ -1032,8 +1064,10 @@ def detect_photos_classical(image: np.ndarray, *, min_area_ratio: float = 0.02) 
             refined_by_lines=refined_by_lines,
         )
         source_counts[candidate.source] = source_counts.get(candidate.source, 0) + 1
-        if assessment.rejected:
+        if assessment.rejected or not quality.geometry_valid:
             for reason in assessment.rejection_reasons:
+                rejected_counts[reason] = rejected_counts.get(reason, 0) + 1
+            for reason in quality.review_reasons:
                 rejected_counts[reason] = rejected_counts.get(reason, 0) + 1
             continue
         detections.append(
@@ -1063,7 +1097,7 @@ def detect_photos_classical(image: np.ndarray, *, min_area_ratio: float = 0.02) 
             )
         )
 
-    detections, nested_rejections = _filter_nested_classical_detections(detections)
+    detections, nested_rejections = select_candidate_set(detections)
     for reason, count in nested_rejections.items():
         rejected_counts[reason] = rejected_counts.get(reason, 0) + count
     detections.sort(key=lambda detection: (detection.bounding_box["y1"], detection.bounding_box["x1"]))
@@ -1365,7 +1399,8 @@ def _parse_simple_box_outputs(
                     float(row[3]),
                     transform=transform,
                 )
-            if confidence < settings.yolo_confidence_threshold:
+            proposal_threshold = getattr(settings, "yolo_proposal_threshold", settings.yolo_confidence_threshold)
+            if confidence < proposal_threshold:
                 continue
             if normalized_boxes is None:
                 continue
@@ -1404,17 +1439,27 @@ def segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationRes
     metadata: dict = {
         "model_path": str(model_path),
         "confidence_threshold": settings.yolo_confidence_threshold,
+        "proposal_threshold": settings.yolo_proposal_threshold,
     }
     if model_path.exists():
         try:
+            if settings.require_registered_models:
+                from app.pipeline.model_registry import verify_model_artifact
+
+                metadata["model_artifact"] = verify_model_artifact(
+                    model_path,
+                    settings.model_manifest_path,
+                    model_id=model_path.name,
+                )
             import onnxruntime as ort
 
             started = perf_counter()
             session = _cached_onnx_session(str(model_path), model_path.stat().st_mtime_ns)
             input_meta = session.get_inputs()[0]
             input_shape = input_meta.shape
-            target_height = int(input_shape[2] if isinstance(input_shape[2], int) else 640)
-            target_width = int(input_shape[3] if isinstance(input_shape[3], int) else 640)
+            registered_input = metadata.get("model_artifact", {}).get("input", {})
+            target_height = int(input_shape[2] if isinstance(input_shape[2], int) else registered_input.get("height", 640))
+            target_width = int(input_shape[3] if isinstance(input_shape[3], int) else registered_input.get("width", 640))
             letterboxed, transform = _letterbox_image(image, target_width, target_height)
             tensor = letterboxed[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
             outputs = session.run(None, {input_meta.name: tensor[np.newaxis, ...]})
@@ -1446,6 +1491,18 @@ def segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationRes
                 }
             )
             if detections:
+                # The model is a proposal source, not an exclusive decision.
+                # Classical proposals complement misses until a calibrated
+                # domain segmenter is available.
+                if settings.enable_classical_segmentation_fallback:
+                    fallback = detect_photos_classical(image)
+                    merged, rejected = select_candidate_set([*detections, *fallback.detections])
+                    metadata.update({
+                        "fallback_used": True,
+                        "proposal_sources": {"yolo_onnx": len(detections), "classical": len(fallback.detections)},
+                        "late_selection_rejections": rejected,
+                    })
+                    return SegmentationResult(detections=merged, metadata=metadata)
                 return SegmentationResult(detections=detections, metadata=metadata)
             metadata["onnx_parse_warning"] = "No supported detections were parsed from model outputs."
         except Exception as exc:  # noqa: BLE001 - model loading should fail into reviewable metadata.

@@ -30,6 +30,20 @@ def test_segmentation_validator_uses_polygon_iou() -> None:
     counts = match_detections([expected], [expected, expected, smaller], iou_threshold=0.85)
     assert counts["true_positive"] == 1
     assert counts["false_positive"] == 2
+    assert counts["duplicates"] == 1
+
+
+def test_segmentation_validator_uses_global_one_to_one_assignment() -> None:
+    from scripts.validate_segmentation import match_detections
+
+    # The first prediction overlaps both labels.  A greedy pair order can
+    # leave the second label unmatched; global matching must retain both.
+    truth_a = [(0.0, 0.0), (0.49, 0.0), (0.49, 1.0), (0.0, 1.0)]
+    truth_b = [(0.51, 0.0), (1.0, 0.0), (1.0, 1.0), (0.51, 1.0)]
+    prediction_a = [(0.0, 0.0), (0.75, 0.0), (0.75, 1.0), (0.0, 1.0)]
+    prediction_b = [(0.52, 0.0), (1.0, 0.0), (1.0, 1.0), (0.52, 1.0)]
+    counts = match_detections([truth_a, truth_b], [prediction_a, prediction_b], iou_threshold=0.5)
+    assert counts["true_positive"] == 2
 
 
 def test_prepare_yolo_dataset_creates_non_overlapping_splits(tmp_path: Path) -> None:

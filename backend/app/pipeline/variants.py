@@ -7,6 +7,9 @@ import cv2
 import numpy as np
 
 from app.pipeline.image_ops import calculate_blur_score
+from app.pipeline.quality_critic import evaluate_candidate
+from app.pipeline.release import select_released_variant
+from app.core.metrics import RELEASE_DECISIONS
 
 
 VARIANT_ORDER = ("original", "enhanced", "premium")
@@ -55,21 +58,16 @@ def _warnings(name: str, metadata: dict, metrics: dict) -> list[str]:
     return warnings
 
 
-def select_safe_variant(variants: dict[str, dict[str, Any]]) -> str:
+def select_safe_variant(
+    variants: dict[str, dict[str, Any]], *, photo_status: Any = None, metadata: dict | None = None
+) -> str:
     """Return the only variant that is safe to expose by default.
 
     Derived images are opt-in until a later quality critic can explicitly mark
     them as auto-releasable.  This makes the original crop the stable fallback
     for model errors, incomplete stages, and unreviewed experimental output.
     """
-    enhanced = variants.get("enhanced")
-    if (
-        isinstance(enhanced, dict)
-        and not enhanced.get("warnings")
-        and enhanced.get("metadata", {}).get("auto_release") is True
-    ):
-        return "enhanced"
-    return "original"
+    return select_released_variant(variants, photo_status=photo_status, metadata=metadata)[0]
 
 
 def variant_record(
@@ -82,6 +80,9 @@ def variant_record(
 ) -> dict[str, Any]:
     metadata = dict(metadata or {})
     metrics = _metrics(source_image, image)
+    gates = evaluate_candidate(source_image, image, metadata)
+    warnings = _warnings(name, metadata, metrics)
+    warnings.extend(f"quality_gate_failed:{gate['name']}" for gate in gates if gate.get("passed") is False)
     return {
         "name": name,
         "path": str(path),
@@ -89,7 +90,8 @@ def variant_record(
         "model_chain": metadata.get("models", []),
         "params": metadata.get("config", {}),
         "metrics": metrics,
-        "warnings": _warnings(name, metadata, metrics),
+        "warnings": list(dict.fromkeys(warnings)),
+        "gates": gates,
         "metadata": metadata,
     }
 
@@ -104,6 +106,8 @@ def build_variant_bundle(
     premium: np.ndarray | None = None,
     premium_metadata: dict | None = None,
     selected_variant: str | None = None,
+    photo_status: Any = None,
+    release_metadata: dict | None = None,
 ) -> dict[str, Any]:
     variants: dict[str, dict[str, Any]] = {
         "original": variant_record(
@@ -132,12 +136,18 @@ def build_variant_bundle(
             source_image=original,
             selected=False,
         )
-    selected_variant = selected_variant if selected_variant in variants else select_safe_variant(variants)
+    selected_variant, release_reasons = select_released_variant(
+        variants,
+        photo_status=photo_status,
+        metadata=release_metadata,
+    ) if selected_variant not in variants else (selected_variant, [])
     for name, variant in variants.items():
         variant["selected"] = name == selected_variant
+    RELEASE_DECISIONS.labels(variant=selected_variant, blocked=str(bool(release_reasons)).lower()).inc()
     return {
         "variant_schema_version": 1,
         "selected_variant": selected_variant,
+        "release": {"selected_variant": selected_variant, "reasons": release_reasons},
         "variants": variants,
     }
 
@@ -151,6 +161,10 @@ def variants_from_metadata(metadata: dict | None) -> dict[str, dict]:
 
 def variant_path_from_photo(photo: Any, variant: str) -> str | None:
     if variant == "original":
+        variants = variants_from_metadata(getattr(photo, "enhancement_applied", None))
+        record = variants.get("original")
+        if isinstance(record, dict) and record.get("path"):
+            return str(record["path"])
         return photo.original_storage_path
 
     variants = variants_from_metadata(getattr(photo, "enhancement_applied", None))
@@ -159,6 +173,15 @@ def variant_path_from_photo(photo: Any, variant: str) -> str | None:
         return str(record["path"])
 
     return None
+
+
+def released_variant_from_photo(photo: Any) -> str:
+    """Re-evaluate legacy metadata at read time rather than trusting it."""
+    metadata = getattr(photo, "enhancement_applied", None) or {}
+    variants = variants_from_metadata(metadata)
+    if not variants:
+        return "original"
+    return select_safe_variant(variants, photo_status=getattr(photo, "status", None), metadata=metadata)
 
 
 def variant_urls(photo: Any) -> dict[str, str | None]:

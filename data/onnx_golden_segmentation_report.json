@@ -1,0 +1,765 @@
+{
+  "model": "models\\yolov8-seg-album.onnx",
+  "manifest": "models\\manifest.json",
+  "iou_threshold": 0.85,
+  "mean_iou": 0.9729937386963216,
+  "precision": 0.9655172413793104,
+  "recall": 0.9655172413793104,
+  "page_perfect": 9,
+  "page_count": 10,
+  "true_positive": 28,
+  "false_positive": 1,
+  "false_negative": 1,
+  "duplicates": 0,
+  "fixtures": [
+    {
+      "fixture": "page_04",
+      "expected": 3,
+      "detected": 3,
+      "ious": [
+        0.9681772920173546,
+        0.9894146628638709,
+        0.9779929855603653
+      ],
+      "mean_iou": 0.9785283134805303,
+      "page_perfect": true,
+      "runtime": {
+        "model_path": "models\\yolov8-seg-album.onnx",
+        "confidence_threshold": 0.25,
+        "proposal_threshold": 0.25,
+        "model_artifact": {
+          "id": "yolov8-seg-album.onnx",
+          "sha256": "e4168ae335a04c480c21048fa0b1f7b569bb1cc942c7e68bc4886e19d0e07242",
+          "license": "AGPL-3.0-only (Ultralytics YOLO11 pretrained weights; fine-tuned PhoSca derivative)",
+          "input": {
+            "layout": "NCHW",
+            "width": 1024,
+            "height": 1024
+          }
+        },
+        "model": "yolov8_seg_onnx",
+        "onnxruntime_version": "1.23.2",
+        "providers": [
+          "CUDAExecutionProvider",
+          "CPUExecutionProvider"
+        ],
+        "session_cache": {
+          "strategy": "path_mtime_lru",
+          "size": 1
+        },
+        "inference_time_ms": 1448.33,
+        "input_size": {
+          "width": 1024,
+          "height": 1024
+        },
+        "letterbox": {
+          "scale": 0.4,
+          "resized": {
+            "width": 1024,
+            "height": 768
+          },
+          "pad": {
+            "x": 0.0,
+            "y": 128.0
+          },
+          "source": {
+            "width": 2560,
+            "height": 1920
+          }
+        },
+        "output_tensors": [
+          [
+            1,
+            37,
+            21504
+          ],
+          [
+            1,
+            32,
+            256,
+            256
+          ]
+        ],
+        "fallback_used": false
+      },
+      "true_positive": 3,
+      "false_negative": 0,
+      "false_positive": 0,
+      "duplicates": 0
+    },
+    {
+      "fixture": "page_05",
+      "expected": 4,
+      "detected": 4,
+      "ious": [
+        0.9920703780616164,
+        0.9845505112651023,
+        0.9873781099061333,
+        0.9887221294960201
+      ],
+      "mean_iou": 0.988180282182218,
+      "page_perfect": true,
+      "runtime": {
+        "model_path": "models\\yolov8-seg-album.onnx",
+        "confidence_threshold": 0.25,
+        "proposal_threshold": 0.25,
+        "model_artifact": {
+          "id": "yolov8-seg-album.onnx",
+          "sha256": "e4168ae335a04c480c21048fa0b1f7b569bb1cc942c7e68bc4886e19d0e07242",
+          "license": "AGPL-3.0-only (Ultralytics YOLO11 pretrained weights; fine-tuned PhoSca derivative)",
+          "input": {
+            "layout": "NCHW",
+            "width": 1024,
+            "height": 1024
+          }
+        },
+        "model": "yolov8_seg_onnx",
+        "onnxruntime_version": "1.23.2",
+        "providers": [
+          "CUDAExecutionProvider",
+          "CPUExecutionProvider"
+        ],
+        "session_cache": {
+          "strategy": "path_mtime_lru",
+          "size": 1
+        },
+        "inference_time_ms": 251.3,
+        "input_size": {
+          "width": 1024,
+          "height": 1024
+        },
+        "letterbox": {
+          "scale": 0.4,
+          "resized": {
+            "width": 1024,
+            "height": 768
+          },
+          "pad": {
+            "x": 0.0,
+            "y": 128.0
+          },
+          "source": {
+            "width": 2560,
+            "height": 1920
+          }
+        },
+        "output_tensors": [
+          [
+            1,
+            37,
+            21504
+          ],
+          [
+            1,
+            32,
+            256,
+            256
+          ]
+        ],
+        "fallback_used": false
+      },
+      "true_positive": 4,
+      "false_negative": 0,
+      "false_positive": 0,
+      "duplicates": 0
+    },
+    {
+      "fixture": "page_10",
+      "expected": 5,
+      "detected": 5,
+      "ious": [
+        0.9901987456159055,
+        0.9273659300646193,
+        0.9927592863488501,
+        0.9934674644927245,
+        0.989503888846938
+      ],
+      "mean_iou": 0.9786590630738076,
+      "page_perfect": true,
+      "runtime": {
+        "model_path": "models\\yolov8-seg-album.onnx",
+        "confidence_threshold": 0.25,
+        "proposal_threshold": 0.25,
+        "model_artifact": {
+          "id": "yolov8-seg-album.onnx",
+          "sha256": "e4168ae335a04c480c21048fa0b1f7b569bb1cc942c7e68bc4886e19d0e07242",
+          "license": "AGPL-3.0-only (Ultralytics YOLO11 pretrained weights; fine-tuned PhoSca derivative)",
+          "input": {
+            "layout": "NCHW",
+            "width": 1024,
+            "height": 1024
+          }
+        },
+        "model": "yolov8_seg_onnx",
+        "onnxruntime_version": "1.23.2",
+        "providers": [
+          "CUDAExecutionProvider",
+          "CPUExecutionProvider"
+        ],
+        "session_cache": {
+          "strategy": "path_mtime_lru",
+          "size": 1
+        },
+        "inference_time_ms": 265.56,
+        "input_size": {
+          "width": 1024,
+          "height": 1024
+        },
+        "letterbox": {
+          "scale": 0.4,
+          "resized": {
+            "width": 1024,
+            "height": 768
+          },
+          "pad": {
+            "x": 0.0,
+            "y": 128.0
+          },
+          "source": {
+            "width": 2560,
+            "height": 1920
+          }
+        },
+        "output_tensors": [
+          [
+            1,
+            37,
+            21504
+          ],
+          [
+            1,
+            32,
+            256,
+            256
+          ]
+        ],
+        "fallback_used": false
+      },
+      "true_positive": 5,
+      "false_negative": 0,
+      "false_positive": 0,
+      "duplicates": 0
+    },
+    {
+      "fixture": "page_11",
+      "expected": 2,
+      "detected": 2,
+      "ious": [
+        0.9868160425028152,
+        0.9914586144222299
+      ],
+      "mean_iou": 0.9891373284625226,
+      "page_perfect": true,
+      "runtime": {
+        "model_path": "models\\yolov8-seg-album.onnx",
+        "confidence_threshold": 0.25,
+        "proposal_threshold": 0.25,
+        "model_artifact": {
+          "id": "yolov8-seg-album.onnx",
+          "sha256": "e4168ae335a04c480c21048fa0b1f7b569bb1cc942c7e68bc4886e19d0e07242",
+          "license": "AGPL-3.0-only (Ultralytics YOLO11 pretrained weights; fine-tuned PhoSca derivative)",
+          "input": {
+            "layout": "NCHW",
+            "width": 1024,
+            "height": 1024
+          }
+        },
+        "model": "yolov8_seg_onnx",
+        "onnxruntime_version": "1.23.2",
+        "providers": [
+          "CUDAExecutionProvider",
+          "CPUExecutionProvider"
+        ],
+        "session_cache": {
+          "strategy": "path_mtime_lru",
+          "size": 1
+        },
+        "inference_time_ms": 167.16,
+        "input_size": {
+          "width": 1024,
+          "height": 1024
+        },
+        "letterbox": {
+          "scale": 0.4,
+          "resized": {
+            "width": 1024,
+            "height": 768
+          },
+          "pad": {
+            "x": 0.0,
+            "y": 128.0
+          },
+          "source": {
+            "width": 2560,
+            "height": 1920
+          }
+        },
+        "output_tensors": [
+          [
+            1,
+            37,
+            21504
+          ],
+          [
+            1,
+            32,
+            256,
+            256
+          ]
+        ],
+        "fallback_used": false
+      },
+      "true_positive": 2,
+      "false_negative": 0,
+      "false_positive": 0,
+      "duplicates": 0
+    },
+    {
+      "fixture": "page_12",
+      "expected": 2,
+      "detected": 2,
+      "ious": [
+        0.9838476066057964,
+        0.9792186641420996
+      ],
+      "mean_iou": 0.981533135373948,
+      "page_perfect": true,
+      "runtime": {
+        "model_path": "models\\yolov8-seg-album.onnx",
+        "confidence_threshold": 0.25,
+        "proposal_threshold": 0.25,
+        "model_artifact": {
+          "id": "yolov8-seg-album.onnx",
+          "sha256": "e4168ae335a04c480c21048fa0b1f7b569bb1cc942c7e68bc4886e19d0e07242",
+          "license": "AGPL-3.0-only (Ultralytics YOLO11 pretrained weights; fine-tuned PhoSca derivative)",
+          "input": {
+            "layout": "NCHW",
+            "width": 1024,
+            "height": 1024
+          }
+        },
+        "model": "yolov8_seg_onnx",
+        "onnxruntime_version": "1.23.2",
+        "providers": [
+          "CUDAExecutionProvider",
+          "CPUExecutionProvider"
+        ],
+        "session_cache": {
+          "strategy": "path_mtime_lru",
+          "size": 1
+        },
+        "inference_time_ms": 169.87,
+        "input_size": {
+          "width": 1024,
+          "height": 1024
+        },
+        "letterbox": {
+          "scale": 0.4,
+          "resized": {
+            "width": 1024,
+            "height": 768
+          },
+          "pad": {
+            "x": 0.0,
+            "y": 128.0
+          },
+          "source": {
+            "width": 2560,
+            "height": 1920
+          }
+        },
+        "output_tensors": [
+          [
+            1,
+            37,
+            21504
+          ],
+          [
+            1,
+            32,
+            256,
+            256
+          ]
+        ],
+        "fallback_used": false
+      },
+      "true_positive": 2,
+      "false_negative": 0,
+      "false_positive": 0,
+      "duplicates": 0
+    },
+    {
+      "fixture": "page_25",
+      "expected": 3,
+      "detected": 3,
+      "ious": [
+        0.9898230057005402,
+        0.9868781512896447,
+        0.9868195348367893
+      ],
+      "mean_iou": 0.9878402306089914,
+      "page_perfect": true,
+      "runtime": {
+        "model_path": "models\\yolov8-seg-album.onnx",
+        "confidence_threshold": 0.25,
+        "proposal_threshold": 0.25,
+        "model_artifact": {
+          "id": "yolov8-seg-album.onnx",
+          "sha256": "e4168ae335a04c480c21048fa0b1f7b569bb1cc942c7e68bc4886e19d0e07242",
+          "license": "AGPL-3.0-only (Ultralytics YOLO11 pretrained weights; fine-tuned PhoSca derivative)",
+          "input": {
+            "layout": "NCHW",
+            "width": 1024,
+            "height": 1024
+          }
+        },
+        "model": "yolov8_seg_onnx",
+        "onnxruntime_version": "1.23.2",
+        "providers": [
+          "CUDAExecutionProvider",
+          "CPUExecutionProvider"
+        ],
+        "session_cache": {
+          "strategy": "path_mtime_lru",
+          "size": 1
+        },
+        "inference_time_ms": 201.94,
+        "input_size": {
+          "width": 1024,
+          "height": 1024
+        },
+        "letterbox": {
+          "scale": 0.4,
+          "resized": {
+            "width": 1024,
+            "height": 768
+          },
+          "pad": {
+            "x": 0.0,
+            "y": 128.0
+          },
+          "source": {
+            "width": 2560,
+            "height": 1920
+          }
+        },
+        "output_tensors": [
+          [
+            1,
+            37,
+            21504
+          ],
+          [
+            1,
+            32,
+            256,
+            256
+          ]
+        ],
+        "fallback_used": false
+      },
+      "true_positive": 3,
+      "false_negative": 0,
+      "false_positive": 0,
+      "duplicates": 0
+    },
+    {
+      "fixture": "page_26",
+      "expected": 4,
+      "detected": 4,
+      "ious": [
+        0.9862334551298574,
+        0.9915574438730717,
+        0.9885712669203242,
+        0.9872923888860143
+      ],
+      "mean_iou": 0.9884136387023168,
+      "page_perfect": true,
+      "runtime": {
+        "model_path": "models\\yolov8-seg-album.onnx",
+        "confidence_threshold": 0.25,
+        "proposal_threshold": 0.25,
+        "model_artifact": {
+          "id": "yolov8-seg-album.onnx",
+          "sha256": "e4168ae335a04c480c21048fa0b1f7b569bb1cc942c7e68bc4886e19d0e07242",
+          "license": "AGPL-3.0-only (Ultralytics YOLO11 pretrained weights; fine-tuned PhoSca derivative)",
+          "input": {
+            "layout": "NCHW",
+            "width": 1024,
+            "height": 1024
+          }
+        },
+        "model": "yolov8_seg_onnx",
+        "onnxruntime_version": "1.23.2",
+        "providers": [
+          "CUDAExecutionProvider",
+          "CPUExecutionProvider"
+        ],
+        "session_cache": {
+          "strategy": "path_mtime_lru",
+          "size": 1
+        },
+        "inference_time_ms": 257.21,
+        "input_size": {
+          "width": 1024,
+          "height": 1024
+        },
+        "letterbox": {
+          "scale": 0.4,
+          "resized": {
+            "width": 1024,
+            "height": 768
+          },
+          "pad": {
+            "x": 0.0,
+            "y": 128.0
+          },
+          "source": {
+            "width": 2560,
+            "height": 1920
+          }
+        },
+        "output_tensors": [
+          [
+            1,
+            37,
+            21504
+          ],
+          [
+            1,
+            32,
+            256,
+            256
+          ]
+        ],
+        "fallback_used": false
+      },
+      "true_positive": 4,
+      "false_negative": 0,
+      "false_positive": 0,
+      "duplicates": 0
+    },
+    {
+      "fixture": "page_31",
+      "expected": 2,
+      "detected": 2,
+      "ious": [
+        0.9876321823346224,
+        0.6518261808274574
+      ],
+      "mean_iou": 0.8197291815810399,
+      "page_perfect": false,
+      "runtime": {
+        "model_path": "models\\yolov8-seg-album.onnx",
+        "confidence_threshold": 0.25,
+        "proposal_threshold": 0.25,
+        "model_artifact": {
+          "id": "yolov8-seg-album.onnx",
+          "sha256": "e4168ae335a04c480c21048fa0b1f7b569bb1cc942c7e68bc4886e19d0e07242",
+          "license": "AGPL-3.0-only (Ultralytics YOLO11 pretrained weights; fine-tuned PhoSca derivative)",
+          "input": {
+            "layout": "NCHW",
+            "width": 1024,
+            "height": 1024
+          }
+        },
+        "model": "yolov8_seg_onnx",
+        "onnxruntime_version": "1.23.2",
+        "providers": [
+          "CUDAExecutionProvider",
+          "CPUExecutionProvider"
+        ],
+        "session_cache": {
+          "strategy": "path_mtime_lru",
+          "size": 1
+        },
+        "inference_time_ms": 159.41,
+        "input_size": {
+          "width": 1024,
+          "height": 1024
+        },
+        "letterbox": {
+          "scale": 0.4,
+          "resized": {
+            "width": 1024,
+            "height": 768
+          },
+          "pad": {
+            "x": 0.0,
+            "y": 128.0
+          },
+          "source": {
+            "width": 2560,
+            "height": 1920
+          }
+        },
+        "output_tensors": [
+          [
+            1,
+            37,
+            21504
+          ],
+          [
+            1,
+            32,
+            256,
+            256
+          ]
+        ],
+        "fallback_used": false
+      },
+      "true_positive": 1,
+      "false_negative": 1,
+      "false_positive": 1,
+      "duplicates": 0
+    },
+    {
+      "fixture": "page_33",
+      "expected": 2,
+      "detected": 2,
+      "ious": [
+        0.9903962253636246,
+        0.9870752318425926
+      ],
+      "mean_iou": 0.9887357286031087,
+      "page_perfect": true,
+      "runtime": {
+        "model_path": "models\\yolov8-seg-album.onnx",
+        "confidence_threshold": 0.25,
+        "proposal_threshold": 0.25,
+        "model_artifact": {
+          "id": "yolov8-seg-album.onnx",
+          "sha256": "e4168ae335a04c480c21048fa0b1f7b569bb1cc942c7e68bc4886e19d0e07242",
+          "license": "AGPL-3.0-only (Ultralytics YOLO11 pretrained weights; fine-tuned PhoSca derivative)",
+          "input": {
+            "layout": "NCHW",
+            "width": 1024,
+            "height": 1024
+          }
+        },
+        "model": "yolov8_seg_onnx",
+        "onnxruntime_version": "1.23.2",
+        "providers": [
+          "CUDAExecutionProvider",
+          "CPUExecutionProvider"
+        ],
+        "session_cache": {
+          "strategy": "path_mtime_lru",
+          "size": 1
+        },
+        "inference_time_ms": 176.84,
+        "input_size": {
+          "width": 1024,
+          "height": 1024
+        },
+        "letterbox": {
+          "scale": 0.4,
+          "resized": {
+            "width": 1024,
+            "height": 768
+          },
+          "pad": {
+            "x": 0.0,
+            "y": 128.0
+          },
+          "source": {
+            "width": 2560,
+            "height": 1920
+          }
+        },
+        "output_tensors": [
+          [
+            1,
+            37,
+            21504
+          ],
+          [
+            1,
+            32,
+            256,
+            256
+          ]
+        ],
+        "fallback_used": false
+      },
+      "true_positive": 2,
+      "false_negative": 0,
+      "false_positive": 0,
+      "duplicates": 0
+    },
+    {
+      "fixture": "page_37",
+      "expected": 2,
+      "detected": 2,
+      "ious": [
+        0.9914801973754275,
+        0.968290845600918
+      ],
+      "mean_iou": 0.9798855214881728,
+      "page_perfect": true,
+      "runtime": {
+        "model_path": "models\\yolov8-seg-album.onnx",
+        "confidence_threshold": 0.25,
+        "proposal_threshold": 0.25,
+        "model_artifact": {
+          "id": "yolov8-seg-album.onnx",
+          "sha256": "e4168ae335a04c480c21048fa0b1f7b569bb1cc942c7e68bc4886e19d0e07242",
+          "license": "AGPL-3.0-only (Ultralytics YOLO11 pretrained weights; fine-tuned PhoSca derivative)",
+          "input": {
+            "layout": "NCHW",
+            "width": 1024,
+            "height": 1024
+          }
+        },
+        "model": "yolov8_seg_onnx",
+        "onnxruntime_version": "1.23.2",
+        "providers": [
+          "CUDAExecutionProvider",
+          "CPUExecutionProvider"
+        ],
+        "session_cache": {
+          "strategy": "path_mtime_lru",
+          "size": 1
+        },
+        "inference_time_ms": 171.62,
+        "input_size": {
+          "width": 1024,
+          "height": 1024
+        },
+        "letterbox": {
+          "scale": 0.4,
+          "resized": {
+            "width": 1024,
+            "height": 768
+          },
+          "pad": {
+            "x": 0.0,
+            "y": 128.0
+          },
+          "source": {
+            "width": 2560,
+            "height": 1920
+          }
+        },
+        "output_tensors": [
+          [
+            1,
+            37,
+            21504
+          ],
+          [
+            1,
+            32,
+            256,
+            256
+          ]
+        ],
+        "fallback_used": false
+      },
+      "true_positive": 2,
+      "false_negative": 0,
+      "false_positive": 0,
+      "duplicates": 0
+    }
+  ]
+}
