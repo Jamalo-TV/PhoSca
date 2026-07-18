@@ -1,11 +1,13 @@
+import importlib
 from dataclasses import dataclass
 from io import BytesIO
+from typing import Any
 
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 try:
-    import magic
+    magic: Any = importlib.import_module("magic")
 except ImportError:  # pragma: no cover - production images install python-magic.
     magic = None
 
@@ -96,9 +98,13 @@ async def read_and_validate_upload(
         file_size += len(chunk)
         current_request_size += len(chunk)
         if file_size > max_file_size:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File exceeds upload limit.")
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File exceeds upload limit."
+            )
         if current_request_size > max_request_size:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Request exceeds upload limit.")
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Request exceeds upload limit."
+            )
         chunks.append(chunk)
 
     content = b"".join(chunks)
@@ -111,7 +117,9 @@ async def read_and_validate_upload(
 
     claimed_mime_type = upload.content_type
     if claimed_mime_type and claimed_mime_type != detected_mime_type:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File MIME type does not match its content.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="File MIME type does not match its content."
+        )
 
     decode_metadata = inspect_image_content(
         content,

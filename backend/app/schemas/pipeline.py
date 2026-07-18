@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models import OCRTextType, PageStatus, PhotoStatus
-from app.schemas.common import BoundingBox, SegmentationMask, StrictSchema
+from app.schemas.common import BoundingBox, NormalizedPoint, SegmentationMask, StrictSchema
 
 
 class AnalyzeRequest(StrictSchema):
@@ -77,9 +77,21 @@ class AlbumStats(BaseModel):
     review_needed_count: int
 
 
+class ReviewSegmentationMask(SegmentationMask):
+    """Review geometry without discarding a detailed visible boundary.
+
+    ``polygon`` is the geometry consumed by the current crop pipeline.  A
+    reviewer can edit a four-corner ``warp_quad`` while retaining a denser
+    ``visible_polygon`` for learning/export and visual comparison.
+    """
+
+    visible_polygon: list[NormalizedPoint] | None = Field(default=None, min_length=4)
+    warp_quad: list[NormalizedPoint] | None = Field(default=None, min_length=4, max_length=4)
+
+
 class BoundingBoxUpdate(StrictSchema):
     bounding_box: BoundingBox
-    segmentation_mask: SegmentationMask | None = None
+    segmentation_mask: ReviewSegmentationMask | None = None
 
 
 class OCRUpdate(StrictSchema):
@@ -97,6 +109,7 @@ class ReviewItem(BaseModel):
     reason: str | None = None
     preview_url: str | None = None
     payload: dict = Field(default_factory=dict)
+
 
 class SearchResult(BaseModel):
     photo_id: UUID | None

@@ -90,18 +90,17 @@ PRESETS: dict[str, EnhancementConfig] = {
 
 
 PRESET_DESCRIPTIONS: dict[str, str] = {
-    "light": "Minimal cleanup with maximum source preservation.",
-    "balanced": "Default archival restoration for mixed album photos.",
-    "aggressive": "Stronger restoration for noisy, faded, or damaged photos.",
-    "archival": "Conservative cleanup and upscale without face restoration.",
-    "speed": "Fast upscale path with light color cleanup and no face or scratch model.",
+    "light": "Minimal deterministic cleanup with maximum source preservation.",
+    "balanced": "Condition-specific deterministic cleanup for mixed album photos.",
+    "aggressive": "Stronger bounded deterministic cleanup for clearly degraded photos.",
+    "archival": "Conservative deterministic cleanup without generative processing.",
+    "speed": "Fast analysis and color-safe deterministic cleanup.",
 }
 
 
 def available_presets() -> dict[str, dict]:
     return {
-        name: {"description": PRESET_DESCRIPTIONS[name], "config": config.as_dict()}
-        for name, config in PRESETS.items()
+        name: {"description": PRESET_DESCRIPTIONS[name], "config": config.as_dict()} for name, config in PRESETS.items()
     }
 
 

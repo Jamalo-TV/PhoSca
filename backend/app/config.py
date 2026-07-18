@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     max_request_size: int = Field(default=209_715_200, alias="MAX_REQUEST_SIZE")
     max_image_pixels: int = Field(default=40_000_000, alias="MAX_IMAGE_PIXELS")
     max_image_frames: int = Field(default=1, alias="MAX_IMAGE_FRAMES")
-    pipeline_version: str = Field(default="2026-07-safety-v1", alias="PIPELINE_VERSION")
+    pipeline_version: str = Field(default="2026-07-crop-enhance-v2", alias="PIPELINE_VERSION")
     auth_required: bool = Field(default=False, alias="AUTH_REQUIRED")
     blur_threshold: float = Field(default=100.0, alias="BLUR_THRESHOLD")
     yolo_confidence_threshold: float = Field(default=0.7, alias="YOLO_CONFIDENCE_THRESHOLD")
@@ -30,20 +30,28 @@ class Settings(BaseSettings):
     yolo_model_path: Path = Field(default=Path("/app/models/yolov8-seg-album.onnx"), alias="YOLO_MODEL_PATH")
     model_manifest_path: Path = Field(default=Path("/app/models/manifest.json"), alias="MODEL_MANIFEST_PATH")
     require_registered_models: bool = Field(default=True, alias="REQUIRE_REGISTERED_MODELS")
-    segmentation_calibration_path: Path = Field(default=Path("/app/models/segmentation-calibration.json"), alias="SEGMENTATION_CALIBRATION_PATH")
+    segmentation_calibration_path: Path = Field(
+        default=Path("/app/models/segmentation-calibration.json"), alias="SEGMENTATION_CALIBRATION_PATH"
+    )
     require_confidence_calibration: bool = Field(default=True, alias="REQUIRE_CONFIDENCE_CALIBRATION")
-    realesrgan_model_path: Path = Field(default=Path("/app/models/RealESRGAN_x2plus.pth"), alias="REALESRGAN_MODEL_PATH")
+    realesrgan_model_path: Path = Field(
+        default=Path("/app/models/RealESRGAN_x2plus.pth"), alias="REALESRGAN_MODEL_PATH"
+    )
     gfpgan_model_path: Path = Field(default=Path("/app/models/GFPGANv1.3.pth"), alias="GFPGAN_MODEL_PATH")
-    segmentation_training_workspace: Path = Field(default=Path("data/segmentation_training"), alias="SEGMENTATION_TRAINING_WORKSPACE")
+    segmentation_training_workspace: Path = Field(
+        default=Path("data/segmentation_training"), alias="SEGMENTATION_TRAINING_WORKSPACE"
+    )
     enable_photo_orientation_correction: bool = Field(default=True, alias="ENABLE_PHOTO_ORIENTATION_CORRECTION")
-    photo_orientation_model_path: Path = Field(default=Path("/app/models/photo-orientation.onnx"), alias="PHOTO_ORIENTATION_MODEL_PATH")
+    photo_orientation_model_path: Path = Field(
+        default=Path("/app/models/photo-orientation.onnx"), alias="PHOTO_ORIENTATION_MODEL_PATH"
+    )
     paddleocr_model_path: Path = Field(default=Path("/app/models/paddleocr/"), alias="PADDLEOCR_MODEL_PATH")
     paddleocr_language: str = Field(default="en", alias="PADDLEOCR_LANGUAGE")
     enable_llm_fallback: bool = Field(default=False, alias="ENABLE_LLM_FALLBACK")
     llm_model_path: Path = Field(default=Path("/app/models/llava-phi3/"), alias="LLM_MODEL_PATH")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     celery_task_always_eager: bool = Field(default=False, alias="CELERY_TASK_ALWAYS_EAGER")
-    enable_classical_segmentation_fallback: bool = Field(default=False, alias="ENABLE_CLASSICAL_SEGMENTATION_FALLBACK")
+    enable_classical_segmentation_fallback: bool = Field(default=True, alias="ENABLE_CLASSICAL_SEGMENTATION_FALLBACK")
     enable_border_trim: bool = Field(default=False, alias="ENABLE_BORDER_TRIM")
     enable_protected_region_guard: bool = Field(default=True, alias="ENABLE_PROTECTED_REGION_GUARD")
     enable_conservative_enhancement: bool = Field(default=True, alias="ENABLE_CONSERVATIVE_ENHANCEMENT")

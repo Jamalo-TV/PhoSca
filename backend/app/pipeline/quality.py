@@ -1,4 +1,13 @@
 from dataclasses import dataclass
+from typing import Protocol
+
+
+class SegmentationQualityLike(Protocol):
+    @property
+    def geometry_valid(self) -> bool: ...
+
+    @property
+    def review_reasons(self) -> list[str]: ...
 
 
 @dataclass(frozen=True)
@@ -40,7 +49,7 @@ def segmentation_review_reasons(
     *,
     confidence: float,
     confidence_threshold: float,
-    quality: SegmentationQuality,
+    quality: SegmentationQualityLike,
 ) -> list[str]:
     reasons = list(quality.review_reasons)
     if confidence < confidence_threshold:

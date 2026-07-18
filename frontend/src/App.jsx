@@ -640,12 +640,61 @@ function boxToPolygon(box) {
 
 function sanitizePolygon(polygon) {
   if (!Array.isArray(polygon) || polygon.length < 4) return null;
-  const points = polygon.slice(0, 4).map((point) => ({ x: clampUnit(Number(point.x)), y: clampUnit(Number(point.y)) }));
-  return points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)) ? points : null;
+  const raw = polygon.map((point) => ({ x: Number(point?.x), y: Number(point?.y) }));
+  if (!raw.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))) return null;
+  return raw.map((point) => ({ x: clampUnit(point.x), y: clampUnit(point.y) }));
 }
 
 function polygonFromPhoto(photo) {
-  return sanitizePolygon(photo.segmentation_mask?.polygon) || boxToPolygon(photo.bounding_box);
+  return sanitizePolygon(photo.visible_polygon)
+    || sanitizePolygon(photo.segmentation_mask?.visible_polygon)
+    || sanitizePolygon(photo.segmentation_mask?.polygon)
+    || boxToPolygon(photo.bounding_box);
+}
+
+function cyclicQuad(points) {
+  if (!Array.isArray(points) || points.length !== 4) return null;
+  const center = points.reduce((sum, point) => ({ x: sum.x + point.x / 4, y: sum.y + point.y / 4 }), { x: 0, y: 0 });
+  const ordered = [...points].sort((a, b) => Math.atan2(a.y - center.y, a.x - center.x) - Math.atan2(b.y - center.y, b.x - center.x));
+  const start = ordered.reduce((best, point, index) => (point.x + point.y < ordered[best].x + ordered[best].y ? index : best), 0);
+  return [...ordered.slice(start), ...ordered.slice(0, start)];
+}
+
+function convexHull(points) {
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  if (sorted.length <= 1) return sorted;
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = [];
+  for (const point of sorted) {
+    while (lower.length >= 2 && cross(lower.at(-2), lower.at(-1), point) <= 0) lower.pop();
+    lower.push(point);
+  }
+  const upper = [];
+  for (const point of [...sorted].reverse()) {
+    while (upper.length >= 2 && cross(upper.at(-2), upper.at(-1), point) <= 0) upper.pop();
+    upper.push(point);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+function minimumAreaQuad(points) {
+  const hull = convexHull(points);
+  if (hull.length === 4) return cyclicQuad(hull);
+  if (hull.length < 2) return null;
+  let best = null;
+  hull.forEach((point, index) => {
+    const next = hull[(index + 1) % hull.length];
+    const angle = Math.atan2(next.y - point.y, next.x - point.x);
+    const cos = Math.cos(angle); const sin = Math.sin(angle);
+    const rotated = hull.map((candidate) => ({ x: candidate.x * cos + candidate.y * sin, y: -candidate.x * sin + candidate.y * cos }));
+    const xs = rotated.map((candidate) => candidate.x); const ys = rotated.map((candidate) => candidate.y);
+    const minX = Math.min(...xs); const maxX = Math.max(...xs); const minY = Math.min(...ys); const maxY = Math.max(...ys);
+    const area = (maxX - minX) * (maxY - minY);
+    if (best && best.area <= area) return;
+    const inverse = (candidate) => ({ x: candidate.x * cos - candidate.y * sin, y: candidate.x * sin + candidate.y * cos });
+    best = { area, points: [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }].map(inverse) };
+  });
+  return cyclicQuad(best?.points || []);
 }
 
 function boundingBoxFromPolygon(polygon) {
@@ -660,8 +709,19 @@ function boundingBoxFromPolygon(polygon) {
 }
 
 function draftShapeFromPhoto(photo) {
-  const polygon = polygonFromPhoto(photo);
-  return { polygon, boundingBox: boundingBoxFromPolygon(polygon) };
+  const visiblePolygon = polygonFromPhoto(photo);
+  const serverQuad = sanitizePolygon(photo.warp_quad)
+    || sanitizePolygon(photo.segmentation_mask?.warp_quad)
+    || sanitizePolygon(photo.correction?.warp_quad);
+  const warpQuad = cyclicQuad(serverQuad?.length === 4 ? serverQuad : [])
+    || (visiblePolygon.length === 4 ? cyclicQuad(visiblePolygon) : minimumAreaQuad(visiblePolygon))
+    || boxToPolygon(photo.bounding_box);
+  return {
+    visiblePolygon,
+    warpQuad,
+    visibleFollowsWarp: visiblePolygon.length === 4,
+    boundingBox: boundingBoxFromPolygon(warpQuad),
+  };
 }
 
 function pointInPolygon(point, polygon) {
@@ -677,9 +737,11 @@ function pointInPolygon(point, polygon) {
   return inside;
 }
 
-function maskFromPolygon(polygon) {
+function maskFromShape(shape) {
   return {
-    polygon: polygon.map((point) => ({ x: clampUnit(point.x), y: clampUnit(point.y) })),
+    polygon: shape.warpQuad.map((point) => ({ x: clampUnit(point.x), y: clampUnit(point.y) })),
+    visible_polygon: shape.visiblePolygon.map((point) => ({ x: clampUnit(point.x), y: clampUnit(point.y) })),
+    warp_quad: shape.warpQuad.map((point) => ({ x: clampUnit(point.x), y: clampUnit(point.y) })),
     source: "manual_quad",
   };
 }
@@ -1265,7 +1327,19 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     photos.forEach((photo) => {
       const shape = draftShapes[photo.id] || draftShapeFromPhoto(photo);
-      const points = shape.polygon.map((point) => ({ x: point.x * canvas.width, y: point.y * canvas.height }));
+      const visiblePoints = shape.visiblePolygon.map((point) => ({ x: point.x * canvas.width, y: point.y * canvas.height }));
+      const points = shape.warpQuad.map((point) => ({ x: point.x * canvas.width, y: point.y * canvas.height }));
+      if (visiblePoints.length >= 4) {
+        context.strokeStyle = "rgba(245, 158, 11, 0.9)";
+        context.lineWidth = 2;
+        context.beginPath();
+        visiblePoints.forEach((point, index) => {
+          if (index === 0) context.moveTo(point.x, point.y);
+          else context.lineTo(point.x, point.y);
+        });
+        context.closePath();
+        context.stroke();
+      }
       context.strokeStyle = photo.id === selectedPhotoId ? "#0f766e" : "#f59e0b";
       context.lineWidth = photo.id === selectedPhotoId ? 4 : 2;
       context.beginPath();
@@ -1310,14 +1384,14 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
     const point = pointToBox(event);
     for (const photo of [...photos].reverse()) {
       const shape = draftShapes[photo.id] || draftShapeFromPhoto(photo);
-      const cornerIndex = shape.polygon.findIndex((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) < 0.035);
+      const cornerIndex = shape.warpQuad.findIndex((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) < 0.035);
       if (cornerIndex >= 0) {
         onSelectPhoto(photo.id);
         dragRef.current = { photoId: photo.id, pointIndex: cornerIndex };
         canvasRef.current.setPointerCapture(event.pointerId);
         return;
       }
-      if (pointInPolygon(point, shape.polygon)) {
+      if (pointInPolygon(point, shape.visiblePolygon)) {
         onSelectPhoto(photo.id);
         return;
       }
@@ -1332,10 +1406,14 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
       const photo = photos.find((candidate) => candidate.id === photoId);
       const currentShape = current[photoId] || (photo ? draftShapeFromPhoto(photo) : null);
       if (!currentShape) return current;
-      const polygon = currentShape.polygon.map((corner, index) =>
+      const warpQuad = currentShape.warpQuad.map((corner, index) =>
         index === pointIndex ? { x: clampUnit(point.x), y: clampUnit(point.y) } : corner
       );
-      return { ...current, [photoId]: { polygon, boundingBox: boundingBoxFromPolygon(polygon) } };
+      const visiblePolygon = currentShape.visibleFollowsWarp ? warpQuad : currentShape.visiblePolygon;
+      return {
+        ...current,
+        [photoId]: { ...currentShape, warpQuad, visiblePolygon, boundingBox: boundingBoxFromPolygon(warpQuad) },
+      };
     });
   }
 
@@ -1349,7 +1427,7 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
   async function saveSelected() {
     if (!selectedPhotoId || !draftShapes[selectedPhotoId]) return;
     const shape = draftShapes[selectedPhotoId];
-    await onSaveBox(selectedPhotoId, shape.boundingBox, maskFromPolygon(shape.polygon));
+    await onSaveBox(selectedPhotoId, shape.boundingBox, maskFromShape(shape));
   }
 
   if (!page) return <EmptyState label="Select a page to review." />;
@@ -1378,7 +1456,18 @@ function ReviewView({ albumId, pages, photos, selectedPageId, setSelectedPageId,
   const [selectedPhotoId, setSelectedPhotoId] = useState(null);
 
   const selectedPage = pages.find((page) => page.id === selectedPageId) || pages[0] || null;
-  const pagePhotos = useMemo(() => photos.filter((photo) => photo.page_id === selectedPage?.id), [photos, selectedPage]);
+  const pagePhotos = useMemo(() => {
+    const enriched = new Map();
+    reviewItems.forEach((item) => {
+      const candidates = item.item_type === "segmentation" ? item.payload?.detections : [item.payload];
+      (candidates || []).forEach((payload) => {
+        if (payload?.photo_id) enriched.set(payload.photo_id, payload);
+      });
+    });
+    return photos
+      .filter((photo) => photo.page_id === selectedPage?.id)
+      .map((photo) => ({ ...photo, ...(enriched.get(photo.id) || {}) }));
+  }, [photos, reviewItems, selectedPage]);
 
   useEffect(() => {
     if (selectedPage && selectedPage.id !== selectedPageId) setSelectedPageId(selectedPage.id);
@@ -1477,7 +1566,10 @@ function ReviewView({ albumId, pages, photos, selectedPageId, setSelectedPageId,
               type="button"
               key={item.id}
               className="queue-row"
-              onClick={() => item.page_id && setSelectedPageId(item.page_id)}
+              onClick={() => {
+                if (item.page_id) setSelectedPageId(item.page_id);
+                if (item.payload?.photo_id) setSelectedPhotoId(item.payload.photo_id);
+              }}
             >
               <span>{item.item_type}</span>
               <StatusBadge status={item.status} />

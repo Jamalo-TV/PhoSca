@@ -78,7 +78,10 @@ def test_prepare_yolo_dataset_creates_non_overlapping_splits(tmp_path: Path) -> 
     assert len(manifest.golden) == 1
     assert set(manifest.train).isdisjoint(manifest.val)
     assert set(manifest.train).isdisjoint(manifest.golden)
-    assert validate_dataset(tmp_path / "data" / "data.yaml", golden_dir=tmp_path / "data" / "golden_fixtures").valid is True
+    assert (
+        validate_dataset(tmp_path / "data" / "data.yaml", golden_dir=tmp_path / "data" / "golden_fixtures").valid
+        is True
+    )
 
 
 def test_label_studio_export_builds_local_file_tasks(tmp_path: Path) -> None:
@@ -103,7 +106,6 @@ def test_label_studio_export_builds_local_file_tasks(tmp_path: Path) -> None:
 def test_label_studio_export_adds_classical_preannotations(tmp_path: Path) -> None:
     import cv2
     import numpy as np
-
     from scripts.export_label_studio_tasks import export_tasks
 
     source_images = tmp_path / "data" / "raw_album_pages"
@@ -130,6 +132,7 @@ def test_label_studio_export_adds_classical_preannotations(tmp_path: Path) -> No
     assert result["type"] == "polygonlabels"
     assert result["value"]["polygonlabels"] == ["photo"]
     assert len(result["value"]["points"]) >= 4
+
 
 def test_label_studio_json_conversion_writes_yolo_polygons(tmp_path: Path) -> None:
     from scripts.convert_label_studio_to_yolo import convert_tasks
@@ -199,6 +202,7 @@ def test_reviewed_yolo_export_groups_masks_by_page(tmp_path: Path) -> None:
         {
             "original_filename": "page_01.jpg",
             "photo_id": "photo-a",
+            "geometry_review_answer": "correct",
             "bounding_box": {"x1": 0.0, "y1": 0.0, "x2": 0.9, "y2": 0.9},
             "segmentation_mask": {
                 "source": "manual_quad",
@@ -236,6 +240,7 @@ def test_reviewed_yolo_export_can_require_manual_masks(tmp_path: Path) -> None:
         {
             "original_filename": "page_01.jpg",
             "photo_id": "auto-photo",
+            "geometry_review_answer": "correct",
             "bounding_box": {"x1": 0.1, "y1": 0.1, "x2": 0.7, "y2": 0.7},
             "segmentation_mask": {
                 "source": "classical_border_quad",
@@ -250,6 +255,7 @@ def test_reviewed_yolo_export_can_require_manual_masks(tmp_path: Path) -> None:
         {
             "original_filename": "page_01.jpg",
             "photo_id": "manual-photo",
+            "geometry_review_answer": "correct",
             "bounding_box": {"x1": 0.2, "y1": 0.2, "x2": 0.5, "y2": 0.5},
             "segmentation_mask": {
                 "source": "manual_quad",
@@ -267,7 +273,7 @@ def test_reviewed_yolo_export_can_require_manual_masks(tmp_path: Path) -> None:
 
     assert report.label_files_written == 1
     assert report.polygons_written == 1
-    assert report.skipped_photos == ["auto-photo: mask is not manual"]
+    assert report.skipped_photos == ["auto-photo: approved mask is not manual"]
     assert (tmp_path / "labels" / "page_01.txt").read_text(encoding="utf-8").startswith("0 0.200000")
 
 
@@ -284,7 +290,9 @@ def test_yolo_dataset_validator_accepts_complete_split(tmp_path: Path) -> None:
             encoding="utf-8",
         )
     data_yaml = tmp_path / "data.yaml"
-    data_yaml.write_text("path: dataset\ntrain: images/train\nval: images/val\nnc: 1\nnames: ['photo']\n", encoding="utf-8")
+    data_yaml.write_text(
+        "path: dataset\ntrain: images/train\nval: images/val\nnc: 1\nnames: ['photo']\n", encoding="utf-8"
+    )
 
     assert len(parse_yolo_segmentation_line("0 0.1 0.1 0.6 0.1 0.6 0.6 0.1 0.6", class_count=1)) == 4
     assert validate_dataset(data_yaml, golden_dir=tmp_path / "golden").valid is True
@@ -301,7 +309,9 @@ def test_yolo_dataset_validator_reports_missing_labels(tmp_path: Path) -> None:
     (root / "images" / "train" / "page_a.jpg").write_bytes(b"placeholder")
     (root / "images" / "val" / "page_b.jpg").write_bytes(b"placeholder")
     data_yaml = tmp_path / "data.yaml"
-    data_yaml.write_text("path: dataset\ntrain: images/train\nval: images/val\nnc: 1\nnames: ['photo']\n", encoding="utf-8")
+    data_yaml.write_text(
+        "path: dataset\ntrain: images/train\nval: images/val\nnc: 1\nnames: ['photo']\n", encoding="utf-8"
+    )
 
     report = validate_dataset(data_yaml, golden_dir=tmp_path / "golden")
 
@@ -310,7 +320,7 @@ def test_yolo_dataset_validator_reports_missing_labels(tmp_path: Path) -> None:
 
 
 def test_orientation_training_labels_are_correction_angles() -> None:
-    from scripts.train_orientation_model import correction_label, ROTATIONS
+    from scripts.train_orientation_model import ROTATIONS, correction_label
 
     assert ROTATIONS[correction_label(0)] == 0
     assert ROTATIONS[correction_label(90)] == 270
@@ -318,7 +328,9 @@ def test_orientation_training_labels_are_correction_angles() -> None:
     assert ROTATIONS[correction_label(270)] == 90
 
 
-@pytest.mark.skipif(not Path("data/golden_fixtures/labels").exists(), reason="Golden labels are required for IoU regression.")
+@pytest.mark.skipif(
+    not Path("data/golden_fixtures/labels").exists(), reason="Golden labels are required for IoU regression."
+)
 def test_golden_fixture_quality_gate_placeholder() -> None:
     # The real gate is executed by scripts/validate_segmentation.py and scripts/validate_ocr.py
     # against a live database after the 10 golden fixtures are processed.

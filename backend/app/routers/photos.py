@@ -1,3 +1,5 @@
+from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -5,14 +7,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.config import Settings, get_settings
 from app.core.auth import Principal, get_principal, require_write_principal
 from app.database import get_async_session
-from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PhotoStatus
+from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PhotoStatus, ProcessingRun, StageRun
 from app.pipeline.presets import available_presets
-from app.pipeline.variants import released_variant_from_photo, variant_path_from_photo, variant_urls, variants_from_metadata
+from app.pipeline.variants import (
+    released_variant_from_photo,
+    variant_path_from_photo,
+    variant_urls,
+    variants_from_metadata,
+)
 from app.schemas import BoundingBoxUpdate, OCRRead, OCRUpdate, PhotoDetail, PhotoRead
 from app.services.pipeline import (
     deduplication_task_logic,
@@ -49,15 +55,68 @@ def _photo_urls(photo: ExtractedPhoto) -> dict[str, str | None]:
 
 
 def _rect_mask_from_box(box: dict[str, float]) -> dict:
+    polygon = [
+        {"x": box["x1"], "y": box["y1"]},
+        {"x": box["x2"], "y": box["y1"]},
+        {"x": box["x2"], "y": box["y2"]},
+        {"x": box["x1"], "y": box["y2"]},
+    ]
     return {
-        "polygon": [
-            {"x": box["x1"], "y": box["y1"]},
-            {"x": box["x2"], "y": box["y1"]},
-            {"x": box["x2"], "y": box["y2"]},
-            {"x": box["x1"], "y": box["y2"]},
-        ],
+        "polygon": polygon,
+        "visible_polygon": polygon,
+        "warp_quad": polygon,
         "source": "manual_rect",
     }
+
+
+async def _prediction_provenance(session: AsyncSession, photo: ExtractedPhoto) -> dict:
+    page = await session.get(Page, photo.page_id)
+    if page is None:
+        return {}
+    run = await session.scalar(
+        select(ProcessingRun).where(ProcessingRun.page_id == page.id).order_by(ProcessingRun.created_at.desc()).limit(1)
+    )
+    stage = None
+    if run is not None:
+        stage = await session.scalar(
+            select(StageRun)
+            .where(StageRun.processing_run_id == run.id, StageRun.stage == "segmentation")
+            .order_by(StageRun.attempt.desc())
+            .limit(1)
+        )
+    return {
+        "page_id": str(page.id),
+        "page_sha256": page.file_hash_sha256,
+        "run_id": str(run.id) if run else None,
+        "pipeline_version": run.pipeline_version if run else None,
+        "config_fingerprint": run.config_fingerprint if run else None,
+        "segmentation_stage_id": str(stage.id) if stage else None,
+        "segmentation_stage_attempt": stage.attempt if stage else None,
+        "segmentation_stage_details": deepcopy(stage.details or {}) if stage else {},
+        "segmentation": deepcopy((page.processing_metadata or {}).get("steps", {}).get("segmentation", {})),
+    }
+
+
+def _geometry_snapshot(photo: ExtractedPhoto) -> dict:
+    return {
+        "bounding_box": deepcopy(photo.bounding_box),
+        "segmentation_mask": deepcopy(photo.segmentation_mask),
+        "segmentation_confidence": photo.segmentation_confidence,
+        "aspect_ratio": photo.aspect_ratio,
+        "geometry_valid": photo.geometry_valid,
+        "status": photo.status.value,
+    }
+
+
+async def _restore_review_provenance(session: AsyncSession, photo_id: UUID, review_provenance: dict) -> ExtractedPhoto:
+    photo = await session.get(ExtractedPhoto, photo_id, populate_existing=True)
+    if photo is None:
+        raise ValueError(f"Photo not found after correction: {photo_id}")
+    metadata = deepcopy(photo.enhancement_applied or {})
+    metadata["review_provenance"] = deepcopy(review_provenance)
+    photo.enhancement_applied = metadata
+    await session.commit()
+    return photo
 
 
 @router.get("/presets")
@@ -138,7 +197,11 @@ async def get_page_ocr(
     principal: Principal | None = Depends(get_principal),
 ) -> list[OCRResult]:
     await _page_for_principal(session, page_id, principal)
-    return (await session.scalars(select(OCRResult).where(OCRResult.page_id == page_id).order_by(OCRResult.created_at.asc()))).all()
+    return (
+        await session.scalars(
+            select(OCRResult).where(OCRResult.page_id == page_id).order_by(OCRResult.created_at.asc())
+        )
+    ).all()
 
 
 @router.patch("/photos/{photo_id}/bounding-box", response_model=PhotoRead)
@@ -150,29 +213,72 @@ async def update_photo_bounding_box(
     principal: Principal | None = Depends(require_write_principal),
 ) -> ExtractedPhoto:
     photo = await _photo_for_principal(session, photo_id, principal)
+    before = _geometry_snapshot(photo)
+    prediction_provenance = await _prediction_provenance(session, photo)
     box = payload.bounding_box.as_dict()
     if box["x2"] <= box["x1"] or box["y2"] <= box["y1"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bounding box must have positive area.")
     segmentation_mask = payload.segmentation_mask.as_dict() if payload.segmentation_mask else _rect_mask_from_box(box)
+    if "visible_polygon" not in segmentation_mask:
+        segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask.get("polygon"))
+    if "warp_quad" not in segmentation_mask and len(segmentation_mask.get("polygon") or []) == 4:
+        segmentation_mask["warp_quad"] = deepcopy(segmentation_mask["polygon"])
+    after = {
+        "bounding_box": deepcopy(box),
+        "segmentation_mask": deepcopy(segmentation_mask),
+        "segmentation_confidence": None,
+        "aspect_ratio": (box["x2"] - box["x1"]) / max(box["y2"] - box["y1"], 1e-9),
+        "geometry_valid": True,
+        "status": PhotoStatus.pending.value,
+    }
+    metadata = deepcopy(photo.enhancement_applied or {})
+    review_provenance = deepcopy(metadata.get("review_provenance") or {})
+    review_provenance.setdefault("original_prediction", before)
+    review_provenance.setdefault("prediction_provenance", prediction_provenance)
+    revisions = list(review_provenance.get("correction_revisions") or [])
+    revisions.append(
+        {
+            "revision": len(revisions) + 1,
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "before": before,
+            "after": after,
+            "source": segmentation_mask.get("source"),
+        }
+    )
+    review_provenance["correction_revisions"] = revisions
+    metadata["review_provenance"] = review_provenance
     photo.bounding_box = box
     photo.segmentation_mask = segmentation_mask
+    photo.segmentation_confidence = None
+    photo.aspect_ratio = after["aspect_ratio"]
+    photo.geometry_valid = True
+    photo.enhancement_applied = metadata
     photo.status = PhotoStatus.pending
     session.add(
         AuditLog(
             entity_type="photo",
             entity_id=photo.id,
             action="bounding_box_updated",
-            details={"bounding_box": box, "segmentation_mask": segmentation_mask},
+            details={
+                "before": before,
+                "after": after,
+                "prediction_provenance": prediction_provenance,
+                # Retain the legacy fields for existing audit consumers.
+                "bounding_box": box,
+                "segmentation_mask": segmentation_mask,
+            },
         )
     )
     await session.commit()
     correction = await perspective_correction_task_logic(session, photo.id, settings)
+    refreshed = await _restore_review_provenance(session, photo.id, review_provenance)
     if correction.get("review_required"):
-        return await session.get(ExtractedPhoto, photo_id)
+        return refreshed
     await enhancement_task_logic(session, photo.id, settings)
+    await _restore_review_provenance(session, photo.id, review_provenance)
     await deduplication_task_logic(session, photo.id, settings)
     await persistence_task_logic(session, photo.id, settings)
-    return await session.get(ExtractedPhoto, photo_id)
+    return await _restore_review_provenance(session, photo.id, review_provenance)
 
 
 @router.patch("/ocr/{ocr_id}", response_model=OCRRead)
@@ -191,7 +297,9 @@ async def update_ocr_result(
     ocr.text_content = payload.text_content
     ocr.text_type = payload.text_type
     ocr.is_verified = payload.is_verified
-    session.add(AuditLog(entity_type="page", entity_id=ocr.page_id, action="ocr_updated", details={"ocr_id": str(ocr.id)}))
+    session.add(
+        AuditLog(entity_type="page", entity_id=ocr.page_id, action="ocr_updated", details={"ocr_id": str(ocr.id)})
+    )
     await session.commit()
     if ocr.photo_id:
         await persistence_task_logic(session, ocr.photo_id)

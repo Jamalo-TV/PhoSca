@@ -70,7 +70,7 @@ Place local-only model files under `models/`:
 - `models/photo-orientation.onnx` (optional 0/90/180/270 classifier)
 - `models/paddleocr/`
 
-The segmentation ONNX parser supports YOLO-style box outputs and segmentation prototype masks, including channels-first and channels-last prototype tensors. If ONNX weights are absent, the pipeline records that fact and uses the classical contour fallback when enabled. Photo orientation correction is enabled by default; it uses `models/photo-orientation.onnx` when present, otherwise it falls back to a conservative face/detail heuristic. Train the optional orientation model from manually reviewed upright crops with `scripts/train_orientation_model.py`. PaddleOCR is loaded lazily; OCR can also be tested with `.ocr.json` sidecars next to uploaded page images.
+The segmentation ONNX parser supports YOLO-style box outputs and segmentation prototype masks, including channels-first and channels-last prototype tensors. Classical boundary analysis is enabled as risk-triggered geometric evidence: it runs when the model is missing, empty, or produces a suspicious instance set, and is fused without suppressing legitimate overlaps. Photo orientation correction uses `models/photo-orientation.onnx` when present; without a calibrated model, face/detail evidence is advisory only and pixels are preserved for review. Train the optional orientation model from manually reviewed upright crops with `scripts/train_orientation_model.py`. PaddleOCR is loaded lazily; OCR can also be tested with `.ocr.json` sidecars next to uploaded page images.
 
 ## Tests And Scans
 
@@ -121,12 +121,15 @@ python scripts/setup_segmentation_training.py train
 
 `bootstrap` copies the existing example pages from `data/raw_album_pages`, creates editable Label Studio preannotations, and writes `data/segmentation_training/label_studio_tasks.json`. Review complete printed photos as `photo` polygons, export the reviewed JSON into `data/segmentation_training/exports/label_studio_export.json`, then run the conversion and training commands. The training command prepares `data/yolo_dataset`, validates labels, fine-tunes the YOLO segmentation model, and exports `models/yolov8-seg-album.onnx`.
 
-Use `docs/LABEL_STUDIO.md` for the labeling UI details. The golden regression tests remain skipped until `data/golden_fixtures/labels/*.txt` contains 10 locked labels. The lower-level commands remain available:
+Use `docs/LABEL_STUDIO.md` for the labeling UI details. Ten locked golden pages and their verified polygon labels are available as a same-domain regression holdout; they are not an album-independent consumer benchmark. The lower-level commands remain available:
 
 ```bash
 python scripts/export_label_studio_tasks.py --source-images data/raw_album_pages --output data/label_studio_tasks.json --preannotate
 python scripts/convert_label_studio_to_yolo.py --input data/label_studio_export.json --output data/label_exports/yolo
 # Or export masks reviewed inside PhoSca directly:
+python scripts/export_reviewed_dataset.py --database-url $DATABASE_URL --output data/reviewed_dataset
+python scripts/split_reviewed_dataset.py --input data/reviewed_dataset/manifest.jsonl --output data/reviewed_dataset/splits
+# Derive legacy YOLO labels only from explicitly approved, valid geometry:
 python scripts/export_reviewed_yolo_labels.py --album-id <album-id> --output data/label_exports/yolo --manual-only --require-complete
 python scripts/prepare_yolo_dataset.py --source-images data/raw_album_pages --source-labels data/label_exports/yolo
 python scripts/validate_yolo_dataset.py --data data/data.yaml
@@ -139,7 +142,8 @@ python scripts/validate_ocr.py --album-id <album-id>
 Safety and operations evidence:
 
 ```bash
-python scripts/evaluate_onnx_segmentation.py --model models/yolov8-seg-album.onnx --manifest models/manifest.json
+python scripts/evaluate_onnx_segmentation.py --include-classical-fallback --output runs/cropping-current.json
+python scripts/evaluate_enhancement.py --output-dir runs/enhancement-current
 python scripts/fit_confidence_calibration.py labelled-predictions.json --holdout-id <independent-holdout-id>
 python scripts/evaluate_shadow_drift.py stable.json shadow.json --output evidence/shadow-drift.json
 python scripts/run_retention.py

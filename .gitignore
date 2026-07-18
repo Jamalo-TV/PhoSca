@@ -46,3 +46,5 @@ data/*_mobile_review.json
 data/yolo_dataset/labels/*.cache
 gfpgan/
 test_output/
+runs/
+data/reviewed_dataset/

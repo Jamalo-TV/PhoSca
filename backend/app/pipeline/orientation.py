@@ -6,7 +6,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-
 _ROTATIONS = (0, 90, 180, 270)
 
 
@@ -151,37 +150,45 @@ def correct_photo_orientation(
         ranked = sorted(model_scores.items(), key=lambda item: item[1], reverse=True)
         best_angle, best_score = ranked[0]
         runner_up = ranked[1][1] if len(ranked) > 1 else 0.0
-        if best_angle and best_score >= min_confidence and best_score - runner_up >= min_margin:
+        confident = best_score >= min_confidence and best_score - runner_up >= min_margin
+        if confident:
             return rotate_image(image, best_angle), {
                 "rotation_degrees": best_angle,
                 "method": "onnx_orientation",
                 "confidence": round(best_score, 4),
+                "decision": "auto_rotate" if best_angle else "confidently_preserve",
                 "scores": {str(angle): round(score, 4) for angle, score in model_scores.items()},
             }
         return image, {
             "rotation_degrees": 0,
+            "suggested_rotation_degrees": best_angle,
             "method": "onnx_orientation",
             "confidence": round(best_score, 4),
-            "reason": "low_confidence_or_margin",
+            "decision": "preserve_and_review",
+            "reason": "ORIENTATION_UNCERTAIN",
+            "reason_code": "ORIENTATION_UNCERTAIN",
             "scores": {str(angle): round(score, 4) for angle, score in model_scores.items()},
         }
 
     heuristic_scores = _heuristic_orientation_scores(image)
-    ranked = sorted(heuristic_scores.items(), key=lambda item: item[1]["combined"], reverse=True)
-    best_angle, best_parts = ranked[0]
-    runner_up = ranked[1][1]["combined"] if len(ranked) > 1 else 0.0
+    heuristic_ranked = sorted(heuristic_scores.items(), key=lambda item: item[1]["combined"], reverse=True)
+    best_angle, best_parts = heuristic_ranked[0]
+    runner_up = heuristic_ranked[1][1]["combined"] if len(heuristic_ranked) > 1 else 0.0
     best_score = best_parts["combined"]
-    face_present = max(parts["face"] for parts in heuristic_scores.values()) > 0.0
-    required_margin = 0.04 if face_present else 0.06
-    required_score = 0.05 if face_present else 0.12
+    runner_up_margin = best_score - runner_up
+    bounded_evidence = best_score / (1.0 + max(0.0, best_score))
     metadata = {
         "rotation_degrees": 0,
+        "suggested_rotation_degrees": best_angle,
         "method": "heuristic_face_detail",
-        "confidence": round(best_score, 4),
+        "confidence": round(bounded_evidence, 4),
+        "evidence_score": round(best_score, 4),
+        "evidence_margin": round(runner_up_margin, 4),
+        "decision": "advisory_preserve",
+        "reason": "ORIENTATION_UNCERTAIN",
+        "reason_code": "ORIENTATION_UNCERTAIN",
         "scores": {str(angle): parts for angle, parts in heuristic_scores.items()},
     }
-    if best_angle and best_score >= required_score and best_score - runner_up >= required_margin:
-        metadata["rotation_degrees"] = best_angle
-        return rotate_image(image, best_angle), metadata
-    metadata["reason"] = "low_confidence_or_margin"
+    # Haar/detail-gravity signals are useful review hints but are neither
+    # calibrated nor robust enough to mutate archival pixels automatically.
     return image, metadata

@@ -96,11 +96,12 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome }) {
 function DetectionOverlay({ item, editable = false, onSaved }) {
   const sourceBox = item.payload?.bounding_box;
   const detections = sourceBox ? [{ bounding_box: sourceBox, photo_id: item.payload?.photo_id }] : (item.payload?.detections || []);
-  const [quad, setQuad] = useState(() => initialQuad(item.payload?.polygon, sourceBox)); const [saving, setSaving] = useState(false);
+  const visiblePolygon = sanitizeReviewPolygon(item.payload?.visible_polygon || item.payload?.polygon);
+  const [quad, setQuad] = useState(() => initialQuad(item.payload?.warp_quad, visiblePolygon, sourceBox)); const [saving, setSaving] = useState(false);
   const [savedCropUrl, setSavedCropUrl] = useState(""); const [saveError, setSaveError] = useState("");
   const [magnifierEnabled, setMagnifierEnabled] = useState(true);
   const [magnifier, setMagnifier] = useState({ visible: false, x: 0, y: 0 });
-  useEffect(() => { setQuad(initialQuad(item.payload?.polygon, sourceBox)); setSavedCropUrl(""); setSaveError(""); }, [item.id]);
+  useEffect(() => { setQuad(initialQuad(item.payload?.warp_quad, visiblePolygon, sourceBox)); setSavedCropUrl(""); setSaveError(""); }, [item.id]);
   const box = quadToBox(quad);
   const validQuad = isValidQuad(quad);
   function moveCorner(event, cornerIndex) {
@@ -121,7 +122,12 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   async function save() {
     if (!validQuad) return; setSaving(true); setSaveError("");
     try {
-      await patchBoundingBox(item.payload.photo_id, box, { polygon: quad, source: "manual_mobile_quad" });
+      await patchBoundingBox(item.payload.photo_id, box, {
+        polygon: quad,
+        visible_polygon: visiblePolygon || quad,
+        warp_quad: quad,
+        source: "manual_mobile_quad",
+      });
       const nextUrl=`/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`;
       setSavedCropUrl(nextUrl); await onSaved?.({ bounding_box: box, polygon: quad });
     } catch (error) { setSaveError(error.message || "Ausschnitt konnte nicht gespeichert werden."); }
@@ -132,17 +138,46 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   const lensPosition = value => ((0.5 - 3.6 * value) / (1 - 3.6)) * 100;
   const lensX=Math.max(20,Math.min(80,magnifier.x*100+(magnifier.x>0.5?-24:24)));
   const lensY=Math.max(20,Math.min(80,magnifier.y*100+(magnifier.y<0.3?25:-25)));
-  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g><polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>{editable && <><div className="quad-hint">Vier nummerierte Ecken frei verschieben · danach wird das Foto geradegerichtet</div><button className={`magnifier-toggle ${magnifierEnabled ? "active" : ""}`} onClick={()=>setMagnifierEnabled(value=>!value)}><ZoomIn size={18}/>{magnifierEnabled ? "Lupe beim Ziehen aktiv" : "Lupe einschalten"}</button><button className="save-crop" onClick={save} disabled={saving || !validQuad}><Save size={18}/>{saving ? "Richtet das Bild …" : "Viereck speichern & geraderichten"}</button>{saveError && <p className="crop-save-error">{saveError}</p>}{quad && <LiveCropPreview src={item.preview_url} quad={quad} savedCropUrl={savedCropUrl}/>}</>}</>;
+  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g>{visiblePolygon && <polygon points={visiblePolygon.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9"/>}<polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>{editable && <><div className="quad-hint">Vier nummerierte Ecken frei verschieben · danach wird das Foto geradegerichtet</div><button className={`magnifier-toggle ${magnifierEnabled ? "active" : ""}`} onClick={()=>setMagnifierEnabled(value=>!value)}><ZoomIn size={18}/>{magnifierEnabled ? "Lupe beim Ziehen aktiv" : "Lupe einschalten"}</button><button className="save-crop" onClick={save} disabled={saving || !validQuad}><Save size={18}/>{saving ? "Richtet das Bild …" : "Viereck speichern & geraderichten"}</button>{saveError && <p className="crop-save-error">{saveError}</p>}{quad && <LiveCropPreview src={item.preview_url} quad={quad} savedCropUrl={savedCropUrl}/>}</>}</>;
 }
 
-function initialQuad(polygon, box) {
-  const points=Array.isArray(polygon) ? polygon.filter(point=>Number.isFinite(point?.x)&&Number.isFinite(point?.y)) : [];
-  if(points.length>=4){
-    const tl=points.reduce((a,b)=>a.x+a.y<=b.x+b.y?a:b); const br=points.reduce((a,b)=>a.x+a.y>=b.x+b.y?a:b);
-    const tr=points.reduce((a,b)=>a.x-a.y>=b.x-b.y?a:b); const bl=points.reduce((a,b)=>a.x-a.y<=b.x-b.y?a:b);
-    const candidate=[tl,tr,br,bl].map(point=>({x:Number(point.x),y:Number(point.y)}));
-    if(new Set(candidate.map(point=>`${point.x.toFixed(6)}:${point.y.toFixed(6)}`)).size===4 && isValidQuad(candidate)) return candidate;
-  }
+function sanitizeReviewPolygon(polygon) {
+  if (!Array.isArray(polygon) || polygon.length < 4) return null;
+  const points=polygon.map(point=>({x:Number(point?.x),y:Number(point?.y)}));
+  return points.every(point=>Number.isFinite(point.x)&&Number.isFinite(point.y)) ? points : null;
+}
+
+function cyclicReviewQuad(points) {
+  if (!Array.isArray(points) || points.length !== 4) return null;
+  const center=points.reduce((sum,point)=>({x:sum.x+point.x/4,y:sum.y+point.y/4}),{x:0,y:0});
+  const ordered=[...points].sort((a,b)=>Math.atan2(a.y-center.y,a.x-center.x)-Math.atan2(b.y-center.y,b.x-center.x));
+  const start=ordered.reduce((best,point,index)=>point.x+point.y<ordered[best].x+ordered[best].y?index:best,0);
+  const candidate=[...ordered.slice(start),...ordered.slice(0,start)];
+  return isValidQuad(candidate) ? candidate : null;
+}
+
+function reviewHull(points) {
+  const sorted=[...points].sort((a,b)=>a.x-b.x||a.y-b.y); const cross=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);
+  const lower=[]; for(const point of sorted){while(lower.length>=2&&cross(lower.at(-2),lower.at(-1),point)<=0)lower.pop();lower.push(point);}
+  const upper=[]; for(const point of [...sorted].reverse()){while(upper.length>=2&&cross(upper.at(-2),upper.at(-1),point)<=0)upper.pop();upper.push(point);}
+  return [...lower.slice(0,-1),...upper.slice(0,-1)];
+}
+
+function minimumAreaReviewQuad(points) {
+  const hull=reviewHull(points); if(hull.length===4)return cyclicReviewQuad(hull); if(hull.length<2)return null; let best=null;
+  hull.forEach((point,index)=>{const next=hull[(index+1)%hull.length],angle=Math.atan2(next.y-point.y,next.x-point.x),cos=Math.cos(angle),sin=Math.sin(angle);
+    const rotated=hull.map(candidate=>({x:candidate.x*cos+candidate.y*sin,y:-candidate.x*sin+candidate.y*cos}));
+    const xs=rotated.map(candidate=>candidate.x),ys=rotated.map(candidate=>candidate.y),minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys),area=(maxX-minX)*(maxY-minY);
+    if(best&&best.area<=area)return; const inverse=candidate=>({x:candidate.x*cos-candidate.y*sin,y:candidate.x*sin+candidate.y*cos});
+    best={area,points:[{x:minX,y:minY},{x:maxX,y:minY},{x:maxX,y:maxY},{x:minX,y:maxY}].map(inverse)};
+  });
+  return cyclicReviewQuad(best?.points||[]);
+}
+
+function initialQuad(serverQuad, visiblePolygon, box) {
+  const server=sanitizeReviewPolygon(serverQuad);
+  if(server?.length===4){const candidate=cyclicReviewQuad(server);if(candidate)return candidate;}
+  if(visiblePolygon){const candidate=visiblePolygon.length===4?cyclicReviewQuad(visiblePolygon):minimumAreaReviewQuad(visiblePolygon);if(candidate)return candidate;}
   if(!box) return null;
   return [{x:box.x1,y:box.y1},{x:box.x2,y:box.y1},{x:box.x2,y:box.y2},{x:box.x1,y:box.y2}];
 }

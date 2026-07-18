@@ -2,6 +2,7 @@ import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import cv2
 import numpy as np
@@ -153,7 +154,12 @@ def test_classical_segmentation_detects_low_contrast_photo_region() -> None:
     result = detect_photos_classical(image)
     height, width = image.shape[:2]
     detected_boxes = [_pixel_box(detection.bounding_box, width, height) for detection in result.detections]
-    expected_xyxy = (expected_box[0], expected_box[1], expected_box[0] + expected_box[2], expected_box[1] + expected_box[3])
+    expected_xyxy = (
+        expected_box[0],
+        expected_box[1],
+        expected_box[0] + expected_box[2],
+        expected_box[1] + expected_box[3],
+    )
 
     assert len(result.detections) == 1
     assert result.detections[0].mask["detector_source"] == "contrast_region"
@@ -164,7 +170,7 @@ def test_classical_segmentation_detects_low_contrast_photo_region() -> None:
 def test_yolo_segmentation_parser_uses_proto_mask_polygon() -> None:
     from app.pipeline.segmentation import _parse_simple_box_outputs
 
-    settings = SimpleNamespace(
+    settings: Any = SimpleNamespace(
         yolo_confidence_threshold=0.25,
         yolo_proposal_threshold=0.25,
         segmentation_min_aspect_ratio=0.2,
@@ -194,7 +200,7 @@ def test_yolo_segmentation_parser_uses_proto_mask_polygon() -> None:
 def test_yolo_box_parser_normalizes_coordinates_against_model_input() -> None:
     from app.pipeline.segmentation import _parse_simple_box_outputs
 
-    settings = SimpleNamespace(
+    settings: Any = SimpleNamespace(
         yolo_confidence_threshold=0.25,
         yolo_proposal_threshold=0.25,
         segmentation_min_aspect_ratio=0.2,
@@ -217,12 +223,10 @@ def test_yolo_box_parser_normalizes_coordinates_against_model_input() -> None:
     assert 0.79 < box["y2"] < 0.81
 
 
-
-
 def test_yolo_box_parser_undoes_letterbox_padding() -> None:
     from app.pipeline.segmentation import _parse_simple_box_outputs
 
-    settings = SimpleNamespace(
+    settings: Any = SimpleNamespace(
         yolo_confidence_threshold=0.25,
         yolo_proposal_threshold=0.25,
         segmentation_min_aspect_ratio=0.2,
@@ -245,10 +249,11 @@ def test_yolo_box_parser_undoes_letterbox_padding() -> None:
     assert 0.24 < box["y1"] < 0.26
     assert 0.74 < box["y2"] < 0.76
 
+
 def test_yolo_segmentation_parser_accepts_channels_last_proto() -> None:
     from app.pipeline.segmentation import _parse_simple_box_outputs
 
-    settings = SimpleNamespace(
+    settings: Any = SimpleNamespace(
         yolo_confidence_threshold=0.25,
         yolo_proposal_threshold=0.25,
         segmentation_min_aspect_ratio=0.2,
@@ -351,7 +356,9 @@ def test_classical_segmentation_detects_perspective_photo_corners() -> None:
     assert len(result.detections) == 1
     detection = result.detections[0]
     assert detection.mask["source"] == "classical_border_quad"
-    points = np.array([[point["x"] * image.shape[1], point["y"] * image.shape[0]] for point in detection.mask["polygon"]])
+    points = np.array(
+        [[point["x"] * image.shape[1], point["y"] * image.shape[0]] for point in detection.mask["polygon"]]
+    )
     top_width = np.linalg.norm(points[1] - points[0])
     bottom_width = np.linalg.norm(points[2] - points[3])
     assert abs(top_width - bottom_width) > 45
@@ -362,14 +369,17 @@ def test_classical_segmentation_detects_perspective_photo_corners() -> None:
     assert 1.45 < width / height < 1.85
 
 
-def test_photo_orientation_correction_rotates_confident_sideways_portrait() -> None:
+def test_photo_orientation_heuristic_is_advisory_for_sideways_portrait() -> None:
     from app.pipeline.orientation import correct_photo_orientation, rotate_image
 
     sideways = rotate_image(upright_portrait_photo(), 90)
     corrected, metadata = correct_photo_orientation(sideways)
 
-    assert metadata["rotation_degrees"] == 270
-    assert corrected.shape[:2] == (220, 160)
+    assert metadata["rotation_degrees"] == 0
+    assert metadata["suggested_rotation_degrees"] == 270
+    assert metadata["decision"] == "advisory_preserve"
+    assert metadata["reason_code"] == "ORIENTATION_UNCERTAIN"
+    assert np.array_equal(corrected, sideways)
 
 
 def test_uniform_border_removal_trims_page_margin() -> None:
@@ -433,7 +443,9 @@ def test_ocr_spatial_classification_links_caption_to_photo() -> None:
             engine="sidecar",
         ),
     ]
-    photos = [{"id": "11111111-1111-1111-1111-111111111111", "bounding_box": {"x1": 0.14, "y1": 0.23, "x2": 0.56, "y2": 0.67}}]
+    photos = [
+        {"id": "11111111-1111-1111-1111-111111111111", "bounding_box": {"x1": 0.14, "y1": 0.23, "x2": 0.56, "y2": 0.67}}
+    ]
 
     classified = classify_ocr_blocks(blocks, photos)
 
@@ -443,17 +455,19 @@ def test_ocr_spatial_classification_links_caption_to_photo() -> None:
 
 
 def test_enhancement_defaults_to_safe_no_model_path_and_phash_primitives(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
     from app.pipeline.dedup import compute_phash, hamming_distance
     from app.pipeline.dl_enhancement import dl_enhance_photo
     from app.pipeline.image_ops import save_jpeg
-    from unittest.mock import patch
 
     image = synthetic_album_page()
     image[130:170, 160:200] = (255, 255, 255)
 
-    with patch("app.pipeline.dl_enhancement.get_dl_models") as mock_models, \
-         patch("app.pipeline.inpainting.inpaint_scratches") as mock_inpaint:
-
+    with (
+        patch("app.pipeline.dl_enhancement.get_dl_models") as mock_models,
+        patch("app.pipeline.inpainting.inpaint_scratches") as mock_inpaint,
+    ):
         # Mock inpainting
         mock_inpaint.return_value = (image, {"scratch_removal": True})
 
@@ -546,7 +560,6 @@ def test_variant_selector_requires_explicit_auto_release(tmp_path: Path) -> None
 
 def test_perspective_rejects_duplicate_quad_corners() -> None:
     import pytest
-
     from app.pipeline.perspective import crop_and_correct_photo
 
     image = synthetic_album_page()
@@ -595,8 +608,9 @@ def test_quality_assessor_rejects_obvious_overprocessing() -> None:
 
 
 def test_premium_enhancement_preserves_source_structure() -> None:
-    from app.pipeline.diffusion_restoration import premium_enhance_photo
     from unittest.mock import patch
+
+    from app.pipeline.diffusion_restoration import premium_enhance_photo
 
     image = synthetic_album_page()
     upscaled = cv2.resize(image, (image.shape[1] * 2, image.shape[0] * 2), interpolation=cv2.INTER_CUBIC)
@@ -645,7 +659,17 @@ def test_exif_caption_write_strips_sensitive_tags(tmp_path: Path) -> None:
 async def test_full_synthetic_page_pipeline(client) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
-    from app.models import Album, AlbumStatus, Asset, ExtractedPhoto, OCRResult, Page, ProcessingRun, RunStatus, StageRun
+    from app.models import (
+        Album,
+        AlbumStatus,
+        Asset,
+        ExtractedPhoto,
+        OCRResult,
+        Page,
+        ProcessingRun,
+        RunStatus,
+        StageRun,
+    )
     from app.services.pipeline import process_page_pipeline
 
     settings = get_settings()
@@ -692,7 +716,7 @@ async def test_full_synthetic_page_pipeline(client) -> None:
     assert replay["idempotent_replay"] is True
     async with get_session_factory()() as session:
         page = await session.get(Page, page_id)
-        album = await session.get(Album, page.album_id) if page is not None else None
+        loaded_album = await session.get(Album, page.album_id) if page is not None else None
         photos = (await session.scalars(select(ExtractedPhoto).where(ExtractedPhoto.page_id == page_id))).all()
         ocr_rows = (await session.scalars(select(OCRResult).where(OCRResult.page_id == page_id))).all()
         runs = (await session.scalars(select(ProcessingRun).where(ProcessingRun.page_id == page_id))).all()
@@ -700,9 +724,9 @@ async def test_full_synthetic_page_pipeline(client) -> None:
         assets = (await session.scalars(select(Asset).where(Asset.processing_run_id == runs[0].id))).all()
 
     assert page is not None
-    assert album is not None
-    assert album.status == AlbumStatus.completed
-    assert album.processed_pages == album.total_pages == 1
+    assert loaded_album is not None
+    assert loaded_album.status == AlbumStatus.completed
+    assert loaded_album.processed_pages == loaded_album.total_pages == 1
     assert page.blur_score is not None
     assert page.processing_metadata["steps"]["pre_cutout_enhancement"]["order"] == "before_segmentation_and_crop"
     assert photos
@@ -712,7 +736,13 @@ async def test_full_synthetic_page_pipeline(client) -> None:
     assert len(runs) == 1
     assert runs[0].status in {RunStatus.completed, RunStatus.review_needed}
     assert {stage.stage for stage in stages} >= {
-        "ingestion", "segmentation", "perspective_correction", "ocr", "enhancement", "deduplication", "persistence"
+        "ingestion",
+        "segmentation",
+        "perspective_correction",
+        "ocr",
+        "enhancement",
+        "deduplication",
+        "persistence",
     }
     assert all(stage.attempt == 1 for stage in stages)
     assert {asset.role for asset in assets} >= {"page_original", "corrected_print", "released_variant"}
@@ -725,7 +755,11 @@ async def test_full_synthetic_page_pipeline(client) -> None:
     assert run_response.status_code == 200, run_response.text
     run_payload = run_response.json()[0]
     assert run_payload["id"] == str(runs[0].id)
-    assert {asset["role"] for asset in run_payload["assets"]} >= {"page_original", "corrected_print", "released_variant"}
+    assert {asset["role"] for asset in run_payload["assets"]} >= {
+        "page_original",
+        "corrected_print",
+        "released_variant",
+    }
 
 
 async def test_photo_image_serves_variant_metadata_path(client) -> None:

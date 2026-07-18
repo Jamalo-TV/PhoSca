@@ -1,20 +1,41 @@
+from __future__ import annotations
+
+import gc
+import hashlib
+import logging
+from dataclasses import replace
+from pathlib import Path
+from time import perf_counter
+
 import cv2
 import numpy as np
-import logging
-import gc
-from pathlib import Path
 import torch
-from app.pipeline.color_correction import apply_color_corrections
+
 from app.pipeline.degradation import DegradationReport, analyze_degradation
-from app.pipeline.presets import EnhancementConfig, get_enhancement_config
-from app.pipeline.quality_assessment import QualityAssessor, QualityDelta
+from app.pipeline.enhancement_types import normalize_bgr_uint8
+from app.pipeline.presets import get_enhancement_config
+from app.pipeline.quality_critic import evaluate_candidate
 from app.utils.device import get_best_device, get_optimal_tile_size
 
 logger = logging.getLogger(__name__)
-
-# Global instances so we don't reload models for every request
 _enhancer = None
 _face_enhancer = None
+_model_cache_key: tuple | None = None
+
+
+def _path_identity(path: Path | None) -> tuple[str | None, int | None, int | None]:
+    if path is None or not path.is_file():
+        return None, None, None
+    stat = path.stat()
+    return str(path.resolve()), int(stat.st_size), int(stat.st_mtime_ns)
+
+
+def _array_sha256(image: np.ndarray) -> str:
+    digest = hashlib.sha256()
+    digest.update(str(image.dtype).encode("ascii"))
+    digest.update(np.asarray(image.shape, dtype=np.int64).tobytes())
+    digest.update(np.ascontiguousarray(image).tobytes())
+    return digest.hexdigest()
 
 
 def _blend_with_reference(enhanced: np.ndarray, reference: np.ndarray, reference_weight: float = 0.12) -> np.ndarray:
@@ -30,65 +51,77 @@ def get_dl_models(
     realesrgan_model_path: Path | None = None,
     gfpgan_model_path: Path | None = None,
 ):
-    """Lazy load models to avoid slowing down backend startup if not used."""
-    global _enhancer, _face_enhancer
-    if _enhancer is not None and (_face_enhancer is not None or not load_faces):
-        return _enhancer, _face_enhancer
-
-    device = get_best_device()
-
+    """Load a cache keyed by artifact identity and inference configuration."""
+    global _enhancer, _face_enhancer, _model_cache_key
     if realesrgan_model_path is None or not realesrgan_model_path.is_file():
         raise RuntimeError("Local, verified Real-ESRGAN weights are required; runtime model downloads are disabled.")
     if load_faces and (gfpgan_model_path is None or not gfpgan_model_path.is_file()):
         raise RuntimeError("Local, verified GFPGAN weights are required; runtime model downloads are disabled.")
 
-    try:
-        import torchvision.transforms.functional as F
-        import sys
-        sys.modules['torchvision.transforms.functional_tensor'] = F
+    device = get_best_device()
+    resolved_tile_size = tile_size or get_optimal_tile_size("realesrgan")
+    cache_key = (
+        _path_identity(realesrgan_model_path),
+        _path_identity(gfpgan_model_path) if load_faces else None,
+        bool(load_faces),
+        int(resolved_tile_size),
+        int(tile_pad),
+        str(device),
+    )
+    if _model_cache_key == cache_key and _enhancer is not None and (_face_enhancer is not None or not load_faces):
+        return _enhancer, _face_enhancer
+    if _model_cache_key is not None and _model_cache_key != cache_key:
+        free_dl_memory()
 
+    try:
+        import sys
+
+        import torchvision.transforms.functional as functional
+
+        sys.modules["torchvision.transforms.functional_tensor"] = functional
         from basicsr.archs.rrdbnet_arch import RRDBNet
         from realesrgan import RealESRGANer
 
-        if _enhancer is None:
-            resolved_tile_size = tile_size or get_optimal_tile_size("realesrgan")
-            logger.info("Initializing Real-ESRGAN with tile=%s, tile_pad=%s...", resolved_tile_size, tile_pad)
-            model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=2)
-            _enhancer = RealESRGANer(
-                scale=2,
-                model_path=str(realesrgan_model_path),
-                model=model,
-                tile=resolved_tile_size,
-                tile_pad=tile_pad,
-                pre_pad=0,
-                half=True if device.type == 'cuda' else False,
-                device=device
-            )
-
-        if load_faces and _face_enhancer is None:
+        logger.info("Initializing Real-ESRGAN with tile=%s, tile_pad=%s", resolved_tile_size, tile_pad)
+        model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=2)
+        _enhancer = RealESRGANer(
+            scale=2,
+            model_path=str(realesrgan_model_path),
+            model=model,
+            tile=resolved_tile_size,
+            tile_pad=tile_pad,
+            pre_pad=0,
+            half=device.type == "cuda",
+            device=device,
+        )
+        _face_enhancer = None
+        if load_faces:
             from gfpgan import GFPGANer
 
-            logger.info("Initializing GFPGAN...")
             _face_enhancer = GFPGANer(
                 model_path=str(gfpgan_model_path),
                 upscale=2,
-                arch='clean',
+                arch="clean",
                 channel_multiplier=2,
                 bg_upsampler=_enhancer,
-                device=device
+                device=device,
             )
-        logger.info("Deep learning models loaded successfully.")
-    except Exception as e:
-        logger.error(f"Failed to load DL models: {e}")
+        _model_cache_key = cache_key
+    except Exception:
+        _enhancer = None
+        _face_enhancer = None
+        _model_cache_key = None
+        logger.exception("Failed to load deep enhancement models")
         raise
-
     return _enhancer, _face_enhancer
 
-def free_dl_memory():
-    """Frees up VRAM when not in use."""
-    global _enhancer, _face_enhancer
+
+def free_dl_memory() -> None:
+    """Free cached model state and accelerator allocations."""
+    global _enhancer, _face_enhancer, _model_cache_key
     _enhancer = None
     _face_enhancer = None
+    _model_cache_key = None
     try:
         import app.pipeline.inpainting as inpainting
 
@@ -101,86 +134,18 @@ def free_dl_memory():
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         torch.mps.empty_cache()
 
-def _pre_denoise(image: np.ndarray, report: DegradationReport, config: EnhancementConfig) -> tuple[np.ndarray, dict]:
-    if not config.denoise_enabled or not report.should_denoise:
-        return image, {"denoise": False, "noise_level": report.noise_level, "reason": "not_recommended"}
-    strength_multiplier = max(config.denoise_strength, report.denoise_strength_recommended)
-    strength = max(1, min(9, int(round(2 + strength_multiplier * 8))))
-    denoised = cv2.fastNlMeansDenoisingColored(image, None, strength, strength, 7, 21)
-    return denoised, {
-        "denoise": True,
-        "method": "fastNlMeansDenoisingColored",
-        "order": "before_upscale",
-        "strength": strength,
-        "noise_level": report.noise_level,
-    }
 
-
-def _quality_gate_step(
-    before: np.ndarray,
-    after: np.ndarray,
-    config: EnhancementConfig,
-    step_name: str,
-    metadata: dict,
-    assessor: QualityAssessor,
-) -> tuple[np.ndarray, dict]:
-    if not config.quality_gating_enabled:
-        return after, metadata
-
-    delta = assessor.compare(before, after)
-    gated_metadata = {
-        **metadata,
-        "quality_delta": delta.as_dict(),
-        "quality_gate": "accepted",
-    }
-    if _should_revert_step(step_name, delta, config):
-        gated_metadata["quality_gate"] = "reverted"
-        return before, gated_metadata
-    return after, gated_metadata
-
-
-def _should_revert_step(step_name: str, delta: QualityDelta, config: EnhancementConfig) -> bool:
-    if step_name == "denoise":
-        noise_improved = delta.noise_delta < -0.4
-        sharpness_drop_ratio = abs(delta.sharpness_delta) / max(delta.before.sharpness, 1.0)
-        if noise_improved and sharpness_drop_ratio <= 0.45 and delta.clipping_delta < 0.04:
-            return False
-    if step_name == "color":
-        range_improved = delta.dynamic_range_delta > 0.015
-        if range_improved and delta.clipping_delta < 0.04:
-            return False
-    if step_name == "scratch" and delta.noise_delta <= 1.0 and delta.clipping_delta < 0.04:
-        return False
-    return QualityAssessor().should_revert(delta, config.min_quality_delta)
-
-
-def _run_upscale_or_faces(
-    image: np.ndarray,
-    config: EnhancementConfig,
-    model_paths: dict[str, Path] | None = None,
-) -> tuple[np.ndarray, list[str], dict]:
-    if not config.super_resolution_enabled or not config.unsafe_models_enabled:
-        return image.copy(), [], {"sr": False, "reason": "model_restoration_disabled_by_safety_policy"}
-    tile_size = config.tile_size or get_optimal_tile_size(config.sr_model)
-    enhancer, face_enhancer = get_dl_models(
-        load_faces=config.face_enhancement_enabled,
-        tile_size=tile_size,
-        tile_pad=config.tile_pad,
-        realesrgan_model_path=(model_paths or {}).get("realesrgan"),
-        gfpgan_model_path=(model_paths or {}).get("gfpgan"),
-    )
-    if config.face_enhancement_enabled:
-        _, _, output = face_enhancer.enhance(
-            image,
-            has_aligned=False,
-            only_center_face=False,
-            paste_back=True,
-            weight=config.face_weight,
-        )
-        return output, ["Real-ESRGAN_x2plus", "GFPGANv1.3"], {"face_weight": config.face_weight, "tile_size": tile_size}
-
-    output, _ = enhancer.enhance(image, outscale=config.upscale_factor)
-    return output, ["Real-ESRGAN_x2plus"], {"face_weight": 0.0, "tile_size": tile_size}
+def _restoration_recommended(image: np.ndarray, report: DegradationReport) -> tuple[bool, list[str]]:
+    minimum_dimension = min(image.shape[:2])
+    reasons: list[str] = []
+    if minimum_dimension < 900:
+        reasons.append("LOW_SOURCE_RESOLUTION")
+    blur = report.signals.get("blur")
+    if minimum_dimension < 1600 and blur and blur.score >= 0.42 and blur.confidence >= 0.62:
+        reasons.append("SUPPORTED_BLUR_AND_RESOLUTION")
+    if minimum_dimension < 1600 and report.compression_artifacts >= 0.22:
+        reasons.append("COMPRESSION_AND_RESOLUTION")
+    return bool(reasons), reasons
 
 
 def dl_enhance_photo(
@@ -188,75 +153,139 @@ def dl_enhance_photo(
     preset: str | None = "balanced",
     degradation_report: DegradationReport | None = None,
     model_paths: dict[str, Path] | None = None,
+    *,
+    allow_model_restoration: bool = False,
+    base_image: np.ndarray | None = None,
+    model_artifacts: dict[str, dict] | None = None,
 ) -> tuple[np.ndarray, dict]:
+    """Produce an explicitly opted-in restoration candidate.
+
+    This function no longer doubles as the deterministic enhancement route.
+    It never marks a model-derived output for automatic release.
     """
-    Enhances a photo using LaMa (inpainting), Real-ESRGAN and GFPGAN.
-    Replaces the legacy OpenCV DSP pipeline.
-    """
-    try:
-        from app.pipeline.inpainting import inpaint_scratches
+    started = perf_counter()
+    source, contract = normalize_bgr_uint8(image)
+    report = degradation_report or analyze_degradation(source)
+    config = get_enhancement_config(preset, recommended_preset=report.recommended_preset)
+    if not allow_model_restoration:
+        return source.copy(), {
+            "method": "no_op",
+            "variant_kind": "restoration_candidate",
+            "models": [],
+            "config": config.as_dict(),
+            "degradation_report": report.as_dict(),
+            "input_contract": contract.as_dict(),
+            "planner": {
+                "route": "noop",
+                "no_op": True,
+                "allowed_steps": [],
+                "unsafe_models_enabled": False,
+                "reason_codes": ["MODEL_RESTORATION_NOT_EXPLICITLY_ENABLED"],
+            },
+            "runtime_ms": round((perf_counter() - started) * 1000.0, 3),
+            "input_pixel_sha256": _array_sha256(source),
+            "output_pixel_sha256": _array_sha256(source),
+            "auto_release": False,
+        }
 
-        report = degradation_report or analyze_degradation(image)
-        config = get_enhancement_config(preset, recommended_preset=report.recommended_preset)
-        working = image.copy()
-        assessor = QualityAssessor()
-
-        # Pre-clean source pixels before any 2x model so noise is not amplified.
-        candidate, denoise_metadata = _pre_denoise(working, report, config)
-        working, denoise_metadata = _quality_gate_step(working, candidate, config, "denoise", denoise_metadata, assessor)
-
-        if report.should_correct_color:
-            candidate, color_metadata = apply_color_corrections(working, report, config)
-            working, color_metadata = _quality_gate_step(working, candidate, config, "color", color_metadata, assessor)
-        else:
-            color_metadata = {"color_correction": False, "reason": "not_recommended"}
-
-        if config.unsafe_models_enabled and config.scratch_removal_enabled and report.should_inpaint:
-            candidate, inpaint_metadata = inpaint_scratches(
-                working,
-                sensitivity=config.scratch_sensitivity,
-                max_mask_ratio=0.03,
-            )
-            inpainted_image, inpaint_metadata = _quality_gate_step(working, candidate, config, "scratch", inpaint_metadata, assessor)
-        else:
-            inpainted_image = working
-            reason = "disabled_by_safety_policy" if not config.unsafe_models_enabled else ("disabled" if not config.scratch_removal_enabled else "not_recommended")
-            inpaint_metadata = {"scratch_removal": False, "method": reason, "mask_pixels": 0}
-
-        output, model_chain, model_metadata = _run_upscale_or_faces(inpainted_image, config, model_paths=model_paths)
-        if model_chain:
-            output = _blend_with_reference(output, inpainted_image, reference_weight=config.reference_blend)
-
+    config = replace(config, super_resolution_enabled=True, unsafe_models_enabled=True)
+    recommended, route_reasons = _restoration_recommended(source, report)
+    if not recommended:
         metadata = {
-            "method": "deep_learning",
+            "method": "no_op",
+            "variant_kind": "restoration_candidate",
+            "models": [],
+            "config": config.as_dict(),
+            "degradation_report": report.as_dict(),
+            "input_contract": contract.as_dict(),
+            "planner": {
+                "route": "noop",
+                "no_op": True,
+                "allowed_steps": [],
+                "unsafe_models_enabled": True,
+                "reason_codes": ["NO_SUPPORTED_MODEL_DEGRADATION"],
+            },
+            "runtime_ms": round((perf_counter() - started) * 1000.0, 3),
+            "input_pixel_sha256": _array_sha256(source),
+            "output_pixel_sha256": _array_sha256(source),
+            "auto_release": False,
+        }
+        return source.copy(), metadata
+
+    try:
+        working = normalize_bgr_uint8(base_image)[0] if base_image is not None else source.copy()
+        use_faces = bool(config.face_enhancement_enabled and report.should_enhance_faces)
+        tile_size = config.tile_size or get_optimal_tile_size(config.sr_model)
+        enhancer, face_enhancer = get_dl_models(
+            load_faces=use_faces,
+            tile_size=tile_size,
+            tile_pad=config.tile_pad,
+            realesrgan_model_path=(model_paths or {}).get("realesrgan"),
+            gfpgan_model_path=(model_paths or {}).get("gfpgan"),
+        )
+        if use_faces:
+            _, _, output = face_enhancer.enhance(
+                working,
+                has_aligned=False,
+                only_center_face=False,
+                paste_back=True,
+                weight=config.face_weight,
+            )
+            model_chain = ["Real-ESRGAN_x2plus", "GFPGANv1.3"]
+            variant_kind = "face_restoration_candidate"
+        else:
+            output, _ = enhancer.enhance(working, outscale=config.upscale_factor)
+            model_chain = ["Real-ESRGAN_x2plus"]
+            variant_kind = "restoration_candidate"
+        output, _ = normalize_bgr_uint8(output)
+        output = _blend_with_reference(output, working, reference_weight=config.reference_blend)
+        metadata = {
+            "method": "deep_learning_restoration",
+            "variant_kind": variant_kind,
+            "generative": True,
             "preset": config.preset,
             "config": config.as_dict(),
             "models": model_chain,
+            "model_artifacts": dict(model_artifacts or {}),
             "device": str(get_best_device()),
+            "tile_size": tile_size,
+            "tile_pad": config.tile_pad,
             "reference_blend": config.reference_blend,
             "degradation_report": report.as_dict(),
-            "steps": {
-                "denoise": denoise_metadata,
-                "color": color_metadata,
-                "scratch": inpaint_metadata,
+            "input_contract": contract.as_dict(),
+            "planner": {
+                "route": variant_kind,
+                "no_op": False,
+                "allowed_steps": ["super_resolution"] + (["face_restoration"] if use_faces else []),
+                "unsafe_models_enabled": True,
+                "reason_codes": route_reasons,
             },
-            "scratch_removal": inpaint_metadata.get("scratch_removal", False),
-            "scratch_method": inpaint_metadata.get("method"),
-            "scratch_mask_pixels": inpaint_metadata.get("mask_pixels", 0),
-            **model_metadata,
+            "runtime_ms": round((perf_counter() - started) * 1000.0, 3),
+            "input_pixel_sha256": _array_sha256(source),
+            "output_pixel_sha256": _array_sha256(output),
+            "auto_release": False,
         }
-        metadata["planner"] = {
-            "no_op": bool(np.array_equal(output, image)),
-            "allowed_steps": [
-                name for name, step in metadata["steps"].items()
-                if step.get(name if name != "scratch" else "scratch_removal", False)
-            ],
-            "unsafe_models_enabled": config.unsafe_models_enabled,
-        }
-        # A producer can never auto-release itself.  The release service is
-        # intentionally the only component allowed to change this later.
-        metadata["auto_release"] = False
+        metadata["gates"] = evaluate_candidate(source, output, metadata)
         return output, metadata
-    except Exception as e:
-        logger.error(f"DL enhancement failed: {e}. Falling back to original image.")
-        return image, {"error": str(e), "method": "failed"}
+    except Exception as exc:  # noqa: BLE001 - optional restoration must fail closed.
+        logger.error("DL enhancement failed: %s. Falling back to source pixels.", exc)
+        return source.copy(), {
+            "error": str(exc),
+            "method": "failed",
+            "variant_kind": "restoration_candidate",
+            "models": [],
+            "model_artifacts": dict(model_artifacts or {}),
+            "degradation_report": report.as_dict(),
+            "input_contract": contract.as_dict(),
+            "planner": {
+                "route": "restoration_candidate",
+                "no_op": True,
+                "allowed_steps": [],
+                "unsafe_models_enabled": True,
+                "reason_codes": ["MODEL_RESTORATION_FAILED"],
+            },
+            "runtime_ms": round((perf_counter() - started) * 1000.0, 3),
+            "input_pixel_sha256": _array_sha256(source),
+            "output_pixel_sha256": _array_sha256(source),
+            "auto_release": False,
+        }

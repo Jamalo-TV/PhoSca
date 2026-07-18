@@ -6,13 +6,22 @@ from typing import Any
 import cv2
 import numpy as np
 
+from app.core.metrics import RELEASE_DECISIONS
 from app.pipeline.image_ops import calculate_blur_score
 from app.pipeline.quality_critic import evaluate_candidate
 from app.pipeline.release import select_released_variant
-from app.core.metrics import RELEASE_DECISIONS
 
-
-VARIANT_ORDER = ("original", "enhanced", "premium")
+VARIANT_ORDER = (
+    "source_corrected",
+    "source_corrected_untrimmed",
+    "source_corrected_trimmed",
+    "conservative_enhanced",
+    "restoration_candidate",
+    "face_restoration_candidate",
+    "original",
+    "enhanced",
+    "premium",
+)
 
 
 def _shape(image: np.ndarray) -> dict[str, int]:
@@ -55,6 +64,8 @@ def _warnings(name: str, metadata: dict, metrics: dict) -> list[str]:
         warnings.append("large_source_delta_review_recommended")
     if name == "premium" and metadata.get("diffusion_used"):
         warnings.append("creative_diffusion_variant_review_required")
+    if name in {"restoration_candidate", "face_restoration_candidate"} or metadata.get("generative"):
+        warnings.append("model_restoration_candidate_review_required")
     return warnings
 
 
@@ -85,6 +96,7 @@ def variant_record(
     warnings.extend(f"quality_gate_failed:{gate['name']}" for gate in gates if gate.get("passed") is False)
     return {
         "name": name,
+        "kind": metadata.get("variant_kind", name),
         "path": str(path),
         "selected": selected,
         "model_chain": metadata.get("models", []),
@@ -108,22 +120,57 @@ def build_variant_bundle(
     selected_variant: str | None = None,
     photo_status: Any = None,
     release_metadata: dict | None = None,
+    *,
+    canonical_kinds: bool = False,
+    conservative_path: Path | None = None,
+    conservative: np.ndarray | None = None,
+    conservative_metadata: dict | None = None,
+    restoration_path: Path | None = None,
+    restoration: np.ndarray | None = None,
+    restoration_metadata: dict | None = None,
 ) -> dict[str, Any]:
+    source_name = "source_corrected" if canonical_kinds else "original"
     variants: dict[str, dict[str, Any]] = {
-        "original": variant_record(
-            "original",
+        source_name: variant_record(
+            source_name,
             original_path,
             original,
-            metadata={"method": "source"},
+            metadata={"method": "source", "variant_kind": "source_corrected"},
             selected=False,
         ),
     }
-    if enhanced_path is not None and enhanced is not None:
+    resolved_conservative_path = conservative_path or (enhanced_path if canonical_kinds else None)
+    resolved_conservative = conservative if conservative is not None else (enhanced if canonical_kinds else None)
+    resolved_conservative_metadata = (
+        conservative_metadata if conservative_metadata is not None else (enhanced_metadata if canonical_kinds else None)
+    )
+    if resolved_conservative_path is not None and resolved_conservative is not None:
+        variants["conservative_enhanced"] = variant_record(
+            "conservative_enhanced",
+            resolved_conservative_path,
+            resolved_conservative,
+            metadata=resolved_conservative_metadata,
+            source_image=original,
+            selected=False,
+        )
+    elif enhanced_path is not None and enhanced is not None:
         variants["enhanced"] = variant_record(
             "enhanced",
             enhanced_path,
             enhanced,
             metadata=enhanced_metadata,
+            source_image=original,
+            selected=False,
+        )
+    if restoration_path is not None and restoration is not None:
+        restoration_name = str((restoration_metadata or {}).get("variant_kind") or "restoration_candidate")
+        if restoration_name not in {"restoration_candidate", "face_restoration_candidate"}:
+            restoration_name = "restoration_candidate"
+        variants[restoration_name] = variant_record(
+            restoration_name,
+            restoration_path,
+            restoration,
+            metadata=restoration_metadata,
             source_image=original,
             selected=False,
         )
@@ -136,11 +183,18 @@ def build_variant_bundle(
             source_image=original,
             selected=False,
         )
-    selected_variant, release_reasons = select_released_variant(
-        variants,
-        photo_status=photo_status,
-        metadata=release_metadata,
-    ) if selected_variant not in variants else (selected_variant, [])
+    # A caller hint may choose the faithful source, but derived candidates must
+    # always pass the central release selector.
+    source_hint = selected_variant in {"original", "source_corrected"}
+    selected_variant, release_reasons = (
+        (source_name, [])
+        if source_hint
+        else select_released_variant(
+            variants,
+            photo_status=photo_status,
+            metadata=release_metadata,
+        )
+    )
     for name, variant in variants.items():
         variant["selected"] = name == selected_variant
     RELEASE_DECISIONS.labels(variant=selected_variant, blocked=str(bool(release_reasons)).lower()).inc()
@@ -160,9 +214,9 @@ def variants_from_metadata(metadata: dict | None) -> dict[str, dict]:
 
 
 def variant_path_from_photo(photo: Any, variant: str) -> str | None:
-    if variant == "original":
+    if variant in {"original", "source_corrected"}:
         variants = variants_from_metadata(getattr(photo, "enhancement_applied", None))
-        record = variants.get("original")
+        record = variants.get(variant) or variants.get("source_corrected") or variants.get("original")
         if isinstance(record, dict) and record.get("path"):
             return str(record["path"])
         return photo.original_storage_path

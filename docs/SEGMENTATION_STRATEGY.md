@@ -1,6 +1,6 @@
 # Cropping, Segmentation, And Orientation Strategy
 
-Date: 2026-06-22
+Date: 2026-06-22; implementation revision: 2026-07-18
 
 This note captures the failure analysis and the selected upgrade path for PhoSca's album-page photo extraction pipeline. It is intentionally paired with the runtime work in `backend/app/pipeline/segmentation.py`, `backend/app/pipeline/perspective.py`, and `backend/app/pipeline/orientation.py`.
 
@@ -45,9 +45,11 @@ Architecture:
 3. Train a one-class YOLO segmentation model for `photo` instances.
 4. Export to ONNX for backend inference.
 5. Parse masks/prototypes at runtime and store polygons on `ExtractedPhoto.segmentation_mask`.
-6. Fall back to classical polygon extraction only when the model is missing or produces no usable detections.
-7. Crop/perspective-correct from the polygon, trim uniform borders, then run orientation correction.
-8. Route low confidence, weak geometry, or unverified OCR to review.
+6. Run classical boundary analysis when the model is absent, empty, or its instance set is geometrically risky; use it as independent refinement/rejection evidence rather than blindly concatenating detections.
+7. Fuse proposals with polygon/containment evidence so duplicate suppression does not remove legitimate overlapping prints.
+8. Crop and perspective-correct at source resolution, retain the untrimmed rectified asset, and create an opt-in content-aware border-trim candidate only with per-edge physical-border evidence.
+9. Auto-rotate only from a high-confidence orientation model; uncalibrated face/detail evidence is advisory and preserves the pixels.
+10. Route low component confidence, unsafe transforms, uncertain orientation, or unverified OCR to review with stable reason codes.
 
 Why this is the recommended default:
 
@@ -66,7 +68,9 @@ Tradeoffs:
 Repo support currently present:
 
 - YOLO-seg ONNX parser with prototype mask support.
-- Candidate rejection in the classical fallback, including nested partial-photo suppression after corner refinement.
+- Risk-triggered model/classical candidate fusion, mask-aware duplicate removal, and nested partial-photo suppression after corner refinement.
+- A shared cyclic quadrilateral contract and homography checks covering convexity, local Jacobian stretch, normalized conditioning, and small-corner perturbations.
+- Explicit untrimmed/trimmed source variants, independent border-edge evidence, confidence components, and stateful review provenance.
 - `data/segmentation_training/` plus `scripts/setup_segmentation_training.py` for a low-friction manual image, Label Studio, dataset, validation, and training loop.
 - Deterministic train/val/golden split preparation.
 - Dataset validator for polygon labels and golden leakage.
@@ -108,8 +112,8 @@ PhoSca should not be considered production-complete for cropping/orientation unt
 - `data/golden_fixtures/labels/*.txt` contains locked labels for all golden pages.
 - `python scripts/validate_yolo_dataset.py --data data/data.yaml` passes.
 - `models/yolov8-seg-album.onnx` exists and is produced by the documented training path.
-- `models/photo-orientation.onnx` exists or the heuristic fallback is explicitly accepted for the target albums.
-- `python scripts/validate_segmentation.py --album-id <album-id>` reports mean IoU greater than `0.85` on golden pages.
+- `models/photo-orientation.onnx` exists for automatic rotation; without it, orientation remains unchanged and uncertain cases stay reviewable.
+- `python scripts/evaluate_onnx_segmentation.py --include-classical-fallback --output runs/cropping-current.json` passes the locked one-to-one detection, boundary, content-loss, duplicate, and transform gates.
 - `python scripts/validate_ocr.py --album-id <album-id>` reports mean CER below `0.10` once OCR ground truth is filled.
 - `python -m pytest -q`, frontend build, and the real-data smoke path pass in the current environment.
 
