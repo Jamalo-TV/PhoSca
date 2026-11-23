@@ -447,3 +447,19 @@ across eight synthetic scenes. The report and overlay are
 `runs/crop-quality/album-window-integrated.json` and
 `runs/crop-quality/album-window-integrated.jpg`. The unchanged locked
 synthetic and same-album Golden splits are checked separately.
+
+When the normal motif search falls short at a broad blank margin, PhoSca
+checks that the same pale stock surrounds the motif on all four sides and
+fits the four seams again in the original page pixels. A ruled margin,
+another print or protected content can veto the suggestion. A verified
+`suggested_warp_quad` stays in review. Selecting it in the desktop corner
+editor and saving the motif corners is the existing manual confirmation.
+The full-print crop stays available under its own approval rules.
+
+The independent synthetic probe in `runs/crop-quality/wide-rim-agent/`
+includes four recoverable wide-rim captures and a look-alike where the
+same white area belongs to the photograph. Both require explicit motif
+confirmation. On the four recoverable examples the maximum confirmed
+corner error is 0.231 px with zero foreign source samples and zero cutoff
+beyond one source pixel. Double frames, engravings, open sky and a
+beveled insert produce no suggestion in the eight corresponding controls.

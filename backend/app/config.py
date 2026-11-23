@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     max_request_size: int = Field(default=209_715_200, alias="MAX_REQUEST_SIZE")
     max_image_pixels: int = Field(default=40_000_000, alias="MAX_IMAGE_PIXELS")
     max_image_frames: int = Field(default=1, alias="MAX_IMAGE_FRAMES")
-    pipeline_version: str = Field(default="2026-11-precise-crops-v11", alias="PIPELINE_VERSION")
+    pipeline_version: str = Field(default="2026-11-precise-crops-v12", alias="PIPELINE_VERSION")
     auth_required: bool = Field(default=False, alias="AUTH_REQUIRED")
     blur_threshold: float = Field(default=100.0, alias="BLUR_THRESHOLD")
     yolo_confidence_threshold: float = Field(default=0.7, alias="YOLO_CONFIDENCE_THRESHOLD")

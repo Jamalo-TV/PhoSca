@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN
-from app.pipeline.border_removal import find_physical_border
+from app.pipeline.border_removal import find_physical_border, wide_paper_motif_proposal
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop
 from app.pipeline.geometry import (
     normalized_polygon_overlap,
@@ -625,7 +625,7 @@ def _orient_crop(image: np.ndarray, enabled: bool, model_path: Path | None) -> t
 
 def _inner_crop_plan(
     corrected: np.ndarray, matrix: np.ndarray, inner: np.ndarray | None, *, trim_border: bool,
-    page_width: int, page_height: int, page_regions: list[dict], protect_regions: bool,
+    page_width: int, page_height: int, page_regions: list[dict], protect_regions: bool, allow_wide_search: bool,
 ) -> tuple[np.ndarray | None, dict, list[str]]:
     height, width = corrected.shape[:2]
     if inner is not None:
@@ -676,6 +676,14 @@ def _inner_crop_plan(
     )
     if (plan.crop_quad is None or not corroborated or uniform - border_candidates.keys() or ambiguous
             or plan.confidence < 0.68):
+        if allow_wide_search and len(uniform) == 4 and "BORDER_PROTECTED_CONTENT_VETO" not in ambiguous:
+            wide = wide_paper_motif_proposal(corrected)
+            if wide is not None:
+                if regions and not validate_protected_regions(
+                    wide, regions, width=width, height=height, require_containment=True,
+                )["passed"]:
+                    return None, diagnostics, ["BORDER_PROTECTED_CONTENT_VETO"]
+                return wide, {"method": "wide_paper_rim", "applied": True}, []
         diagnostics["applied"] = False
         return None, diagnostics, ["IMAGE_BOUNDARY_UNCERTAIN", *sorted(ambiguous)]
     quad = plan.crop_quad + shift
@@ -718,8 +726,10 @@ def _dual_crop_result(
     if not full_reasons or independent:
         quad, diagnostics, image_reasons = _inner_crop_plan(
             full_image, matrix, inner, trim_border=trim_border, page_width=page_width, page_height=page_height,
-            page_regions=page_regions, protect_regions=protect_regions,
+            page_regions=page_regions, protect_regions=protect_regions, allow_wide_search=not independent,
         )
+        wide_rim = diagnostics["method"] == "wide_paper_rim"
+        suggested_quad = None
         all_edges = diagnostics.get("edges", {})
         four_rim_edges = len(all_edges) == 4 and all(edge.get("is_physical_border") for edge in all_edges.values())
         if independent and (quad is None or (inner is None and not four_rim_edges)):
@@ -732,13 +742,14 @@ def _dual_crop_result(
             try:
                 _validate_quad(quad, width, height)
                 source = cv2.perspectiveTransform(quad.reshape(1, 4, 2), np.linalg.inv(matrix))[0]
-                if independent or (inner is None and four_rim_edges):
+                if independent or wide_rim or (inner is None and four_rim_edges):
                     # The rectified scan corroborates the paper rim. Locate its last
                     # boundary in source pixels, where resampling cannot blur the seam.
-                    refined, native_evidence, native_reasons = refine_print_boundary(page, source, search_radius=3)
+                    radius = max(3, min(16, round(max(width, height) / 450))) if wide_rim else 3
+                    refined, native_evidence, native_reasons = refine_print_boundary(page, source, search_radius=radius)
                     diagnostics["native_boundary_refinement"] = native_evidence
                     native_verified = refined is not None and not native_reasons
-                    if independent and (
+                    if (independent or wide_rim) and (
                         not native_verified or len(native_evidence) != 4
                         or any(edge["support"] < .85 or (edge["corner_support"] or 0) < .85
                                for edge in native_evidence.values())
@@ -751,12 +762,23 @@ def _dual_crop_result(
                         source, quad = refined, candidate
                 _validate_quad(source, page_width, page_height)
                 measured = metadata["aspect_ratio_estimation"]["method"] == "known_print_aspect"
-                if independent and not image_reasons and not _independent_motif_visible(page, source, neighbors):
+                if (independent or wide_rim) and not image_reasons and not _independent_motif_visible(page, source, neighbors):
                     image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
-                if (measured or independent) and not _is_rectangular_in_measured_plane(quad):
+                if (measured or independent or wide_rim) and not _is_rectangular_in_measured_plane(quad):
                     image_reasons.append("IMAGE_RECTANGLE_INCONSISTENT")
                 if protect_regions and not validate_protected_regions(source, page_regions, width=page_width, height=page_height)["passed"]:
                     image_reasons.append("BORDER_PROTECTED_CONTENT_VETO")
+                if not image_reasons and wide_rim:
+                    rectified_regions = _rectified_protected_regions(
+                        page_regions, page_width=page_width, page_height=page_height, matrix=matrix,
+                        target_width=width, target_height=height,
+                    )
+                    if validate_protected_regions(quad, rectified_regions, width=width, height=height,
+                                                  require_containment=True)["passed"]:
+                        suggested_quad = _vertices_on_page(source, page_width, page_height)
+                        image_reasons.append("WIDE_MOTIF_CONFIRMATION_REQUIRED")
+                    else:
+                        image_reasons.append("BORDER_PROTECTED_CONTENT_VETO")
                 if not image_reasons:
                     top, right, bottom, left = np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1)
                     inner_width = round(float((top + bottom) / 2)) + 1
@@ -778,6 +800,8 @@ def _dual_crop_result(
         if image_reasons:
             diagnostics["applied"] = False
             image_mode = {"status": "review_needed", "reason_codes": list(dict.fromkeys(image_reasons))}
+            if suggested_quad is not None:
+                image_mode["suggested_warp_quad"] = suggested_quad
 
     metadata.update(
         crop_modes={"full_print": full_mode, "image_only": image_mode},

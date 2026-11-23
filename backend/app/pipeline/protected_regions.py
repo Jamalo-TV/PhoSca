@@ -127,8 +127,9 @@ def validate_protected_regions(
     *,
     width: int,
     height: int,
+    require_containment: bool = False,
 ) -> dict[str, Any]:
-    """Reject a crop if any known protected region is cut by its boundary."""
+    """Reject cuts across protected regions, or require all regions inside a crop."""
     contour = quad.reshape(-1, 1, 2).astype(np.float32)
     violations: list[dict[str, Any]] = []
     for region in regions:
@@ -142,6 +143,6 @@ def validate_protected_regions(
             dtype=np.float32,
         )
         inside = [cv2.pointPolygonTest(contour, (float(x), float(y)), False) >= 0 for x, y in corners]
-        if any(inside) and not all(inside):
+        if not all(inside) and (require_containment or any(inside)):
             violations.append({"type": region.get("type", "unknown"), "source": region.get("source", "unknown"), "box": region.get("box", region)})
     return {"passed": not violations, "violations": violations, "regions_checked": len(regions)}

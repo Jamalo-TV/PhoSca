@@ -149,6 +149,51 @@ def _is_pale_paper(color: tuple[int, int, int]) -> bool:
     return min(color) >= 145 and max(color) - min(color) <= 55
 
 
+def wide_paper_motif_proposal(image: np.ndarray) -> np.ndarray | None:
+    """Seed a native seam search from an uninterrupted pale annulus."""
+    height, width = image.shape[:2]
+    if min(height, width) < 80:
+        return None
+    scale = min(1.0, 840 / max(height, width))
+    size = (round(width * scale), round(height * scale))
+    preview = cv2.resize(image, size, interpolation=cv2.INTER_AREA) if scale < 1 else image
+    h, w = preview.shape[:2]
+    band = max(4, round(.025 * min(h, w)))
+    corners = np.concatenate([
+        preview[rows, columns].reshape(-1, 3)
+        for rows in (slice(2, 2 + band), slice(-2 - band, -2))
+        for columns in (slice(2, 2 + band), slice(-2 - band, -2))
+    ])
+    if not _is_pale_paper(tuple(np.rint(np.median(corners, axis=0)).astype(int))):
+        return None
+    lab = cv2.cvtColor(preview, cv2.COLOR_BGR2LAB).astype(np.float32)
+    stock = np.median(cv2.cvtColor(corners[None], cv2.COLOR_BGR2LAB)[0], axis=0)
+    different = np.linalg.norm(lab - stock, axis=2) > 16
+    # A mixed first row from the outer homography is outside the motif search.
+    search = np.uint8(different[2:-2, 2:-2])
+    count, _, components, _ = cv2.connectedComponentsWithStats(search)
+    if count < 2:
+        return None
+    x, y, span_x, span_y, area = map(int, max(components[1:], key=lambda item: item[cv2.CC_STAT_AREA]))
+    x, y = x + 2, y + 2
+    margins = (x, y, w - x - span_x, h - y - span_y)
+    if (
+        span_x < .38 * w or span_y < .38 * h or area < .93 * span_x * span_y
+        or min(margins) < band + 2 or max(np.array(margins) / [w, h, w, h]) <= .12
+        or np.count_nonzero(search) - np.count_nonzero(different[y:y + span_y, x:x + span_x]) > .0015 * h * w
+    ):
+        return None
+    motif = different[y:y + span_y, x:x + span_x]
+    for side in (motif, motif[::-1], motif.T, motif.T[::-1]):
+        inset = max(2, round(.15 * side.shape[1]))
+        inner_band = side[3:min(33, len(side) // 5), inset:-inset]
+        # Reject a ruled frame whose inner strip returns to the same blank stock.
+        if np.any(np.mean(inner_band, axis=1) < .20):
+            return None
+    quad = np.float32([[x, y], [x + span_x - 1, y], [x + span_x - 1, y + span_y - 1], [x, y + span_y - 1]])
+    return ((quad + .5) * np.float32([width / w, height / h]) - .5).astype(np.float32)
+
+
 def _picture_side_line(
     smooth: np.ndarray, columns: np.ndarray, line: tuple[float, float], paper_tone: float, direction: float,
     sample_step: int = 1,

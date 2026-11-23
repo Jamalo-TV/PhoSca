@@ -465,6 +465,46 @@ async def test_saving_coordinates_cannot_release_a_photo_hidden_by_an_album_wind
         assert (await client.get(f"{url}/image?variant={name}")).status_code == 404
 
 
+async def test_wide_motif_suggestion_requires_explicit_confirmation_before_download(client, monkeypatch) -> None:
+    from app.config import get_settings
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_BORDER_TRIM", "true")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    page = np.full((280, 350, 3), (61, 81, 103), np.uint8)
+    page[29:251, 32:312] = (229, 237, 245)
+    page[78:201, 94:247] = (77, 101, 147)
+    _, _, photo_id = await _seed_review_data(page)
+    url = f"/api/v1/photos/{photo_id}"
+    box = {"x1": 32 / 350, "y1": 29 / 280, "x2": 312 / 350, "y2": 251 / 280}
+    outer = [{"x": x / 349, "y": y / 279} for x, y in ((32, 29), (311, 29), (311, 250), (32, 250))]
+    mask = {"polygon": outer, "warp_quad": outer, "source": "manual_quad"}
+    edits = {"bounding_box": box, "segmentation_mask": mask}
+
+    proposed = await client.patch(f"{url}/bounding-box", json=edits)
+    saved_outer_only = await client.patch(f"{url}/bounding-box", json=edits)
+
+    for response in (proposed, saved_outer_only):
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        motif = payload["enhancement_applied"]["correction"]["crop_modes"]["image_only"]
+        assert motif["reason_codes"] == ["WIDE_MOTIF_CONFIRMATION_REQUIRED"]
+        assert len(motif["suggested_warp_quad"]) == 4
+        assert payload["crop_download_urls"]["image_only"] is None
+        assert "image_quad" not in payload["segmentation_mask"]
+    assert (await client.get(f"{url}/image?variant=image_only")).status_code == 404
+
+    accepted = await client.patch(f"{url}/bounding-box", json={
+        **edits, "segmentation_mask": {**mask, "image_quad": motif["suggested_warp_quad"]},
+    })
+
+    assert accepted.status_code == 200, accepted.text
+    download = accepted.json()["crop_download_urls"]["image_only"]
+    assert download and (await client.get(download)).status_code == 200
+
+
 async def test_measured_print_size_recovers_both_oblique_crops_and_survives_reprocessing(client, monkeypatch) -> None:
     from app.config import get_settings
 

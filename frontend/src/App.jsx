@@ -1356,6 +1356,10 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
   const pageId = page?.id;
   const selected = photos.find((photo) => photo.id === selectedPhotoId);
   const selectedShape = selected && (draftShapes[selected.id] || draftShapeFromPhoto(selected));
+  const imageSuggestion = cyclicQuad(sanitizePolygon(
+    (selected?.crop_modes || getCropModes(selected))?.image_only?.suggested_warp_quad,
+  ));
+  const needsMotifSelection = editingImage && Boolean(imageSuggestion) && !selectedShape?.imageQuad;
   const measurement = selectedShape && parsePrintSize(selectedShape.printSizeFields);
   const sizeError = editingImage ? "" : measurement?.error;
 
@@ -1511,7 +1515,7 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
   }
 
   async function saveSelected() {
-    if (!selected || sizeError) return;
+    if (!selected || sizeError || needsMotifSelection) return;
     const saved = draftShapeFromPhoto(selected);
     const box = editingImage ? selected.bounding_box : selectedShape.boundingBox;
     const mask = editingImage
@@ -1545,6 +1549,14 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
         ))}
       </div>
       {editingImage && selected && <p className="crop-editor-hint">Setze die vier blauen Eckpunkte an die Grenze des Bildmotivs.</p>}
+      {editingImage && imageSuggestion && (
+        <button className="text-button compact" type="button" disabled={saveState?.saving} onClick={() => {
+          setDraftShapes((current) => ({ ...current, [selected.id]: { ...selectedShape, imageQuad: imageSuggestion } }));
+          setSaveState(null);
+        }}>
+          Motivvorschlag in den Editor laden
+        </button>
+      )}
       <canvas
         ref={canvasRef}
         onPointerDown={onPointerDown}
@@ -1564,7 +1576,7 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
           error={sizeError}
         />
       )}
-      <button className="primary-button compact" type="button" disabled={!selected || saveState?.saving || Boolean(sizeError)} onClick={saveSelected}>
+      <button className="primary-button compact" type="button" disabled={!selected || saveState?.saving || Boolean(sizeError) || needsMotifSelection} onClick={saveSelected}>
         <Save size={16} />
         {currentSave?.saving ? "Ausschnitt wird berechnet …" : "Ecken speichern"}
       </button>
