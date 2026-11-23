@@ -450,8 +450,8 @@ def _crop_dimensions(
                 reasons.append("PRINT_ASPECT_UNCERTAIN")
     if aspect is not None:
         # Preserve the largest observed sampling dimension while fixing the shape of the print.
-        # A physical measurement fixes the span between the rectified corner pixel centers.
-        offset = 1 if print_aspect_ratio is not None else 0
+        # Measured geometry fixes the span between the rectified corner pixel centers.
+        offset = 1 if method in {"known_print_aspect", "calibrated_camera"} else 0
         scale = max((target_width - offset) / aspect, target_height - offset)
         target_width, target_height = round(scale * aspect) + offset, round(scale) + offset
     return target_width, target_height, {"method": method, "estimated_ratio": aspect}, reasons
@@ -763,7 +763,9 @@ def _dual_crop_result(
                         _validate_quad(candidate, width, height)
                         source, quad = refined, candidate
                 _validate_quad(source, page_width, page_height)
-                measured = metadata["aspect_ratio_estimation"]["method"] in {"known_print_aspect", "measured_page_reference"}
+                measured = metadata["aspect_ratio_estimation"]["method"] in {
+                    "known_print_aspect", "measured_page_reference", "calibrated_camera",
+                }
                 if (independent or wide_rim) and not image_reasons and not _independent_motif_visible(page, source, neighbors):
                     image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
                 if (measured or independent or wide_rim) and not _is_rectangular_in_measured_plane(quad):

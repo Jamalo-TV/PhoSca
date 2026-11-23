@@ -505,8 +505,10 @@ async def test_wide_motif_suggestion_requires_explicit_confirmation_before_downl
     assert download and (await client.get(download)).status_code == 200
 
 
-async def test_measured_print_size_recovers_both_oblique_crops_and_survives_reprocessing(client, monkeypatch) -> None:
+async def test_measured_print_size_recovers_both_oblique_crops_and_survives_reprocessing(client, monkeypatch, tmp_path) -> None:
     from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, Page
 
     monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
     monkeypatch.setenv("ENABLE_BORDER_TRIM", "false")
@@ -529,7 +531,7 @@ async def test_measured_print_size_recovers_both_oblique_crops_and_survives_repr
         return [{"x": float(x), "y": float(y)} for x, y in captured]
 
     outer, inner = vertices(print_corners), vertices(motif_corners)
-    _, _, photo_id = await _seed_review_data(image)
+    _, page_id, photo_id = await _seed_review_data(image)
     url = f"/api/v1/photos/{photo_id}"
     mask = {"polygon": outer, "warp_quad": outer, "image_quad": inner, "source": "manual_quad"}
     body = {
@@ -542,6 +544,42 @@ async def test_measured_print_size_recovers_both_oblique_crops_and_survives_repr
     correction = unmeasured.json()["enhancement_applied"]["correction"]
     assert correction["crop_modes"]["full_print"]["reason_codes"] == ["PRINT_ASPECT_UNCERTAIN"]
     assert (await client.get(f"{url}/image?variant=full_print")).status_code == 404
+
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_confidence = 0.95
+        capture_hash = (await session.get(Page, page_id)).file_hash_sha256
+        await session.commit()
+    calibration = tmp_path / "camera-calibrations.json"
+    calibration.write_text(json.dumps({"schema_version": 1, "captures": {capture_hash: {
+        "width": width, "height": height, "camera_matrix": camera.tolist(), "calibration_id": "test-calibration",
+    }}}), encoding="utf-8")
+    monkeypatch.setenv("CAMERA_CALIBRATION_PATH", str(calibration))
+    get_settings.cache_clear()
+
+    preview = await client.post(f"{url}/reprocess")
+    assert preview.status_code == 200, preview.text
+    preview_photo = (await client.get(url)).json()
+    correction = preview_photo["enhancement_applied"]["correction"]
+    assert correction["aspect_ratio_estimation"]["method"] == "calibrated_camera"
+    assert "CAMERA_ASPECT_REVIEW" in correction["crop_modes"]["full_print"]["reason_codes"]
+    assert preview_photo["urls"]["full_print"] is None
+    assert (await client.get(preview_photo["urls"]["source_corrected"])).status_code == 200
+
+    calibrated = await client.patch(f"{url}/bounding-box", json=body)
+    assert calibrated.status_code == 200, calibrated.text
+    payload = calibrated.json()
+    assert payload["enhancement_applied"]["correction"]["camera_calibration"]["capture_sha256"] == capture_hash
+    downloads = payload["crop_download_urls"]
+    for mode, expected in (("full_print", 1.5), ("image_only", 128 / 72)):
+        response = await client.get(downloads[mode])
+        assert response.status_code == 200
+        crop = cv2.imdecode(np.frombuffer(response.content, np.uint8), cv2.IMREAD_COLOR)
+        assert (crop.shape[1] - 1) / (crop.shape[0] - 1) == pytest.approx(expected, rel=0.007)
+
+    calibration.unlink()
+    assert (await client.get(downloads["full_print"])).status_code == 404
+    assert (await client.get(downloads["image_only"])).status_code == 404
 
     size = {"width": 150, "height": 100}
     mask["print_size_mm"] = size

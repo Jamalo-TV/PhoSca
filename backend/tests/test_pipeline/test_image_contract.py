@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from io import BytesIO
 from pathlib import Path
 
@@ -70,6 +71,41 @@ def test_camera_jpeg_gain_map_does_not_count_as_a_second_page() -> None:
 
     assert inspected["frame_policy"] == metadata["frame_policy"]
     assert decoded.shape == (1920, 2560, 3)
+
+
+def test_crop_calibration_requires_original_bytes_and_decoded_dimensions(tmp_path) -> None:
+    from app.pipeline.camera_calibration import load_crop_source
+    from app.pipeline.image_ops import sha256_file
+
+    path = tmp_path / "capture.jpg"
+    photo = Image.new("RGB", (80, 100))
+    exif = photo.getexif()
+    exif[274] = 6
+    photo.save(path, exif=exif)
+    digest = sha256_file(path)
+    artifact = tmp_path / "calibration.json"
+    record = {"width": 100, "height": 80, "camera_matrix": [[100, 0, 50], [0, 100, 40], [0, 0, 1]],
+              "calibration_id": "test"}
+    artifact.write_text(json.dumps({"schema_version": 1, "captures": {digest: record}}), encoding="utf-8")
+
+    image, calibration = load_crop_source(path, digest, artifact)
+    assert image.shape == (80, 100, 3)
+    assert calibration is not None
+    assert load_crop_source(path, "1" * 64, artifact)[1] is None
+
+    record.update(width=80, height=100)
+    artifact.write_text(json.dumps({"schema_version": 1, "captures": {digest: record}}, indent=2), encoding="utf-8")
+    assert load_crop_source(path, digest, artifact)[1] is None
+    record["camera_matrix"][0][0] = "100"
+    artifact.write_text(json.dumps({"schema_version": 1, "captures": {digest: record}}), encoding="utf-8")
+    assert load_crop_source(path, digest, artifact)[1] is None
+
+    record.update(width=100, height=80)
+    record["camera_matrix"][0][0] = 100
+    artifact.write_text(json.dumps({"schema_version": 1, "captures": {digest: record}}) + "\n", encoding="utf-8")
+    photo.save(path)
+    with pytest.raises(ValueError, match="source hash"):
+        load_crop_source(path, digest, artifact)
 
 
 def test_animated_png_is_rejected_by_upload_and_decoder(tmp_path) -> None:

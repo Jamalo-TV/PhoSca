@@ -9,6 +9,7 @@ import numpy as np
 
 from app.config import get_settings
 from app.core.metrics import RELEASE_DECISIONS
+from app.pipeline.camera_calibration import capture_calibration
 from app.pipeline.crop_validation import crop_validation_evidence
 from app.pipeline.decisions import is_reviewed_non_print
 from app.pipeline.image_ops import calculate_blur_score
@@ -233,7 +234,15 @@ def variant_path_from_photo(photo: Any, variant: str) -> str | None:
             return None
         if (modes.get(mode) or {}).get("status") != "ready":
             return None
-        if getattr(photo, "segmentation_confidence", None) is not None:
+        automatic = getattr(photo, "segmentation_confidence", None) is not None
+        if (correction.get("aspect_ratio_estimation") or {}).get("method") == "calibrated_camera":
+            if automatic:
+                return None
+            evidence = correction.get("camera_calibration") or {}
+            calibration = capture_calibration(get_settings().camera_calibration_path, evidence.get("capture_sha256"))
+            if calibration is None or calibration.profile_sha256 != evidence.get("profile_sha256"):
+                return None
+        if automatic:
             receipt = correction.get("crop_validation")
             if not isinstance(receipt, dict):
                 return None

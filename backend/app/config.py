@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     crop_validation_report_path: Path = Field(
         default=Path("/app/models/crop-validation.json"), alias="CROP_VALIDATION_REPORT_PATH"
     )
+    camera_calibration_path: Path | None = Field(default=None, alias="CAMERA_CALIBRATION_PATH")
     realesrgan_model_path: Path = Field(
         default=Path("/app/models/RealESRGAN_x2plus.pth"), alias="REALESRGAN_MODEL_PATH"
     )

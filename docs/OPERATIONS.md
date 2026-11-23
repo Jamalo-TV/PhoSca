@@ -56,6 +56,33 @@ python scripts/verify_launch_gates.py evidence/launch-gates.json --report eviden
 Das zweite Kommando endet mit Status 2, solange nur ein Gate blockiert ist,
 Evidenz fehlt oder deren SHA-256 nicht übereinstimmt.
 
+## Kamerakalibrierung für schräge Albumaufnahmen
+
+Fotografiere ein flaches Schachbrett aus mindestens sechs verschiedenen
+Neigungen und Abständen. Verteile die Ecken des Musters über den gesamten
+Bildbereich. Verwende für die Schachbrett- und Albumaufnahmen dieselbe Kamera,
+dasselbe Objektiv, denselben Zoom und Fokus sowie denselben Aufnahmemodus.
+Die decodierte Auflösung und Ausrichtung müssen übereinstimmen.
+
+```text
+python scripts/calibrate_crop_camera.py --cols 9 --rows 6 --checkerboards board1.jpg board2.jpg board3.jpg board4.jpg board5.jpg board6.jpg --captures album01.jpg --output camera-calibrations.json
+```
+
+`--cols` und `--rows` zählen die inneren Schachbrettecken. Das Werkzeug prüft
+die Passung an zurückgehaltenen Schachbrettaufnahmen und verwirft Kalibrierungen
+mit mehr als 0,5 Pixeln rechnerischer Linsenverzeichnung über den Bildbereich.
+Die Geometrie gilt für ebene Abzüge.
+
+Binde die JSON-Datei für API und Worker ein und setze
+`CAMERA_CALIBRATION_PATH` auf den dort sichtbaren Pfad. PhoSca setzt die
+Kalibrierung nur bei ausdrücklich aufgeführten Originaldateien mit identischem
+SHA-256 und passender decodierter Bildgrösse ein. Automatisch erkannte Abzüge
+erhalten damit eine entzerrte Vorschau. Bestätige die Ecken im Geometrie-Review,
+um geometrisch gültige Zuschnitte freizugeben. Direkt eingegebene Abzugsmasse
+haben Vorrang. Wird der Kalibrierungseintrag einer Aufnahme gelöscht oder
+geändert, müssen ihre Zuschnitte erneut gespeichert werden, bevor sie wieder
+als Download verfügbar sind.
+
 ## Future Rust Extraction Points
 
 Only consider Rust if profiling shows Python bottlenecks after load testing. Candidate boundaries are contour extraction, pHash batch computation, and EXIF batch rewrites. Keep the Python API contract unchanged.

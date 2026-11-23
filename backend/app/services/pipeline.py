@@ -33,6 +33,7 @@ from app.models import (
     PhotoStatus,
     RunStatus,
 )
+from app.pipeline.camera_calibration import CAMERA_ASPECT_REVIEW, CameraCalibration, load_crop_source
 from app.pipeline.confidence import calibrate_confidence
 from app.pipeline.crop_validation import (
     CROP_VALIDATION_UNAVAILABLE,
@@ -344,6 +345,7 @@ async def perspective_correction_task_logic(
     skip_if_exists: bool = False,
     reject_invalid_edit: bool = False,
     page_image: np.ndarray | None = None,
+    page_camera: CameraCalibration | None = None,
 ) -> dict:
     photo = await session.scalar(
         select(ExtractedPhoto)
@@ -373,7 +375,10 @@ async def perspective_correction_task_logic(
     stage = await start_stage(session, run, "perspective_correction", input_path=Path(photo.page.storage_path))
 
     if page_image is None:
-        page_image = await asyncio.to_thread(load_image, Path(photo.page.storage_path))
+        page_image, page_camera = await asyncio.to_thread(
+            load_crop_source, Path(photo.page.storage_path), photo.page.file_hash_sha256,
+            settings.camera_calibration_path if settings.enable_precise_photo_crops else None,
+        )
     automatic_detection = photo.segmentation_confidence is not None
     page_steps = (photo.page.processing_metadata or {}).get("steps") or {}
     protection_evidence = page_steps.get("protected_regions") or {}
@@ -423,6 +428,7 @@ async def perspective_correction_task_logic(
             dual_mode=settings.enable_precise_photo_crops,
             enable_classical_retry=settings.enable_classical_segmentation_fallback,
             print_aspect_ratio=manual_aspect,
+            camera_matrix=page_camera.matrix if page_camera is not None else None,
             measured_page_references=measured_references,
             neighbor_masks=neighbor_masks,
         )
@@ -464,13 +470,18 @@ async def perspective_correction_task_logic(
     untrimmed_path = output_dir / f"{photo.id}_source_corrected_untrimmed.jpg"
     crop_modes = correction_metadata.get("crop_modes") or {}
     orientation_reason = (correction_metadata.get("orientation") or {}).get("reason_code")
+    camera_aspect = page_camera is not None and (
+        (correction_metadata.get("aspect_ratio_estimation") or {}).get("method") == "calibrated_camera"
+    )
+    if camera_aspect:
+        correction_metadata["camera_calibration"] = page_camera.provenance()
     if crop_modes and automatic_detection:
         prediction = photo.enhancement_applied or {}
         calibration = prediction.get("segmentation_confidence") or {}
         segmentation = page_steps.get("segmentation") or {}
         model = segmentation.get("model_artifact") or {}
         evidence = None
-        if segmentation_matches_crop_profile(settings, segmentation):
+        if not camera_aspect and segmentation_matches_crop_profile(settings, segmentation):
             evidence = crop_validation_evidence(settings, model.get("sha256"))
         auto_review = automatic_crop_review_reasons(
             settings, photo.segmentation_confidence, photo.geometry_valid,
@@ -478,7 +489,9 @@ async def perspective_correction_task_logic(
             and calibration.get("model_sha256") == model["sha256"],
             prediction.get("segmentation_review_reasons") or [], orientation_reason,
         )
-        if evidence is None:
+        if camera_aspect:
+            auto_review.insert(0, CAMERA_ASPECT_REVIEW)
+        elif evidence is None:
             auto_review.append(CROP_VALIDATION_UNAVAILABLE)
         if auto_review:
             route_ready_crop_modes_to_review(crop_modes, auto_review)
@@ -1087,10 +1100,15 @@ async def process_page_pipeline(page_id: UUID, settings: Settings | None = None)
         segmentation = await segmentation_task_logic(session, page_id, settings, update_page_status=False)
         photo_ids = list(map(UUID, segmentation["photo_ids"]))
         photo_ids = [photo_id for photo_id in photo_ids if photo_id not in ready_photos]
-        correction_source = await asyncio.to_thread(load_image, Path(page.storage_path)) if photo_ids else None
+        correction_source, page_camera = None, None
+        if photo_ids:
+            correction_source, page_camera = await asyncio.to_thread(
+                load_crop_source, Path(page.storage_path), page.file_hash_sha256,
+                settings.camera_calibration_path if settings.enable_precise_photo_crops else None,
+            )
         corrections = [
             await perspective_correction_task_logic(
-                session, photo_id, settings, skip_if_exists=True, page_image=correction_source
+                session, photo_id, settings, skip_if_exists=True, page_image=correction_source, page_camera=page_camera,
             )
             for photo_id in photo_ids
         ]

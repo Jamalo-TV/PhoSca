@@ -1,6 +1,7 @@
 import hashlib
 from io import BytesIO
 from pathlib import Path
+from typing import BinaryIO
 
 import cv2
 import numpy as np
@@ -55,7 +56,7 @@ def _working_rgb(image: Image.Image) -> tuple[np.ndarray, dict]:
     return np.asarray(image), metadata
 
 
-def load_image_with_metadata(path: Path) -> tuple[np.ndarray, dict]:
+def load_image_with_metadata(path: Path | BinaryIO) -> tuple[np.ndarray, dict]:
     """Decode one canonical, orientation-corrected sRGB working image.
 
     The original bytes remain immutable in storage; this function only defines
@@ -109,7 +110,7 @@ def load_image_with_metadata(path: Path) -> tuple[np.ndarray, dict]:
     }
 
 
-def load_image(path: Path) -> np.ndarray:
+def load_image(path: Path | BinaryIO) -> np.ndarray:
     image, _ = load_image_with_metadata(path)
     return image
 
