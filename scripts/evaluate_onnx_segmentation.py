@@ -1,18 +1,23 @@
-"""Evaluate the runtime ONNX segmentation path against locked YOLO fixtures."""
+"""Benchmark detector matches and the rectified images the crop pipeline writes."""
 
 from __future__ import annotations
 
 import argparse
+from collections import Counter
+from hashlib import sha256
+from html import escape
 import json
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from time import perf_counter
 
 import cv2
 import numpy as np
-from validate_segmentation import read_yolo_segmentation
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+GOLDEN_MANIFEST = Path("data/evaluation/cropping_dataset.json")
+MODES = ("full_print", "image_only")
 
 
 def _runtime_value(value) -> float | None:
@@ -62,7 +67,7 @@ def _runtime_summary(pages: list[dict[str, float | bool | None]]) -> dict:
     model_stats = _latency_statistics(model)
     classical_stats = _latency_statistics(classical)
     return {
-        "timing_scope": "segment_album_page(image, settings); excludes image I/O and evaluator-only scoring",
+        "timing_scope": "segment_album_page(image, settings); excludes decode, cutout preparation, and scoring",
         "segmentation_end_to_end": end_to_end_stats,
         "model": model_stats,
         "classical": classical_stats,
@@ -101,47 +106,460 @@ def _runtime_settings(args: argparse.Namespace):
         ENABLE_CLASSICAL_SEGMENTATION_FALLBACK=args.include_classical_fallback,
         YOLO_PROPOSAL_THRESHOLD=args.proposal_threshold,
         YOLO_CONFIDENCE_THRESHOLD=args.acceptance_threshold,
+        ENABLE_PRECISE_PHOTO_CROPS=not args.legacy_crop,
     )
 
 
 def _detected_polygon(detection) -> list[tuple[float, float]]:
-    return [(float(point["x"]), float(point["y"])) for point in detection.mask.get("polygon", [])]
+    mask = detection.mask or {}
+    return _points(mask.get("visible_polygon") or mask.get("polygon") or [])
 
 
-def _load_manifest(path: Path | None) -> dict[str, dict]:
-    if path is None:
-        return {}
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    records = payload.get("pages", payload if isinstance(payload, list) else [])
-    return {str(record["id"]): record for record in records}
+def _points(values) -> list[tuple[float, float]]:
+    return [
+        (float(point["x"]), float(point["y"])) if isinstance(point, dict) else tuple(map(float, point))
+        for point in values
+    ]
 
 
-def _perspective_stability(image, detections) -> tuple[int, list[dict]]:
-    from app.pipeline.perspective import crop_and_correct_photo_with_metadata
+def _record_path(value: str, manifest: Path) -> Path:
+    path = Path(value)
+    relative = manifest.parent / path
+    return relative if relative.is_file() else path
 
-    stable = 0
-    evidence: list[dict] = []
-    for index, detection in enumerate(detections):
-        try:
-            crop, metadata = crop_and_correct_photo_with_metadata(
-                image,
-                detection.bounding_box,
-                detection.mask,
-                trim_border=False,
-                auto_orient=False,
-                protected_regions=[],
-                protect_regions=False,
+
+def _reference_bytes(path: Path, pinned_hash: str | None) -> bytes:
+    payload = path.read_bytes()
+    if pinned_hash is not None and sha256(payload).hexdigest() != pinned_hash:
+        raise ValueError(f"Evaluation reference hash mismatch: {path}")
+    return payload
+
+
+def _has_disjoint_calibration_holdout(settings, records) -> bool:
+    path = settings.segmentation_calibration_path
+    if not path.is_file():
+        return not settings.require_confidence_calibration
+    try:
+        artifact = json.loads(path.read_bytes())
+        groups = artifact.get("source_groups")
+        digest = artifact.get("input_sha256")
+        if (
+            not isinstance(groups, list) or not groups or not all(isinstance(group, str) and group.strip() for group in groups)
+            or not isinstance(digest, str) or len(digest) != 64 or set(digest) - set("0123456789abcdef")
+        ):
+            return False
+        reference_groups = {str(record.get("source_group") or "").strip().casefold() for record in records}
+        return reference_groups.isdisjoint(group.strip().casefold() for group in groups)
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def _load_cases(args) -> tuple[list[dict], dict]:
+    if args.dataset_manifest is None and args.images == Path("data/golden_fixtures"):
+        args.dataset_manifest = GOLDEN_MANIFEST
+    if args.dataset_manifest:
+        contents = args.dataset_manifest.read_bytes()
+        args.dataset_manifest_sha256 = sha256(contents).hexdigest()
+        payload = json.loads(contents)
+        records = payload if isinstance(payload, list) else payload["pages"]
+        split = payload.get("split_policy", {}) if isinstance(payload, dict) else {}
+        if not records or len({str(record["id"]) for record in records}) != len(records):
+            raise ValueError("Dataset manifest requires at least one page and unique IDs")
+        for record in records:
+            record["image"] = _record_path(record["image"], args.dataset_manifest)
+            record["annotations"] = (
+                _record_path(record["annotations"], args.dataset_manifest) if record.get("annotations") else None
             )
-            assessment = metadata.get("geometry_assessment") or metadata.get("quad_validation") or {}
-            passed = bool(crop.size and min(crop.shape[:2]) >= 2 and assessment.get("passed", True))
-            stable += int(passed)
-            evidence.append({"prediction_index": index, "stable": passed, "assessment": assessment})
-        except (ValueError, cv2.error) as exc:
-            evidence.append({"prediction_index": index, "stable": False, "reason": str(exc)})
-    return stable, evidence
+        return records, split
+    return [
+        {"id": image.stem, "image": image, "annotations": args.labels / f"{image.stem}.txt"}
+        for image in sorted(args.images.iterdir()) if image.is_file() and image.suffix.lower() in IMAGE_EXTENSIONS
+    ], {}
+
+
+def _read_page_truth(record, parse_labels, hash_file):
+    label_path = record["annotations"]
+    label_hash = record.get("annotations_sha256")
+    if label_path and label_path.is_file():
+        expected = parse_labels(_reference_bytes(label_path, label_hash).decode("utf-8"))
+        pinned = label_hash is not None
+    else:
+        expected = []
+        pinned = label_path is None
+    count = record.get("expected_count")
+    if (count is not None and len(expected) != count) or (not expected and count != 0):
+        raise ValueError(f"Missing or inconsistent label file: {label_path or record['id']}")
+    if record.get("image_sha256") and hash_file(record["image"]) != record["image_sha256"]:
+        raise ValueError(f"Evaluation image hash mismatch: {record['id']}")
+    return expected, pinned
+
+
+def _reference_masks(record, expected, image_shape, manifest, *, include_reference_images=False):
+    from app.evaluation.cropping import _mask
+    from app.schemas.common import PrintSizeMM
+
+    height, width = image_shape[:2]
+    crops = record.get("expected_final_crops")
+    if crops is None:
+        return [
+            {"full_print": {"mask": _mask(polygon, width, height), "verified": False}}
+            for polygon in expected
+        ]
+    if len(crops) != len(expected):
+        raise ValueError(f"{record['id']}: reference crops must follow annotation order")
+    references = []
+    for print_crops in crops:
+        modes = {}
+        for name, annotation in print_crops.items():
+            if name not in MODES:
+                raise ValueError(f"Unknown reference mode: {name}")
+            sidecar_pinned = True
+            if annotation.get("mask"):
+                mask_path = _record_path(annotation["mask"], manifest)
+                mask_hash = annotation.get("mask_sha256")
+                payload = _reference_bytes(mask_path, mask_hash)
+                reference_mask = cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), cv2.IMREAD_GRAYSCALE) if payload else None
+                sidecar_pinned = mask_hash is not None
+                if reference_mask is None or reference_mask.shape != (height, width):
+                    raise ValueError(f"{record['id']}: invalid source-resolution reference mask")
+            else:
+                reference_mask = _mask(_points(annotation["polygon"]), width, height)
+            recoverable = annotation.get("recoverable")
+            if not isinstance(recoverable, bool) or not np.any(reference_mask):
+                raise ValueError(f"{record['id']}: {name} needs a recoverability flag and a nonempty reference mask")
+            corners = np.array(_points(annotation["warp_quad"]), dtype=np.float32) if annotation.get("warp_quad") else None
+            shape = tuple(annotation["shape"]) if annotation.get("shape") is not None else None
+            if shape is not None and (len(shape) != 2 or not all(isinstance(size, int) and size >= 2 for size in shape)):
+                raise ValueError(f"{record['id']}: {name} has invalid rectified reference dimensions")
+            reference_image = None
+            if annotation.get("reference_image"):
+                reference_path = _record_path(annotation["reference_image"], manifest)
+                reference_hash = annotation.get("reference_image_sha256")
+                payload = _reference_bytes(reference_path, reference_hash)
+                reference_image = cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), cv2.IMREAD_COLOR) if payload else None
+                sidecar_pinned &= reference_hash is not None
+                if reference_image is None or min(reference_image.shape[:2]) < 2:
+                    raise ValueError(f"{record['id']}: {name} has an invalid rectified reference image")
+                if shape is not None and reference_image.shape[:2] != shape:
+                    raise ValueError(f"{record['id']}: {name} reference image does not match its stated shape")
+                shape = reference_image.shape[:2]
+            measurement = annotation.get("physical_size_mm")
+            ratio = PrintSizeMM.model_validate(measurement).aspect_ratio if measurement is not None else None
+            if ratio is not None and shape is not None and abs((shape[1] - 1) / (shape[0] - 1) / ratio - 1) > .01:
+                raise ValueError(f"{record['id']}: {name} rectified reference contradicts its physical dimensions")
+            source_landmarks = annotation.get("source_landmarks")
+            landmarks = annotation.get("landmarks")
+            if source_landmarks is not None or landmarks is not None:
+                source_landmarks = np.asarray(source_landmarks, dtype=float)
+                landmarks = np.asarray(landmarks, dtype=float)
+                if (
+                    shape is None or source_landmarks.ndim != 2 or source_landmarks.shape[1] != 2
+                    or source_landmarks.shape != landmarks.shape or not len(landmarks)
+                    or not np.isfinite(source_landmarks).all() or not np.isfinite(landmarks).all()
+                    or np.any((source_landmarks < 0) | (source_landmarks > [width - 1, height - 1]))
+                    or np.any((landmarks < 0) | (landmarks > [shape[1] - 1, shape[0] - 1]))
+                ):
+                    raise ValueError(f"{record['id']}: {name} needs paired landmarks in the source and rectified pixel grids")
+            reference_geometry = bool(
+                corners is not None and corners.shape == (4, 2) and np.isfinite(corners).all()
+                and np.all((corners >= 0) & (corners <= 1)) and cv2.isContourConvex(corners)
+                and (ratio is not None or shape is not None)
+            )
+            modes[name] = {
+                "mask": reference_mask,
+                "sidecar_pinned": sidecar_pinned,
+                "verified": (
+                    record.get("annotation_provenance") == "manually_verified"
+                    and annotation.get("annotation_provenance") == "manually_verified"
+                    and (not recoverable or reference_geometry)
+                ),
+                "recoverable": recoverable,
+                "corners": corners * [width - 1, height - 1] if corners is not None else None,
+                "shape": shape,
+                "expected_aspect_ratio": ratio,
+                "aspect_reference": "physical_size_mm" if ratio is not None else "rectified_pixels" if shape else None,
+                "image": reference_image if include_reference_images else None,
+                "source_landmarks": source_landmarks,
+                "landmarks": landmarks,
+            }
+        references.append(modes)
+    return references
+
+
+def _check_references(args, records, split, parse_labels, load_image, hash_file):
+    from app.evaluation.cropping import is_locked_album_manifest
+
+    totals = {
+        name: Counter(present=0, verified=0, verified_recoverable=0, physical_dimensions=0) for name in MODES
+    }
+    positives = {name: set() for name in MODES}
+    expected_photos = 0
+    files_pinned = True
+    for record in records:
+        expected, pinned = _read_page_truth(record, parse_labels, hash_file)
+        expected_photos += len(expected)
+        files_pinned &= pinned and bool(record.get("image_sha256"))
+        page = load_image(record["image"])
+        group = str(record.get("source_group") or "").strip().casefold()
+        references = _reference_masks(record, expected, page.shape, args.dataset_manifest)
+        for modes in references:
+            for name, reference in modes.items():
+                files_pinned &= reference.get("sidecar_pinned", True)
+                totals[name]["present"] += 1
+                totals[name]["verified"] += int(reference["verified"])
+                if reference["verified"] and reference.get("recoverable") is True:
+                    totals[name]["verified_recoverable"] += 1
+                    if group:
+                        positives[name].add(group)
+                if reference.get("aspect_reference") == "physical_size_mm":
+                    totals[name]["physical_dimensions"] += 1
+    locked = is_locked_album_manifest(records, split)
+    return {
+        "reference_check_only": True,
+        "dataset_manifest_sha256": args.dataset_manifest_sha256,
+        "pages": len(records),
+        "expected_photos": expected_photos,
+        "reference_files_pinned": files_pinned,
+        "locked_album_provenance": locked,
+        "ready_for_locked_evaluation": locked and files_pinned and all(
+            totals[name]["verified"] == expected_photos and len(positives[name]) >= 2 for name in MODES
+        ),
+        "modes": {name: dict(totals[name]) | {"verified_recoverable_groups": sorted(positives[name])} for name in MODES},
+    }
+
+
+def _legacy_mode(vertices, image, source_shape, rotation):
+    height, width = image.shape[:2]
+    source = np.asarray(_points(vertices), dtype=np.float32) * np.float32(
+        [source_shape[1] - 1, source_shape[0] - 1]
+    )
+    destination = np.float32([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]])
+    destination = np.roll(destination, -(int(rotation) // 90), axis=0)
+    return {"status": "legacy", "warp_quad": vertices,
+            "page_to_output": cv2.getPerspectiveTransform(source, destination).tolist()}
+
+
+def _render_crops(image, proposals, settings, temporary):
+    from app.pipeline.image_ops import save_jpeg
+    from app.pipeline.perspective import correct_photo_crop
+    from app.pipeline.protected_regions import detect_protected_regions
+
+    protected = detect_protected_regions(image) if settings.enable_protected_region_guard else []
+    rendered = []
+    for index, (box, mask, geometry_valid) in enumerate(proposals):
+        try:
+            result = correct_photo_crop(
+                image, box, mask,
+                trim_border=settings.enable_border_trim,
+                auto_orient=settings.enable_photo_orientation_correction,
+                orientation_model_path=settings.photo_orientation_model_path,
+                protected_regions=protected,
+                protect_regions=settings.enable_protected_region_guard,
+                allow_page_face_overlap=geometry_valid,
+                dual_mode=settings.enable_precise_photo_crops,
+                enable_classical_retry=settings.enable_classical_segmentation_fallback,
+                neighbor_masks=[
+                    neighbor_mask for n, (_, neighbor_mask, _) in enumerate(proposals) if n != index and neighbor_mask
+                ],
+            )
+        except (ValueError, cv2.error) as error:
+            rendered.append({"reason": str(error), "modes": {}, "images": {}})
+            continue
+        if settings.enable_precise_photo_crops:
+            modes = result.metadata["crop_modes"]
+            images = {"full_print": result.image}
+            if result.image_only is not None:
+                images["image_only"] = result.image_only
+        else:
+            rotation = (result.metadata.get("orientation") or {}).get("rotation_degrees", 0)
+            images = {"full_print": result.rectified_untrimmed}
+            modes = {"full_print": _legacy_mode(
+                result.metadata["source_quad"], result.rectified_untrimmed, image.shape, rotation,
+            )}
+            if result.metadata["border_trim"].get("applied"):
+                images["image_only"] = result.image
+                modes["image_only"] = _legacy_mode(result.metadata["warp_quad"], result.image, image.shape, rotation)
+        save_jpeg(temporary / f"{index}-full.jpg", images["full_print"])
+        if "image_only" in images and images["image_only"] is not images["full_print"]:
+            save_jpeg(temporary / f"{index}-motif.jpg", images["image_only"])
+        rendered.append({"images": images, "modes": modes, "metadata": result.metadata})
+    return rendered
+
+
+def _rendered_quality(references, matches, rendered, difficulty, eligible):
+    from app.evaluation.cropping import evaluate_rendered_crop
+
+    rows = []
+    by_truth = {match["truth_index"]: match for match in matches}
+    for truth_index, truth_modes in enumerate(references):
+        match = by_truth.get(truth_index)
+        render = rendered[match["prediction_index"]] if match else None
+        for name, reference in truth_modes.items():
+            evidence = render["modes"].get(name, {}) if render else {}
+            image = render["images"].get(name) if render else None
+            state = evidence.get("status") or ("review_needed" if render and render.get("reason") else "unavailable")
+            row = {
+                "truth_index": truth_index, "prediction_index": match["prediction_index"] if match else None,
+                "mode": name, "status": state, "valid_detection": bool(match and match["valid_detection"]),
+                "matched_instance": bool(match and match["mask_iou"] >= .50),
+                "verified": reference["verified"], "recoverable": reference.get("recoverable"),
+                "aspect_reference": reference.get("aspect_reference") or ("rectified_pixels" if reference.get("shape") else None),
+                "difficulty": difficulty, "reason_codes": evidence.get("reason_codes") or
+                ([render["reason"]] if render and render.get("reason") else []),
+            }
+            matrix = evidence.get("page_to_output")
+            if image is not None and matrix is not None:
+                row.update(evaluate_rendered_crop(
+                    reference["mask"], _points(evidence["warp_quad"]), matrix, image.shape[:2],
+                    expected_corners=reference.get("corners"),
+                    expected_shape=reference.get("shape"),
+                    expected_aspect_ratio=reference.get("expected_aspect_ratio"),
+                    source_landmarks=reference.get("source_landmarks"),
+                    expected_landmarks=reference.get("landmarks"),
+                    sampling=evidence.get("sampling"),
+                ))
+            row["passes"] = bool(
+                row["matched_instance"] and state == "ready" and "footprint_iou" in row
+                and row["cutoff_beyond_1px"] == row["foreign_beyond_1px"] == row["outside_source_samples"] == 0
+                and row["sampling_shortfall_px"] <= 1
+                and row["warp_metadata_error_max_px"] <= 1
+                and row.get("aspect_ratio_relative_error", 0) <= .01
+                and row.get("landmark_error_p95_px", 0) <= 2
+                and (row["foreign_source_samples"] == 0 if difficulty != "real" else (
+                    row.get("orientation_matches_reference") is True and row.get("corner_error_max_px", np.inf) <= 2
+                ))
+            )
+            row["automatic_release_passes"] = bool(row["passes"] and eligible[match["prediction_index"]])
+            rows.append(row)
+    return rows
+
+
+def _quality_summary(rows):
+    summaries = {}
+    for name in MODES:
+        mode_rows = [row for row in rows if row["mode"] == name]
+        verified = [row for row in mode_rows if row["verified"]]
+        recoverable = [row for row in verified if row["recoverable"]]
+        obstructed = [row for row in verified if row["recoverable"] is False]
+        summary = {
+            "verified": len(verified), "recoverable": len(recoverable), "obstructed": len(obstructed),
+            "obstructed_routed_to_review": sum(row["status"] == "review_needed" for row in obstructed),
+            "obstructed_marked_ready": sum(row["status"] == "ready" for row in obstructed),
+            "verified_ready_failures": sum(
+                row["status"] == "ready" and (not row["recoverable"] or not row["passes"]) for row in verified
+            ),
+            "ready": sum(row["status"] == "ready" for row in mode_rows),
+            "passing_recoverable": sum(row["passes"] for row in recoverable),
+        }
+        real_by_group = {}
+        for row in recoverable:
+            group = row.get("source_group")
+            if row["difficulty"] == "real" and group:
+                counts = real_by_group.setdefault(group, {"expected": 0, "automatic_release_passes": 0})
+                counts["expected"] += 1
+                counts["automatic_release_passes"] += int(row["automatic_release_passes"])
+        summary["real_by_group"] = real_by_group
+        for difficulty in ("clean", "hard", "real"):
+            cases = [row for row in recoverable if row["difficulty"] == difficulty]
+            errors = [error for row in cases if row["status"] == "ready" for error in row.get("corner_errors_px", [])]
+            summary[difficulty] = {
+                "expected": len(cases), "passes": sum(row["passes"] for row in cases),
+                "automatic_release_passes": sum(row["automatic_release_passes"] for row in cases),
+                "corner_error_p95_px": float(np.percentile(errors, 95)) if errors else None,
+            }
+        scored = [row for row in mode_rows if "footprint_iou" in row]
+        for metric in ("footprint_iou", "content_cutoff", "foreign_fraction"):
+            summary[f"mean_{metric}"] = float(np.mean([row[metric] for row in scored])) if scored else None
+        summaries[name] = summary
+    return summaries
+
+
+def _rendered_mode_passes(mode, *, synthetic: bool, real_manifest_locked: bool, expected_photos: int) -> bool:
+    if mode["obstructed_routed_to_review"] != mode["obstructed"] or mode["verified_ready_failures"]:
+        return False
+    if synthetic:
+        clean, hard = mode["clean"], mode["hard"]
+        return bool(
+            clean["expected"] and clean["passes"] == clean["expected"]
+            and clean["corner_error_p95_px"] is not None and clean["corner_error_p95_px"] <= 1
+            and hard["expected"] and hard["passes"] / hard["expected"] >= .90
+            and hard["corner_error_p95_px"] is not None and hard["corner_error_p95_px"] <= 2
+        )
+    real = mode["real"]
+    groups = mode["real_by_group"]
+    return bool(
+        real_manifest_locked and mode["verified"] == expected_photos
+        and real["expected"] and real["automatic_release_passes"] / real["expected"] >= .90
+        and len(groups) >= 2 and all(counts["automatic_release_passes"] / counts["expected"] >= .90 for counts in groups.values())
+    )
+
+
+def _detection_passes(metrics, args) -> bool:
+    if not metrics.expected_photos:
+        return not metrics.detected_photos
+    if args.dataset_manifest == GOLDEN_MANIFEST and (metrics.totals["false_positive"] or metrics.totals["false_negative"]):
+        return False
+    return (
+        metrics.polygon_iou >= args.min_mean_iou
+        and metrics.detection_precision >= args.min_precision and metrics.detection_recall >= args.min_recall
+        and metrics.boundary_f_score >= args.min_boundary_f_score
+        and metrics.content_cutoff <= args.max_content_cutoff
+        and metrics.background_retained <= args.max_background_retained
+        and metrics.serious_failure_rate <= args.max_serious_failure_rate
+    )
+
+
+def _contact_sheet(directory, image, expected, detected, rendered, rows, references, index, name):
+    height, width = image.shape[:2]
+    annotated = image.copy()
+    for polygons, color in ((expected, (65, 225, 25)), (detected, (255, 125, 25))):
+        for polygon in polygons:
+            points = np.rint(np.asarray(polygon) * [width - 1, height - 1]).astype(np.int32)
+            if len(points):
+                cv2.polylines(annotated, [points], True, color, max(2, width // 500))
+    for item in rendered:
+        for mode, color in (("full_print", (25, 75, 255)), ("image_only", (15, 210, 240))):
+            quad = _points(item["modes"].get(mode, {}).get("warp_quad") or [])
+            if quad:
+                points = np.rint(np.asarray(quad) * [width - 1, height - 1]).astype(np.int32)
+                cv2.polylines(annotated, [points], True, color, max(2, width // 500))
+        refined = _points((item.get("metadata") or {}).get("refined_visible_polygon") or [])
+        if refined:
+            points = np.rint(np.asarray(refined) * [width - 1, height - 1]).astype(np.int32)
+            cv2.polylines(annotated, [points], True, (185, 40, 205), max(1, width // 800))
+
+    def figure(picture, slug, caption, max_width=440):
+        width_px = min(max_width, picture.shape[1])
+        thumbnail = cv2.resize(picture, (width_px, max(1, round(width_px * picture.shape[0] / picture.shape[1]))),
+                               interpolation=cv2.INTER_AREA)
+        path = f"{index:03d}-{slug}.jpg"
+        cv2.imwrite(str(directory / path), thumbnail)
+        return f'<figure><img src="{path}" alt=""><figcaption>{escape(caption)}</figcaption></figure>'
+
+    items = [figure(annotated, "page", "Truth green · detector blue · visible mask magenta · full red · motif yellow", 920)]
+    for prediction_index, item in enumerate(rendered):
+        for mode, crop in item["images"].items():
+            row = next((r for r in rows if r["prediction_index"] == prediction_index and r["mode"] == mode), {})
+            status = item["modes"].get(mode, {}).get("status", "unavailable")
+            caption = f"{prediction_index + 1} · {mode} · {status}"
+            if "content_cutoff" in row:
+                caption += f' · cutoff {row["content_cutoff"]:.2%} · foreign {row["foreign_fraction"]:.2%}'
+            slug = f"crop-{prediction_index}-{mode}"
+            items.append(figure(crop, slug, caption))
+            if "truth_index" in row:
+                reference = references[row["truth_index"]][mode].get("image")
+                if reference is not None:
+                    items.append(figure(reference, f"{slug}-reference", f"{mode} · original reference"))
+            edge = min(48, *crop.shape[:2])
+            corners = np.hstack((crop[:edge, :edge], crop[:edge, -edge:], crop[-edge:, :edge], crop[-edge:, -edge:]))
+            items.append(figure(cv2.resize(corners, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST),
+                                f"{slug}-corners", "Corners ×2"))
+    return f"<section><h2>{escape(name)}</h2><div>{''.join(items)}</div></section>"
 
 
 def main() -> None:
+    from validate_segmentation import parse_yolo_segmentation
+
     parser = argparse.ArgumentParser(
         description="Evaluate a registered ONNX segmentation model against locked fixtures."
     )
@@ -152,9 +570,15 @@ def main() -> None:
     parser.add_argument("--proposal-threshold", type=float, default=0.25)
     parser.add_argument("--acceptance-threshold", type=float, default=0.70)
     parser.add_argument("--include-classical-fallback", action="store_true")
-    parser.add_argument("--dataset-manifest", type=Path, default=Path("data/evaluation/cropping_dataset.json"))
+    parser.add_argument("--dataset-manifest", type=Path)
+    parser.add_argument("--check-references", action="store_true", help="Validate real reference files and report readiness without running inference.")
+    parser.add_argument("--synthetic", choices=("development", "locked"))
+    parser.add_argument("--geometry-only", action="store_true", help="Seed approximate proposals on synthetic pages.")
+    parser.add_argument("--legacy-crop", action="store_true", help="Measure the rollback detector and crop path.")
+    parser.add_argument("--visuals", action="store_true", help="Write a contact sheet alongside the report.")
+    parser.add_argument("--require-final-quality", action="store_true")
     parser.add_argument("--iou-threshold", type=float, default=0.85)
-    parser.add_argument("--output", type=Path, default=Path("data/onnx_golden_segmentation_report.json"))
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--min-mean-iou", type=float, default=0.85)
     parser.add_argument("--min-precision", type=float, default=0.90)
     parser.add_argument("--min-recall", type=float, default=0.90)
@@ -163,124 +587,275 @@ def main() -> None:
     parser.add_argument("--max-background-retained", type=float, default=0.12)
     parser.add_argument("--max-serious-failure-rate", type=float, default=0.0)
     args = parser.parse_args()
+    if args.output is None:
+        args.output = Path("runs/crop-quality") / ("reference-check.json" if args.check_references else "evaluation.json")
+    if args.dataset_manifest and args.output.resolve() == args.dataset_manifest.resolve():
+        parser.error("--output must be separate from the input reference manifest")
 
-    if not args.model.is_file():
+    if args.geometry_only and (not args.synthetic or args.legacy_crop):
+        parser.error("--geometry-only requires a synthetic split and the precise crop path")
+    if args.synthetic and args.dataset_manifest:
+        parser.error("--synthetic and --dataset-manifest are separate inputs")
+    if args.check_references and not args.dataset_manifest:
+        parser.error("--check-references requires --dataset-manifest")
+    if not args.check_references and not args.geometry_only and not args.model.is_file():
         raise SystemExit(f"ONNX model missing: {args.model}")
     settings = _runtime_settings(args)
-    from app.evaluation.cropping import evaluate_cropping_dataset, evaluate_page_crops
+    from app.evaluation.cropping import evaluate_cropping_dataset, evaluate_page_crops, is_locked_album_manifest
     from app.pipeline.confidence import calibrate_confidence
+    from app.pipeline.crop_validation import CROP_VALIDATION_SCHEMA, automatic_crop_review_reasons, crop_validation_profile
     from app.pipeline.decisions import component_review_reasons, confidence_components
+    from app.pipeline.enhancement import prepare_for_cutout
+    from app.pipeline.image_ops import load_image, sha256_file
+    from app.pipeline.quality import segmentation_review_reasons
     from app.pipeline.segmentation import segment_album_page
 
-    manifest = _load_manifest(args.dataset_manifest if args.dataset_manifest.is_file() else None)
+    if args.synthetic:
+        from app.evaluation.crop_fixtures import geometry_seed, synthetic_crop_pages
+
+        records = [{"id": page.name, "fixture": page, "annotation_provenance": "generated_fixture"}
+                   for page in synthetic_crop_pages(args.synthetic)]
+        split = {"synthetic": args.synthetic}
+    else:
+        records, split = _load_cases(args)
+    if not records:
+        raise SystemExit("No evaluation pages")
+    if args.check_references:
+        checked = _check_references(args, records, split, parse_yolo_segmentation, load_image, sha256_file)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        contents = json.dumps(checked, indent=2)
+        args.output.write_text(contents, encoding="utf-8")
+        print(contents)
+        if args.require_final_quality and not checked["ready_for_locked_evaluation"]:
+            raise SystemExit(3)
+        return
     page_metrics = []
+    final_instance_page_metrics = []
     fixtures: list[dict] = []
     page_runtimes: list[dict[str, float | bool | None]] = []
+    pipeline_runtimes = []
+    crop_rows = []
+    mode_availability = {mode: Counter() for mode in MODES}
+    sheets = []
+    visuals = args.output.parent / f"{args.output.stem}-visuals" if args.visuals else None
+    if visuals:
+        visuals.mkdir(parents=True, exist_ok=True)
     stable_transforms = 0
     transform_attempts = 0
-    orientation_expected = 0
-    orientation_correct = 0
     quality_gate_acceptances = 0
     evaluated_detections = 0
-    fixture_paths = (
-        path for path in args.images.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
-    )
-    for image_path in sorted(fixture_paths):
-        label_path = args.labels / f"{image_path.stem}.txt"
-        expected = read_yolo_segmentation(label_path)
-        if not expected:
-            raise SystemExit(f"Golden label missing or empty: {label_path}")
-        image = cv2.imread(str(image_path))
-        if image is None:
-            raise SystemExit(f"Fixture image could not be decoded: {image_path}")
-        page_started = perf_counter()
-        result = segment_album_page(image, settings)
-        page_runtime = _page_runtime(result.metadata, (perf_counter() - page_started) * 1000.0)
-        page_runtimes.append(page_runtime)
-        if result.metadata.get("onnx_error"):
-            raise SystemExit(f"Runtime ONNX error for {image_path.name}: {result.metadata['onnx_error']}")
-        detected = [_detected_polygon(item) for item in result.detections]
-        accepted: list[bool] = []
-        acceptance_evidence: list[dict] = []
-        for item in result.detections:
-            mask = item.mask or {}
-            detector_source = str(mask.get("detector_source", "default"))
-            calibrated, calibration = calibrate_confidence(
-                item.confidence,
-                detector_source,
-                settings.segmentation_calibration_path,
+    reference_files_locked = True
+    with TemporaryDirectory(prefix="phosca-crop-benchmark-") as temporary:
+        for page_index, record in enumerate(records):
+            synthetic = record.get("fixture")
+            if synthetic:
+                expected = [item.visible_polygon for item in synthetic.prints]
+                references = [
+                    {mode: {"mask": ref.mask, "corners": ref.corners, "shape": ref.shape,
+                            "source_landmarks": ref.source_landmarks, "landmarks": ref.landmarks,
+                            "recoverable": ref.recoverable, "verified": True, "image": ref.image}
+                     for mode, ref in item.reference_modes.items()}
+                    for item in synthetic.prints
+                ]
+            else:
+                expected, pinned = _read_page_truth(record, parse_yolo_segmentation, sha256_file)
+                reference_files_locked &= pinned
+            pipeline_started = perf_counter()
+            image = synthetic.image if synthetic else load_image(record["image"])
+            detection_metadata = {}
+            acceptance_evidence: list[dict] = []
+            if args.geometry_only:
+                proposals = [(*geometry_seed(item, image.shape), True) for item in synthetic.prints]
+                detected = [_points(mask["visible_polygon"]) for _, mask, _ in proposals]
+                page_runtime = None
+            else:
+                prepared, _ = prepare_for_cutout(image)
+                segmentation_started = perf_counter()
+                result = segment_album_page(prepared, settings)
+                detection_metadata = result.metadata
+                page_runtime = _page_runtime(detection_metadata, (perf_counter() - segmentation_started) * 1000.0)
+                page_runtimes.append(page_runtime)
+                if detection_metadata.get("onnx_error"):
+                    raise SystemExit(f"Runtime ONNX error for {record['id']}: {detection_metadata['onnx_error']}")
+                proposals = [(item.bounding_box, item.mask, item.geometry_valid) for item in result.detections]
+                detected = [_detected_polygon(item) for item in result.detections]
+
+            rendered = _render_crops(image, proposals, settings, Path(temporary))
+            pipeline_ms = (perf_counter() - pipeline_started) * 1000
+            pipeline_runtimes.append(pipeline_ms)
+            for item in rendered:
+                for mode in MODES:
+                    unavailable = "review_needed" if item.get("reason") else "unavailable"
+                    mode_availability[mode][item["modes"].get(mode, {}).get("status") or unavailable] += 1
+            accepted: list[bool] = []
+            if not args.geometry_only:
+                for item, crop in zip(result.detections, rendered):
+                    mask = item.mask or {}
+                    detector_source = str(mask.get("detector_source", "default"))
+                    calibrated, calibration = calibrate_confidence(
+                        item.confidence, detector_source, settings.segmentation_calibration_path,
+                    )
+                    boundary = mask.get("boundary_evidence") or {}
+                    geometry = mask.get("geometry_evidence") or {}
+                    perspective = crop.get("metadata") or {}
+                    detection_components = confidence_components(
+                        detection_confidence=calibrated,
+                        boundary_confidence=boundary.get("score"),
+                        geometry_confidence=geometry.get("score"),
+                    )
+                    components = confidence_components(
+                        detection_components.as_dict(),
+                        boundary_confidence=perspective.get("boundary_confidence"),
+                        geometry_confidence=perspective.get("geometry_confidence"),
+                        perspective_confidence=perspective.get("perspective_confidence"),
+                        orientation_confidence=perspective.get("orientation_confidence"),
+                        border_trim_confidence=perspective.get("border_trim_confidence"),
+                    )
+                    full_mode = crop["modes"].get("full_print", {})
+                    reasons = segmentation_review_reasons(
+                        confidence=calibrated, confidence_threshold=settings.yolo_confidence_threshold, quality=item,
+                    )
+                    reasons.extend(component_review_reasons(detection_components))
+                    reasons.extend(component_review_reasons(components))
+                    reasons.extend(full_mode.get("reason_codes") or [])
+                    orientation_reason = (perspective.get("orientation") or {}).get("reason_code")
+                    if orientation_reason:
+                        reasons.append(orientation_reason)
+                    if (perspective.get("protected_regions") or {}).get("review_untrimmed"):
+                        reasons.append("POSSIBLE_CONTENT_CUTOFF")
+                    quality_accepted = bool(
+                        item.geometry_valid and not reasons and full_mode.get("status") in {"ready", "legacy"}
+                    )
+                    crop_review = automatic_crop_review_reasons(
+                        settings, calibrated, item.geometry_valid, calibration.get("calibrated") is True,
+                        item.review_reasons, orientation_reason,
+                    )
+                    release_eligible = full_mode.get("status") == "ready" and not crop_review
+                    quality_gate_acceptances += int(quality_accepted)
+                    evaluated_detections += 1
+                    accepted.append(release_eligible or bool(args.legacy_crop and quality_accepted and not crop_review))
+                    acceptance_evidence.append({
+                        "quality_gate_accepted": quality_accepted,
+                        "eligible_before_album_validation": release_eligible,
+                        "calibrated": bool(calibration.get("calibrated")),
+                        "confidence_components": components.as_dict(),
+                        "review_reasons": list(dict.fromkeys(reasons)),
+                    })
+            metrics = evaluate_page_crops(
+                expected, detected, width=image.shape[1], height=image.shape[0],
+                iou_threshold=args.iou_threshold, accepted=accepted or [False] * len(detected),
             )
-            boundary = mask.get("boundary_evidence") if isinstance(mask.get("boundary_evidence"), dict) else {}
-            geometry = mask.get("geometry_evidence") if isinstance(mask.get("geometry_evidence"), dict) else {}
-            components = confidence_components(
-                detection_confidence=calibrated,
-                boundary_confidence=boundary.get("score"),
-                geometry_confidence=geometry.get("score"),
+            page_metrics.append(metrics)
+            refined_polygons = [
+                (item.get("metadata") or {}).get("refined_visible_polygon") for item in rendered
+            ]
+            refined_count = sum(bool(polygon) for polygon in refined_polygons)
+            final_metrics = metrics
+            if refined_count:
+                final_polygons = [
+                    _points(refined) if refined else raw for raw, refined in zip(detected, refined_polygons, strict=True)
+                ]
+                final_metrics = evaluate_page_crops(
+                    expected, final_polygons, width=image.shape[1], height=image.shape[0],
+                    iou_threshold=args.iou_threshold, accepted=accepted or [False] * len(detected),
+                )
+            final_instance_page_metrics.append(final_metrics)
+            if not synthetic:
+                references = _reference_masks(record, expected, image.shape, args.dataset_manifest,
+                                              include_reference_images=visuals is not None)
+                reference_files_locked &= all(
+                    reference.get("sidecar_pinned", True) for modes in references for reference in modes.values()
+                )
+            rows = _rendered_quality(
+                references, final_metrics.matches, rendered, synthetic.difficulty if synthetic else "real",
+                accepted or [False] * len(detected),
             )
-            component_reasons = component_review_reasons(components)
-            quality_accepted = bool(item.geometry_valid and not item.review_reasons and not component_reasons)
-            production_accepted = bool(
-                quality_accepted
-                and calibrated >= settings.yolo_confidence_threshold
-                and (calibration.get("calibrated") or not settings.require_confidence_calibration)
-            )
-            quality_gate_acceptances += int(quality_accepted)
-            evaluated_detections += 1
-            accepted.append(production_accepted)
-            acceptance_evidence.append(
-                {
-                    "quality_gate_accepted": quality_accepted,
-                    "production_accepted": production_accepted,
-                    "calibrated": bool(calibration.get("calibrated")),
-                    "confidence_components": components.as_dict(),
-                    "review_reasons": list(dict.fromkeys([*item.review_reasons, *component_reasons])),
-                }
-            )
-        metrics = evaluate_page_crops(
-            expected,
-            detected,
-            width=image.shape[1],
-            height=image.shape[0],
-            iou_threshold=args.iou_threshold,
-            accepted=accepted,
-        )
-        page_metrics.append(metrics)
-        stable, transform_evidence = _perspective_stability(image, result.detections)
-        stable_transforms += stable
-        transform_attempts += len(result.detections)
-        manifest_record = manifest.get(image_path.stem, {})
-        if manifest_record.get("expected_orientation") is not None:
-            orientation_expected += 1
-            # Page-level orientation is intentionally not inferred from print
-            # geometry.  This remains unmeasured until crop labels are present.
-        fixtures.append(
-            {
-                "fixture": image_path.stem,
-                "expected": len(expected),
-                "detected": len(detected),
-                "page_category": manifest_record.get("page_category"),
-                "difficulty_tags": manifest_record.get("difficulty_tags", []),
-                "annotation_provenance": manifest_record.get("annotation_provenance"),
+            if not synthetic:
+                for row in rows:
+                    row["source_group"] = str(record.get("source_group") or "").strip().casefold()
+            crop_rows.extend(rows)
+            stable = sum(bool(item["images"]) for item in rendered)
+            stable_transforms += stable
+            transform_attempts += len(rendered)
+            if visuals:
+                sheets.append(_contact_sheet(
+                    visuals, image, expected, detected, rendered, rows, references, page_index, record["id"],
+                ))
+            fixtures.append({
+                "fixture": record["id"], "expected": len(expected), "detected": len(detected),
+                "page_category": record.get("page_category"), "difficulty_tags": record.get("difficulty_tags", []),
+                "source_group": record.get("source_group"), "annotation_provenance": record.get("annotation_provenance"),
                 "metrics": metrics.as_dict(),
-                "page_perfect": (
-                    metrics.false_positive == 0 and metrics.false_negative == 0 and metrics.serious_failures == 0
-                ),
-                "perspective": {"stable": stable, "attempted": len(result.detections), "evidence": transform_evidence},
+                "final_instance_metrics": final_metrics.as_dict(),
+                "refined_instances": refined_count,
+                "page_perfect": metrics.false_positive == metrics.false_negative == metrics.serious_failures == 0,
+                "perspective": {
+                    "stable": stable, "attempted": len(rendered),
+                    "evidence": [{key: value for key, value in item.items() if key != "images"} for item in rendered],
+                },
+                "crop_modes": rows,
                 "acceptance": acceptance_evidence,
-                "runtime": result.metadata,
-                "latency": page_runtime,
-            }
-        )
+                "runtime": detection_metadata,
+                "latency": (page_runtime or {}) | {"image_to_jpeg_ms": pipeline_ms},
+            })
 
     aggregate = evaluate_cropping_dataset(page_metrics)
+    final_instances = evaluate_cropping_dataset(final_instance_page_metrics)
     runtime = _runtime_summary(page_runtimes)
+    runtime["image_to_jpeg"] = _latency_statistics(pipeline_runtimes)
+    runtime["image_to_jpeg_scope"] = (
+        "Decode, cutout prep, detection, protected regions, both crop modes and JPEG writes. "
+        "Excludes database, later enhancement and evaluation. Geometry-only runs omit decode and detection."
+    )
+    quality = _quality_summary(crop_rows)
+    detector_gate_passed = _detection_passes(aggregate, args)
+    final_instance_gate_passed = _detection_passes(final_instances, args)
+    calibration_holdout_disjoint = None if args.synthetic else _has_disjoint_calibration_holdout(settings, records)
+    real_manifest_locked = (
+        not args.synthetic and reference_files_locked and calibration_holdout_disjoint
+        and is_locked_album_manifest(records, split)
+    )
+    rendered_gates = {
+        name: _rendered_mode_passes(
+            mode, synthetic=bool(args.synthetic), real_manifest_locked=real_manifest_locked,
+            expected_photos=aggregate.expected_photos,
+        )
+        for name, mode in quality.items()
+    }
+    validation_gates = {
+        "detection": detector_gate_passed,
+        "final_instance_segmentation": final_instance_gate_passed,
+        "rendered_crop_modes": rendered_gates,
+        "locked_real_album_manifest": None if args.synthetic else real_manifest_locked,
+        "locked_reference_artifacts": None if args.synthetic else reference_files_locked,
+        "calibration_holdout_disjoint": calibration_holdout_disjoint,
+        "standard_detection_thresholds": (
+            args.iou_threshold >= 0.85 and args.min_mean_iou >= 0.85
+            and args.min_precision >= 0.90 and args.min_recall >= 0.90
+            and args.min_boundary_f_score >= 0.80 and args.max_content_cutoff <= 0.08
+            and args.max_background_retained <= 0.12 and args.max_serious_failure_rate <= 0.0
+        ),
+    }
     report = {
-        "schema_version": 2,
+        "schema_version": CROP_VALIDATION_SCHEMA,
         "model": str(args.model),
+        "model_sha256": sha256_file(args.model) if not args.geometry_only else None,
         "manifest": str(args.manifest),
-        "dataset_manifest": str(args.dataset_manifest) if args.dataset_manifest.is_file() else None,
+        "dataset_manifest": str(args.dataset_manifest) if args.dataset_manifest else None,
+        "dataset_manifest_sha256": getattr(args, "dataset_manifest_sha256", None),
+        "split": split,
+        "geometry_only": args.geometry_only,
+        "legacy_crop": args.legacy_crop,
         "iou_threshold": args.iou_threshold,
         "classical_evidence_enabled": args.include_classical_fallback,
+        "validation_profile": crop_validation_profile(settings),
+        "settings": {
+            "pipeline_version": settings.pipeline_version,
+            "orientation_enabled": settings.enable_photo_orientation_correction,
+            "border_analysis_enabled": settings.enable_border_trim,
+            "protected_region_guard_enabled": settings.enable_protected_region_guard,
+            "opencv_version": cv2.__version__,
+        },
         "review_policy": {
             "acceptance_threshold": args.acceptance_threshold,
             "require_confidence_calibration": settings.require_confidence_calibration,
@@ -291,6 +866,7 @@ def main() -> None:
             "production_acceptance_is_fail_closed": True,
         },
         "metrics": aggregate.as_dict(),
+        "final_instance_metrics": final_instances.as_dict(),
         # Compatibility summary for existing release scripts.
         "mean_iou": aggregate.polygon_iou,
         "precision": aggregate.detection_precision,
@@ -299,33 +875,47 @@ def main() -> None:
         "page_count": aggregate.page_count,
         **aggregate.totals,
         "perspective_correction_stability": stable_transforms / transform_attempts if transform_attempts else 0.0,
-        "orientation_accuracy": orientation_correct / orientation_expected if orientation_expected else None,
-        "orientation_evaluated": orientation_expected,
+        "orientation_accuracy": None,
+        "orientation_evaluated": 0,
+        "crop_modes": quality,
+        "validation_gates": validation_gates,
+        "crop_mode_availability": {mode: dict(counts) for mode, counts in mode_availability.items()},
         "runtime": runtime,
         "limitations": [
-            "The locked pages are a same-domain, page-level holdout and are not album-independent.",
-            "Orientation accuracy is null until manually verified crop-orientation labels exist.",
+            "The legacy golden split measures same-album regression. Synthetic splits cannot establish real accuracy.",
+            "Crop appearance and aspect need independent per-mode references. Unverified outline measurements "
+            "are diagnostic only.",
             "Mask and polygon IoU are rasterized at source resolution because no vector-geometry "
             "dependency is required.",
-            "No reference final crops exist, so output appearance and page-curvature correction are not scored here.",
-            "Automatic acceptance and review rates apply the production fail-closed calibration policy; "
-            "the separate quality-gate rate excludes calibration availability.",
+            "Automatic crop eligibility applies final geometry and segmentation confidence before enabling releases "
+            "from the independently validated album report. Enhancement is evaluated separately.",
         ],
         "fixtures": fixtures,
     }
+    orientation_matches = [row["orientation_matches_reference"] for row in crop_rows
+                           if row["verified"] and "orientation_matches_reference" in row]
+    if orientation_matches:
+        report["orientation_accuracy"] = sum(orientation_matches) / len(orientation_matches)
+        report["orientation_evaluated"] = len(orientation_matches)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(json.dumps(report, indent=2))
-    if (
-        aggregate.polygon_iou < args.min_mean_iou
-        or aggregate.detection_precision < args.min_precision
-        or aggregate.detection_recall < args.min_recall
-        or aggregate.boundary_f_score < args.min_boundary_f_score
-        or aggregate.content_cutoff > args.max_content_cutoff
-        or aggregate.background_retained > args.max_background_retained
-        or aggregate.serious_failure_rate > args.max_serious_failure_rate
-    ):
+    if visuals:
+        (visuals / "index.html").write_text(
+            '<!doctype html><meta charset="utf-8"><title>PhoSca crop evaluation</title>'
+            '<style>body{font:16px system-ui;background:#181818;color:#eee;margin:24px}'
+            'section{margin-bottom:28px}section div{display:flex;gap:12px;flex-wrap:wrap}'
+            'figure{margin:0}img{max-width:100%}</style><h1>PhoSca crop evaluation</h1>' + "".join(sheets),
+            encoding="utf-8",
+        )
+    print(json.dumps({"report": str(args.output), "metrics": aggregate.as_dict(),
+                      "final_instance_metrics": final_instances.as_dict(), "crop_modes": quality,
+                      "validation_gates": validation_gates,
+                      "crop_mode_availability": report["crop_mode_availability"],
+                      "image_to_jpeg": runtime["image_to_jpeg"]}, indent=2))
+    if not detector_gate_passed:
         raise SystemExit(2)
+    if args.require_final_quality and (not final_instance_gate_passed or not all(rendered_gates.values())):
+        raise SystemExit(3)
 
 
 if __name__ == "__main__":

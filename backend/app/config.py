@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     max_request_size: int = Field(default=209_715_200, alias="MAX_REQUEST_SIZE")
     max_image_pixels: int = Field(default=40_000_000, alias="MAX_IMAGE_PIXELS")
     max_image_frames: int = Field(default=1, alias="MAX_IMAGE_FRAMES")
-    pipeline_version: str = Field(default="2026-07-crop-enhance-v2", alias="PIPELINE_VERSION")
+    pipeline_version: str = Field(default="2026-11-precise-crops-v5", alias="PIPELINE_VERSION")
     auth_required: bool = Field(default=False, alias="AUTH_REQUIRED")
     blur_threshold: float = Field(default=100.0, alias="BLUR_THRESHOLD")
     yolo_confidence_threshold: float = Field(default=0.7, alias="YOLO_CONFIDENCE_THRESHOLD")
@@ -34,6 +34,9 @@ class Settings(BaseSettings):
         default=Path("/app/models/segmentation-calibration.json"), alias="SEGMENTATION_CALIBRATION_PATH"
     )
     require_confidence_calibration: bool = Field(default=True, alias="REQUIRE_CONFIDENCE_CALIBRATION")
+    crop_validation_report_path: Path = Field(
+        default=Path("/app/models/crop-validation.json"), alias="CROP_VALIDATION_REPORT_PATH"
+    )
     realesrgan_model_path: Path = Field(
         default=Path("/app/models/RealESRGAN_x2plus.pth"), alias="REALESRGAN_MODEL_PATH"
     )
@@ -52,7 +55,8 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     celery_task_always_eager: bool = Field(default=False, alias="CELERY_TASK_ALWAYS_EAGER")
     enable_classical_segmentation_fallback: bool = Field(default=True, alias="ENABLE_CLASSICAL_SEGMENTATION_FALLBACK")
-    enable_border_trim: bool = Field(default=False, alias="ENABLE_BORDER_TRIM")
+    enable_precise_photo_crops: bool = Field(default=True, alias="ENABLE_PRECISE_PHOTO_CROPS")
+    enable_border_trim: bool = Field(default=True, alias="ENABLE_BORDER_TRIM")
     enable_protected_region_guard: bool = Field(default=True, alias="ENABLE_PROTECTED_REGION_GUARD")
     enable_conservative_enhancement: bool = Field(default=True, alias="ENABLE_CONSERVATIVE_ENHANCEMENT")
     enable_deep_enhancement: bool = Field(default=False, alias="ENABLE_DEEP_ENHANCEMENT")

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.models import Album, AuditLog, Page, PageStatus
+from app.models import Album, AlbumStatus, AuditLog, Page, PageStatus
 from app.schemas.pages import PageUploadItem, PageUploadResponse
 from app.utils.file_security import ValidatedUpload, read_and_validate_upload
 
@@ -124,6 +124,8 @@ async def save_validated_page_uploads(
             created_pages.append(page)
 
         album.total_pages += len(saved_paths)
+        if saved_paths and settings.auto_analyze_uploads:
+            album.status = AlbumStatus.processing
         await session.commit()
     except Exception:
         await session.rollback()

@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import json
 import math
 import os
 import tempfile
 from pathlib import Path
+from urllib.parse import quote
 
-import cv2
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
+from PIL import Image
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
 from app.core.auth import require_admin_principal
+from app.pipeline.image_ops import load_image
 from app.pipeline.segmentation import segment_album_page
 from app.utils.file_security import read_and_validate_upload, validate_original_filename
 
@@ -82,11 +85,14 @@ def _label_path_for_image(image_path: Path, settings: Settings) -> Path:
 
 
 def _image_size(path: Path) -> tuple[int | None, int | None]:
-    image = cv2.imread(str(path))
-    if image is None:
+    try:
+        with Image.open(path) as image:
+            width, height = image.size
+            if image.getexif().get(274) in (5, 6, 7, 8):
+                return height, width
+            return width, height
+    except (OSError, ValueError, Image.DecompressionBombError):
         return None, None
-    height, width = image.shape[:2]
-    return int(width), int(height)
 
 
 def _image_record(path: Path, settings: Settings) -> dict:
@@ -95,7 +101,7 @@ def _image_record(path: Path, settings: Settings) -> dict:
     polygons = _read_yolo_label(label_path) if label_path.exists() else []
     return {
         "name": path.name,
-        "url": f"/api/v1/training/segmentation/images/{path.name}",
+        "url": f"/api/v1/training/segmentation/images/{quote(path.name, safe='')}",
         "width": width,
         "height": height,
         "bytes": path.stat().st_size,
@@ -107,6 +113,22 @@ def _image_record(path: Path, settings: Settings) -> dict:
 def _image_files(settings: Settings) -> list[Path]:
     image_dir = _image_dir(settings)
     return sorted(path for path in image_dir.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS)
+
+
+def _read_detection_suggestions(path: Path, settings: Settings) -> list[dict] | None:
+    export = _workspace(settings) / "exports" / "detection_suggestions.json"
+    try:
+        entries = json.loads(export.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    draft = entries.get(path.name) if isinstance(entries, dict) else None
+    if not isinstance(draft, dict):
+        return None
+    stamp = path.stat()
+    if draft.get("mtime_ns") != stamp.st_mtime_ns or draft.get("bytes") != stamp.st_size:
+        return None
+    polygons = draft.get("polygons")
+    return polygons if isinstance(polygons, list) else None
 
 
 def _unique_upload_path(original_filename: str, extension: str, settings: Settings) -> Path:
@@ -255,7 +277,13 @@ async def get_training_labels(filename: str, settings: Settings = Depends(get_se
     if not image_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found.")
     label_path = _label_path_for_image(image_path, settings)
-    return {"image": _image_record(image_path, settings), "polygons": _read_yolo_label(label_path)}
+    image = _image_record(image_path, settings)
+    payload = {"image": image, "polygons": _read_yolo_label(label_path)}
+    if not image["has_label"]:
+        suggestions = _read_detection_suggestions(image_path, settings)
+        if suggestions is not None:
+            payload["suggestions"] = suggestions
+    return payload
 
 
 @router.put("/images/{filename}/labels")
@@ -273,9 +301,10 @@ async def detect_training_labels(filename: str, settings: Settings = Depends(get
     image_path = _safe_image_path(filename, settings)
     if not image_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found.")
-    image = cv2.imread(str(image_path))
-    if image is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image could not be read.")
+    try:
+        image = load_image(image_path)
+    except (ValueError, Image.DecompressionBombError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image could not be read.") from exc
     result = segment_album_page(image, settings)
     polygons = [
         {

@@ -6,6 +6,8 @@ from typing import Any
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from app.utils.image_frames import primary_frame_policy
+
 try:
     magic: Any = importlib.import_module("magic")
 except ImportError:  # pragma: no cover - production images install python-magic.
@@ -30,9 +32,7 @@ class ValidatedUpload:
 def inspect_image_content(content: bytes, *, max_image_pixels: int, max_image_frames: int) -> dict:
     """Decode-verify an upload before persisting it.
 
-    MIME detection alone accepts decompression bombs and multi-frame files whose
-    semantics the processing pipeline cannot preserve.  We intentionally
-    reject those inputs instead of silently selecting an arbitrary frame.
+    The primary SDR image of a JPEG with an HDR gain map counts as one page.
     """
     try:
         with Image.open(BytesIO(content)) as probe:
@@ -42,13 +42,14 @@ def inspect_image_content(content: bytes, *, max_image_pixels: int, max_image_fr
             orientation = int(probe.getexif().get(274, 1))
             if width < 1 or height < 1 or width * height > max_image_pixels:
                 raise ValueError("image dimensions exceed the configured pixel limit")
-            if frames > max_image_frames:
+            frame_policy = primary_frame_policy(probe)
+            if max_image_frames < 1:
                 raise ValueError("multi-frame images are not supported")
             # Force a real decode, rather than only checking container headers.
             probe.seek(0)
             decoded = ImageOps.exif_transpose(probe)
             decoded.load()
-    except (UnidentifiedImageError, OSError, ValueError) as exc:
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid image upload: {exc}") from exc
     return {
         "format": image_format,
@@ -56,6 +57,7 @@ def inspect_image_content(content: bytes, *, max_image_pixels: int, max_image_fr
         "height": height,
         "pixel_count": width * height,
         "frames": frames,
+        "frame_policy": frame_policy,
         "exif_orientation": orientation,
         "icc_profile_present": bool(getattr(decoded, "info", {}).get("icc_profile")),
     }

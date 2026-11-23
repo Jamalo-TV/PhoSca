@@ -4,16 +4,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_async_session
-from app.core.auth import Principal, album_for_principal, get_principal, require_write_principal
 from app.config import Settings, get_settings
-from app.models import Album, AlbumStatus, AuditLog, ExtractedPhoto, OCRResult, Page, PageStatus, PhotoStatus, OCRTextType
+from app.core.auth import Principal, album_for_principal, get_principal, require_write_principal
+from app.database import get_async_session
+from app.models import Album, AuditLog, ExtractedPhoto, OCRResult, OCRTextType, Page, PageStatus, PhotoStatus
 from app.schemas import AlbumCreate, AlbumRead, AlbumStats, AnalyzeRequest, JobQueued, PageRead, PhotoRead
-from app.services.pipeline import process_pages_pipeline
 from app.services.deletion import delete_album_with_assets
+from app.services.pipeline import process_pages_serialized
 from app.tasks.pipeline import process_pages_task
 
 router = APIRouter(prefix="/api/v1/albums", tags=["albums"])
+ANALYZABLE_PAGE_STATUSES = (PageStatus.uploaded, PageStatus.queued, PageStatus.processing, PageStatus.review_needed)
 
 
 @router.post("", response_model=AlbumRead, status_code=status.HTTP_201_CREATED)
@@ -82,14 +83,14 @@ async def analyze_album(
     session: AsyncSession = Depends(get_async_session),
     principal: Principal | None = Depends(require_write_principal),
 ) -> JobQueued:
-    album = await album_for_principal(session, album_id, principal)
+    await album_for_principal(session, album_id, principal)
 
     if payload.page_ids is None:
         page_ids = (
             await session.scalars(
                 select(Page.id).where(
                     Page.album_id == album_id,
-                    Page.status.in_([PageStatus.uploaded, PageStatus.queued, PageStatus.review_needed]),
+                    Page.status.in_(ANALYZABLE_PAGE_STATUSES),
                 )
             )
         ).all()
@@ -99,8 +100,6 @@ async def analyze_album(
         if existing_count != len(page_ids):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="One or more pages do not belong to this album.")
 
-    album.status = AlbumStatus.processing
-    await session.commit()
     result = process_pages_task.delay([str(page_id) for page_id in page_ids])
     return JobQueued(job_id=result.id, status="queued", estimated_pages=len(page_ids))
 
@@ -112,14 +111,14 @@ async def analyze_album_now(
     session: AsyncSession = Depends(get_async_session),
     principal: Principal | None = Depends(require_write_principal),
 ) -> dict:
-    album = await album_for_principal(session, album_id, principal)
+    await album_for_principal(session, album_id, principal)
 
     if payload.page_ids is None:
         page_ids = (
             await session.scalars(
                 select(Page.id).where(
                     Page.album_id == album_id,
-                    Page.status.in_([PageStatus.uploaded, PageStatus.queued, PageStatus.review_needed]),
+                    Page.status.in_(ANALYZABLE_PAGE_STATUSES),
                 )
             )
         ).all()
@@ -129,9 +128,8 @@ async def analyze_album_now(
         if existing_count != len(page_ids):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="One or more pages do not belong to this album.")
 
-    album.status = AlbumStatus.processing
     await session.commit()
-    return await process_pages_pipeline(page_ids)
+    return await process_pages_serialized(page_ids)
 
 
 @router.get("/{album_id}", response_model=AlbumStats)

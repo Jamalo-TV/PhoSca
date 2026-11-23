@@ -22,6 +22,10 @@ class ReviewReason(str, Enum):
     TEXT_DISTORTION_RISK = "TEXT_DISTORTION_RISK"
 
 
+def is_reviewed_non_print(rejection: dict | None, bounding_box: dict | None, mask: dict | None) -> bool:
+    return bool(rejection and rejection == {"bounding_box": bounding_box, "segmentation_mask": mask})
+
+
 @dataclass(frozen=True)
 class ConfidenceComponents:
     detection_confidence: float | None = None

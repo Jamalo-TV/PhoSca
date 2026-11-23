@@ -7,11 +7,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from PIL import Image
 
 from app.config import Settings, get_settings
 from app.core.auth import Principal, get_principal, require_write_principal
 from app.database import get_async_session
 from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PhotoStatus, ProcessingRun, StageRun
+from app.pipeline.image_ops import normalized_box_to_pixels
+from app.pipeline.perspective import validate_review_quads
 from app.pipeline.presets import available_presets
 from app.pipeline.variants import (
     released_variant_from_photo,
@@ -20,6 +23,7 @@ from app.pipeline.variants import (
     variants_from_metadata,
 )
 from app.schemas import BoundingBoxUpdate, OCRRead, OCRUpdate, PhotoDetail, PhotoRead
+from app.schemas.common import PrintSizeMM
 from app.services.pipeline import (
     deduplication_task_logic,
     enhancement_task_logic,
@@ -30,10 +34,14 @@ from app.services.pipeline import (
 router = APIRouter(prefix="/api/v1", tags=["photos"])
 
 
-async def _photo_for_principal(session: AsyncSession, photo_id: UUID, principal: Principal | None) -> ExtractedPhoto:
+async def _photo_for_principal(
+    session: AsyncSession, photo_id: UUID, principal: Principal | None, *, for_update: bool = False
+) -> ExtractedPhoto:
     query = select(ExtractedPhoto).where(ExtractedPhoto.id == photo_id)
     if principal is not None:
         query = query.where(ExtractedPhoto.album.has(tenant_id=principal.tenant_id))
+    if for_update:
+        query = query.with_for_update()
     photo = await session.scalar(query)
     if photo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.")
@@ -54,12 +62,13 @@ def _photo_urls(photo: ExtractedPhoto) -> dict[str, str | None]:
     return variant_urls(photo)
 
 
-def _rect_mask_from_box(box: dict[str, float]) -> dict:
+def _rect_mask_from_box(box: dict[str, float], width: int, height: int) -> dict:
+    x1, y1, x2, y2 = normalized_box_to_pixels(box, width, height)
+    if x2 <= x1 or y2 <= y1:
+        raise ValueError("Bounding box does not enclose any source pixels.")
     polygon = [
-        {"x": box["x1"], "y": box["y1"]},
-        {"x": box["x2"], "y": box["y1"]},
-        {"x": box["x2"], "y": box["y2"]},
-        {"x": box["x1"], "y": box["y2"]},
+        {"x": x / max(width - 1, 1), "y": y / max(height - 1, 1)}
+        for x, y in [(x1, y1), (x2 - 1, y1), (x2 - 1, y2 - 1), (x1, y2 - 1)]
     ]
     return {
         "polygon": polygon,
@@ -67,6 +76,15 @@ def _rect_mask_from_box(box: dict[str, float]) -> dict:
         "warp_quad": polygon,
         "source": "manual_rect",
     }
+
+
+def _align_measured_quad(previous: list[dict], updated: list[dict], width: int, height: int) -> list[dict]:
+    """Match a legacy edit's corners to the previously measured edges."""
+    orders = (cycle[index:] + cycle[:index] for cycle in (updated, updated[::-1]) for index in range(4))
+    return min(orders, key=lambda points: sum(
+        (width * (old["x"] - new["x"])) ** 2 + (height * (old["y"] - new["y"])) ** 2
+        for old, new in zip(previous, points, strict=True)
+    ))
 
 
 async def _prediction_provenance(session: AsyncSession, photo: ExtractedPhoto) -> dict:
@@ -212,26 +230,56 @@ async def update_photo_bounding_box(
     settings: Settings = Depends(get_settings),
     principal: Principal | None = Depends(require_write_principal),
 ) -> ExtractedPhoto:
-    photo = await _photo_for_principal(session, photo_id, principal)
+    photo = await _photo_for_principal(session, photo_id, principal, for_update=True)
     before = _geometry_snapshot(photo)
-    prediction_provenance = await _prediction_provenance(session, photo)
     box = payload.bounding_box.as_dict()
     if box["x2"] <= box["x1"] or box["y2"] <= box["y1"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bounding box must have positive area.")
-    segmentation_mask = payload.segmentation_mask.as_dict() if payload.segmentation_mask else _rect_mask_from_box(box)
-    if "visible_polygon" not in segmentation_mask:
-        segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask.get("polygon"))
-    if "warp_quad" not in segmentation_mask and len(segmentation_mask.get("polygon") or []) == 4:
-        segmentation_mask["warp_quad"] = deepcopy(segmentation_mask["polygon"])
+    page = await session.get(Page, photo.page_id)
+    if page is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo source page not found.")
+    try:
+        with Image.open(page.storage_path) as source:
+            width, height = source.size
+            if source.getexif().get(274) in {5, 6, 7, 8}:
+                width, height = height, width
+        segmentation_mask = (
+            payload.segmentation_mask.as_dict() if payload.segmentation_mask else _rect_mask_from_box(box, width, height)
+        )
+        if "visible_polygon" not in segmentation_mask:
+            segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask.get("polygon"))
+        if "warp_quad" not in segmentation_mask and len(segmentation_mask.get("polygon") or []) == 4:
+            segmentation_mask["warp_quad"] = deepcopy(segmentation_mask["polygon"])
+        size = payload.segmentation_mask.print_size_mm if payload.segmentation_mask else None
+        edited_fields = payload.segmentation_mask.model_fields_set if payload.segmentation_mask else set()
+        previous_mask = (photo.segmentation_mask or {}) if photo.segmentation_confidence is None else {}
+        previous_quad = previous_mask.get("warp_quad") or []
+        updated_quad = segmentation_mask.get("warp_quad") or []
+        if "print_size_mm" not in edited_fields and previous_mask.get("print_size_mm") is not None:
+            size = PrintSizeMM.model_validate(previous_mask["print_size_mm"])
+            segmentation_mask["print_size_mm"] = size.model_dump()
+            if previous_quad and updated_quad:
+                segmentation_mask["warp_quad"] = _align_measured_quad(previous_quad, updated_quad, width, height)
+        if "image_quad" not in edited_fields and previous_mask.get("image_quad") and previous_quad and updated_quad:
+            old_corners = {(p["x"], p["y"]) for p in previous_quad}
+            if old_corners == {(p["x"], p["y"]) for p in updated_quad}:
+                segmentation_mask["image_quad"] = deepcopy(previous_mask["image_quad"])
+        validate_review_quads(segmentation_mask, width, height)
+    except OSError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo source image could not be opened.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    prediction_provenance = await _prediction_provenance(session, photo)
     after = {
         "bounding_box": deepcopy(box),
         "segmentation_mask": deepcopy(segmentation_mask),
         "segmentation_confidence": None,
-        "aspect_ratio": (box["x2"] - box["x1"]) / max(box["y2"] - box["y1"], 1e-9),
+        "aspect_ratio": size.aspect_ratio if size else (box["x2"] - box["x1"]) / max(box["y2"] - box["y1"], 1e-9),
         "geometry_valid": True,
         "status": PhotoStatus.pending.value,
     }
     metadata = deepcopy(photo.enhancement_applied or {})
+    metadata.pop("review_rejected_detection", None)
     review_provenance = deepcopy(metadata.get("review_provenance") or {})
     review_provenance.setdefault("original_prediction", before)
     review_provenance.setdefault("prediction_provenance", prediction_provenance)
@@ -269,8 +317,12 @@ async def update_photo_bounding_box(
             },
         )
     )
-    await session.commit()
-    correction = await perspective_correction_task_logic(session, photo.id, settings)
+    await session.flush()
+    try:
+        correction = await perspective_correction_task_logic(session, photo.id, settings, reject_invalid_edit=True)
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     refreshed = await _restore_review_provenance(session, photo.id, review_provenance)
     if correction.get("review_required"):
         return refreshed

@@ -6,6 +6,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageCms, ImageOps
 
+from app.utils.image_frames import primary_frame_policy
+
 
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -62,8 +64,7 @@ def load_image_with_metadata(path: Path) -> tuple[np.ndarray, dict]:
     """
     try:
         with Image.open(path) as source:
-            if int(getattr(source, "n_frames", 1)) != 1:
-                raise ValueError("Multi-frame images require an explicit frame-selection policy.")
+            frame_policy = primary_frame_policy(source)
             source_mode = source.mode
             source_bands = list(source.getbands())
             exif_orientation = source.getexif().get(274, 1)
@@ -96,6 +97,7 @@ def load_image_with_metadata(path: Path) -> tuple[np.ndarray, dict]:
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     return bgr, {
         **contract,
+        "frame_policy": frame_policy,
         "exif_orientation_applied": exif_orientation_applied,
         "icc_profile_present": bool(icc_profile),
         "icc_to_srgb_applied": icc_converted,

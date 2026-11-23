@@ -22,7 +22,7 @@ from app.models import (
     ReviewEvent,
     StageRun,
 )
-from app.pipeline.variants import variant_urls, variants_from_metadata
+from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import ReviewItem
 
 router = APIRouter(prefix="/api/v1/review", tags=["review"])
@@ -293,6 +293,12 @@ def _apply_review_decision(event: ReviewEvent, payload: MobileReviewAnswer, cont
             "geometry",
             _decision_record(event.id, payload, state=state),
         )
+        if payload.answer == "wrong_object":
+            metadata["review_rejected_detection"] = {
+                "bounding_box": deepcopy(photo.bounding_box), "segmentation_mask": deepcopy(photo.segmentation_mask),
+            }
+        else:
+            metadata.pop("review_rejected_detection", None)
         reasons = [
             str(reason)
             for reason in metadata.get("review_reasons") or []
@@ -387,6 +393,16 @@ async def add_review_event(
     if existing is not None:
         _validate_idempotent_replay(existing, payload, principal)
         return {"id": existing.id, "saved": True, "duplicate": True}
+
+    if payload.task_type == "geometry" and payload.answer == "correct":
+        photo = context["photo"]
+        metadata = photo.enhancement_applied or {}
+        full_mode = ((metadata.get("correction") or {}).get("crop_modes") or {}).get("full_print")
+        if full_mode and not variant_path_from_photo(photo, "full_print"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Adjust the print corners or recapture the page before approving this crop.",
+            )
 
     snapshot = await _snapshot_task(session, payload, context)
     client_metadata = deepcopy(payload.metadata)
@@ -528,6 +544,9 @@ def _photo_review_payload(photo: ExtractedPhoto) -> dict:
         "polygon": visible_polygon,
         "visible_polygon": visible_polygon,
         "warp_quad": warp_quad,
+        "image_quad": deepcopy((correction.get("crop_modes") or {}).get("image_only", {}).get("warp_quad") or mask.get("image_quad")),
+        "print_size_mm": deepcopy(mask.get("print_size_mm")),
+        "crop_modes": deepcopy(correction.get("crop_modes") or {}),
         "confidence": photo.segmentation_confidence,
         "confidence_components": confidence_components,
         "geometry_valid": photo.geometry_valid,

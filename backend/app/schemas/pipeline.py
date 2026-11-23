@@ -1,10 +1,11 @@
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.models import OCRTextType, PageStatus, PhotoStatus
-from app.schemas.common import BoundingBox, NormalizedPoint, SegmentationMask, StrictSchema
+from app.pipeline.variants import photo_image_url
+from app.schemas.common import BoundingBox, NormalizedPoint, PrintSizeMM, SegmentationMask, StrictSchema
 
 
 class AnalyzeRequest(StrictSchema):
@@ -59,6 +60,11 @@ class PhotoRead(BaseModel):
     enhancement_applied: dict
     status: PhotoStatus
 
+    @computed_field
+    @property
+    def image_url(self) -> str:
+        return photo_image_url(self)
+
 
 class PhotoDetail(PhotoRead):
     ocr_results: list[OCRRead] = []
@@ -78,15 +84,12 @@ class AlbumStats(BaseModel):
 
 
 class ReviewSegmentationMask(SegmentationMask):
-    """Review geometry without discarding a detailed visible boundary.
-
-    ``polygon`` is the geometry consumed by the current crop pipeline.  A
-    reviewer can edit a four-corner ``warp_quad`` while retaining a denser
-    ``visible_polygon`` for learning/export and visual comparison.
-    """
+    """Visible boundary, optional rectification corners and measured print size."""
 
     visible_polygon: list[NormalizedPoint] | None = Field(default=None, min_length=4)
     warp_quad: list[NormalizedPoint] | None = Field(default=None, min_length=4, max_length=4)
+    image_quad: list[NormalizedPoint] | None = Field(default=None, min_length=4, max_length=4)
+    print_size_mm: PrintSizeMM | None = None
 
 
 class BoundingBoxUpdate(StrictSchema):

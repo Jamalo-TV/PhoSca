@@ -41,6 +41,8 @@ For a lightweight SQLite-backed dev run:
 $env:DATABASE_URL='sqlite+aiosqlite:///./dev.db'
 $env:REDIS_URL='redis://localhost:6379/0'
 $env:STORAGE_PATH='C:\Users\gabri\Documents\Projects\PhoSca\storage'
+$env:YOLO_MODEL_PATH=(Join-Path $PWD 'models/yolov8-seg-album.onnx')
+$env:MODEL_MANIFEST_PATH=(Join-Path $PWD 'models/manifest.json')
 python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 ```
 
@@ -61,6 +63,25 @@ URL. Windows Firewall may ask once for permission on private networks.
 Original mobile captures are stored unchanged below
 `storage/uploads/<album-id>/`. The database keeps the original filename,
 SHA-256 hash and the generated page ID. Derived photos are stored separately.
+Uploads trigger photo detection and extraction automatically. In the photo
+detail, **Ganzer Abzug** keeps the original print border and **Nur Bildmotiv**
+uses the verified inner edge. The preview and download follow the selected
+option. Review the source page when a boundary cannot be verified. Reprocess
+an existing photo to generate the new variants from its stored album page.
+For a strongly oblique photo of a flat print, measure the print and enter the
+width and height in millimetres in the corner editor. Use numbered edges 1–2
+for width and 2–3 for height. PhoSca uses those measurements for perspective
+correction in both crop modes and retains them for subsequent processing.
+
+`ENABLE_BORDER_TRIM=false` disables automatic inner-edge detection. Reviewers
+can still provide inner corners. `ENABLE_PRECISE_PHOTO_CROPS=false` switches
+new processing to the legacy detector and crop path. Automatic downloads of
+the two precise modes require a passing independent album report for the
+deployed checkpoint and settings at `CROP_VALIDATION_REPORT_PATH`. The
+preview and manual corner editor are available while automatic crops are in
+review. See [crop evaluation](data/evaluation/README.md) for the report format.
+For HDR JPEGs the app processes the primary image and keeps the original gain
+map in the stored file.
 
 ## ML Models
 

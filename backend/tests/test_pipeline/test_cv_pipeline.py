@@ -250,6 +250,49 @@ def test_yolo_box_parser_undoes_letterbox_padding() -> None:
     assert 0.74 < box["y2"] < 0.76
 
 
+def test_native_onnx_mask_matches_torch_letterbox_coordinates() -> None:
+    import pytest
+
+    torch = pytest.importorskip("torch")
+    from app.pipeline.segmentation import _build_letterbox_transform, _native_mask_roi, _source_box_from_input_box
+
+    logits = np.full((16, 16), -9, dtype=np.float32)
+    logits[4:13, 5:12] = 2
+    logits[7:10, 6:8] = -4
+    for width, height in ((173, 101), (101, 173)):
+        transform = _build_letterbox_transform(width, height, 64, 64)
+        left, top = int(transform.pad_x), int(transform.pad_y)
+        right, bottom = left + transform.resized_width, top + transform.resized_height
+        input_box = {"x1": (left + 3) / 64, "y1": (top + 1) / 64, "x2": (right - 2) / 64, "y2": (bottom - 4) / 64}
+        box = _source_box_from_input_box(input_box, transform, native=True)
+        assert box is not None
+        binary, x, y = _native_mask_roi(logits, box, transform)
+        interpolate = torch.nn.functional.interpolate
+        model = interpolate(torch.from_numpy(logits)[None, None], (64, 64), mode="bilinear", align_corners=False)
+        source = interpolate(model[..., top:bottom, left:right], (height, width), mode="bilinear", align_corners=False)
+        expected = source[0, 0, y : y + binary.shape[0], x : x + binary.shape[1]].numpy() > 0
+        # OpenCV's bilinear table quantizes interpolation near the zero crossing.
+        kernel = np.ones((3, 3), dtype=np.uint8)
+        assert not np.any((binary == 0) & (cv2.erode(expected.astype(np.uint8), kernel) != 0))
+        assert not np.any((binary != 0) & (cv2.dilate(expected.astype(np.uint8), kernel) == 0))
+        assert (binary != expected).mean() < 0.01
+
+
+def test_native_mask_polygon_preserves_a_small_occlusion_at_scan_resolution() -> None:
+    from app.pipeline.segmentation import _polygon_from_binary_mask
+
+    mask = np.zeros((2080, 2800), dtype=np.uint8)
+    mask[180:1901, 200:2601] = 1
+    mask[180:203, 1400:1460] = 0
+
+    contour = _polygon_from_binary_mask(mask)
+
+    assert contour is not None
+    assert cv2.pointPolygonTest(contour, (1430, 190), False) < 0
+    assert cv2.pointPolygonTest(contour, (1430, 220), False) > 0
+    assert cv2.pointPolygonTest(contour, (1350, 190), False) > 0
+
+
 def test_yolo_segmentation_parser_accepts_channels_last_proto() -> None:
     from app.pipeline.segmentation import _parse_simple_box_outputs
 
@@ -656,7 +699,7 @@ def test_exif_caption_write_strips_sensitive_tags(tmp_path: Path) -> None:
     assert released["0th"][piexif.ImageIFD.ImageDescription] == b"Summer picnic"
 
 
-async def test_full_synthetic_page_pipeline(client) -> None:
+async def test_full_synthetic_page_pipeline(client, monkeypatch) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import (
@@ -672,6 +715,8 @@ async def test_full_synthetic_page_pipeline(client) -> None:
     )
     from app.services.pipeline import process_page_pipeline
 
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "false")
+    get_settings.cache_clear()
     settings = get_settings()
     album = Album(name="Synthetic Album", description=None)
     page_image = synthetic_album_page()
@@ -813,8 +858,16 @@ async def test_photo_image_serves_variant_metadata_path(client) -> None:
             },
         )
         session.add(photo)
+        legacy_photo = ExtractedPhoto(
+            page_id=page.id,
+            album_id=album.id,
+            storage_path=str(original_path),
+            bounding_box=photo.bounding_box,
+        )
+        session.add(legacy_photo)
         await session.commit()
         photo_id = photo.id
+        legacy_photo_id = legacy_photo.id
 
     detail_response = await client.get(f"/api/v1/photos/{photo_id}")
     assert detail_response.status_code == 200, detail_response.text
@@ -823,6 +876,10 @@ async def test_photo_image_serves_variant_metadata_path(client) -> None:
     image_response = await client.get(f"/api/v1/photos/{photo_id}/image?variant=premium")
     assert image_response.status_code == 200, image_response.text
     assert image_response.content.startswith(b"\xff\xd8")
+
+    legacy_response = await client.get(f"/api/v1/photos/{legacy_photo_id}/image?variant=original")
+    assert legacy_response.status_code == 200, legacy_response.text
+    assert legacy_response.content == original_path.read_bytes()
 
 
 async def test_failed_page_pipeline_writes_dlq_manifest(client) -> None:

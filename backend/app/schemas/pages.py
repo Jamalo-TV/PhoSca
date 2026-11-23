@@ -17,3 +17,4 @@ class PageUploadItem(BaseModel):
 
 class PageUploadResponse(BaseModel):
     pages: list[PageUploadItem]
+    analysis_queued: bool = False

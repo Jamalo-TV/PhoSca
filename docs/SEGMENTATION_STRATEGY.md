@@ -47,7 +47,7 @@ Architecture:
 5. Parse masks/prototypes at runtime and store polygons on `ExtractedPhoto.segmentation_mask`.
 6. Run classical boundary analysis when the model is absent, empty, or its instance set is geometrically risky; use it as independent refinement/rejection evidence rather than blindly concatenating detections.
 7. Fuse proposals with polygon/containment evidence so duplicate suppression does not remove legitimate overlapping prints.
-8. Crop and perspective-correct at source resolution, retain the untrimmed rectified asset, and create an opt-in content-aware border-trim candidate only with per-edge physical-border evidence.
+8. Crop and perspective-correct at source resolution, trim edges with physical-border evidence and retain the full rectified print.
 9. Auto-rotate only from a high-confidence orientation model; uncalibrated face/detail evidence is advisory and preserves the pixels.
 10. Route low component confidence, unsafe transforms, uncertain orientation, or unverified OCR to review with stable reason codes.
 

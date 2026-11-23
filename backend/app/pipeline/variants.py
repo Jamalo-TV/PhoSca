@@ -2,16 +2,22 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import cv2
 import numpy as np
 
+from app.config import get_settings
 from app.core.metrics import RELEASE_DECISIONS
+from app.pipeline.crop_validation import crop_validation_evidence
+from app.pipeline.decisions import is_reviewed_non_print
 from app.pipeline.image_ops import calculate_blur_score
 from app.pipeline.quality_critic import evaluate_candidate
 from app.pipeline.release import select_released_variant
 
 VARIANT_ORDER = (
+    "full_print",
+    "image_only",
     "source_corrected",
     "source_corrected_untrimmed",
     "source_corrected_trimmed",
@@ -214,14 +220,32 @@ def variants_from_metadata(metadata: dict | None) -> dict[str, dict]:
 
 
 def variant_path_from_photo(photo: Any, variant: str) -> str | None:
+    metadata = getattr(photo, "enhancement_applied", None) or {}
+    correction = metadata.get("correction") or {}
+    modes = correction.get("crop_modes") or {}
+    variants = variants_from_metadata(metadata)
+    precise_crop = bool(modes or "image_only" in variants)
+    mode = "image_only" if precise_crop and variant == "source_corrected_trimmed" else variant
+    if mode in {"full_print", "image_only"}:
+        if is_reviewed_non_print(
+            metadata.get("review_rejected_detection"), getattr(photo, "bounding_box", None), getattr(photo, "segmentation_mask", None),
+        ):
+            return None
+        if (modes.get(mode) or {}).get("status") != "ready":
+            return None
+        if getattr(photo, "segmentation_confidence", None) is not None:
+            receipt = correction.get("crop_validation")
+            if not isinstance(receipt, dict):
+                return None
+            if receipt != crop_validation_evidence(get_settings(), receipt.get("model_sha256")):
+                return None
     if variant in {"original", "source_corrected"}:
-        variants = variants_from_metadata(getattr(photo, "enhancement_applied", None))
         record = variants.get(variant) or variants.get("source_corrected") or variants.get("original")
         if isinstance(record, dict) and record.get("path"):
             return str(record["path"])
-        return photo.original_storage_path
+        # Legacy rows stored their only crop directly, before variant records were added.
+        return photo.original_storage_path or (getattr(photo, "storage_path", None) if not variants else None)
 
-    variants = variants_from_metadata(getattr(photo, "enhancement_applied", None))
     record = variants.get(variant)
     if isinstance(record, dict) and record.get("path"):
         return str(record["path"])
@@ -238,12 +262,22 @@ def released_variant_from_photo(photo: Any) -> str:
     return select_safe_variant(variants, photo_status=getattr(photo, "status", None), metadata=metadata)
 
 
+def photo_image_url(photo: Any, variant: str | None = None) -> str:
+    metadata = getattr(photo, "enhancement_applied", None) or {}
+    version = metadata.get("released_asset_id") or (metadata.get("correction") or {}).get("asset_id")
+    params = {"variant": variant} if variant else {}
+    if version:
+        params["v"] = str(version)
+    url = f"/api/v1/photos/{photo.id}/image"
+    return f"{url}?{urlencode(params)}" if params else url
+
+
 def variant_urls(photo: Any) -> dict[str, str | None]:
     names = list(VARIANT_ORDER)
     for name in variants_from_metadata(getattr(photo, "enhancement_applied", None)):
         if name not in names:
             names.append(name)
     return {
-        name: f"/api/v1/photos/{photo.id}/image?variant={name}" if variant_path_from_photo(photo, name) else None
+        name: photo_image_url(photo, name) if variant_path_from_photo(photo, name) else None
         for name in names
     }

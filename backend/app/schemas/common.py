@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictSchema(BaseModel):
@@ -20,6 +20,23 @@ class BoundingBox(StrictSchema):
 class NormalizedPoint(StrictSchema):
     x: float = Field(ge=0.0, le=1.0)
     y: float = Field(ge=0.0, le=1.0)
+
+
+class PrintSizeMM(StrictSchema):
+    """Physical lengths of the numbered width and height edges, in millimetres."""
+
+    width: float = Field(gt=0.0, allow_inf_nan=False)
+    height: float = Field(gt=0.0, allow_inf_nan=False)
+
+    @property
+    def aspect_ratio(self) -> float:
+        return self.width / self.height
+
+    @model_validator(mode="after")
+    def validate_aspect_ratio(self) -> "PrintSizeMM":
+        if not 0.1 <= self.aspect_ratio <= 10:
+            raise ValueError("Print width to height ratio must be between 0.1 and 10.")
+        return self
 
 
 class SegmentationMask(StrictSchema):

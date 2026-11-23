@@ -37,6 +37,7 @@ data/yolo_dataset/images/**
 !data/segmentation_training/exports/.gitkeep
 !data/yolo_dataset/images/.gitkeep
 models/**/*.onnx
+models/crop-validation.json
 models/paddleocr/**
 !models/paddleocr/.gitkeep
 *.log

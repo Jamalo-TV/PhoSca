@@ -55,6 +55,37 @@ def pixel_vertices_to_normalized(
     return np.clip(array / scale, 0.0, 1.0)
 
 
+def rectify_crop_quad(
+    image: np.ndarray,
+    crop_quad: np.ndarray,
+    *,
+    page_to_rectified: np.ndarray | None = None,
+) -> np.ndarray:
+    """Sample an ordered print quad, optionally straight from its original album page."""
+    quad = _point_array(crop_quad)
+    if quad.shape != (4, 2) or not cv2.isContourConvex(quad) or cv2.contourArea(quad, oriented=True) <= 0:
+        raise ValueError("invalid_print_quad")
+
+    top, right, bottom, left = np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1)
+    # Opposite sides estimate the same print dimension. Pixel centers include both endpoints.
+    width = round(float((top + bottom) / 2)) + 1
+    height = round(float((left + right) / 2)) + 1
+    if min(width, height) < 2:
+        raise ValueError("degenerate_print_quad")
+    destination = np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], np.float32)
+    if page_to_rectified is None:
+        if np.any(quad < 0) or np.any(quad > [image.shape[1] - 1, image.shape[0] - 1]):
+            raise ValueError("print_quad_outside_image")
+        if np.array_equal(quad, quad[0] + destination) and np.array_equal(quad[0], np.rint(quad[0])):
+            x, y = quad[0].astype(int)
+            return image[y : y + height, x : x + width].copy()
+
+    transform = cv2.getPerspectiveTransform(quad, destination)
+    if page_to_rectified is not None:
+        transform = transform @ page_to_rectified
+    return cv2.warpPerspective(image, transform, (width, height), borderMode=cv2.BORDER_REPLICATE)
+
+
 def order_quad_cyclic(points: np.ndarray | list | tuple) -> np.ndarray:
     """Return four unique convex points in clockwise image-space order.
 

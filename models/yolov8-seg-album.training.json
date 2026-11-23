@@ -1,36 +1,45 @@
 {
-  "data": "data/data.yaml",
-  "base_model": "yolo11n-seg.pt",
-  "training_run": "photo-seg-v1-40-pages",
-  "best_checkpoint": "C:/Users/gabri/runs/segment/runs/phosca-segmentation/photo-seg-v1-40-pages/weights/best.pt",
-  "completed_epochs": 96,
-  "early_stopping_best_epoch": 71,
-  "split": {
-    "train_images": 25,
-    "validation_images": 5,
-    "golden_holdout_images": 10
+  "training_run": "development_visual_screen_warm_finetune",
+  "base_model": "PhoSca YOLO11n v1 checkpoint",
+  "training_epochs": 15,
+  "best_checkpoint": "runs/segmentation-review-2026-11-22/finetune/jobs/warm_finetune/weights/best.pt",
+  "training_samples": {
+    "legacy_manual": 25,
+    "visually_screened_approximate": 50
+  },
+  "validation_samples": {
+    "legacy_manual": 5,
+    "new_outlined": 11
   },
   "validation_metrics": {
-    "mask_precision": 0.9967245278765524,
-    "mask_recall": 1.0,
-    "mask_map50": 0.995,
-    "mask_map50_95": 0.995
+    "metrics/precision(B)": 0.9990631004309256,
+    "metrics/recall(B)": 1.0,
+    "metrics/mAP50(B)": 0.995,
+    "metrics/mAP50-95(B)": 0.9742869118700186,
+    "metrics/precision(M)": 0.9990631004309256,
+    "metrics/recall(M)": 1.0,
+    "metrics/mAP50(M)": 0.995,
+    "metrics/mAP50-95(M)": 0.9727879792433359,
+    "fitness": 1.9470748911133544
   },
-  "runtime_golden_metrics": {
-    "mean_iou": 0.9729937386963216,
-    "precision": 0.9655172413793104,
-    "recall": 0.9655172413793104,
-    "page_perfect": 9,
+  "heldout_samples": 34,
+  "heldout_report": "runs/segmentation-review-2026-11-22/heldout_scores.json",
+  "heldout_detection_f1": {
+    "0.50": 0.8581314878892733,
+    "0.85": 0.7958477508650519
+  },
+  "legacy_regression": {
     "page_count": 10,
-    "false_positive": 1,
-    "false_negative": 1
+    "true_positive": 29,
+    "false_positive": 0,
+    "false_negative": 0,
+    "mean_iou": 0.9783587006603668
   },
   "onnx_export": "models/yolov8-seg-album.onnx",
-  "onnx_sha256": "e4168ae335a04c480c21048fa0b1f7b569bb1cc942c7e68bc4886e19d0e07242",
+  "onnx_sha256": "4d8235880ea1868a0ce6c77fd313522ae979329eed1441385cb2c256e2cf960f",
   "input": {
     "layout": "NCHW",
     "width": 1024,
-    "height": 1024,
-    "dynamic": true
+    "height": 1024
   }
 }

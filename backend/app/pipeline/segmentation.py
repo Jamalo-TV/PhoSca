@@ -14,8 +14,12 @@ from app.pipeline.geometry import (
     pixel_vertices_to_normalized,
     quad_from_polygon,
 )
-from app.pipeline.image_ops import pixel_box_to_normalized
+from app.pipeline.image_ops import normalized_box_to_pixels, pixel_box_to_normalized
+from app.pipeline.mounted_prints import mounted_print_evidence
 from app.pipeline.quality import evaluate_segmentation_geometry
+from app.pipeline.segmentation_filter import paper_and_edge_rejection_reasons, paper_around_nested_print
+
+_CLASSICAL_MIN_AREA_RATIO = 0.02
 
 
 @dataclass(frozen=True)
@@ -176,13 +180,16 @@ def _model_points_to_source(points: np.ndarray, transform: _LetterboxTransform) 
     return _clamp_points(mapped, transform.source_width, transform.source_height)
 
 
-def _source_box_from_input_box(input_box: dict[str, float], transform: _LetterboxTransform) -> dict[str, float] | None:
-    scale = max(transform.scale, 1e-6)
+def _source_box_from_input_box(
+    input_box: dict[str, float], transform: _LetterboxTransform, *, native: bool
+) -> dict[str, float] | None:
+    width = transform.resized_width if native else transform.scale * transform.source_width
+    height = transform.resized_height if native else transform.scale * transform.source_height
     source_box = {
-        "x1": ((input_box["x1"] * transform.input_width) - transform.pad_x) / scale / transform.source_width,
-        "y1": ((input_box["y1"] * transform.input_height) - transform.pad_y) / scale / transform.source_height,
-        "x2": ((input_box["x2"] * transform.input_width) - transform.pad_x) / scale / transform.source_width,
-        "y2": ((input_box["y2"] * transform.input_height) - transform.pad_y) / scale / transform.source_height,
+        "x1": (input_box["x1"] * transform.input_width - transform.pad_x) / width,
+        "y1": (input_box["y1"] * transform.input_height - transform.pad_y) / height,
+        "x2": (input_box["x2"] * transform.input_width - transform.pad_x) / width,
+        "y2": (input_box["y2"] * transform.input_height - transform.pad_y) / height,
     }
     return _clip_normalized_box(source_box)
 
@@ -319,7 +326,11 @@ def _segment_near_side(
     return overlap_end - overlap_start > side_length * 0.12
 
 
-def _refine_quadrilateral_with_lines(image: np.ndarray, points: np.ndarray) -> tuple[np.ndarray, bool]:
+def _refine_quadrilateral_with_lines(
+    image: np.ndarray,
+    points: np.ndarray,
+    line_cache: dict[tuple[int, int, int, int], np.ndarray | None],
+) -> tuple[np.ndarray, bool]:
     height, width = image.shape[:2]
     ordered = _order_points(points.astype(np.float32))
     x, y, w, h = cv2.boundingRect(ordered.astype(np.int32))
@@ -331,18 +342,25 @@ def _refine_quadrilateral_with_lines(image: np.ndarray, points: np.ndarray) -> t
     if x2 <= x1 or y2 <= y1:
         return ordered, False
 
-    roi_gray = _enhanced_gray(image[y1:y2, x1:x2])
-    try:
-        detector = cv2.createLineSegmentDetector(cv2.LSD_REFINE_STD)
-    except Exception:
-        detector = cv2.createLineSegmentDetector()
-    detected = detector.detect(roi_gray)[0]
+    roi = (x1, y1, x2, y2)
+    if roi not in line_cache:
+        roi_gray = _enhanced_gray(image[y1:y2, x1:x2])
+        try:
+            detector = cv2.createLineSegmentDetector(cv2.LSD_REFINE_STD)
+        except Exception:
+            detector = cv2.createLineSegmentDetector()
+        if len(line_cache) >= 16:
+            line_cache.pop(next(iter(line_cache)))
+        line_cache[roi] = detector.detect(roi_gray)[0]
+    detected = line_cache[roi]
     if detected is None or len(detected) < 4:
         return ordered, False
 
     lines = detected.reshape(-1, 4).astype(np.float32)
     lines[:, [0, 2]] += x1
     lines[:, [1, 3]] += y1
+    # The L1 length is an upper bound. Leave near-threshold cases to the scalar check.
+    line_length_upper_bounds = np.abs(lines[:, 2:] - lines[:, :2]).sum(axis=1, dtype=np.float64)
 
     fitted_sides: list[tuple[np.ndarray, np.ndarray] | None] = []
     for index in range(4):
@@ -351,7 +369,8 @@ def _refine_quadrilateral_with_lines(image: np.ndarray, points: np.ndarray) -> t
         side_length = float(np.linalg.norm(side_end - side_start))
         distance_tolerance = max(8.0, side_length * 0.06, min(width, height) * 0.012)
         support_points: list[np.ndarray] = []
-        for line in lines:
+        minimum_length = max(16.0, side_length * 0.18) * (1.0 - 1e-6)
+        for line in lines[line_length_upper_bounds >= minimum_length]:
             if _segment_near_side(
                 line,
                 side_start,
@@ -410,9 +429,8 @@ def _edge_support_scores(edge_map: np.ndarray, points: np.ndarray) -> list[float
     return side_scores
 
 
-def _border_contrast_scores(image: np.ndarray, points: np.ndarray) -> list[float]:
-    height, width = image.shape[:2]
-    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB).astype(np.float32)
+def _border_contrast_scores(lab: np.ndarray, points: np.ndarray) -> list[float]:
+    height, width = lab.shape[:2]
     ordered = _order_points(points.astype(np.float32))
     centroid = np.mean(ordered, axis=0)
     offset = max(3.0, min(width, height) * 0.006)
@@ -438,7 +456,7 @@ def _border_contrast_scores(image: np.ndarray, points: np.ndarray) -> list[float
             iy = int(round(float(np.clip(inside[1], 0, height - 1))))
             ox = int(round(float(np.clip(outside[0], 0, width - 1))))
             oy = int(round(float(np.clip(outside[1], 0, height - 1))))
-            distances.append(float(np.linalg.norm(lab[iy, ix] - lab[oy, ox])))
+            distances.append(float(np.linalg.norm(lab[iy, ix].astype(np.float32) - lab[oy, ox])))
         if distances:
             side_scores.append(min(1.0, float(np.median(distances)) / 30.0))
         else:
@@ -446,11 +464,10 @@ def _border_contrast_scores(image: np.ndarray, points: np.ndarray) -> list[float
     return side_scores
 
 
-def _frame_background_lab_model(image: np.ndarray) -> tuple[np.ndarray, float]:
-    height, width = image.shape[:2]
-    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB).astype(np.float32)
+def _frame_background_lab_model(lab: np.ndarray) -> tuple[np.ndarray, float]:
+    height, width = lab.shape[:2]
     frame_width = max(6, min(width, height) // 24)
-    frame = _frame_pixels(lab, frame_width)
+    frame = _frame_pixels(lab, frame_width).astype(np.float32)
     background = np.median(frame, axis=0)
     distances = np.linalg.norm(frame - background, axis=1)
     median_distance = float(np.median(distances))
@@ -459,10 +476,11 @@ def _frame_background_lab_model(image: np.ndarray) -> tuple[np.ndarray, float]:
     return background.astype(np.float32), threshold
 
 
-def _exterior_background_scores(image: np.ndarray, points: np.ndarray) -> list[float]:
-    height, width = image.shape[:2]
-    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB).astype(np.float32)
-    background, threshold = _frame_background_lab_model(image)
+def _exterior_background_scores(
+    lab: np.ndarray, points: np.ndarray, lab_background: tuple[np.ndarray, float]
+) -> list[float]:
+    height, width = lab.shape[:2]
+    background, threshold = lab_background
     ordered = _order_points(points.astype(np.float32))
     centroid = np.mean(ordered, axis=0)
     min_dimension = min(width, height)
@@ -510,27 +528,32 @@ def _rectangularity_score(points: np.ndarray) -> float:
     return float(max(0.0, min(1.0, area / box_area)))
 
 
-def _interior_texture_score(image: np.ndarray, points: np.ndarray) -> float:
-    height, width = image.shape[:2]
-    mask = np.zeros((height, width), dtype=np.uint8)
-    cv2.fillConvexPoly(mask, _clamp_points(points, width, height).astype(np.int32), 255)
-    if cv2.countNonZero(mask) < max(64, int(width * height * 0.002)):
-        return 0.0
+def _interior_texture_score(laplacian: np.ndarray, points: np.ndarray) -> float:
+    height, width = laplacian.shape
     _, _, box_width, box_height = cv2.boundingRect(points.astype(np.int32))
     inset = max(3, min(21, int(round(min(box_width, box_height) * 0.06))))
+    polygon = _clamp_points(points, width, height).astype(np.int32)
+    x, y, polygon_width, polygon_height = cv2.boundingRect(polygon)
+    radius = inset // 2
+    left, top = max(0, x - radius), max(0, y - radius)
+    right, bottom = min(width, x + polygon_width + radius), min(height, y + polygon_height + radius)
+    mask = np.zeros((bottom - top, right - left), dtype=np.uint8)
+    cv2.fillConvexPoly(mask, polygon - np.array([left, top], dtype=np.int32), 255)
+    if cv2.countNonZero(mask) < max(64, int(width * height * 0.002)):
+        return 0.0
     kernel = np.ones((inset | 1, inset | 1), dtype=np.uint8)
     eroded = cv2.erode(mask, kernel, iterations=1)
     if cv2.countNonZero(eroded) > 0:
         mask = eroded
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    laplacian = cv2.Laplacian(gray, cv2.CV_32F, ksize=3)
-    texture = float(np.std(laplacian[mask > 0]))
+    texture = float(np.std(laplacian[top:bottom, left:right][mask > 0]))
     return float(max(0.0, min(1.0, texture / 42.0)))
 
 
 def _assess_candidate(
-    image: np.ndarray,
+    lab: np.ndarray,
     edge_map: np.ndarray,
+    lab_background: tuple[np.ndarray, float],
+    laplacian: np.ndarray,
     points: np.ndarray,
     *,
     area_ratio: float,
@@ -539,13 +562,13 @@ def _assess_candidate(
     refined_by_lines: bool,
 ) -> _CandidateAssessment:
     edge_scores = _edge_support_scores(edge_map, points)
-    border_scores = _border_contrast_scores(image, points)
-    exterior_scores = _exterior_background_scores(image, points)
+    border_scores = _border_contrast_scores(lab, points)
+    exterior_scores = _exterior_background_scores(lab, points, lab_background)
     edge_support = _mean_score(edge_scores)
     border_contrast = _mean_score(border_scores)
     exterior_background_support = _mean_score(exterior_scores)
     rectangularity = _rectangularity_score(points)
-    interior_texture = _interior_texture_score(image, points)
+    interior_texture = _interior_texture_score(laplacian, points)
     edge_supported_sides = sum(score >= 0.10 for score in edge_scores)
     outline_supported_sides = sum(
         max(edge_score, border_score, exterior_score * 0.6) >= 0.16
@@ -565,7 +588,7 @@ def _assess_candidate(
         rejection_reasons.append("candidate_not_rectangular_enough")
     if area_ratio > 0.62:
         rejection_reasons.append("candidate_too_large_for_single_photo")
-    image_height, image_width = image.shape[:2]
+    image_height, image_width = lab.shape[:2]
     x, y, box_width, box_height = cv2.boundingRect(points.astype(np.int32))
     touches_frame = sum(
         [
@@ -993,14 +1016,21 @@ def _detection_polygon(detection: SegmentationDetection) -> np.ndarray:
     )
 
 
+def _boundary_inputs(image: np.ndarray) -> tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray]:
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    # Give printed borders with two Canny responses a narrow scoring tolerance.
+    tolerant_edges = cv2.dilate(_edge_support_map(image), np.ones((5, 5), dtype=np.uint8), iterations=1)
+    return lab, _frame_background_lab_model(lab), tolerant_edges
+
+
 def _detection_boundary_evidence(
-    image: np.ndarray,
     detection: SegmentationDetection,
-    *,
-    edge_map: np.ndarray | None = None,
+    lab: np.ndarray,
+    lab_background: tuple[np.ndarray, float],
+    tolerant_edge_map: np.ndarray,
 ) -> dict[str, float]:
     """Score full-resolution physical-boundary evidence for any proposal source."""
-    height, width = image.shape[:2]
+    height, width = lab.shape[:2]
     try:
         polygon = normalized_vertices_to_pixels(_detection_polygon(detection), width, height)
         quad, _ = quad_from_polygon(polygon)
@@ -1012,14 +1042,9 @@ def _detection_boundary_evidence(
             "exterior_background_support": 0.0,
             "rectangularity": 0.0,
         }
-    base_edge_map = edge_map if edge_map is not None else _edge_support_map(image)
-    # Printed borders are often several pixels thick, leaving the exact
-    # centerline between the two Canny responses empty. A narrow evidence-only
-    # tolerance band recognizes either side without moving the candidate.
-    tolerant_edge_map = cv2.dilate(base_edge_map, np.ones((5, 5), dtype=np.uint8), iterations=1)
     edge_support = _mean_score(_edge_support_scores(tolerant_edge_map, quad))
-    border_contrast = _mean_score(_border_contrast_scores(image, quad))
-    exterior_background = _mean_score(_exterior_background_scores(image, quad))
+    border_contrast = _mean_score(_border_contrast_scores(lab, quad))
+    exterior_background = _mean_score(_exterior_background_scores(lab, quad, lab_background))
     rectangularity = _rectangularity_score(quad)
     score = 0.35 * edge_support + 0.40 * border_contrast + 0.15 * exterior_background + 0.10 * rectangularity
     return {
@@ -1069,13 +1094,12 @@ def _model_set_risk_reasons(
     detections: list[SegmentationDetection],
     settings: Settings,
 ) -> tuple[list[str], dict[int, dict[str, float]]]:
-    edge_map = _edge_support_map(image)
-    evidence = {
-        index: _detection_boundary_evidence(image, detection, edge_map=edge_map)
-        for index, detection in enumerate(detections)
-    }
     if not detections:
-        return ["MODEL_SET_EMPTY"], evidence
+        return ["MODEL_SET_EMPTY"], {}
+    inputs = _boundary_inputs(image)
+    evidence = {
+        index: _detection_boundary_evidence(detection, *inputs) for index, detection in enumerate(detections)
+    }
     reasons: list[str] = []
     for index, detection in enumerate(detections):
         source = str((detection.mask or {}).get("source", ""))
@@ -1123,13 +1147,20 @@ def fuse_candidate_evidence(
     image: np.ndarray,
     model_detections: list[SegmentationDetection],
     classical_detections: list[SegmentationDetection],
+    *,
+    model_evidence: dict[int, dict[str, float]] | None = None,
 ) -> tuple[list[SegmentationDetection], dict]:
     """Fuse proposal sources after assessment, preserving real overlapping instances."""
     records: list[dict] = []
-    edge_map = _edge_support_map(image)
+    inputs = None
     for family, detections in (("model", model_detections), ("classical", classical_detections)):
-        for detection in detections:
-            boundary = _detection_boundary_evidence(image, detection, edge_map=edge_map)
+        for index, detection in enumerate(detections):
+            if family == "model" and model_evidence is not None:
+                boundary = model_evidence[index]
+            else:
+                if inputs is None:
+                    inputs = _boundary_inputs(image)
+                boundary = _detection_boundary_evidence(detection, *inputs)
             geometry = _detection_geometry_evidence(detection)
             records.append(
                 {
@@ -1331,7 +1362,10 @@ def select_candidate_set(detections: list[SegmentationDetection]) -> tuple[list[
     return selected, rejected
 
 
-def detect_photos_classical(image: np.ndarray, *, min_area_ratio: float = 0.02) -> SegmentationResult:
+def detect_photos_classical(
+    image: np.ndarray, *, min_area_ratio: float = _CLASSICAL_MIN_AREA_RATIO,
+    max_line_refinement_pixels: int | None = None,
+) -> SegmentationResult:
     started = perf_counter()
     height, width = image.shape[:2]
     image_area = width * height
@@ -1339,13 +1373,28 @@ def detect_photos_classical(image: np.ndarray, *, min_area_ratio: float = 0.02) 
     # Do not consolidate by area before candidate assessment.  Containers are
     # frequently larger than the true prints and used to erase them here.
     filtered_contours = _find_contour_candidates(image, min_area_ratio)
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    lab_background = _frame_background_lab_model(lab)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    laplacian = cv2.Laplacian(gray, cv2.CV_32F, ksize=3)
 
     detections: list[SegmentationDetection] = []
     source_counts: dict[str, int] = {}
     rejected_counts: dict[str, int] = {}
+    line_cache: dict[tuple[int, int, int, int], np.ndarray | None] = {}
+    line_pixels = 0
+    unrefined_candidates = 0
+    line_pad = 2 * int(max(12, min(width, height) * 0.025))
     for candidate in filtered_contours:
         polygon_points, polygon_source = _quadrilateral_from_contour(candidate.contour)
-        polygon_points, refined_by_lines = _refine_quadrilateral_with_lines(image, polygon_points)
+        _, _, candidate_width, candidate_height = candidate.box
+        candidate_pixels = (candidate_width + line_pad) * (candidate_height + line_pad)
+        refined_by_lines = False
+        if max_line_refinement_pixels is None or line_pixels + candidate_pixels <= max_line_refinement_pixels:
+            polygon_points, refined_by_lines = _refine_quadrilateral_with_lines(image, polygon_points, line_cache)
+            line_pixels += candidate_pixels
+        else:
+            unrefined_candidates += 1
         polygon_points = _clamp_points(polygon_points, width, height)
         x, y, w, h = cv2.boundingRect(polygon_points.astype(np.int32))
         contour_width, contour_height = _quadrilateral_geometry_dimensions(polygon_points, w, h)
@@ -1357,8 +1406,10 @@ def detect_photos_classical(image: np.ndarray, *, min_area_ratio: float = 0.02) 
         )
         quad_area_ratio = cv2.contourArea(polygon_points.reshape(-1, 1, 2)) / image_area
         assessment = _assess_candidate(
-            image,
+            lab,
             edge_map,
+            lab_background,
+            laplacian,
             polygon_points,
             area_ratio=max(candidate.area_ratio, quad_area_ratio),
             polygon_source=polygon_source,
@@ -1416,6 +1467,7 @@ def detect_photos_classical(image: np.ndarray, *, min_area_ratio: float = 0.02) 
             "fallback_used": True,
             "candidate_sources": source_counts,
             "rejected_candidates": rejected_counts,
+            "line_refinement_skipped": unrefined_candidates,
         },
     )
 
@@ -1478,6 +1530,7 @@ def _normalize_xyxy(
     y2: float,
     *,
     transform: _LetterboxTransform,
+    native: bool = True,
 ) -> tuple[dict[str, float], dict[str, float]] | None:
     if max(abs(x1), abs(y1), abs(x2), abs(y2)) > 1.5:
         input_box = {
@@ -1491,7 +1544,7 @@ def _normalize_xyxy(
     clipped_input_box = _clip_normalized_box(input_box)
     if clipped_input_box is None:
         return None
-    source_box = _source_box_from_input_box(clipped_input_box, transform)
+    source_box = _source_box_from_input_box(clipped_input_box, transform, native=native)
     if source_box is None:
         return None
     return source_box, clipped_input_box
@@ -1504,15 +1557,20 @@ def _normalize_cxcywh(
     box_height: float,
     *,
     transform: _LetterboxTransform,
+    native: bool = True,
 ) -> tuple[dict[str, float], dict[str, float]] | None:
     x1 = cx - box_width / 2.0
     y1 = cy - box_height / 2.0
     x2 = cx + box_width / 2.0
     y2 = cy + box_height / 2.0
-    return _normalize_xyxy(x1, y1, x2, y2, transform=transform)
+    return _normalize_xyxy(x1, y1, x2, y2, transform=transform, native=native)
 
 
-def _box_to_points(box: dict[str, float], width: int, height: int) -> np.ndarray:
+def _box_to_points(box: dict[str, float], width: int, height: int, *, native: bool) -> np.ndarray:
+    if native:
+        x1, y1, x2, y2 = normalized_box_to_pixels(box, width, height)
+        x2, y2 = max(x1, x2 - 1), max(y1, y2 - 1)
+        return np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=np.float32)
     return np.array(
         [
             [box["x1"] * width, box["y1"] * height],
@@ -1539,8 +1597,8 @@ def _expand_mask_polygon_to_pixel_edges(points: np.ndarray, mask_width: int, mas
     return expanded
 
 
-def _polygon_from_binary_mask(binary_mask: np.ndarray) -> np.ndarray | None:
-    contours, _ = cv2.findContours(binary_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+def _polygon_from_binary_mask(binary_mask: np.ndarray, *, legacy_expansion: bool = False) -> np.ndarray | None:
+    contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return None
     contour = max(contours, key=cv2.contourArea)
@@ -1550,11 +1608,52 @@ def _polygon_from_binary_mask(binary_mask: np.ndarray) -> np.ndarray | None:
     for epsilon_ratio in (0.004, 0.008, 0.012, 0.02, 0.035, 0.05):
         approx = cv2.approxPolyDP(contour, epsilon_ratio * perimeter, True).reshape(-1, 2)
         if 4 <= len(approx) <= 48:
-            return _expand_mask_polygon_to_pixel_edges(approx, binary_mask.shape[1], binary_mask.shape[0])
-    hull = cv2.convexHull(contour).reshape(-1, 2)
-    if len(hull) >= 4:
-        return _expand_mask_polygon_to_pixel_edges(hull, binary_mask.shape[1], binary_mask.shape[0])
-    return None
+            break
+    else:
+        approx = cv2.convexHull(contour).reshape(-1, 2)
+        if len(approx) < 4:
+            return None
+    if legacy_expansion:
+        return _expand_mask_polygon_to_pixel_edges(approx, binary_mask.shape[1], binary_mask.shape[0])
+    if cv2.isContourConvex(approx):
+        native = cv2.approxPolyDP(contour, 1.0, True).reshape(-1, 2)
+        # Preserve inward deficits erased by simplification, within the established silhouette.
+        if 4 < len(native) <= 128 and not cv2.isContourConvex(native) and all(
+            cv2.pointPolygonTest(approx, tuple(map(float, point)), True) >= -1.0 for point in native
+        ):
+            return native.astype(np.float32)
+    return approx.astype(np.float32)
+
+
+def _native_mask_roi(logits: np.ndarray, box: dict[str, float], transform: _LetterboxTransform) -> tuple[np.ndarray, int, int]:
+    width, height = transform.source_width, transform.source_height
+    x1, x2 = (max(0, min(width, int(np.ceil(box[key] * width)))) for key in ("x1", "x2"))
+    y1, y2 = (max(0, min(height, int(np.ceil(box[key] * height)))) for key in ("y1", "y2"))
+    binary = np.empty((y2 - y1, x2 - x1), dtype=np.uint8)
+    if not binary.size:
+        return binary, x1, y1
+    left, top = int(transform.pad_x), int(transform.pad_y)
+    content_width, content_height = transform.resized_width, transform.resized_height
+    # Undo the *actual* rounded letterbox before scaling logits to source pixel centres.
+    model_logits = cv2.resize(logits, (transform.input_width, transform.input_height), interpolation=cv2.INTER_LINEAR)
+    active = model_logits[top : top + content_height, left : left + content_width]
+    sx, sy = content_width / width, content_height / height
+    # Keep full-resolution float intermediates bounded even for large page-sized proposals.
+    tile_size = 2048
+    for row in range(0, binary.shape[0], tile_size):
+        for column in range(0, binary.shape[1], tile_size):
+            tile = binary[row : row + tile_size, column : column + tile_size]
+            mapping = np.array(
+                [[sx, 0, (x1 + column + 0.5) * sx - 0.5], [0, sy, (y1 + row + 0.5) * sy - 0.5]],
+                dtype=np.float64,
+            )
+            resized = cv2.warpAffine(
+                active, mapping, (tile.shape[1], tile.shape[0]),
+                flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_REPLICATE,
+            )
+            tile[:] = resized > 0
+    return binary, x1, y1
 
 
 def _polygon_from_proto_mask(
@@ -1562,13 +1661,20 @@ def _polygon_from_proto_mask(
     coefficients: np.ndarray,
     box: dict[str, float],
     *,
-    input_width: int,
-    input_height: int,
+    transform: _LetterboxTransform,
+    source_box: dict[str, float],
+    native: bool,
 ) -> np.ndarray | None:
     channels, mask_height, mask_width = proto.shape
     if coefficients.size != channels:
         return None
     logits = np.matmul(coefficients.astype(np.float32), proto.reshape(channels, -1)).reshape(mask_height, mask_width)
+    if native:
+        binary, x, y = _native_mask_roi(logits, source_box, transform)
+        points = _polygon_from_binary_mask(binary) if binary.size else None
+        return points + np.array([x, y], dtype=np.float32) if points is not None else None
+
+    input_width, input_height = transform.input_width, transform.input_height
     mask = _sigmoid(logits)
     resized = cv2.resize(mask, (input_width, input_height), interpolation=cv2.INTER_LINEAR)
     binary = (resized > 0.5).astype(np.uint8) * 255
@@ -1582,7 +1688,8 @@ def _polygon_from_proto_mask(
         max(0, y1) : min(input_height, y2),
         max(0, x1) : min(input_width, x2),
     ]
-    return _polygon_from_binary_mask(crop_mask)
+    points = _polygon_from_binary_mask(crop_mask, legacy_expansion=True)
+    return _model_points_to_source(points, transform) if points is not None else None
 
 
 def _make_detection(
@@ -1665,70 +1772,44 @@ def _parse_simple_box_outputs(
     transform = _build_letterbox_transform(width, height, input_width, input_height)
     proto = _find_proto_output(outputs)
     mask_channels = int(proto.shape[0]) if proto is not None else 0
+    native = getattr(settings, "enable_precise_photo_crops", True)
+    proposal_threshold = getattr(settings, "yolo_proposal_threshold", settings.yolo_confidence_threshold)
     detections: list[SegmentationDetection] = []
     for array in _prediction_rows(outputs):
-        for row in array:
-            row = row.reshape(-1)
-            normalized_boxes: tuple[dict[str, float], dict[str, float]] | None = None
-            mask_coefficients: np.ndarray | None = None
-            source = "yolo_box"
-            if proto is not None and row.size >= 4 + mask_channels + 1:
-                class_count = int(row.size - 4 - mask_channels)
-                if class_count < 1:
-                    continue
-                class_scores = row[4 : 4 + class_count]
-                confidence = float(np.max(class_scores))
-                normalized_boxes = _normalize_cxcywh(
-                    float(row[0]),
-                    float(row[1]),
-                    float(row[2]),
-                    float(row[3]),
-                    transform=transform,
-                )
-                mask_coefficients = row[4 + class_count : 4 + class_count + mask_channels]
-                source = "yolo_seg_mask"
-            elif row.size <= 7:
-                confidence = float(row[4])
-                normalized_boxes = _normalize_xyxy(
-                    float(row[0]),
-                    float(row[1]),
-                    float(row[2]),
-                    float(row[3]),
-                    transform=transform,
-                )
-            else:
-                class_scores = row[4:]
-                confidence = float(np.max(class_scores))
-                normalized_boxes = _normalize_cxcywh(
-                    float(row[0]),
-                    float(row[1]),
-                    float(row[2]),
-                    float(row[3]),
-                    transform=transform,
-                )
-            proposal_threshold = getattr(settings, "yolo_proposal_threshold", settings.yolo_confidence_threshold)
-            if confidence < proposal_threshold:
-                continue
+        columns = array.shape[-1]
+        if columns < 5:
+            continue
+        has_masks = proto is not None and columns >= 5 + mask_channels
+        uses_centers = has_masks or columns > 7
+        score_end = columns - mask_channels if has_masks else columns
+        confidences = np.max(array[:, 4:score_end], axis=1) if uses_centers else array[:, 4]
+        normalize = _normalize_cxcywh if uses_centers else _normalize_xyxy
+        for index in np.flatnonzero(confidences >= proposal_threshold):
+            row = array[index]
+            normalized_boxes = normalize(*map(float, row[:4]), transform=transform, native=native)
             if normalized_boxes is None:
                 continue
             source_box, input_box = normalized_boxes
+            source = "yolo_box"
             points = None
-            if proto is not None and mask_coefficients is not None:
+            if has_masks:
+                source = "yolo_seg_mask"
                 points = _polygon_from_proto_mask(
                     proto,
-                    mask_coefficients,
+                    row[score_end:],
                     input_box,
-                    input_width=input_width,
-                    input_height=input_height,
+                    transform=transform,
+                    source_box=source_box,
+                    native=native,
                 )
-                if points is not None:
-                    points = _model_points_to_source(points, transform)
             if points is None:
-                points = _box_to_points(source_box, width, height)
+                points = _box_to_points(source_box, width, height, native=native)
+                if native:
+                    source = "yolo_box"
             detection = _make_detection(
                 box=source_box,
                 points=points,
-                confidence=confidence,
+                confidence=float(confidences[index]),
                 image_width=width,
                 image_height=height,
                 settings=settings,
@@ -1741,8 +1822,116 @@ def _parse_simple_box_outputs(
     return _nms_detections(detections)
 
 
+def refine_album_page_result(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    polygons = [detection.mask.get("polygon", []) for detection in result.detections]
+    mount_rejections, quads = mounted_print_evidence(image, polygons)
+    mount_polygons = [_normalized_polygon(order_quad_cyclic(quad), 1, 1) for quad in quads]
+    paper_rejections = paper_and_edge_rejection_reasons(image, polygons + mount_polygons)
+    rejected = {index: reason for index, reason in paper_rejections.items() if index < len(polygons)} | mount_rejections
+
+    height, width = image.shape[:2]
+    detections = [detection for index, detection in enumerate(result.detections) if index not in rejected]
+    for offset, (quad, polygon) in enumerate(zip(quads, mount_polygons, strict=True)):
+        if len(polygons) + offset in paper_rejections:
+            continue
+        left, top = quad.min(axis=0)
+        right, bottom = quad.max(axis=0)
+        bbox = {"x1": float(left), "y1": float(top), "x2": float(right), "y2": float(bottom)}
+        quality = evaluate_segmentation_geometry((right - left) * width, (bottom - top) * height)
+        detections.append(
+            SegmentationDetection(
+                bounding_box=bbox,
+                mask={
+                    "polygon": polygon,
+                    "source": "chromatic_mount_boundary",
+                    "detector_source": "chromatic_mount",
+                },
+                confidence=0.70,
+                aspect_ratio=quality.aspect_ratio,
+                geometry_valid=quality.geometry_valid,
+                review_reasons=[*quality.review_reasons, "chromatic_mount_boundary_needs_review"],
+            )
+        )
+    containers = _page_containers(detections, image)
+    if not rejected and not quads and not containers:
+        return result
+    detections = [detection for index, detection in enumerate(detections) if index not in containers]
+    detections.sort(key=lambda detection: (detection.bounding_box["y1"], detection.bounding_box["x1"]))
+    replacement_count = sum(len(polygons) + offset not in paper_rejections for offset in range(len(quads)))
+    metadata = {
+        **result.metadata,
+        "mount_replacements": replacement_count,
+        "page_proposal_rejections": rejected,
+        "container_rejections": len(containers),
+    }
+    return SegmentationResult(detections=detections, metadata=metadata)
+
+
+def _page_containers(detections: list[SegmentationDetection], image: np.ndarray) -> set[int]:
+    if len(detections) < 3:
+        return set()
+    polygons = [_detection_polygon(detection) for detection in detections]
+    areas = [float(cv2.contourArea(polygon)) for polygon in polygons]
+    bounds = [(polygon.min(axis=0), polygon.max(axis=0)) for polygon in polygons]
+    credible = []
+    for index, (detection, polygon, area) in enumerate(zip(detections, polygons, areas, strict=True)):
+        width, height = cv2.minAreaRect(polygon)[1]
+        if detection.confidence >= 0.48 and area >= 0.012 and area >= 0.70 * width * height:
+            credible.append(index)
+    credible.sort(key=areas.__getitem__, reverse=True)
+
+    @lru_cache(maxsize=None)
+    def overlap(first: int, second: int):
+        return normalized_polygon_overlap(polygons[first], polygons[second])
+
+    rejected = set()
+    for index in sorted(range(len(detections)), key=areas.__getitem__):
+        area = areas[index]
+        lower, upper = bounds[index]
+        at_edge = np.any(lower <= 0.035) or np.any(upper >= 0.965)
+        boundary = detections[index].mask.get("boundary_evidence", {})
+        weak_outline = (
+            area >= 0.22
+            and detections[index].mask.get("source") == "yolo_seg_mask"
+            and boundary.get("score", 1.0) < 0.42
+            and boundary.get("edge_support", 1.0) < 0.12
+        )
+        broad_region = area > 0.40 or (area >= 0.16 and at_edge)
+        if not (broad_region or weak_outline):
+            continue
+        children = []
+        for child in credible:
+            if child in rejected or areas[child] >= area * 0.68:
+                continue
+            child_lower, child_upper = bounds[child]
+            intersection = np.maximum(0, np.minimum(upper, child_upper) - np.maximum(lower, child_lower)).prod()
+            if intersection < areas[child] * 0.82 or overlap(child, index).first_containment < 0.82:
+                continue
+            if any(max(overlap(child, other).first_containment, overlap(child, other).second_containment) > 0.35 for other in children):
+                continue
+            children.append(child)
+        if broad_region and len(children) >= 2 and sum(areas[child] for child in children) >= 0.25 * area:
+            rejected.add(index)
+        elif weak_outline and len(children) == 1:
+            child = children[0]
+            child_boundary = detections[child].mask.get("boundary_evidence", {})
+            if (
+                areas[child] >= 0.30 * area
+                and child_boundary.get("border_contrast", 0.0) >= 0.52
+                and paper_around_nested_print(image, polygons[index], polygons[child])
+            ):
+                rejected.add(index)
+    return rejected
+
+
 def segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationResult:
+    result = _segment_album_page(image, settings)
+    return refine_album_page_result(image, result) if settings.enable_classical_segmentation_fallback else result
+
+
+def _segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationResult:
     model_path = Path(settings.yolo_model_path)
+    line_budget = min(3 * image.shape[0] * image.shape[1], 12_000_000) if settings.enable_precise_photo_crops else None
     metadata: dict = {
         "model_path": str(model_path),
         "confidence_threshold": settings.yolo_confidence_threshold,
@@ -1813,9 +2002,20 @@ def segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationRes
                 # Classical geometry is an expensive evidence channel. Run it
                 # for an empty/risky model set, not universally and not merely
                 # after total model failure.
-                if settings.enable_classical_segmentation_fallback and risk_reasons:
-                    fallback = detect_photos_classical(image)
-                    merged, fusion = fuse_candidate_evidence(image, detections, fallback.detections)
+                dense_small_prints = (
+                    settings.enable_precise_photo_crops
+                    and len(detections) >= 16
+                    and all(reason.startswith("MODEL_CONFIDENCE_MARGIN_LOW:") for reason in risk_reasons)
+                    and np.median([_score_value(d, "area_ratio", _normalized_box_area(d.bounding_box)) for d in detections])
+                    < _CLASSICAL_MIN_AREA_RATIO
+                )
+                if settings.enable_classical_segmentation_fallback and risk_reasons and dense_small_prints:
+                    metadata["classical_evidence_skipped"] = "dense_small_prints_confidence_only"
+                if settings.enable_classical_segmentation_fallback and risk_reasons and not dense_small_prints:
+                    fallback = detect_photos_classical(image, max_line_refinement_pixels=line_budget)
+                    merged, fusion = fuse_candidate_evidence(
+                        image, detections, fallback.detections, model_evidence=model_evidence
+                    )
                     metadata.update(
                         {
                             "fallback_used": True,
@@ -1827,7 +2027,7 @@ def segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationRes
                         }
                     )
                     return SegmentationResult(detections=merged, metadata=metadata)
-                model_only, fusion = fuse_candidate_evidence(image, detections, [])
+                model_only, fusion = fuse_candidate_evidence(image, detections, [], model_evidence=model_evidence)
                 metadata["fusion"] = fusion
                 return SegmentationResult(detections=model_only, metadata=metadata)
             metadata["onnx_parse_warning"] = "No supported detections were parsed from model outputs."
@@ -1837,7 +2037,7 @@ def segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationRes
     if not settings.enable_classical_segmentation_fallback:
         return SegmentationResult(detections=[], metadata={**metadata, "fallback_used": False})
 
-    fallback = detect_photos_classical(image)
+    fallback = detect_photos_classical(image, max_line_refinement_pixels=line_budget)
     selected, fusion = fuse_candidate_evidence(image, [], fallback.detections)
     return SegmentationResult(
         detections=selected,

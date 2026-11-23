@@ -54,6 +54,33 @@ def test_protected_region_crossing_crop_is_a_hard_failure() -> None:
         )
 
 
+def test_automatic_crop_with_page_face_overlap_is_available_untrimmed_for_review() -> None:
+    from app.pipeline.perspective import correct_photo_crop
+
+    image = np.full((100, 100, 3), 180, dtype=np.uint8)
+    box = {"x1": 0.2, "y1": 0.2, "x2": 0.8, "y2": 0.8}
+    face = {
+        "type": "face",
+        "source": "opencv_haarcascade_frontalface_default",
+        "box": {"x1": 0.1, "y1": 0.4, "x2": 0.3, "y2": 0.6},
+    }
+    result = correct_photo_crop(
+        image, box, auto_orient=False, protected_regions=[face], allow_page_face_overlap=True
+    )
+
+    assert result.metadata["protected_regions"]["review_untrimmed"] is True
+    assert result.metadata["border_trim"]["applied"] is False
+    assert result.image.shape[:2] == (60, 60)
+    with pytest.raises(ValueError, match="protected_region_cut"):
+        correct_photo_crop(
+            image,
+            box,
+            auto_orient=False,
+            protected_regions=[{**face, "source": "manual"}],
+            allow_page_face_overlap=True,
+        )
+
+
 def test_perspective_metadata_contains_stability_and_protection_gates() -> None:
     from app.pipeline.perspective import crop_and_correct_photo_with_metadata
 
@@ -69,8 +96,8 @@ def test_perspective_metadata_contains_stability_and_protection_gates() -> None:
 
 
 def test_canonical_load_image_applies_exif_orientation(tmp_path) -> None:
-    from PIL import Image
     from app.pipeline.image_ops import load_image
+    from PIL import Image
 
     source = Image.fromarray(np.full((10, 20, 3), 120, dtype=np.uint8), "RGB")
     exif = Image.Exif()

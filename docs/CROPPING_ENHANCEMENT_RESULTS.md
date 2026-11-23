@@ -41,7 +41,7 @@ historical-photo quality.
 | High | High | `pipeline/segmentation.py`: box NMS | Axis-aligned box overlap could suppress real overlapping prints and could fail to merge differently shaped proposals for the same print. | Legitimate overlaps disappear or one print is exported twice. | Mask-aware duplicate tests distinguish high mutual containment from real partial overlap. |
 | Critical | High | `pipeline/perspective.py`: corner order and transform validation | Sum/difference ordering can assign one point twice near 45 degrees. Reprojecting the four fit points made the old semantic-validity check tautological. | Empty, mirrored, severely stretched, or incorrectly rectified output. | Shared cyclic ordering, uniqueness/convexity/angle/area checks, normalized conditioning, Jacobian stretch, and corner-perturbation stability gates. |
 | High | High | `pipeline/image_ops.py`, `pipeline/geometry.py` | Boxes used half-open maximum edges while normalized polygon `1.0` could become an out-of-range pixel; alpha and high-bit-depth conversion were implicit. | Off-by-one crops, lost transparent content, inconsistent full-resolution mapping. | Explicit vertex/box coordinate contracts, reversible source-resolution mapping, EXIF/ICC metadata, white alpha compositing, and deterministic grayscale/uint16/float normalization. |
-| High | High | `pipeline/perspective.py`, `pipeline/border_removal.py` | A global uniform-frame heuristic could mistake sky, snow, walls, night scenes, or studio backgrounds for a border. Only the trimmed pixels survived. | Meaningful edge content is silently deleted. | Opt-in independent edge classification requiring a physical transition, protected-region vetoes, maximum trim, exact offsets/confidence/reasons, and a permanently addressable untrimmed rectified asset. |
+| High | High | `pipeline/perspective.py`, `pipeline/border_removal.py` | A global uniform-frame heuristic could mistake sky, snow, walls, night scenes, or studio backgrounds for a border. Only the trimmed pixels survived. | Meaningful edge content is silently deleted. | Independent edge classification requiring a physical transition, protected-region vetoes, maximum trim, exact offsets/confidence/reasons, and a permanently addressable untrimmed rectified asset. |
 | High | High | `pipeline/orientation.py` | An uncalibrated face/detail heuristic could rotate an upright landscape by 180 degrees and emit confidence above one. | Correct photos are rotated incorrectly. | Only a high-confidence/margin-gated ONNX classifier may mutate pixels. Heuristics are bounded advisory evidence; ambiguous cases preserve orientation and emit `ORIENTATION_UNCERTAIN`. |
 | High | High | `pipeline/enhancement.py`, `pipeline/dl_enhancement.py`, feature flags | Conservative and deep flags entered the same model-capable function; the supposed conservative route was not independently model-free. | Unexpected model use and unclear fidelity guarantees. | Separate deterministic conservative, model-restoration, and premium routes with fail-closed registration and variant labels. |
 | High | High | `pipeline/degradation.py`, `pipeline/color_correction.py` | Global range/Lab statistics confused monochrome, sepia, high-key, and warm photographic intent with fading or damage. | Historical colour is modernized or monochrome content is tinted. | Typed signals with evidence/confidence/ambiguity; ambiguous colour disables chroma correction while strongly supported luminance damage may receive a bounded Lab-L-only adjustment. |
@@ -84,11 +84,14 @@ historical-photo quality.
 
 ### Border and orientation handling
 
-- Border trimming is disabled by default. When enabled, four edges are assessed
-  separately for outer-band dispersion, texture, colour transition, boundary
-  gradient, protected content, maximum trim, and remaining content area.
-- `source_corrected` is the untrimmed rectified asset. An applied trim is stored
-  separately as `source_corrected_trimmed`; both are visible to review.
+- Border refinement is enabled by default. It fits the four paper-to-picture
+  transitions and intersects them to obtain the print corners. For automatic
+  detections it can use neighboring page pixels to recover a missed corner.
+  The final image is sampled directly from the original page. The crop metadata
+  records the fitted corners in both rectified and original page coordinates.
+- `source_corrected` is the crop used for display and enhancement, including
+  any supported trim. The full rectified print is available for review as
+  `source_corrected_untrimmed`.
 - A calibrated orientation model can auto-rotate only above confidence and
   margin thresholds. Missing/ambiguous model evidence preserves pixels and
   records a suggested rotation and reason code.

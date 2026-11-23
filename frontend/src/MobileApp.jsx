@@ -1,6 +1,8 @@
 import { Camera, Check, ChevronLeft, CircleHelp, CloudOff, Images, ListChecks, RefreshCw, Save, Upload, WandSparkles, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createAlbum, getReviewProgress, getReviewQueue, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
+import { createAlbum, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
+import { CropVariants, getCropModes } from "./CropVariants.jsx";
+import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
 
 const cropAnswers = {
@@ -73,7 +75,7 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome }) {
         if (!navigator.onLine) throw new Error("offline");
         const result = file.size > 20 * 1024 * 1024 ? await uploadFileChunked(activeAlbumId, file) : await uploadFiles(activeAlbumId, [file]);
         if (!result?.pages?.[0]?.verified) throw new Error("Serverbestätigung fehlt");
-        setMessage("Auf PC gespeichert, geprüft und zur Analyse eingeplant.");
+        setMessage(result.analysis_queued ? "Auf PC gespeichert. Fotos werden automatisch ausgeschnitten." : "Auf PC gespeichert und geprüft.");
       } catch {
         await queueUpload(activeAlbumId, [file]); setMessage("Lokal gesichert – wartet auf Upload.");
       }
@@ -87,7 +89,7 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome }) {
     <section className="mobile-card batch-picker"><label>Album / Batch</label><div><select value={activeAlbumId || ""} onChange={e => setActiveAlbumId(e.target.value)}><option value="" disabled>Batch auswählen</option>{albums.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select><button className="mobile-icon light" onClick={addBatch}>+</button></div></section>
     <section className="capture-stage"><div className={`live-camera ${streaming ? "streaming" : ""}`}><video ref={videoRef} autoPlay playsInline muted />{!streaming && <div className="page-guide"><Camera size={44}/><strong>Kamera direkt im Browser</strong><span>Die Aufnahme landet automatisch auf deinem PC.</span></div>}{streaming && <div className="camera-guide"><span>Ganze Albumseite mit etwas Rand ausrichten</span></div>}{lastCapture && <img className="last-capture" src={lastCapture} alt="Letzte Aufnahme" />}</div>
       {!streaming ? <button className="capture-button" disabled={!activeAlbumId} onClick={startCamera}><Camera/><span>Kamera starten</span></button> : <button className={`shutter-button ${busy ? "busy" : ""}`} disabled={busy || !activeAlbumId} onClick={captureInBrowser} aria-label="Foto jetzt aufnehmen"><span /></button>}
-      {cameraError && <p className="camera-error">{cameraError}</p>}<label className="secondary-capture"><Images size={19}/> Aus Galerie wählen<input type="file" accept="image/*" multiple disabled={!activeAlbumId} onChange={e => receive([...e.target.files])}/></label>
+      {cameraError && <p className="camera-error">{cameraError}</p>}<label className="secondary-capture"><Images size={19}/> Aus Galerie wählen<input type="file" accept="image/jpeg,image/png" multiple disabled={!activeAlbumId || busy} onChange={e => receive([...e.target.files])}/></label>
     </section>{message && <div className="mobile-message"><Check size={18}/>{message}</div>}
     <section className="queue-card"><div><strong>Upload-Warteschlange</strong><span>{queue.length ? `${queue.length} ausstehend` : "Alles auf dem PC gespeichert"}</span></div>{queue.length > 0 && <button onClick={retry} disabled={busy}><RefreshCw size={18}/> Erneut versuchen</button>}{queue.map(item => <div className="queue-row" key={item.id}><CloudOff/><span><b>{item.file.name}</b><small>{item.status} · Versuch {item.attempts || 0}</small></span><button onClick={() => removeQueuedUpload(item.id).then(refreshQueue)}>×</button></div>)}</section>
   </main></div>;
@@ -97,13 +99,23 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   const sourceBox = item.payload?.bounding_box;
   const detections = sourceBox ? [{ bounding_box: sourceBox, photo_id: item.payload?.photo_id }] : (item.payload?.detections || []);
   const visiblePolygon = sanitizeReviewPolygon(item.payload?.visible_polygon || item.payload?.polygon);
-  const [quad, setQuad] = useState(() => initialQuad(item.payload?.warp_quad, visiblePolygon, sourceBox)); const [saving, setSaving] = useState(false);
+  const storedMeasurement = item.payload?.print_size_mm ?? item.payload?.segmentation_mask?.print_size_mm;
+  const measuredQuad = storedMeasurement && sanitizeReviewPolygon(item.payload?.segmentation_mask?.warp_quad || item.payload?.warp_quad);
+  const initialOuter = () => isValidQuad(measuredQuad) ? measuredQuad : initialQuad(item.payload?.warp_quad, visiblePolygon, sourceBox);
+  const [quad, setQuad] = useState(initialOuter); const [saving, setSaving] = useState(false);
+  const [measurementFields, setMeasurementFields] = useState(() => printSizeInputs(storedMeasurement));
   const [savedCropUrl, setSavedCropUrl] = useState(""); const [saveError, setSaveError] = useState("");
   const [magnifierEnabled, setMagnifierEnabled] = useState(true);
   const [magnifier, setMagnifier] = useState({ visible: false, x: 0, y: 0 });
-  useEffect(() => { setQuad(initialQuad(item.payload?.warp_quad, visiblePolygon, sourceBox)); setSavedCropUrl(""); setSaveError(""); }, [item.id]);
+  useEffect(() => {
+    setQuad(initialOuter());
+    setMeasurementFields(printSizeInputs(storedMeasurement));
+    setSavedCropUrl("");
+    setSaveError("");
+  }, [item.id]);
   const box = quadToBox(quad);
   const validQuad = isValidQuad(quad);
+  const { size, error: sizeError } = parsePrintSize(measurementFields);
   function moveCorner(event, cornerIndex) {
     if (!editable || !quad) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId);
     const svg = event.currentTarget.ownerSVGElement; const rect = svg.getBoundingClientRect();
@@ -120,12 +132,13 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
     addEventListener("pointermove", move); addEventListener("pointerup", up, { once: true });
   }
   async function save() {
-    if (!validQuad) return; setSaving(true); setSaveError("");
+    if (!validQuad || sizeError) return; setSaving(true); setSaveError("");
     try {
       await patchBoundingBox(item.payload.photo_id, box, {
         polygon: quad,
         visible_polygon: visiblePolygon || quad,
         warp_quad: quad,
+        print_size_mm: size,
         source: "manual_mobile_quad",
       });
       const nextUrl=`/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`;
@@ -138,7 +151,27 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   const lensPosition = value => ((0.5 - 3.6 * value) / (1 - 3.6)) * 100;
   const lensX=Math.max(20,Math.min(80,magnifier.x*100+(magnifier.x>0.5?-24:24)));
   const lensY=Math.max(20,Math.min(80,magnifier.y*100+(magnifier.y<0.3?25:-25)));
-  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g>{visiblePolygon && <polygon points={visiblePolygon.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9"/>}<polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>{editable && <><div className="quad-hint">Vier nummerierte Ecken frei verschieben · danach wird das Foto geradegerichtet</div><button className={`magnifier-toggle ${magnifierEnabled ? "active" : ""}`} onClick={()=>setMagnifierEnabled(value=>!value)}><ZoomIn size={18}/>{magnifierEnabled ? "Lupe beim Ziehen aktiv" : "Lupe einschalten"}</button><button className="save-crop" onClick={save} disabled={saving || !validQuad}><Save size={18}/>{saving ? "Richtet das Bild …" : "Viereck speichern & geraderichten"}</button>{saveError && <p className="crop-save-error">{saveError}</p>}{quad && <LiveCropPreview src={item.preview_url} quad={quad} savedCropUrl={savedCropUrl}/>}</>}</>;
+  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g>{visiblePolygon && <polygon points={visiblePolygon.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9"/>}<polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>
+    {editable && <>
+      <div className="quad-hint">Vier nummerierte Ecken frei verschieben · danach wird das Foto geradegerichtet</div>
+      <button className={`magnifier-toggle ${magnifierEnabled ? "active" : ""}`} onClick={()=>setMagnifierEnabled(value=>!value)}><ZoomIn size={18}/>{magnifierEnabled ? "Lupe beim Ziehen aktiv" : "Lupe einschalten"}</button>
+      <PrintSizeFields
+        value={measurementFields}
+        onChange={(fields) => {
+          setMeasurementFields(fields);
+          setSavedCropUrl("");
+          setSaveError("");
+        }}
+        disabled={saving}
+        error={sizeError}
+      />
+      <button className="save-crop" onClick={save} disabled={saving || !validQuad || Boolean(sizeError)}>
+        <Save size={18}/>{saving ? "Richtet das Bild …" : "Viereck speichern & geraderichten"}
+      </button>
+      {saveError && <p className="crop-save-error">{saveError}</p>}
+      {quad && <LiveCropPreview src={item.preview_url} quad={quad} savedCropUrl={savedCropUrl} measuredAspect={size ? size.width / size.height : null} />}
+    </>}
+  </>;
 }
 
 function sanitizeReviewPolygon(polygon) {
@@ -209,12 +242,18 @@ function drawMappedTriangle(context, image, source, destination) {
   context.setTransform(a,b,c,d,e,f); context.drawImage(image,0,0); context.restore();
 }
 
-function drawQuadPreview(canvas, image, quad) {
-  const source=quad.map(point=>({x:point.x*image.naturalWidth,y:point.y*image.naturalHeight}));
+function drawQuadPreview(canvas, image, quad, measuredAspect) {
+  const [first, second, third] = quad;
+  const clockwise = (second.x - first.x) * (third.y - first.y) - (second.y - first.y) * (third.x - first.x) > 0;
+  const ordered = clockwise ? quad : [quad[1], quad[0], quad[3], quad[2]];
+  const source = ordered.map((point) => ({ x: point.x * image.naturalWidth, y: point.y * image.naturalHeight }));
   const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
   const rawWidth=Math.max(distance(source[0],source[1]),distance(source[3],source[2]),1);
   const rawHeight=Math.max(distance(source[0],source[3]),distance(source[1],source[2]),1);
-  const width=Math.min(1000,Math.max(240,Math.round(rawWidth))); const height=Math.max(1,Math.round(width*rawHeight/rawWidth));
+  const widthLimit = measuredAspect ? Math.min(1000, Math.floor(1000 * measuredAspect)) : 1000;
+  const width = Math.min(widthLimit, Math.max(240, Math.round(rawWidth)));
+  const aspect = measuredAspect || rawWidth / rawHeight;
+  const height = Math.max(1, Math.round(width / aspect));
   canvas.width=width; canvas.height=height;
   const destination=[{x:0,y:0},{x:width,y:0},{x:width,y:height},{x:0,y:height}];
   const context=canvas.getContext("2d",{alpha:false}); context.fillStyle="#071b18"; context.fillRect(0,0,width,height);
@@ -222,14 +261,16 @@ function drawQuadPreview(canvas, image, quad) {
   drawMappedTriangle(context,image,[source[0],source[2],source[3]],[destination[0],destination[2],destination[3]]);
 }
 
-function LiveCropPreview({ src, quad, savedCropUrl }) {
+function LiveCropPreview({ src, quad, savedCropUrl, measuredAspect }) {
   const canvasRef = useRef(null); const [image,setImage]=useState(null);
   useEffect(() => {
     let cancelled = false; const nextImage = new Image();
     nextImage.onload = () => { if(!cancelled) setImage(nextImage); };
     nextImage.src=src; return () => { cancelled=true; };
   }, [src]);
-  useEffect(() => { if(image && canvasRef.current && isValidQuad(quad)) drawQuadPreview(canvasRef.current,image,quad); },[image,quad]);
+  useEffect(() => {
+    if (image && canvasRef.current && isValidQuad(quad)) drawQuadPreview(canvasRef.current, image, quad, measuredAspect);
+  }, [image, quad, measuredAspect, savedCropUrl]);
   return <section className={`live-crop-preview ${savedCropUrl ? "rectified" : ""}`}><header><ZoomIn size={17}/><div><strong>{savedCropUrl ? "Gerichteter Ausschnitt" : "Live-Ausschnitt"}</strong><span>{savedCropUrl ? "Perspektive wurde aus den vier Ecken korrigiert" : "Vorschau folgt allen vier Ecken live"}</span></div></header>{savedCropUrl ? <img src={savedCropUrl} alt="Perspektivisch gerichteter Ausschnitt"/> : <canvas ref={canvasRef}/>}</section>;
 }
 
@@ -276,10 +317,89 @@ function EnhancementReview({ albumId, goHome }) {
   </main></div>;
 }
 
+function MobilePhotoDetail({ photo, goBack }) {
+  const [detail, setDetail] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    getPhoto(photo.id).then((result) => {
+      if (active) setDetail(result);
+    }).catch((failure) => {
+      if (active) setError(failure.message || "Das Foto konnte nicht geladen werden.");
+    });
+    return () => { active = false; };
+  }, [photo.id]);
+
+  const legacyUrl = detail?.urls?.original || photo.image_url;
+  return (
+    <div className="mobile-shell">
+      <MobileHeader title="Foto" onBack={goBack} />
+      <main className="mobile-content">
+        {error && <p role="alert">{error}</p>}
+        {!detail && !error && <p role="status">Foto wird geladen …</p>}
+        {detail && (getCropModes(detail) ? <CropVariants photo={detail} /> : (
+          <section className="crop-variants">
+            <img className="crop-variant-image" src={legacyUrl} alt="Ausgeschnittenes Foto" />
+            <a className="crop-download" href={legacyUrl} download={`photo-${photo.id}.jpg`}>Foto herunterladen</a>
+          </section>
+        ))}
+      </main>
+    </div>
+  );
+}
+
 function BatchGallery({ albums, goHome }) {
   const [batches, setBatches] = useState([]); const [loading, setLoading] = useState(true);
-  useEffect(() => { Promise.all(albums.map(async album => ({ album, pages: await listPages(album.id) }))).then(setBatches).finally(() => setLoading(false)); }, [albums]);
-  return <div className="mobile-shell"><MobileHeader title="Bilder nach Batch" onBack={goHome}/><main className="mobile-content"><div className="gallery-heading"><div><span>LOKALE ABLAGE</span><h2>Aufgenommene Seiten</h2></div><strong>{batches.reduce((sum,b)=>sum+b.pages.length,0)}</strong></div>{loading && <div className="gallery-empty">Bilder werden geladen …</div>}<div className="batch-gallery">{batches.map(({album,pages}) => <section className="batch-section" key={album.id}><header><div><strong>{album.name}</strong><span>{pages.length} {pages.length === 1 ? "Bild" : "Bilder"}</span></div><small>{album.status}</small></header>{pages.length ? <div className="batch-images">{pages.map((page,index) => <a href={`/api/v1/pages/${page.id}/image`} target="_blank" rel="noreferrer" key={page.id}><img src={`/api/v1/pages/${page.id}/image`} loading="lazy" alt={`${album.name}, Seite ${index+1}`}/><span>{index+1}</span></a>)}</div> : <p>Noch keine Aufnahmen.</p>}</section>)}</div></main></div>;
+  const [error, setError] = useState("");
+  const [activePhoto, setActivePhoto] = useState(null);
+  useEffect(() => {
+    let active = true;
+    Promise.all(albums.map(async (album) => {
+      const [pages, photos] = await Promise.all([listPages(album.id), listPhotos(album.id)]);
+      return { album, pages, crops: photos.filter(hasPhotoCrop) };
+    })).then((nextBatches) => {
+      if (active) {
+        setBatches(nextBatches);
+        setError("");
+      }
+    }).catch(() => {
+      if (active) setError("Bilder konnten nicht geladen werden.");
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => { active = false; };
+  }, [albums]);
+
+  if (activePhoto) return <MobilePhotoDetail key={activePhoto.id} photo={activePhoto} goBack={() => setActivePhoto(null)} />;
+
+  return <div className="mobile-shell">
+    <MobileHeader title="Bilder nach Batch" onBack={goHome} />
+    <main className="mobile-content">
+      <div className="gallery-heading"><h2>Albumseiten und Fotos</h2></div>
+      {loading && <div className="gallery-empty">Bilder werden geladen …</div>}
+      {error && <p role="alert">{error}</p>}
+      <div className="batch-gallery">
+        {batches.map(({ album, pages, crops }) => <section className="batch-section" key={album.id}>
+          <header><div><strong>{album.name}</strong><span>{pages.length} Seiten · {crops.length} Fotos</span></div></header>
+          {crops.length > 0 && <div className="batch-images batch-crops">
+            {crops.map((photo, index) => {
+              const url = photo.image_url;
+              return <button type="button" key={photo.id} onClick={() => setActivePhoto(photo)}>
+                <img src={url} loading="lazy" alt={`Ausgeschnittenes Foto ${index + 1}`} />
+              </button>;
+            })}
+          </div>}
+          {album.status === "processing" && <p>Fotos werden ausgeschnitten …</p>}
+          {pages.length ? <div className="batch-images">
+            {pages.map((page, index) => <a href={`/api/v1/pages/${page.id}/image`} target="_blank" rel="noreferrer" key={page.id}>
+              <img src={`/api/v1/pages/${page.id}/image`} loading="lazy" alt={`${album.name}, Seite ${index + 1}`} />
+              <span>{index + 1}</span>
+            </a>)}
+          </div> : <p>Noch keine Aufnahmen.</p>}
+        </section>)}
+      </div>
+    </main>
+  </div>;
 }
 
 function Progress({ albums, goHome }) {
@@ -293,6 +413,12 @@ export default function MobileApp() {
   const [albums,setAlbums] = useState([]); const [albumId,setAlbumId] = useState(localStorage.getItem("phosca-batch") || "");
   const reload = useCallback(async () => { const next = await listAlbums(); setAlbums(next); if (!albumId && next[0]) setAlbumId(next[0].id); }, [albumId]);
   useEffect(() => { reload(); }, [reload]); useEffect(() => { if(albumId) localStorage.setItem("phosca-batch",albumId); },[albumId]);
+  const processing = albums.some((album) => album.status === "processing");
+  useEffect(() => {
+    if (view !== "batches" || !processing) return;
+    const timer = window.setInterval(() => reload().catch(() => {}), 2500);
+    return () => window.clearInterval(timer);
+  }, [processing, reload, view]);
   const nav = v => { setView(v); history.replaceState({},"", v === "home" ? "/mobile" : `/mobile/${v}`); };
   if(view === "capture") return <Capture albums={albums} activeAlbumId={albumId} setActiveAlbumId={setAlbumId} reload={reload} goHome={()=>nav("home")}/>;
   if(view === "batches") return <BatchGallery albums={albums} goHome={()=>nav("home")}/>;

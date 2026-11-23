@@ -3,6 +3,7 @@ import {
   Aperture,
   Camera,
   Check,
+  Download,
   FileImage,
   FolderPlus,
   GalleryHorizontal,
@@ -17,7 +18,6 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  analyzeAlbum,
   analyzeAlbumNow,
   createAlbum,
   deleteSegmentationTrainingImage,
@@ -26,6 +26,7 @@ import {
   getPhoto,
   getReviewQueue,
   getSegmentationTrainingLabels,
+  hasPhotoCrop,
   listAlbums,
   listPages,
   listPhotos,
@@ -42,6 +43,8 @@ import {
 } from "./api.js";
 import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
+import { CropVariants, cropModeLabels, getCropModes } from "./CropVariants.jsx";
+import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
 const tabs = [
   { id: "analyze", label: "Analyze", icon: Play },
@@ -52,6 +55,10 @@ const tabs = [
   { id: "gallery", label: "Gallery", icon: Aperture },
   { id: "capture", label: "Capture", icon: Camera },
 ];
+
+function pageAnalysisFinished(status) {
+  return status === "completed" || status === "review_needed" || status === "failed";
+}
 
 function StatusBadge({ status }) {
   const tone = {
@@ -81,7 +88,7 @@ function EmptyState({ label }) {
 }
 
 function variantLabel(name) {
-  return name.replaceAll("_", " ");
+  return cropModeLabels[name] || name.replaceAll("_", " ");
 }
 
 function availableVariantEntries(detail) {
@@ -90,7 +97,7 @@ function availableVariantEntries(detail) {
 
 function comparisonUrls(detail) {
   const before = detail?.urls?.original || detail?.urls?.perspective_corrected || detail?.urls?.enhanced;
-  const after = detail?.urls?.enhanced || detail?.urls?.premium || before;
+  const after = detail?.urls?.conservative_enhanced || detail?.urls?.enhanced || detail?.urls?.premium || before;
   return { before, after };
 }
 
@@ -102,8 +109,11 @@ function fileSizeLabel(bytes) {
 
 function PhotoCompareModal({ detail, imageSrc, title = "Photo", onClose }) {
   const [slider, setSlider] = useState(50);
+  const [compareEnhancement, setCompareEnhancement] = useState(false);
   const { before, after } = comparisonUrls(detail);
   const canCompare = Boolean(before && after && before !== after);
+  const cropModes = getCropModes(detail);
+  const showComparison = canCompare && (!cropModes || compareEnhancement);
   const displaySrc = imageSrc || after || before;
 
   useEffect(() => {
@@ -118,18 +128,25 @@ function PhotoCompareModal({ detail, imageSrc, title = "Photo", onClose }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  if (!displaySrc && !canCompare) return null;
+  if (!displaySrc && !canCompare && !cropModes) return null;
 
   return (
     <div className="fullscreen-overlay" onClick={onClose}>
-      <div className="photo-modal" onClick={(event) => event.stopPropagation()}>
+      <div className="photo-modal" role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
         <div className="photo-modal-header">
           <strong>{title}</strong>
-          <button className="icon-button" type="button" onClick={onClose} title="Close">
-            <X size={16} />
-          </button>
+          <div className="photo-modal-actions">
+            {cropModes && canCompare && (
+              <button className="crop-comparison-toggle" type="button" aria-pressed={showComparison} onClick={() => setCompareEnhancement((active) => !active)}>
+                {showComparison ? "Fotoausschnitt anzeigen" : "Verbesserung vergleichen"}
+              </button>
+            )}
+            <button className="icon-button" type="button" onClick={onClose} title="Close">
+              <X size={16} />
+            </button>
+          </div>
         </div>
-        {canCompare ? (
+        {showComparison && (
           <div className="compare-viewer" style={{ "--compare-position": `${slider}%` }}>
             <img className="compare-image compare-before" src={before} alt="Before enhancement" />
             <div className="compare-after-wrap">
@@ -139,10 +156,10 @@ function PhotoCompareModal({ detail, imageSrc, title = "Photo", onClose }) {
             <span className="compare-label compare-label-after">After</span>
             <span className="compare-divider" />
           </div>
-        ) : (
-          <img className="single-photo-preview" src={displaySrc} alt="" />
         )}
-        {canCompare && (
+        {cropModes && <CropVariants key={detail.id} photo={detail} hidden={showComparison} />}
+        {!cropModes && !showComparison && <img className="single-photo-preview" src={displaySrc} alt="" />}
+        {showComparison && (
           <label className="compare-control">
             <span>Before</span>
             <input
@@ -169,6 +186,9 @@ function OrderedAnalyzer({ onAlbumReady, onOpenPhoto = () => {} }) {
   const [message, setMessage] = useState("");
   const [previewSrc, setPreviewSrc] = useState(null);
   const itemsRef = useRef([]);
+  const analysisRef = useRef(null);
+  const hasPendingUpload = items.some((item) => !item.pageId);
+  const canExtract = items.some((item) => !item.page || item.analysisStatus === "failed");
 
   useEffect(() => {
     itemsRef.current = items;
@@ -176,6 +196,7 @@ function OrderedAnalyzer({ onAlbumReady, onOpenPhoto = () => {} }) {
 
   useEffect(() => {
     return () => {
+      analysisRef.current?.abort();
       itemsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
     };
   }, []);
@@ -193,7 +214,6 @@ function OrderedAnalyzer({ onAlbumReady, onOpenPhoto = () => {} }) {
       page: null,
       photos: [],
       ocrRows: [],
-      output: null,
       error: null,
     }));
     setItems((current) => [...current, ...nextItems]);
@@ -224,92 +244,77 @@ function OrderedAnalyzer({ onAlbumReady, onOpenPhoto = () => {} }) {
       description: "Created from the local analyze workspace.",
     });
     setAlbumId(album.id);
-    onAlbumReady?.(album.id);
     return album.id;
   }
 
-  async function uploadPending(existingAlbumId = null, sourceItems = items) {
-    const targetAlbumId = existingAlbumId || (await ensureAlbum());
-    const pending = sourceItems.filter((item) => !item.pageId);
-    if (pending.length === 0) return { targetAlbumId, orderedItems: sourceItems };
+  async function uploadPending(targetAlbumId) {
+    const pending = items.filter((item) => !item.pageId);
+    if (pending.length === 0) return { orderedItems: items, analysisQueued: false };
 
     setPhase("Uploading");
     setItems((current) =>
-      current.map((item) => (pending.some((pendingItem) => pendingItem.clientId === item.clientId) ? { ...item, uploadStatus: "uploading" } : item))
+      current.map((item) => (item.pageId ? item : { ...item, uploadStatus: "uploading", error: null }))
     );
     const response = await uploadFiles(targetAlbumId, pending.map((item) => item.file));
     const pageByClientId = new Map(pending.map((item, index) => [item.clientId, response.pages[index]]));
-    const orderedItems = sourceItems.map((item) => {
+    const orderedItems = items.map((item) => {
       const page = pageByClientId.get(item.clientId);
       if (!page) return item;
-      return { ...item, pageId: page.page_id, uploadStatus: "uploaded", analysisStatus: "ready" };
+      return { ...item, pageId: page.page_id, uploadStatus: "uploaded", analysisStatus: page.status };
     });
     setItems(orderedItems);
-    return { targetAlbumId, orderedItems };
-  }
-
-  async function uploadOnly() {
-    if (items.length === 0 || busy) return;
-    setBusy(true);
-    setMessage("");
-    try {
-      await uploadPending();
-      setPhase("Uploaded");
-      setMessage("Upload complete.");
-    } catch (error) {
-      setMessage(error.message || "Upload failed.");
-      setItems((current) => current.map((item) => (item.uploadStatus === "uploading" ? { ...item, uploadStatus: "selected" } : item)));
-    } finally {
-      setBusy(false);
-    }
+    return { orderedItems, analysisQueued: response.analysis_queued };
   }
 
   async function analyzeInOrder() {
-    if (items.length === 0 || busy) return;
+    if (!canExtract || busy) return;
+    const controller = new AbortController();
+    analysisRef.current = controller;
     setBusy(true);
     setMessage("");
     try {
       const targetAlbumId = await ensureAlbum();
-      const uploaded = await uploadPending(targetAlbumId);
-      const orderedItems = uploaded.orderedItems;
-      const pageIds = orderedItems.map((item) => item.pageId).filter(Boolean);
-      if (pageIds.length === 0) return;
+      const { orderedItems, analysisQueued } = await uploadPending(targetAlbumId);
+      if (controller.signal.aborted) return;
+      onAlbumReady(targetAlbumId);
+      const targets = orderedItems.filter((item) => item.pageId && (!item.page || item.analysisStatus === "failed"));
+      const pageIds = new Set(targets.map((item) => item.pageId));
+      const retryIds = new Set(targets.filter((item) => item.analysisStatus === "failed"
+        || (analysisQueued === false && !pageAnalysisFinished(item.analysisStatus))).map((item) => item.pageId));
 
       setPhase("Analyzing");
       setItems((current) =>
-        current.map((item) => (item.pageId ? { ...item, analysisStatus: "analyzing", error: null, output: null } : item))
+        current.map((item) => (pageIds.has(item.pageId) ? { ...item, analysisStatus: "analyzing", error: null, page: null } : item))
       );
-      const result = await analyzeAlbumNow(targetAlbumId, pageIds);
-      const [latestPages, latestPhotos, ocrResponses] = await Promise.all([
-        listPages(targetAlbumId),
-        listPhotos(targetAlbumId),
-        Promise.all(pageIds.map((pageId) => getPageOcr(pageId).catch(() => []))),
-      ]);
+      if (retryIds.size > 0) await analyzeAlbumNow(targetAlbumId, [...retryIds]);
 
-      const pageById = new Map(latestPages.map((page) => [page.id, page]));
-      const resultByPageId = new Map((result.pages || []).map((pageResult) => [pageResult.page_id, pageResult]));
-      const ocrByPageId = new Map(pageIds.map((pageId, index) => [pageId, ocrResponses[index]]));
-
-      setItems(
-        orderedItems.map((item) => {
-          if (!item.pageId) return item;
-          const pageResult = resultByPageId.get(item.pageId);
-          return {
-            ...item,
-            uploadStatus: "uploaded",
-            analysisStatus: pageResult?.status || "completed",
-            page: pageById.get(item.pageId) || null,
-            photos: latestPhotos.filter((photo) => photo.page_id === item.pageId),
-            ocrRows: ocrByPageId.get(item.pageId) || [],
-            output: pageResult || null,
-            error: pageResult?.error || null,
-          };
-        })
-      );
-      await onAlbumReady?.(targetAlbumId);
+      const pending = new Set(pageIds);
+      while (pending.size > 0) {
+        const latestPages = await listPages(targetAlbumId, controller.signal);
+        const finished = latestPages.filter((page) => pending.has(page.id) && pageAnalysisFinished(page.status));
+        if (finished.length > 0) {
+          const [photos, ocrResponses] = await Promise.all([
+            listPhotos(targetAlbumId),
+            Promise.all(finished.map((page) => getPageOcr(page.id).catch(() => []))),
+          ]);
+          if (controller.signal.aborted) return;
+          const crops = photos.filter(hasPhotoCrop);
+          const results = new Map(finished.map((page, index) => [page.id, {
+            analysisStatus: page.status,
+            page,
+            photos: crops.filter((photo) => photo.page_id === page.id),
+            ocrRows: ocrResponses[index],
+            error: page.status === "failed" ? page.error_message || "Photo extraction failed." : null,
+          }]));
+          setItems((current) => current.map((item) => ({ ...item, ...results.get(item.pageId) })));
+          finished.forEach((page) => pending.delete(page.id));
+        }
+        if (pending.size > 0) await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      }
       setPhase("Complete");
-      setMessage("Analysis complete.");
     } catch (error) {
+      if (controller.signal.aborted) return;
+      setPhase("Failed");
       setMessage(error.message || "Analysis failed.");
       setItems((current) =>
         current.map((item) =>
@@ -333,18 +338,17 @@ function OrderedAnalyzer({ onAlbumReady, onOpenPhoto = () => {} }) {
             <label className="icon-button text-button file-pick">
               <Upload size={16} />
               Select
-              <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => addFiles(event.target.files)} />
+              <input type="file" accept="image/jpeg,image/png" multiple disabled={busy} onChange={(event) => {
+                addFiles(event.target.files);
+                event.target.value = "";
+              }} />
             </label>
           </div>
         </div>
         <div className="analyzer-actions">
-          <button className="icon-button text-button" type="button" disabled={busy || items.length === 0} onClick={uploadOnly}>
-            {busy && phase === "Uploading" ? <Loader2 className="spin-icon" size={16} /> : <Upload size={16} />}
-            Upload
-          </button>
-          <button className="primary-button" type="button" disabled={busy || items.length === 0} onClick={analyzeInOrder}>
-            {busy && phase === "Analyzing" ? <Loader2 className="spin-icon" size={16} /> : <Play size={16} />}
-            Analyze
+          <button className="primary-button" type="button" disabled={busy || !canExtract} onClick={analyzeInOrder}>
+            {busy ? <Loader2 className="spin-icon" size={16} /> : <Upload size={16} />}
+            {hasPendingUpload || items.length === 0 ? "Upload & extract" : "Retry extraction"}
           </button>
           <button className="icon-button" type="button" disabled={busy || items.length === 0} onClick={clearRun} title="Clear run">
             <RefreshCw size={16} />
@@ -393,7 +397,6 @@ function OrderedAnalyzer({ onAlbumReady, onOpenPhoto = () => {} }) {
                   <span className="order-index">{index + 1}</span>
                   <div>
                     <strong>{item.name}</strong>
-                    <span>{item.page?.status || item.analysisStatus}</span>
                   </div>
                   <StatusBadge status={item.error ? "failed" : item.analysisStatus} />
                 </div>
@@ -404,14 +407,17 @@ function OrderedAnalyzer({ onAlbumReady, onOpenPhoto = () => {} }) {
                   </div>
                 )}
                 {item.error && <p className="error-text">{item.error}</p>}
-                {!item.output && !item.error && item.analysisStatus !== "analyzing" && <p className="muted-text">Waiting for analysis.</p>}
-                {item.output && !item.error && (
+                {!item.page && !item.error && item.analysisStatus !== "analyzing" && <p className="muted-text">Waiting for upload.</p>}
+                {item.page && (
                   <div className="output-details">
                     <div className="stats-row">
                       <span>{item.photos.length} photos</span>
                       <span>{item.ocrRows.length} OCR rows</span>
                       <span>{item.page?.blur_score ? `Blur ${item.page.blur_score.toFixed(1)}` : "Blur pending"}</span>
                     </div>
+                    {item.page?.status === "review_needed" && item.page.error_message && (
+                      <p className="muted-text">{item.page.error_message}</p>
+                    )}
                     {item.ocrRows.length > 0 && (
                       <div className="ocr-output">
                         {item.ocrRows.map((row) => (
@@ -421,15 +427,26 @@ function OrderedAnalyzer({ onAlbumReady, onOpenPhoto = () => {} }) {
                     )}
                     {item.photos.length > 0 && (
                       <div className="mini-photo-grid">
-                        {item.photos.map((photo) => (
-                          <img
-                            key={photo.id}
-                            src={`/api/v1/photos/${photo.id}/image`}
-                            alt=""
-                            style={{ cursor: "pointer" }}
-                            onClick={() => onOpenPhoto(photo)}
-                          />
-                        ))}
+                        {item.photos.map((photo, index) => {
+                          const imageUrl = photo.image_url;
+                          const cropModes = getCropModes(photo);
+                          const downloadUrl = !cropModes ? imageUrl : cropModes.full_print?.status === "ready"
+                            ? `/api/v1/photos/${photo.id}/image?variant=full_print` : null;
+                          return (
+                            <div className="mini-photo-card" key={photo.id}>
+                              <button type="button" className="variant-preview-button" onClick={() => onOpenPhoto(photo)}>
+                                <img src={imageUrl} alt={`Open extracted photo ${index + 1}`} />
+                              </button>
+                              {downloadUrl && (
+                                <a className="icon-button text-button" href={downloadUrl} download={`photo-${photo.id}.jpg`}
+                                  aria-label={`Download extracted photo ${index + 1}`}>
+                                  <Download size={14} />
+                                  Download
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -448,6 +465,7 @@ function AlbumList({ albums, selectedAlbumId, pages = [], photos = [], onOpen, o
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const selectedAlbum = albums.find((album) => album.id === selectedAlbumId) || null;
+  const crops = photos.filter(hasPhotoCrop);
 
   async function submit(event) {
     event.preventDefault();
@@ -513,11 +531,11 @@ function AlbumList({ albums, selectedAlbumId, pages = [], photos = [], onOpen, o
                 ))}
               </div>
             )}
-            {photos.length > 0 ? (
+            {crops.length > 0 ? (
               <div className="album-photo-grid">
-                {photos.map((photo) => (
+                {crops.map((photo) => (
                   <button type="button" className="photo-tile" key={photo.id} onClick={() => onOpenPhoto(photo)}>
-                    <img src={`/api/v1/photos/${photo.id}/image`} alt="" />
+                    <img src={photo.image_url} alt="" />
                     <div>
                       <StatusBadge status={photo.status} />
                       <span>{photo.segmentation_confidence ? `${Math.round(photo.segmentation_confidence * 100)}%` : "manual"}</span>
@@ -526,7 +544,7 @@ function AlbumList({ albums, selectedAlbumId, pages = [], photos = [], onOpen, o
                 ))}
               </div>
             ) : (
-              <EmptyState label="No extracted photos in this album yet." />
+              <EmptyState label={selectedAlbum.status === "processing" ? "Extracting photos…" : "No extracted photos in this album yet."} />
             )}
           </div>
         )}
@@ -555,7 +573,7 @@ function AlbumList({ albums, selectedAlbumId, pages = [], photos = [], onOpen, o
   );
 }
 
-function PageGrid({ albumId, pages, onAnalyze, onUpload, onSelectPage, selectedPageId }) {
+function PageGrid({ albumId, pages, onAnalyze, onUpload, onSelectPage, selectedPageId, analyzing, processing }) {
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
@@ -565,9 +583,9 @@ function PageGrid({ albumId, pages, onAnalyze, onUpload, onSelectPage, selectedP
     setUploading(true);
     setMessage("");
     try {
-      await onUpload(files);
+      const analysisQueued = await onUpload(files);
       setFiles([]);
-      setMessage("Upload complete.");
+      setMessage(analysisQueued ? "Upload complete. Extracting photos automatically." : "Upload complete.");
     } catch (error) {
       setMessage(error.message || "Upload failed.");
     } finally {
@@ -580,10 +598,13 @@ function PageGrid({ albumId, pages, onAnalyze, onUpload, onSelectPage, selectedP
       <section className="work-surface">
         <div className="section-title">
           <h2>Page Grid</h2>
-          <button className="icon-button text-button" type="button" onClick={() => onAnalyze()}>
-            <Play size={16} />
-            Analyze
-          </button>
+          <div className="toolbar-row">
+            {processing && <StatusBadge status="processing" />}
+            <button className="icon-button text-button" type="button" disabled={analyzing || pages.every((page) => page.status === "completed")} onClick={onAnalyze}>
+              {analyzing ? <Loader2 className="spin-icon" size={16} /> : <Play size={16} />}
+              Extract photos
+            </button>
+          </div>
         </div>
         {!albumId ? <EmptyState label="Select an album first." /> : null}
         {albumId && pages.length === 0 ? <EmptyState label="No uploaded pages." /> : null}
@@ -710,18 +731,35 @@ function boundingBoxFromPolygon(polygon) {
 
 function draftShapeFromPhoto(photo) {
   const visiblePolygon = polygonFromPhoto(photo);
+  const cropModes = photo.crop_modes || getCropModes(photo);
+  const printSize = photo.segmentation_mask?.print_size_mm ?? photo.print_size_mm;
+  const measuredQuad = printSize && sanitizePolygon(photo.segmentation_mask?.warp_quad);
   const serverQuad = sanitizePolygon(photo.warp_quad)
-    || sanitizePolygon(photo.segmentation_mask?.warp_quad)
-    || sanitizePolygon(photo.correction?.warp_quad);
-  const warpQuad = cyclicQuad(serverQuad?.length === 4 ? serverQuad : [])
+    || sanitizePolygon(cropModes?.full_print?.warp_quad)
+    || sanitizePolygon(photo.correction?.warp_quad)
+    || sanitizePolygon(photo.enhancement_applied?.correction?.warp_quad)
+    || sanitizePolygon(photo.segmentation_mask?.warp_quad);
+  const warpQuad = measuredQuad?.length === 4 ? measuredQuad : (
+    cyclicQuad(serverQuad?.length === 4 ? serverQuad : [])
     || (visiblePolygon.length === 4 ? cyclicQuad(visiblePolygon) : minimumAreaQuad(visiblePolygon))
-    || boxToPolygon(photo.bounding_box);
+    || boxToPolygon(photo.bounding_box)
+  );
+  const imageQuad = cyclicQuad(sanitizePolygon(photo.image_quad)
+    || sanitizePolygon(photo.segmentation_mask?.image_quad)
+    || sanitizePolygon(cropModes?.image_only?.warp_quad));
   return {
     visiblePolygon,
     warpQuad,
-    visibleFollowsWarp: visiblePolygon.length === 4,
+    imageQuad,
+    visibleFollowsWarp: !photo.visible_polygon && !photo.segmentation_mask?.visible_polygon && visiblePolygon.length === 4,
     boundingBox: boundingBoxFromPolygon(warpQuad),
+    printSizeFields: printSizeInputs(printSize),
   };
+}
+
+function insetQuad(quad) {
+  const center = quad.reduce((sum, point) => ({ x: sum.x + point.x / 4, y: sum.y + point.y / 4 }), { x: 0, y: 0 });
+  return quad.map((point) => ({ x: point.x * 0.88 + center.x * 0.12, y: point.y * 0.88 + center.y * 0.12 }));
 }
 
 function pointInPolygon(point, polygon) {
@@ -737,11 +775,12 @@ function pointInPolygon(point, polygon) {
   return inside;
 }
 
-function maskFromShape(shape) {
+function maskFromShape(shape, imageQuad = null) {
   return {
     polygon: shape.warpQuad.map((point) => ({ x: clampUnit(point.x), y: clampUnit(point.y) })),
     visible_polygon: shape.visiblePolygon.map((point) => ({ x: clampUnit(point.x), y: clampUnit(point.y) })),
     warp_quad: shape.warpQuad.map((point) => ({ x: clampUnit(point.x), y: clampUnit(point.y) })),
+    ...(imageQuad ? { image_quad: imageQuad } : {}),
     source: "manual_quad",
   };
 }
@@ -1057,9 +1096,9 @@ function TrainingAnnotationView() {
         const payload = await getSegmentationTrainingLabels(selectedImage.name);
         let nextPolygons = (payload.polygons || []).map(normalizeTrainingPolygon).filter(Boolean);
         let loadedSuggestions = false;
-        if (nextPolygons.length === 0) {
-          const detected = await detectSegmentationTrainingLabels(selectedImage.name);
-          nextPolygons = (detected.polygons || []).map(normalizeTrainingPolygon).filter(Boolean);
+        if (!payload.image.has_label && nextPolygons.length === 0) {
+          const suggestions = payload.suggestions ?? (await detectSegmentationTrainingLabels(selectedImage.name)).polygons;
+          nextPolygons = (suggestions || []).map(normalizeTrainingPolygon).filter(Boolean);
           loadedSuggestions = nextPolygons.length > 0;
         }
         if (!cancelled) {
@@ -1306,9 +1345,17 @@ function TrainingAnnotationView() {
 
 function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto }) {
   const canvasRef = useRef(null);
-  const imageRef = useRef(null);
+  const [pageImage, setPageImage] = useState(null);
   const [draftShapes, setDraftShapes] = useState({});
+  const [editMode, setEditMode] = useState("full_print");
+  const [saveState, setSaveState] = useState(null);
   const dragRef = useRef(null);
+  const editingImage = editMode === "image_only";
+  const pageId = page?.id;
+  const selected = photos.find((photo) => photo.id === selectedPhotoId);
+  const selectedShape = selected && (draftShapes[selected.id] || draftShapeFromPhoto(selected));
+  const measurement = selectedShape && parsePrintSize(selectedShape.printSizeFields);
+  const sizeError = editingImage ? "" : measurement?.error;
 
   useEffect(() => {
     setDraftShapes(Object.fromEntries(photos.map((photo) => [photo.id, draftShapeFromPhoto(photo)])));
@@ -1316,8 +1363,8 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
-    const image = imageRef.current;
-    if (!canvas || !image || !page) return;
+    if (!canvas || !pageImage || pageImage.pageId !== pageId) return;
+    const { image } = pageImage;
     const context = canvas.getContext("2d");
     const maxWidth = canvas.parentElement?.clientWidth || 720;
     const ratio = image.naturalHeight / image.naturalWidth || 0.75;
@@ -1328,7 +1375,8 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
     photos.forEach((photo) => {
       const shape = draftShapes[photo.id] || draftShapeFromPhoto(photo);
       const visiblePoints = shape.visiblePolygon.map((point) => ({ x: point.x * canvas.width, y: point.y * canvas.height }));
-      const points = shape.warpQuad.map((point) => ({ x: point.x * canvas.width, y: point.y * canvas.height }));
+      const outer = editingImage ? draftShapeFromPhoto(photo).warpQuad : shape.warpQuad;
+      const points = outer.map((point) => ({ x: point.x * canvas.width, y: point.y * canvas.height }));
       if (visiblePoints.length >= 4) {
         context.strokeStyle = "rgba(245, 158, 11, 0.9)";
         context.lineWidth = 2;
@@ -1349,31 +1397,57 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
       });
       context.closePath();
       context.stroke();
-      if (photo.id === selectedPhotoId) {
+      if (photo.id === selectedPhotoId && !editingImage) {
         context.fillStyle = "rgba(15, 118, 110, 0.1)";
         context.fill();
       }
+      if (editingImage && photo.id !== selectedPhotoId) return;
+      const handles = editingImage
+        ? (shape.imageQuad || insetQuad(outer)).map((point) => ({ x: point.x * canvas.width, y: point.y * canvas.height }))
+        : points;
+      if (editingImage) {
+        context.strokeStyle = "#2563eb";
+        context.beginPath();
+        context.moveTo(handles[0].x, handles[0].y);
+        handles.slice(1).forEach((point) => context.lineTo(point.x, point.y));
+        context.closePath();
+        context.stroke();
+      }
       context.fillStyle = "#ffffff";
-      points.forEach((point) => {
+      handles.forEach((point, index) => {
         context.fillRect(point.x - 5, point.y - 5, 10, 10);
         context.strokeRect(point.x - 5, point.y - 5, 10, 10);
+        if (!editingImage && photo.id === selectedPhotoId) {
+          context.save();
+          const x = point.x > canvas.width - 24 ? point.x - 13 : point.x + 13;
+          const y = point.y < 16 ? point.y + 14 : point.y - 9;
+          context.font = "bold 14px Inter, sans-serif";
+          context.textAlign = "center";
+          context.textBaseline = "middle";
+          context.strokeStyle = "#ffffff";
+          context.lineWidth = 4;
+          context.strokeText(String(index + 1), x, y);
+          context.fillStyle = "#134e4a";
+          context.fillText(String(index + 1), x, y);
+          context.restore();
+        }
       });
     });
-  }, [draftShapes, page, photos, selectedPhotoId]);
+  }, [draftShapes, editingImage, pageId, pageImage, photos, selectedPhotoId]);
 
   useEffect(() => {
     draw();
+    window.addEventListener("resize", draw);
+    return () => window.removeEventListener("resize", draw);
   }, [draw]);
 
   useEffect(() => {
-    if (!page) return;
+    if (!pageId) return;
     const image = new Image();
-    image.onload = () => {
-      imageRef.current = image;
-      draw();
-    };
-    image.src = `/api/v1/pages/${page.id}/image`;
-  }, [draw, page]);
+    image.onload = () => setPageImage({ pageId, image });
+    image.src = `/api/v1/pages/${pageId}/image`;
+    return () => { image.onload = null; };
+  }, [pageId]);
 
   function pointToBox(event) {
     const rect = canvasRef.current.getBoundingClientRect();
@@ -1381,13 +1455,19 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
   }
 
   function onPointerDown(event) {
+    if (saveState?.saving) return;
     const point = pointToBox(event);
     for (const photo of [...photos].reverse()) {
-      const shape = draftShapes[photo.id] || draftShapeFromPhoto(photo);
-      const cornerIndex = shape.warpQuad.findIndex((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) < 0.035);
+      const saved = draftShapeFromPhoto(photo);
+      const shape = draftShapes[photo.id] || saved;
+      const corners = editingImage
+        ? (photo.id === selectedPhotoId ? shape.imageQuad || insetQuad(saved.warpQuad) : [])
+        : shape.warpQuad;
+      const cornerIndex = corners.findIndex((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) < 0.025);
       if (cornerIndex >= 0) {
         onSelectPhoto(photo.id);
         dragRef.current = { photoId: photo.id, pointIndex: cornerIndex };
+        setSaveState(null);
         canvasRef.current.setPointerCapture(event.pointerId);
         return;
       }
@@ -1404,52 +1484,98 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
     const { photoId, pointIndex } = dragRef.current;
     setDraftShapes((current) => {
       const photo = photos.find((candidate) => candidate.id === photoId);
-      const currentShape = current[photoId] || (photo ? draftShapeFromPhoto(photo) : null);
-      if (!currentShape) return current;
-      const warpQuad = currentShape.warpQuad.map((corner, index) =>
+      if (!photo) return current;
+      const saved = draftShapeFromPhoto(photo);
+      const currentShape = current[photoId] || saved;
+      const corners = editingImage ? currentShape.imageQuad || insetQuad(saved.warpQuad) : currentShape.warpQuad;
+      const nextQuad = corners.map((corner, index) =>
         index === pointIndex ? { x: clampUnit(point.x), y: clampUnit(point.y) } : corner
       );
-      const visiblePolygon = currentShape.visibleFollowsWarp ? warpQuad : currentShape.visiblePolygon;
-      return {
-        ...current,
-        [photoId]: { ...currentShape, warpQuad, visiblePolygon, boundingBox: boundingBoxFromPolygon(warpQuad) },
+      const shape = editingImage ? { ...currentShape, imageQuad: nextQuad } : {
+        ...currentShape,
+        warpQuad: nextQuad,
+        visiblePolygon: currentShape.visibleFollowsWarp ? nextQuad : currentShape.visiblePolygon,
+        boundingBox: boundingBoxFromPolygon(nextQuad),
       };
+      return { ...current, [photoId]: shape };
     });
   }
 
   function onPointerUp(event) {
-    if (dragRef.current) {
+    if (dragRef.current && canvasRef.current.hasPointerCapture(event.pointerId)) {
       canvasRef.current.releasePointerCapture(event.pointerId);
     }
     dragRef.current = null;
   }
 
   async function saveSelected() {
-    if (!selectedPhotoId || !draftShapes[selectedPhotoId]) return;
-    const shape = draftShapes[selectedPhotoId];
-    await onSaveBox(selectedPhotoId, shape.boundingBox, maskFromShape(shape));
+    if (!selected || sizeError) return;
+    const saved = draftShapeFromPhoto(selected);
+    const box = editingImage ? selected.bounding_box : selectedShape.boundingBox;
+    const mask = editingImage
+      ? maskFromShape(saved, selectedShape.imageQuad || insetQuad(saved.warpQuad))
+      : maskFromShape(selectedShape);
+    if (!editingImage) mask.print_size_mm = measurement.size;
+    else {
+      const savedMeasurement = selected.segmentation_mask?.print_size_mm ?? selected.print_size_mm;
+      if (savedMeasurement) mask.print_size_mm = savedMeasurement;
+    }
+    setSaveState({ photoId: selected.id, mode: editMode, saving: true });
+    try {
+      const result = await onSaveBox(selected.id, box, mask);
+      const url = result.urls?.[editMode] || (!getCropModes(result) && !editingImage ? result.urls?.original : null);
+      setSaveState({ photoId: selected.id, mode: editMode, url });
+    } catch (error) {
+      setSaveState({ photoId: selected.id, mode: editMode, error: error.message });
+    }
   }
 
   if (!page) return <EmptyState label="Select a page to review." />;
 
+  const currentSave = saveState?.photoId === selectedPhotoId && saveState?.mode === editMode ? saveState : null;
   return (
     <div className="canvas-wrap">
+      <div className="variant-tabs crop-mode-tabs" role="group" aria-label="Zu bearbeitenden Ausschnitt wählen">
+        {Object.entries(cropModeLabels).map(([mode, label]) => (
+          <button key={mode} type="button" aria-pressed={editMode === mode} onClick={() => setEditMode(mode)} disabled={saveState?.saving}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {editingImage && selected && <p className="crop-editor-hint">Setze die vier blauen Eckpunkte an die Grenze des Bildmotivs.</p>}
       <canvas
         ref={canvasRef}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         aria-label="Segmented album page"
       />
-      <button className="primary-button compact" type="button" disabled={!selectedPhotoId} onClick={saveSelected}>
+      {!editingImage && selectedShape && (
+        <PrintSizeFields
+          value={selectedShape.printSizeFields}
+          onChange={(fields) => {
+            setDraftShapes((current) => ({ ...current, [selected.id]: { ...selectedShape, printSizeFields: fields } }));
+            setSaveState(null);
+          }}
+          disabled={saveState?.saving}
+          error={sizeError}
+        />
+      )}
+      <button className="primary-button compact" type="button" disabled={!selected || saveState?.saving || Boolean(sizeError)} onClick={saveSelected}>
         <Save size={16} />
-        Save Corners
+        {currentSave?.saving ? "Ausschnitt wird berechnet …" : "Ecken speichern"}
       </button>
+      {currentSave?.error && <p role="alert">{currentSave.error}</p>}
+      {currentSave?.url && <img className="review-crop-preview" src={currentSave.url} alt={cropModeLabels[editMode]} />}
+      {currentSave && !currentSave.saving && !currentSave.error && !currentSave.url && (
+        <p role="status">Der gespeicherte Ausschnitt muss geprüft werden.</p>
+      )}
     </div>
   );
 }
 
-function ReviewView({ albumId, pages, photos, selectedPageId, setSelectedPageId, refresh }) {
+function ReviewView({ albumId, albumStatus, pages, photos, selectedPageId, setSelectedPageId, refresh }) {
   const [reviewType, setReviewType] = useState("segmentation");
   const [reviewItems, setReviewItems] = useState([]);
   const [ocrRows, setOcrRows] = useState([]);
@@ -1476,7 +1602,7 @@ function ReviewView({ albumId, pages, photos, selectedPageId, setSelectedPageId,
   useEffect(() => {
     if (!albumId) return;
     getReviewQueue(albumId, reviewType).then(setReviewItems).catch(() => setReviewItems([]));
-  }, [albumId, reviewType]);
+  }, [albumId, albumStatus, reviewType]);
 
   useEffect(() => {
     if (!selectedPage) {
@@ -1494,13 +1620,18 @@ function ReviewView({ albumId, pages, photos, selectedPageId, setSelectedPageId,
 
   async function saveBox(photoId, box, segmentationMask = null) {
     await patchBoundingBox(photoId, box, segmentationMask);
-    await refresh();
+    const [detail] = await Promise.all([getPhoto(photoId), refreshCorrections()]);
+    return detail;
   }
 
   async function reprocessSelected() {
     if (!selectedPhotoId) return;
     await reprocessPhoto(selectedPhotoId);
-    await refresh();
+    await refreshCorrections();
+  }
+
+  async function refreshCorrections() {
+    await Promise.all([refresh(), getReviewQueue(albumId, reviewType).then(setReviewItems)]);
   }
 
   return (
@@ -1581,11 +1712,12 @@ function ReviewView({ albumId, pages, photos, selectedPageId, setSelectedPageId,
   );
 }
 
-function GalleryView({ photos, onOpenPhoto = () => {} }) {
+function GalleryView({ photos, processing, onOpenPhoto = () => {} }) {
   const [detail, setDetail] = useState(null);
   const [selectedVariant, setSelectedVariant] = useState("original");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
+  const crops = photos.filter(hasPhotoCrop);
 
   const variantEntries = availableVariantEntries(detail);
   const selectedVariantUrl = detail?.urls?.[selectedVariant] || detail?.urls?.original;
@@ -1594,7 +1726,8 @@ function GalleryView({ photos, onOpenPhoto = () => {} }) {
   useEffect(() => {
     if (!detail) return;
     const entries = availableVariantEntries(detail);
-    const preferred = entries.find(([name]) => name === detail?.enhancement_applied?.selected_variant)
+    const preferred = entries.find(([name]) => name === "full_print")
+      || entries.find(([name]) => name === detail?.enhancement_applied?.selected_variant)
       || entries.find(([name]) => name === "original") || entries[0];
     if (preferred) setSelectedVariant(preferred[0]);
   }, [detail?.id]);
@@ -1635,10 +1768,11 @@ function GalleryView({ photos, onOpenPhoto = () => {} }) {
             ))}
           </div>
         )}
+        {!crops.length && <EmptyState label={processing ? "Extracting photos…" : "No extracted photos in this album yet."} />}
         <div className="gallery-grid">
-          {photos.map((photo) => (
+          {crops.map((photo) => (
             <button type="button" className="photo-tile" key={photo.id} onClick={() => openGalleryPhoto(photo.id)}>
-              <img src={`/api/v1/photos/${photo.id}/image`} alt="" />
+              <img src={photo.image_url} alt="" />
               <div>
                 <StatusBadge status={photo.status} />
                 <span>{photo.segmentation_confidence ? `${Math.round(photo.segmentation_confidence * 100)}%` : "manual"}</span>
@@ -1829,39 +1963,45 @@ export default function App() {
   const [photos, setPhotos] = useState([]);
   const [selectedPageId, setSelectedPageId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [notice, setNotice] = useState("");
   const [photoViewerDetail, setPhotoViewerDetail] = useState(null);
+  const selectedAlbumRef = useRef(null);
 
   const selectedAlbum = albums.find((album) => album.id === selectedAlbumId) || null;
 
-  function selectAlbum(albumId, nextTab = activeTab) {
-    setSelectedAlbumId(albumId);
-    setSelectedPageId(null);
-    setPages([]);
-    setPhotos([]);
-    setActiveTab(nextTab);
-  }
+  const selectAlbum = useCallback((albumId, nextTab) => {
+    if (selectedAlbumRef.current !== albumId) {
+      selectedAlbumRef.current = albumId;
+      setSelectedAlbumId(albumId);
+      setSelectedPageId(null);
+      setPages([]);
+      setPhotos([]);
+    }
+    if (nextTab) setActiveTab(nextTab);
+  }, []);
 
   const refreshAlbums = useCallback(async () => {
     setLoading(true);
     try {
       const nextAlbums = await listAlbums();
       setAlbums(nextAlbums);
-      if (!selectedAlbumId && nextAlbums.length > 0) selectAlbum(nextAlbums[0].id);
+      if (!selectedAlbumRef.current && nextAlbums.length > 0) selectAlbum(nextAlbums[0].id);
     } finally {
       setLoading(false);
     }
-  }, [selectedAlbumId]);
+  }, [selectAlbum]);
 
   const refreshAlbumData = useCallback(async () => {
     if (!selectedAlbumId) return;
-    const [nextPages, nextPhotos, nextAlbums] = await Promise.all([listPages(selectedAlbumId), listPhotos(selectedAlbumId), listAlbums()]);
+    const nextAlbums = await listAlbums();
+    const [nextPages, nextPhotos] = await Promise.all([listPages(selectedAlbumId), listPhotos(selectedAlbumId)]);
+    if (selectedAlbumRef.current !== selectedAlbumId) return;
     setPages(nextPages);
     setPhotos(nextPhotos);
     setAlbums(nextAlbums);
-    const nextSelectedPageId = nextPages.some((page) => page.id === selectedPageId) ? selectedPageId : nextPages[0]?.id || null;
-    setSelectedPageId(nextSelectedPageId);
-  }, [selectedAlbumId, selectedPageId]);
+    setSelectedPageId((current) => nextPages.some((page) => page.id === current) ? current : nextPages[0]?.id || null);
+  }, [selectedAlbumId]);
 
   useEffect(() => {
     refreshAlbums().catch((error) => setNotice(error.message));
@@ -1869,7 +2009,24 @@ export default function App() {
 
   useEffect(() => {
     refreshAlbumData().catch((error) => setNotice(error.message));
-  }, [refreshAlbumData]);
+  }, [activeTab, refreshAlbumData]);
+
+  useEffect(() => {
+    if (activeTab === "analyze" || selectedAlbum?.status !== "processing") return;
+    let refreshing = false;
+    const timer = window.setInterval(async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        await refreshAlbumData();
+      } catch (error) {
+        setNotice(error.message);
+      } finally {
+        refreshing = false;
+      }
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [activeTab, refreshAlbumData, selectedAlbum?.status]);
 
   async function handleCreateAlbum(payload) {
     const album = await createAlbum(payload);
@@ -1878,14 +2035,25 @@ export default function App() {
   }
 
   async function handleUpload(files) {
-    await uploadFiles(selectedAlbumId, files);
+    const response = await uploadFiles(selectedAlbumId, files);
     await refreshAlbumData();
+    return response.analysis_queued;
   }
 
   async function handleAnalyze() {
-    const result = await analyzeAlbum(selectedAlbumId);
-    setNotice(`Queued job ${result.job_id}`);
-    setTimeout(() => refreshAlbumData().catch(() => {}), 1500);
+    if (!selectedAlbumId || analyzing) return;
+    const pageIds = pages.filter((page) => page.status !== "completed").map((page) => page.id);
+    if (!pageIds.length) return;
+    setAnalyzing(true);
+    setNotice("");
+    try {
+      await analyzeAlbumNow(selectedAlbumId, pageIds);
+      await refreshAlbumData();
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setAnalyzing(false);
+    }
   }
 
   async function openPhoto(photo) {
@@ -1935,14 +2103,7 @@ export default function App() {
       {activeTab === "analyze" && (
         <OrderedAnalyzer
           onOpenPhoto={openPhoto}
-          onAlbumReady={async (albumId) => {
-            setSelectedAlbumId(albumId);
-            const [nextAlbums, nextPages, nextPhotos] = await Promise.all([listAlbums(), listPages(albumId), listPhotos(albumId)]);
-            setAlbums(nextAlbums);
-            setPages(nextPages);
-            setPhotos(nextPhotos);
-            if (nextPages.length > 0) setSelectedPageId(nextPages[0].id);
-          }}
+          onAlbumReady={selectAlbum}
         />
       )}
       {activeTab === "albums" && (
@@ -1962,6 +2123,8 @@ export default function App() {
           albumId={selectedAlbumId}
           pages={pages}
           selectedPageId={selectedPageId}
+          analyzing={analyzing}
+          processing={selectedAlbum?.status === "processing"}
           onAnalyze={handleAnalyze}
           onUpload={handleUpload}
           onSelectPage={setSelectedPageId}
@@ -1970,6 +2133,7 @@ export default function App() {
       {activeTab === "review" && (
         <ReviewView
           albumId={selectedAlbumId}
+          albumStatus={selectedAlbum?.status}
           pages={pages}
           photos={photos}
           selectedPageId={selectedPageId}
@@ -1978,7 +2142,7 @@ export default function App() {
         />
       )}
       {activeTab === "training" && <TrainingAnnotationView />}
-      {activeTab === "gallery" && <GalleryView photos={photos} onOpenPhoto={openPhoto} />}
+      {activeTab === "gallery" && <GalleryView photos={photos} processing={selectedAlbum?.status === "processing"} onOpenPhoto={openPhoto} />}
       {activeTab === "capture" && <CaptureView albumId={selectedAlbumId} refresh={refreshAlbumData} />}
       {photoViewerDetail && (
         <PhotoCompareModal detail={photoViewerDetail} title={`Photo ${String(photoViewerDetail.id).slice(0, 8)}`} onClose={() => setPhotoViewerDetail(null)} />

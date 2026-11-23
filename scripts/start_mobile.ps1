@@ -18,8 +18,7 @@ $env:MODEL_MANIFEST_PATH = Join-Path $models "manifest.json"
 $env:SEGMENTATION_CALIBRATION_PATH = Join-Path $models "segmentation-calibration.json"
 $env:REQUIRE_REGISTERED_MODELS = "true"
 $env:REQUIRE_CONFIDENCE_CALIBRATION = "true"
-$env:ENABLE_CLASSICAL_SEGMENTATION_FALLBACK = "false"
-$env:ENABLE_BORDER_TRIM = "false"
+$env:ENABLE_CLASSICAL_SEGMENTATION_FALLBACK = "true"
 $env:ENABLE_PROTECTED_REGION_GUARD = "true"
 $env:ENABLE_PHOTO_ORIENTATION_CORRECTION = "false"
 $env:ENABLE_CONSERVATIVE_ENHANCEMENT = "true"
@@ -34,7 +33,7 @@ function Test-Port([int]$Port) {
 }
 
 if (-not (Test-Path $env:YOLO_MODEL_PATH)) {
-    throw "Segmentierungsmodell fehlt: $($env:YOLO_MODEL_PATH)"
+    Write-Warning "Segmentierungsmodell fehlt. Die Erkennung verwendet Bildkanten und ist weniger genau."
 }
 
 if (-not (Test-Port 8000)) {

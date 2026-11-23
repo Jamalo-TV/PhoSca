@@ -23,7 +23,12 @@ def _load(path: str, modified_ns: int) -> dict[str, Any]:
         raise CalibrationError("Calibration artifact needs a default stratum.")
     for name, record in strata.items():
         x, y = record.get("raw", []), record.get("calibrated", [])
-        if len(x) < 2 or len(x) != len(y) or list(x) != sorted(x) or list(y) != sorted(y):
+        if (
+            not isinstance(x, list) or not isinstance(y, list) or len(x) < 2 or len(x) != len(y)
+            or not all(isinstance(value, (int, float)) and 0.0 <= value <= 1.0 for value in x + y)
+            or any(left >= right for left, right in zip(x, x[1:]))
+            or any(left > right for left, right in zip(y, y[1:]))
+        ):
             raise CalibrationError(f"Invalid monotonic calibration points for {name}.")
     return artifact
 
@@ -42,5 +47,5 @@ def calibrate_confidence(raw: float, source: str, path: Path) -> tuple[float, di
             "stratum": source if source in artifact["strata"] else "default",
             "independent_holdout_id": artifact["independent_holdout_id"],
         }
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         return float(raw), {"calibrated": False, "reason": f"artifact_invalid:{type(exc).__name__}", "raw": float(raw)}

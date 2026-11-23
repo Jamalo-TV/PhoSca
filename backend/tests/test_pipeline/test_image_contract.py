@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from io import BytesIO
+from pathlib import Path
+
 import numpy as np
+import pytest
+from fastapi import HTTPException
 from PIL import Image
 
 
@@ -53,3 +58,31 @@ def test_icc_conversion_preserves_alpha_until_srgb_compositing(tmp_path) -> None
     assert decoded[0, 1].tolist() == [0, 0, 255]
     assert metadata["icc_to_srgb_applied"] is True
     assert metadata["alpha_policy"] == "composite_over_white_before_working_space"
+
+
+def test_camera_jpeg_gain_map_does_not_count_as_a_second_page() -> None:
+    from app.pipeline.image_ops import load_image_with_metadata
+    from app.utils.file_security import inspect_image_content
+
+    path = Path("data/golden_fixtures/page_04.jpg")
+    inspected = inspect_image_content(path.read_bytes(), max_image_pixels=5_000_000, max_image_frames=1)
+    decoded, metadata = load_image_with_metadata(path)
+
+    assert inspected["frame_policy"] == metadata["frame_policy"]
+    assert decoded.shape == (1920, 2560, 3)
+
+
+def test_animated_png_is_rejected_by_upload_and_decoder(tmp_path) -> None:
+    from app.pipeline.image_ops import load_image_with_metadata
+    from app.utils.file_security import inspect_image_content
+
+    buffer = BytesIO()
+    Image.new("RGB", (16, 16), "red").save(
+        buffer, format="PNG", save_all=True, append_images=[Image.new("RGB", (16, 16), "blue")]
+    )
+    with pytest.raises(HTTPException, match="multi-frame images are not supported"):
+        inspect_image_content(buffer.getvalue(), max_image_pixels=1024, max_image_frames=1)
+    path = tmp_path / "animated.png"
+    path.write_bytes(buffer.getvalue())
+    with pytest.raises(ValueError, match="Could not read image"):
+        load_image_with_metadata(path)

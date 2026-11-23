@@ -8,14 +8,15 @@ a hard veto.
 """
 from __future__ import annotations
 
+import threading
 from typing import Any, Iterable
 
 import cv2
 import numpy as np
 
 
-def _as_box(region: dict[str, Any], width: int, height: int) -> tuple[float, float, float, float] | None:
-    box = region.get("box", region)
+def region_box_in_pixels(region: dict[str, Any], width: int, height: int) -> tuple[float, float, float, float] | None:
+    box = region.get("box") or region.get("bounding_box") or region
     try:
         x1, y1, x2, y2 = (float(box[key]) for key in ("x1", "y1", "x2", "y2"))
     except (KeyError, TypeError, ValueError):
@@ -29,6 +30,7 @@ def _as_box(region: dict[str, Any], width: int, height: int) -> tuple[float, flo
 
 
 _MARGINS = {"face": 0.18, "head": 0.16, "person": 0.10, "text": 0.08, "object": 0.08, "subject": 0.10}
+_cascade_cache = threading.local()
 
 
 def _iou(left: dict[str, Any], right: dict[str, Any]) -> float:
@@ -56,9 +58,14 @@ def merge_protected_regions(*groups: Iterable[dict[str, Any]]) -> list[dict[str,
 
 
 def _cascade_regions(gray: np.ndarray, filename: str, region_type: str) -> list[dict[str, Any]]:
-    detector = cv2.CascadeClassifier(cv2.data.haarcascades + filename)
-    if detector.empty():
-        return []
+    # Reuse parsed classifiers on a worker without sharing OpenCV's mutable detector across threads.
+    detectors = vars(_cascade_cache)
+    detector = detectors.get(filename)
+    if detector is None:
+        detector = cv2.CascadeClassifier(cv2.data.haarcascades + filename)
+        if detector.empty():
+            return []
+        detectors[filename] = detector
     boxes = detector.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=6, minSize=(24, 24))
     return [
         {
@@ -125,7 +132,7 @@ def validate_protected_regions(
     contour = quad.reshape(-1, 1, 2).astype(np.float32)
     violations: list[dict[str, Any]] = []
     for region in regions:
-        box = _as_box(region, width, height)
+        box = region_box_in_pixels(region, width, height)
         if box is None:
             continue
         x1, y1, x2, y2 = box

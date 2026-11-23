@@ -13,7 +13,7 @@ from app.core.metrics import RETENTION_DELETIONS
 from app.models import Asset, AuditLog
 
 
-PRESERVED_ASSET_ROLES = {"page_original", "corrected_print", "released_variant"}
+PRESERVED_ASSET_ROLES = {"page_original", "corrected_print", "corrected_print_untrimmed", "released_variant"}
 
 
 def _inside(path: Path, root: Path) -> bool:

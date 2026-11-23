@@ -94,8 +94,9 @@ def polygon_from_mask_or_box(
     *,
     include_box_fallback: bool,
 ) -> list[tuple[float, float]] | None:
-    if mask and isinstance(mask.get("polygon"), list) and len(mask["polygon"]) >= 4:
-        points = [(strict_unit(point["x"]), strict_unit(point["y"])) for point in mask["polygon"]]
+    polygon = (mask.get("visible_polygon") or mask.get("polygon")) if mask else None
+    if isinstance(polygon, list) and len(polygon) >= 4:
+        points = [(strict_unit(point["x"]), strict_unit(point["y"])) for point in polygon]
         validate_polygon(points)
         return points
     if include_box_fallback and box:

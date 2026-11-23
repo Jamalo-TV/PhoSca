@@ -3,8 +3,8 @@ from pathlib import Path
 from uuid import UUID
 
 from httpx import AsyncClient
+from PIL import Image, ImageDraw
 from sqlalchemy import select
-from PIL import Image
 
 
 def _valid_jpeg_bytes() -> bytes:
@@ -35,6 +35,7 @@ async def test_upload_accepts_valid_jpeg_and_stores_uuid_filename(client: AsyncC
 
     assert response.status_code == 201, response.text
     body = response.json()
+    assert body["analysis_queued"] is False
     assert len(body["pages"]) == 1
     assert body["pages"][0]["filename"] == "album-page.jpg"
     assert body["pages"][0]["status"] == "uploaded"
@@ -66,16 +67,60 @@ async def test_analyze_accepts_uploaded_page_ids_as_json_strings(client: AsyncCl
 
     from app.routers import albums as albums_router
 
-    async def fake_process_pages_pipeline(page_ids):
+    async def fake_process_pages_serialized(page_ids):
         assert page_ids == [UUID(page_id)]
         return {"pages": [{"page_id": str(page_ids[0]), "status": "completed"}]}
 
-    monkeypatch.setattr(albums_router, "process_pages_pipeline", fake_process_pages_pipeline)
+    monkeypatch.setattr(albums_router, "process_pages_serialized", fake_process_pages_serialized)
 
     response = await client.post(f"/api/v1/albums/{album_id}/analyze-now", json={"page_ids": [page_id]})
 
     assert response.status_code == 200, response.text
     assert response.json()["pages"][0]["page_id"] == page_id
+
+
+async def test_uploaded_page_is_cropped_automatically_even_if_ocr_fails(
+    client: AsyncClient, monkeypatch, tmp_path
+) -> None:
+    from app.config import get_settings
+    from app.services import pipeline
+
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
+    monkeypatch.setenv("MAX_UPLOAD_SIZE", "32768")
+    monkeypatch.setenv("MAX_REQUEST_SIZE", "65536")
+    monkeypatch.setenv("YOLO_MODEL_PATH", str(tmp_path / "unavailable.onnx"))
+    get_settings.cache_clear()
+
+    def unavailable_ocr(*args):
+        raise RuntimeError("OCR inference unavailable")
+
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", unavailable_ocr)
+    album_id = await create_album(client)
+    page = Image.new("RGB", (560, 420), (245, 245, 245))
+    draw = ImageDraw.Draw(page)
+    draw.rectangle((80, 100, 310, 280), fill=(20, 20, 20))
+    draw.rectangle((88, 108, 302, 272), fill=(180, 120, 70))
+    draw.line((180, 108, 210, 272), fill=(255, 255, 255), width=2)
+    buffer = BytesIO()
+    page.save(buffer, format="JPEG")
+
+    upload = await client.post(
+        f"/api/v1/albums/{album_id}/pages/upload",
+        files=[("files", ("album-page.jpg", buffer.getvalue(), "image/jpeg"))],
+    )
+    assert upload.status_code == 201, upload.text
+    assert upload.json()["analysis_queued"] is True
+
+    pages = (await client.get(f"/api/v1/albums/{album_id}/pages")).json()
+    assert pages[0]["status"] in {"completed", "review_needed"}
+    assert pages[0]["processing_metadata"]["steps"]["ocr"]["primary"]["error"] == "OCR inference unavailable"
+    photos = (await client.get(f"/api/v1/albums/{album_id}/photos")).json()
+    assert len(photos) == 1
+    crop = await client.get(f"/api/v1/photos/{photos[0]['id']}/image")
+    assert crop.status_code == 200, crop.text
+    with Image.open(BytesIO(crop.content)) as image:
+        assert 180 < image.width < 260
+        assert 140 < image.height < 210
 
 
 async def test_upload_rejects_invalid_magic_mime(client: AsyncClient) -> None:

@@ -49,10 +49,12 @@ def polygon_iou(a: Polygon, b: Polygon, *, canvas_size: int = 1024) -> float:
 
 
 def read_yolo_segmentation(label_path: Path) -> list[Polygon]:
+    return parse_yolo_segmentation(label_path.read_text(encoding="utf-8")) if label_path.exists() else []
+
+
+def parse_yolo_segmentation(contents: str) -> list[Polygon]:
     polygons: list[Polygon] = []
-    if not label_path.exists():
-        return polygons
-    for line in label_path.read_text(encoding="utf-8").splitlines():
+    for line in contents.splitlines():
         parts = line.split()
         if len(parts) < 7:
             continue

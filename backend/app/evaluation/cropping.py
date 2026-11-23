@@ -67,6 +67,18 @@ class CroppingDatasetMetrics:
         return asdict(self)
 
 
+def is_locked_album_manifest(records: Sequence[dict], split: dict) -> bool:
+    """Check that the declared independent split pins distinct, reviewed album pages."""
+    groups = {str(record.get("source_group") or "").strip().casefold() for record in records}
+    hashes = {str(record.get("image_sha256") or "").strip().lower() for record in records}
+    return (
+        split.get("album_independent") is True and "" not in groups and len(groups) >= 2
+        and len(hashes) == len(records)
+        and all(len(digest) == 64 and set(digest) <= set("0123456789abcdef") for digest in hashes)
+        and all(record.get("annotation_provenance") == "manually_verified" for record in records)
+    )
+
+
 def _safe_polygon(polygon: Polygon) -> np.ndarray:
     points = np.asarray(polygon, dtype=np.float32).reshape(-1, 2)
     if len(points) < 3 or not np.isfinite(points).all():
@@ -97,6 +109,24 @@ def _mask_overlap(truth: Polygon, prediction: Polygon, width: int, height: int) 
     cutoff = (truth_area - intersection) / truth_area if truth_area else 1.0
     background = (prediction_area - intersection) / prediction_area if prediction_area else 1.0
     return iou, iou, cutoff, background
+
+
+def _pixel_bounds(polygon: Polygon, width: int, height: int) -> tuple[int, int, int, int] | None:
+    points = _safe_polygon(polygon)
+    if not len(points):
+        return None
+    pixels = np.rint(points * np.float32([max(width - 1, 1), max(height - 1, 1)])).astype(np.int32)
+    left, top = pixels.min(axis=0)
+    right, bottom = pixels.max(axis=0)
+    return left, top, right, bottom
+
+
+def _bounds_intersect(first, second) -> bool:
+    if first is None or second is None:
+        return False
+    left, top, right, bottom = first
+    x1, y1, x2, y2 = second
+    return left <= x2 and x1 <= right and top <= y2 and y1 <= bottom
 
 
 def _boundary_f_score(
@@ -140,18 +170,156 @@ def _cyclic_quad(polygon: Polygon) -> np.ndarray | None:
     return np.roll(quad, -start, axis=0).astype(np.float32)
 
 
-def _corner_error(truth: Polygon, prediction: Polygon) -> float | None:
+def _aligned_corner_errors(truth_quad: np.ndarray, prediction_quad: np.ndarray) -> np.ndarray:
+    alignments = (
+        np.linalg.norm(truth_quad - np.roll(candidate, offset, axis=0), axis=1)
+        for candidate in (prediction_quad, prediction_quad[::-1])
+        for offset in range(4)
+    )
+    return min(alignments, key=np.mean)
+
+
+def _corner_error(truth: Polygon, prediction: Polygon, width: int, height: int) -> float | None:
     truth_quad = _cyclic_quad(truth)
     prediction_quad = _cyclic_quad(prediction)
     if truth_quad is None or prediction_quad is None:
         return None
-    candidates: list[float] = []
-    for reverse in (False, True):
-        candidate = prediction_quad[::-1] if reverse else prediction_quad
-        for offset in range(4):
-            aligned = np.roll(candidate, offset, axis=0)
-            candidates.append(float(np.mean(np.linalg.norm(truth_quad - aligned, axis=1)) / np.sqrt(2.0)))
-    return min(candidates)
+    scale = np.array([max(width - 1, 1), max(height - 1, 1)], dtype=np.float32)
+    errors = _aligned_corner_errors(truth_quad * scale, prediction_quad * scale)
+    return float(errors.mean() / np.linalg.norm(scale))
+
+
+def _source_center_footprint(
+    source_shape: tuple[int, int], matrix: np.ndarray, output_shape: tuple[int, int],
+) -> tuple[np.ndarray, np.ndarray]:
+    height, width = source_shape
+    out_height, out_width = output_shape
+    corners = np.float64([[0, 0, 1], [out_width - 1, 0, 1], [out_width - 1, out_height - 1, 1], [0, out_height - 1, 1]])
+    mapped = corners @ np.linalg.inv(matrix).T
+    weights = mapped[:, 2]
+    if not np.isfinite(mapped).all() or not (np.all(weights > 0) or np.all(weights < 0)):
+        raise ValueError("Crop footprint crosses the projective horizon")
+    quad = mapped[:, :2] / weights[:, None]
+    orientation = np.sign(cv2.contourArea(quad.astype(np.float32), oriented=True))
+    if not np.isfinite(quad).all() or orientation not in (-1, 1):
+        raise ValueError("Invalid crop footprint")
+
+    # Scan source pixel centers between the inverse-mapped output centers, with
+    # no half-output-pixel extension at the perimeter.
+    tolerance = 1e-5
+    first_y = max(0, int(np.ceil(quad[:, 1].min() - tolerance)))
+    last_y = min(height - 1, int(np.floor(quad[:, 1].max() + tolerance)))
+    rows = np.arange(first_y, last_y + 1)
+    left = np.zeros(len(rows))
+    right = np.full(len(rows), width - 1, dtype=np.float64)
+    valid = np.ones(len(rows), dtype=bool)
+    for start, end in zip(quad, np.roll(quad, -1, axis=0), strict=True):
+        dx, dy = (end - start) * orientation
+        bound = dx * (rows - start[1]) + tolerance * np.hypot(dx, dy)
+        if dy > 1e-12:
+            right = np.minimum(right, start[0] + bound / dy)
+        elif dy < -1e-12:
+            left = np.maximum(left, start[0] + bound / dy)
+        else:
+            valid &= bound >= 0
+    valid &= left <= right
+    footprint = np.zeros(source_shape, dtype=bool)
+    for row, first, last in zip(rows[valid], np.ceil(left[valid]).astype(int), np.floor(right[valid]).astype(int), strict=True):
+        footprint[row, first:last + 1] = True
+    return footprint, quad
+
+
+def evaluate_rendered_crop(
+    expected_mask: np.ndarray,
+    source_quad: Polygon,
+    page_to_output: np.ndarray,
+    output_shape: tuple[int, int],
+    *,
+    expected_corners: np.ndarray | None = None,
+    expected_shape: tuple[int, int] | None = None,
+    expected_aspect_ratio: float | None = None,
+    source_landmarks: np.ndarray | None = None,
+    expected_landmarks: np.ndarray | None = None,
+    sampling: str | None = None,
+) -> dict:
+    """Score the actual linear sampler against a source-space ownership mask.
+
+    Source and output landmarks use pixel centers. A one-source-pixel band is
+    excluded from the strict cutoff and contamination counts.
+    """
+    height, width = expected_mask.shape
+    output_height, output_width = output_shape
+    matrix = np.asarray(page_to_output, dtype=np.float64)
+    expected = np.asarray(expected_mask != 0, dtype=np.uint8)
+    if (
+        not expected.any()
+        or not np.isfinite(matrix).all()
+        or matrix.shape != (3, 3)
+        or min(output_height, output_width) < 2
+        or np.linalg.matrix_rank(matrix) != 3
+    ):
+        raise ValueError("Invalid crop measurement geometry")
+    footprint, sampled_corners = _source_center_footprint((height, width), matrix, output_shape)
+    footprint_area = int(footprint.sum())
+    intersection = int((footprint & expected).sum())
+    expected_area = int(expected.sum())
+    kernel = np.ones((3, 3), dtype=np.uint8)
+    expected_core = cv2.erode(expected, kernel, borderType=cv2.BORDER_REPLICATE)
+    outside_band = 1 - cv2.dilate(expected, kernel)
+    from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop
+
+    def replay(source):
+        size = (output_width, output_height)
+        if sampling == OWNED_BILINEAR:
+            return warp_owned_crop(source.astype(np.float32), matrix, size)[0]
+        return cv2.warpPerspective(source.astype(np.float32), matrix, size)
+
+    strict_contaminated = replay(outside_band) > 1e-6
+    source_support = replay(np.ones((height, width), dtype=np.uint8))
+    # Fractional contributions are scored against independent pixel ownership.
+    ownership = replay(expected)
+    spans = np.linalg.norm(np.roll(sampled_corners, -1, axis=0) - sampled_corners, axis=1)
+    vertices = np.asarray(source_quad, dtype=np.float64) * [width - 1, height - 1]
+    report = {
+        "footprint_iou": intersection / (footprint_area + expected_area - intersection),
+        "content_cutoff": (expected_area - intersection) / expected_area,
+        "foreign_fraction": float(np.mean(1.0 - ownership)),
+        "foreign_source_samples": int((ownership < 1 - 1e-6).sum()),
+        "outside_source_samples": int((source_support < 1 - 1e-6).sum()),
+        "cutoff_beyond_1px": int((expected_core & ~footprint).sum()),
+        "foreign_beyond_1px": int(strict_contaminated.sum()),
+        "sampling_shortfall_px": max(
+            0.0, float(spans[::2].min()) - (output_width - 1), float(spans[1::2].min()) - (output_height - 1),
+        ),
+        "warp_metadata_error_max_px": float(_aligned_corner_errors(sampled_corners, vertices).max()),
+    }
+    if expected_corners is not None:
+        errors = _aligned_corner_errors(expected_corners, sampled_corners)
+        report["corner_errors_px"] = errors.tolist()
+        report["corner_error_max_px"] = float(errors.max())
+        ordered = np.asarray(expected_corners, dtype=np.float64).reshape(1, 4, 2)
+        mapped = cv2.perspectiveTransform(ordered, matrix)[0]
+        output_corners = np.array([[0, 0], [output_width - 1, 0], [output_width - 1, output_height - 1],
+                                   [0, output_height - 1]])
+        nearest = np.argmin(np.linalg.norm(mapped[:, None] - output_corners, axis=2), axis=1)
+        report["orientation_matches_reference"] = bool(np.array_equal(nearest, np.arange(4)))
+    if expected_aspect_ratio is None and expected_shape is not None:
+        expected_aspect_ratio = (expected_shape[1] - 1) / (expected_shape[0] - 1)
+    if expected_aspect_ratio is not None:
+        if not np.isfinite(expected_aspect_ratio) or expected_aspect_ratio <= 0:
+            raise ValueError("Invalid reference aspect ratio")
+        actual_aspect = (output_width - 1) / (output_height - 1)
+        report["reference_aspect_ratio"] = expected_aspect_ratio
+        report["aspect_ratio_relative_error"] = abs(actual_aspect / expected_aspect_ratio - 1)
+    if source_landmarks is not None and expected_landmarks is not None and expected_shape is not None:
+        expected_height, expected_width = expected_shape
+        actual = cv2.perspectiveTransform(source_landmarks.astype(np.float64).reshape(1, -1, 2), matrix)[0]
+        actual *= np.array([expected_width - 1, expected_height - 1]) / np.array(
+            [output_width - 1, output_height - 1]
+        )
+        landmark_errors = np.linalg.norm(actual - expected_landmarks, axis=1)
+        report["landmark_error_p95_px"] = float(np.percentile(landmark_errors, 95))
+    return report
 
 
 def _hungarian_assignment(cost: list[list[float]]) -> list[int]:
@@ -212,13 +380,22 @@ def evaluate_page_crops(
     """Evaluate a page with one-to-one matching and content-safety metrics."""
     size = max(len(truth), len(predictions))
     accepted = list(accepted) if accepted is not None else [True] * len(predictions)
+    truth_bounds = [_pixel_bounds(polygon, width, height) for polygon in truth]
+    prediction_bounds = [_pixel_bounds(polygon, width, height) for polygon in predictions]
     overlaps: list[list[tuple[float, float, float, float]]] = [
-        [_mask_overlap(expected, detected, width, height) for detected in predictions] for expected in truth
+        [
+            _mask_overlap(expected, detected, width, height)
+            if _bounds_intersect(expected_bounds, detected_bounds) else (0.0, 0.0, 1.0, 1.0)
+            for detected, detected_bounds in zip(predictions, prediction_bounds)
+        ]
+        for expected, expected_bounds in zip(truth, truth_bounds)
     ]
     cost = [[1.0] * size for _ in range(size)]
     for truth_index, row in enumerate(overlaps):
         for prediction_index, values in enumerate(row):
-            cost[truth_index][prediction_index] = 1.0 - values[0]
+            iou = values[0]
+            # Prefer the maximum number of valid matches before comparing their IoU.
+            cost[truth_index][prediction_index] = 1.0 - iou - (size + 1 if iou >= iou_threshold else 0)
     assignment = _hungarian_assignment(cost) if size else []
 
     match_records: list[dict] = []
@@ -231,7 +408,7 @@ def evaluate_page_crops(
         assigned_predictions.add(prediction_index)
         polygon_iou, mask_iou, cutoff, background = overlaps[truth_index][prediction_index]
         boundary = _boundary_f_score(truth[truth_index], predictions[prediction_index], width, height)
-        corner = _corner_error(truth[truth_index], predictions[prediction_index])
+        corner = _corner_error(truth[truth_index], predictions[prediction_index], width, height)
         is_valid = polygon_iou >= iou_threshold
         if is_valid:
             valid_truth.add(truth_index)

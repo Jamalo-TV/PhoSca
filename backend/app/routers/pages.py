@@ -7,12 +7,26 @@ from app.config import Settings, get_settings
 from app.core.auth import Principal, album_for_principal, require_write_principal
 from app.core.rate_limit import limiter
 from app.database import get_async_session
+from app.models import PageStatus
 from app.schemas import PageUploadResponse
 from app.services.chunked_uploads import receive_upload_chunk
-from app.services.uploads import save_page_uploads
 from app.services.pipeline import process_pages_serialized
+from app.services.uploads import save_page_uploads
 
 router = APIRouter(prefix="/api/v1/albums/{album_id}/pages", tags=["pages"])
+
+
+def _schedule_analysis(response: PageUploadResponse, background_tasks: BackgroundTasks, settings: Settings) -> None:
+    if not settings.auto_analyze_uploads:
+        return
+    page_ids = [
+        item.page_id
+        for item in response.pages
+        if item.status in {PageStatus.uploaded, PageStatus.queued, PageStatus.processing}
+    ]
+    if page_ids:
+        background_tasks.add_task(process_pages_serialized, page_ids, settings)
+        response.analysis_queued = True
 
 
 @router.post("/upload", response_model=PageUploadResponse, status_code=status.HTTP_201_CREATED)
@@ -38,8 +52,7 @@ async def upload_pages(
         files=uploaded_files,
         idempotent_retry=request.headers.get("X-Upload-Retry") == "1",
     )
-    if settings.auto_analyze_uploads:
-        background_tasks.add_task(process_pages_serialized, [item.page_id for item in response.pages], settings)
+    _schedule_analysis(response, background_tasks, settings)
     return response
 
 
@@ -65,6 +78,6 @@ async def upload_page_chunk(
         chunk=file,
         idempotent_retry=request.headers.get("X-Upload-Retry") == "1",
     )
-    if settings.auto_analyze_uploads and hasattr(response, "pages"):
-        background_tasks.add_task(process_pages_serialized, [item.page_id for item in response.pages], settings)
+    if isinstance(response, PageUploadResponse):
+        _schedule_analysis(response, background_tasks, settings)
     return response

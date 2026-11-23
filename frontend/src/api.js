@@ -27,22 +27,17 @@ export async function getAlbum(albumId) {
   return parseResponse(await fetch(`/api/v1/albums/${albumId}`));
 }
 
-export async function listPages(albumId) {
-  return parseResponse(await fetch(`/api/v1/albums/${albumId}/pages`));
+export async function listPages(albumId, signal) {
+  return parseResponse(await fetch(`/api/v1/albums/${albumId}/pages`, { signal }));
 }
 
 export async function listPhotos(albumId) {
   return parseResponse(await fetch(`/api/v1/albums/${albumId}/photos`));
 }
 
-export async function analyzeAlbum(albumId, pageIds = null) {
-  return parseResponse(
-    await fetch(`/api/v1/albums/${albumId}/analyze`, {
-      method: "POST",
-      headers: jsonHeaders,
-      body: JSON.stringify({ page_ids: pageIds }),
-    })
-  );
+export function hasPhotoCrop(photo) {
+  const variants = photo.enhancement_applied?.variants;
+  return Boolean(photo.original_storage_path || variants?.source_corrected?.path || variants?.original?.path || photo.storage_path);
 }
 
 export async function analyzeAlbumNow(albumId, pageIds = null) {

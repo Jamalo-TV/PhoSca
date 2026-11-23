@@ -5,8 +5,10 @@ from pathlib import Path
 from time import perf_counter
 from uuid import UUID, uuid4
 
+import cv2
+import numpy as np
 import structlog
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,7 +34,13 @@ from app.models import (
     RunStatus,
 )
 from app.pipeline.confidence import calibrate_confidence
-from app.pipeline.decisions import ReviewReason, component_review_reasons, confidence_components
+from app.pipeline.crop_validation import (
+    CROP_VALIDATION_UNAVAILABLE,
+    automatic_crop_review_reasons,
+    crop_validation_evidence,
+    crop_validation_profile,
+)
+from app.pipeline.decisions import ReviewReason, component_review_reasons, confidence_components, is_reviewed_non_print
 from app.pipeline.dedup import compute_phash, hamming_distance
 from app.pipeline.degradation import analyze_degradation
 from app.pipeline.dl_enhancement import dl_enhance_photo
@@ -40,12 +48,13 @@ from app.pipeline.enhancement import conservative_enhance_photo, prepare_for_cut
 from app.pipeline.exif import write_caption_exif
 from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, sha256_file
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
-from app.pipeline.perspective import correct_photo_crop
+from app.pipeline.perspective import apply_refined_visibility, correct_photo_crop
 from app.pipeline.presets import get_enhancement_config
 from app.pipeline.protected_regions import detect_protected_regions
 from app.pipeline.quality import segmentation_review_reasons
 from app.pipeline.segmentation import segment_album_page
 from app.pipeline.variants import build_variant_bundle
+from app.schemas.common import PrintSizeMM
 from app.services.dlq import quarantine_page_failure
 from app.services.provenance import (
     asset_for_path,
@@ -108,7 +117,9 @@ def _source_variant_record(name: str, path: Path, *, selected: bool, metadata: d
     }
 
 
-async def ingestion_task_logic(session: AsyncSession, page_id: UUID, settings: Settings) -> dict:
+async def ingestion_task_logic(
+    session: AsyncSession, page_id: UUID, settings: Settings, *, update_page_status: bool = True
+) -> dict:
     page = await session.get(Page, page_id)
     if page is None:
         raise ValueError(f"Page not found: {page_id}")
@@ -133,10 +144,12 @@ async def ingestion_task_logic(session: AsyncSession, page_id: UUID, settings: S
         logger.warning("page_ingestion_failed", page_id=str(page.id), reason="sha256_verification_failed", **dlq)
         raise ValueError(page.error_message)
 
-    image = load_image(path)
-    blur_score = calculate_blur_score(image)
+    image = await asyncio.to_thread(load_image, path)
+    blur_score = await asyncio.to_thread(calculate_blur_score, image)
     page.blur_score = blur_score
-    page.status = PageStatus.review_needed if blur_score < settings.blur_threshold else PageStatus.queued
+    needs_review = blur_score < settings.blur_threshold
+    if update_page_status:
+        page.status = PageStatus.review_needed if needs_review else PageStatus.queued
     _append_metadata(
         page,
         "ingestion",
@@ -144,7 +157,7 @@ async def ingestion_task_logic(session: AsyncSession, page_id: UUID, settings: S
             "hash_verified": True,
             "blur_score": blur_score,
             "blur_threshold": settings.blur_threshold,
-            "review_needed": blur_score < settings.blur_threshold,
+            "review_needed": needs_review,
         },
     )
     session.add(AuditLog(entity_type="page", entity_id=page.id, action="ingested", details={"blur_score": blur_score}))
@@ -157,7 +170,7 @@ async def ingestion_task_logic(session: AsyncSession, page_id: UUID, settings: S
     }
     finish_stage(
         stage,
-        status=RunStatus.review_needed if page.status == PageStatus.review_needed else RunStatus.completed,
+        status=RunStatus.review_needed if needs_review else RunStatus.completed,
         details=ingestion_details,
         output_path=path,
     )
@@ -165,7 +178,9 @@ async def ingestion_task_logic(session: AsyncSession, page_id: UUID, settings: S
     return {"page_id": str(page.id), "status": page.status.value, "blur_score": blur_score}
 
 
-async def segmentation_task_logic(session: AsyncSession, page_id: UUID, settings: Settings) -> dict:
+async def segmentation_task_logic(
+    session: AsyncSession, page_id: UUID, settings: Settings, *, update_page_status: bool = True
+) -> dict:
     page = await session.get(Page, page_id)
     if page is None:
         raise ValueError(f"Page not found: {page_id}")
@@ -184,11 +199,11 @@ async def segmentation_task_logic(session: AsyncSession, page_id: UUID, settings
 
     prior_review_required = page.status == PageStatus.review_needed
     page.status = PageStatus.processing
-    image = load_image(Path(page.storage_path))
-    cutout_ready_image, cutout_prep_metadata = prepare_for_cutout(image)
+    image = await asyncio.to_thread(load_image, Path(page.storage_path))
+    cutout_ready_image, cutout_prep_metadata = await asyncio.to_thread(prepare_for_cutout, image)
     _append_metadata(page, "pre_cutout_enhancement", cutout_prep_metadata)
     segmentation_started = perf_counter()
-    result = segment_album_page(cutout_ready_image, settings)
+    result = await asyncio.to_thread(segment_album_page, cutout_ready_image, settings)
     SEGMENTATION_SECONDS.labels(model=str(result.metadata.get("model", "unknown"))).observe(
         perf_counter() - segmentation_started
     )
@@ -196,10 +211,18 @@ async def segmentation_task_logic(session: AsyncSession, page_id: UUID, settings
         SEGMENTATION_CONFIDENCE.labels(source=str((detection.mask or {}).get("detector_source", "unknown"))).observe(
             detection.confidence
         )
-    protected_regions = detect_protected_regions(image) if settings.enable_protected_region_guard else []
+    protected_regions = (
+        await asyncio.to_thread(detect_protected_regions, image) if settings.enable_protected_region_guard else []
+    )
     PROTECTED_REGIONS.observe(len(protected_regions))
-    _append_metadata(page, "protected_regions", {"regions": protected_regions, "count": len(protected_regions)})
-    _append_metadata(page, "segmentation", result.metadata | {"detections": len(result.detections)})
+    _append_metadata(page, "protected_regions", {
+        "regions": protected_regions, "count": len(protected_regions),
+        "enabled": settings.enable_protected_region_guard,
+    })
+    _append_metadata(page, "segmentation", result.metadata | {
+        "detections": len(result.detections),
+        "validation_profile": crop_validation_profile(settings),
+    })
 
     created_photo_ids: list[str] = []
     review_reasons_by_photo: dict[str, list[str]] = {}
@@ -242,6 +265,7 @@ async def segmentation_task_logic(session: AsyncSession, page_id: UUID, settings
             geometry_valid=detection.geometry_valid,
             enhancement_applied={
                 "review_reasons": review_reasons,
+                "segmentation_review_reasons": detection.review_reasons,
                 "segmentation_confidence": calibration,
                 "confidence_components": components.as_dict(),
             },
@@ -252,8 +276,14 @@ async def segmentation_task_logic(session: AsyncSession, page_id: UUID, settings
         if review_reasons:
             review_reasons_by_photo[str(photo.id)] = review_reasons
 
+    needs_review = (
+        not result.detections
+        or prior_review_required
+        or (page.blur_score is not None and page.blur_score < settings.blur_threshold)
+    )
+    if update_page_status:
+        page.status = PageStatus.review_needed if needs_review else PageStatus.queued
     if not result.detections:
-        page.status = PageStatus.review_needed
         page.error_message = "No photos detected; manual review required."
         session.add(
             AuditLog(
@@ -261,9 +291,6 @@ async def segmentation_task_logic(session: AsyncSession, page_id: UUID, settings
             )
         )
     else:
-        # Ingestion and segmentation reasons are cumulative: a blur warning
-        # must not be erased simply because later stages produced detections.
-        page.status = PageStatus.review_needed if prior_review_required else PageStatus.queued
         details = {"photo_ids": created_photo_ids, "review_reasons_by_photo": review_reasons_by_photo}
         session.add(AuditLog(entity_type="page", entity_id=page.id, action="segmented", details=details))
         logger.info(
@@ -274,10 +301,9 @@ async def segmentation_task_logic(session: AsyncSession, page_id: UUID, settings
             model=result.metadata.get("model"),
         )
 
-    await session.commit()
     finish_stage(
         stage,
-        status=RunStatus.review_needed if page.status == PageStatus.review_needed else RunStatus.completed,
+        status=RunStatus.review_needed if needs_review else RunStatus.completed,
         details=result.metadata,
     )
     await session.commit()
@@ -290,28 +316,57 @@ async def perspective_correction_task_logic(
     settings: Settings,
     *,
     skip_if_exists: bool = False,
+    reject_invalid_edit: bool = False,
+    page_image: np.ndarray | None = None,
 ) -> dict:
     photo = await session.scalar(
-        select(ExtractedPhoto).options(selectinload(ExtractedPhoto.page)).where(ExtractedPhoto.id == photo_id)
+        select(ExtractedPhoto)
+        .options(selectinload(ExtractedPhoto.page))
+        .where(ExtractedPhoto.id == photo_id)
+        .with_for_update()
     )
     if photo is None:
         raise ValueError(f"Photo not found: {photo_id}")
     run = await get_or_create_run(session, photo.page, settings)
     if skip_if_exists and photo.original_storage_path and Path(photo.original_storage_path).exists():
+        full_mode = ((photo.enhancement_applied or {}).get("correction") or {}).get("crop_modes", {}).get("full_print")
         return {
             "photo_id": str(photo.id),
             "storage_path": photo.original_storage_path,
             "idempotent_replay": True,
             "run_id": str(run.id),
+            "review_required": bool(full_mode and full_mode["status"] != "ready"),
+            "reason": next(iter(full_mode.get("reason_codes", [])), "CROP_GEOMETRY_UNCERTAIN") if full_mode else None,
         }
     stage = await start_stage(session, run, "perspective_correction", input_path=Path(photo.page.storage_path))
 
-    page_image = load_image(Path(photo.page.storage_path))
-    protected_regions = list(
-        (photo.page.processing_metadata or {}).get("steps", {}).get("protected_regions", {}).get("regions") or []
-    )
+    if page_image is None:
+        page_image = await asyncio.to_thread(load_image, Path(photo.page.storage_path))
+    automatic_detection = photo.segmentation_confidence is not None
+    page_steps = (photo.page.processing_metadata or {}).get("steps") or {}
+    protection_evidence = page_steps.get("protected_regions") or {}
+    protected_regions = protection_evidence.get("regions") if protection_evidence.get("enabled", True) else None
+    neighbor_masks = []
+    if settings.enable_precise_photo_crops:
+        rows = await session.execute(
+            select(
+                ExtractedPhoto.segmentation_mask,
+                ExtractedPhoto.bounding_box,
+                ExtractedPhoto.enhancement_applied["review_rejected_detection"],
+            ).where(
+                ExtractedPhoto.page_id == photo.page_id,
+                ExtractedPhoto.id != photo.id,
+                ExtractedPhoto.segmentation_mask.is_not(None),
+            )
+        )
+        neighbor_masks = [mask for mask, box, rejection in rows if mask and not is_reviewed_non_print(rejection, box, mask)]
     try:
-        crop_result = correct_photo_crop(
+        size = (photo.segmentation_mask or {}).get("print_size_mm")
+        manual_aspect = None
+        if not automatic_detection and size is not None:
+            manual_aspect = PrintSizeMM.model_validate(size).aspect_ratio
+        crop_result = await asyncio.to_thread(
+            correct_photo_crop,
             page_image,
             photo.bounding_box,
             photo.segmentation_mask,
@@ -320,17 +375,32 @@ async def perspective_correction_task_logic(
             orientation_model_path=settings.photo_orientation_model_path,
             protect_regions=settings.enable_protected_region_guard,
             protected_regions=protected_regions,
+            allow_page_face_overlap=automatic_detection and photo.geometry_valid,
+            # Saving reviewer corners clears prediction confidence, even when the client retains its model tag.
+            allow_border_expansion=automatic_detection,
+            dual_mode=settings.enable_precise_photo_crops,
+            enable_classical_retry=settings.enable_classical_segmentation_fallback,
+            print_aspect_ratio=manual_aspect,
+            neighbor_masks=[mask for mask in neighbor_masks if mask],
         )
         corrected = crop_result.image
         correction_metadata = crop_result.metadata
-    except ValueError as exc:
-        reason = str(exc)
+    except (ValueError, cv2.error) as exc:
+        reason = str(exc) if isinstance(exc, ValueError) else "perspective_opencv_error"
+        if reject_invalid_edit:
+            raise ValueError(reason) from exc
         metadata = _update_photo_decision_metadata(
             photo,
             component_updates={"perspective_confidence": 0.0},
             reason_codes=[ReviewReason.QUADRILATERAL_UNSTABLE.value],
         )
+        prior_correction = metadata.get("correction") or {}
         metadata["correction"] = {"status": "rejected", "reason": reason}
+        if settings.enable_precise_photo_crops or prior_correction.get("crop_modes"):
+            metadata["correction"]["crop_modes"] = {
+                name: {"status": "review_needed", "reason_codes": [reason]}
+                for name in ("full_print", "image_only")
+            }
         photo.enhancement_applied = metadata
         session.add(
             AuditLog(entity_type="photo", entity_id=photo.id, action="correction_rejected", details={"reason": reason})
@@ -349,16 +419,53 @@ async def perspective_correction_task_logic(
         / "photos"
     )
     untrimmed_path = output_dir / f"{photo.id}_source_corrected_untrimmed.jpg"
-    save_jpeg(untrimmed_path, crop_result.rectified_untrimmed)
+    crop_modes = correction_metadata.get("crop_modes") or {}
+    orientation_reason = (correction_metadata.get("orientation") or {}).get("reason_code")
+    if crop_modes and automatic_detection:
+        prediction = photo.enhancement_applied or {}
+        calibration = prediction.get("segmentation_confidence") or {}
+        segmentation = page_steps.get("segmentation") or {}
+        model = segmentation.get("model_artifact") or {}
+        evidence = None
+        if not segmentation.get("onnx_error") and segmentation.get("validation_profile") == crop_validation_profile(settings):
+            evidence = crop_validation_evidence(settings, model.get("sha256"))
+        auto_review = automatic_crop_review_reasons(
+            settings, photo.segmentation_confidence, photo.geometry_valid, calibration.get("calibrated") is True,
+            prediction.get("segmentation_review_reasons") or [], orientation_reason,
+        )
+        if evidence is None:
+            auto_review.append(CROP_VALIDATION_UNAVAILABLE)
+        if auto_review:
+            for mode in crop_modes.values():
+                if mode.get("status") == "ready":
+                    mode["geometry_status"] = "ready"
+                    mode["status"] = "review_needed"
+                    mode["reason_codes"] = auto_review.copy()
+        else:
+            correction_metadata["crop_validation"] = evidence
+    full_mode = crop_modes.get("full_print")
+    image_mode = crop_modes.get("image_only") or {}
+    full_ready = bool(full_mode and full_mode["status"] == "ready")
+    image_ready = bool(full_ready and image_mode.get("status") == "ready" and crop_result.image_only is not None)
+    image_is_full = image_ready and crop_result.image_only is corrected
     trim_applied = bool(correction_metadata.get("border_trim", {}).get("applied"))
+    trim_applied = (image_ready and not image_is_full) if crop_modes else trim_applied
     trimmed_path = output_dir / f"{photo.id}_source_corrected_trimmed.jpg" if trim_applied else None
-    if trimmed_path is not None:
-        save_jpeg(trimmed_path, corrected)
-    photo.original_storage_path = str(untrimmed_path)
-    photo.storage_path = str(untrimmed_path)
+    try:
+        await asyncio.to_thread(save_jpeg, untrimmed_path, crop_result.rectified_untrimmed)
+        if trimmed_path is not None:
+            await asyncio.to_thread(save_jpeg, trimmed_path, crop_result.image_only if crop_modes else corrected)
+    except (OSError, ValueError, cv2.error):
+        untrimmed_path.unlink(missing_ok=True)
+        if trimmed_path is not None:
+            trimmed_path.unlink(missing_ok=True)
+        raise
+    source_path = untrimmed_path if crop_modes else trimmed_path or untrimmed_path
+    photo.original_storage_path = str(source_path)
+    photo.storage_path = str(source_path)
     correction_metadata = correction_metadata | {
         "status": "completed",
-        "source_corrected_path": str(untrimmed_path),
+        "source_corrected_path": str(source_path),
         "untrimmed_path": str(untrimmed_path),
         "trimmed_path": str(trimmed_path) if trimmed_path else None,
     }
@@ -367,9 +474,7 @@ async def perspective_correction_task_logic(
         session,
         run,
         path=untrimmed_path,
-        # Keep the canonical lineage role for existing consumers; metadata
-        # and the explicit path distinguish this faithful untrimmed asset.
-        role="corrected_print",
+        role="corrected_print_untrimmed" if trimmed_path else "corrected_print",
         stage=stage,
         parent_asset=parent_asset,
         metadata=correction_metadata,
@@ -380,20 +485,33 @@ async def perspective_correction_task_logic(
             session,
             run,
             path=trimmed_path,
-            role="corrected_print_trimmed_candidate",
+            role="corrected_print",
             stage=stage,
-            parent_asset=untrimmed_asset,
-            metadata=correction_metadata.get("border_trim") or {},
+            parent_asset=parent_asset if crop_modes else untrimmed_asset,
+            metadata=image_mode if crop_modes else correction_metadata.get("border_trim") or {},
         )
     correction_metadata = correction_metadata | {
-        "asset_id": str(untrimmed_asset.id),
+        "asset_id": str((untrimmed_asset if crop_modes else trimmed_asset or untrimmed_asset).id),
         "untrimmed_asset_id": str(untrimmed_asset.id),
         "trimmed_asset_id": str(trimmed_asset.id) if trimmed_asset else None,
     }
-    orientation_metadata = correction_metadata.get("orientation") or {}
     reason_codes: list[str] = []
-    if orientation_metadata.get("reason_code"):
-        reason_codes.append(str(orientation_metadata["reason_code"]))
+    if orientation_reason:
+        reason_codes.append(orientation_reason)
+    if correction_metadata["protected_regions"].get("review_untrimmed"):
+        reason_codes.append(ReviewReason.POSSIBLE_CONTENT_CUTOFF.value)
+    prior_metadata = dict(photo.enhancement_applied or {})
+    prior_modes = (prior_metadata.get("correction") or {}).get("crop_modes") or {}
+    prior_reasons = set((prior_modes.get("full_print") or {}).get("reason_codes") or [])
+    if prior_reasons:
+        prior_metadata["review_reasons"] = [
+            reason for reason in (prior_metadata.get("review_reasons") or []) if reason not in prior_reasons
+        ]
+        photo.enhancement_applied = prior_metadata
+        if photo.status == PhotoStatus.review_needed and not prior_metadata["review_reasons"]:
+            photo.status = PhotoStatus.pending
+    if full_mode and not full_ready:
+        reason_codes.extend(full_mode.get("reason_codes") or ["CROP_GEOMETRY_UNCERTAIN"])
     metadata = _update_photo_decision_metadata(
         photo,
         component_updates={
@@ -405,38 +523,48 @@ async def perspective_correction_task_logic(
         },
         reason_codes=reason_codes,
     )
-    variants = dict(metadata.get("variants") or {})
-    variants["source_corrected"] = _source_variant_record("source_corrected", untrimmed_path, selected=True)
-    variants["source_corrected_untrimmed"] = _source_variant_record(
-        "source_corrected_untrimmed", untrimmed_path, selected=False, metadata={"alias_of": "source_corrected"}
-    )
+    # A new correction invalidates every variant generated from the previous crop.
+    metadata.pop("released_asset_id", None)
+    metadata.pop("released_asset_path", None)
+    variants = {
+        "source_corrected": _source_variant_record("source_corrected", source_path, selected=True),
+        "source_corrected_untrimmed": _source_variant_record(
+            "source_corrected_untrimmed", untrimmed_path, selected=False
+        ),
+    }
     if trimmed_path is not None:
         variants["source_corrected_trimmed"] = _source_variant_record(
             "source_corrected_trimmed", trimmed_path, selected=False, metadata=correction_metadata.get("border_trim")
+        )
+    if full_ready:
+        variants["full_print"] = _source_variant_record("full_print", source_path, selected=False, metadata=full_mode)
+    if image_ready:
+        variants["image_only"] = _source_variant_record(
+            "image_only", trimmed_path or untrimmed_path, selected=False, metadata=image_mode
         )
     metadata["variants"] = variants
     metadata["selected_variant"] = "source_corrected"
     metadata["correction"] = correction_metadata
     photo.enhancement_applied = metadata
+    photo.segmentation_mask = apply_refined_visibility(photo.segmentation_mask, correction_metadata)
     session.add(
         AuditLog(
             entity_type="photo",
             entity_id=photo.id,
             action="corrected",
-            details={"path": str(untrimmed_path), **correction_metadata},
+            details={"path": str(source_path), **correction_metadata},
         )
     )
     stage_status = RunStatus.review_needed if photo.status == PhotoStatus.review_needed else RunStatus.completed
-    finish_stage(stage, status=stage_status, details=correction_metadata, output_path=untrimmed_path)
+    finish_stage(stage, status=stage_status, details=correction_metadata, output_path=source_path)
     await session.commit()
     return {
         "photo_id": str(photo.id),
-        "storage_path": str(untrimmed_path),
+        "storage_path": str(source_path),
         "untrimmed_path": str(untrimmed_path),
         "trimmed_path": str(trimmed_path) if trimmed_path else None,
-        # A valid faithful crop can safely continue through reversible
-        # enhancement/persistence even while its uncertainty remains queued.
-        "review_required": False,
+        "review_required": bool(full_mode and not full_ready),
+        "reason": next(iter(full_mode.get("reason_codes", [])), "CROP_GEOMETRY_UNCERTAIN") if full_mode else None,
         "review_flagged": photo.status == PhotoStatus.review_needed,
     }
 
@@ -449,10 +577,16 @@ async def ocr_task_logic(session: AsyncSession, page_id: UUID, settings: Setting
     stage = await start_stage(session, run, "ocr", input_path=Path(page.storage_path))
 
     page_path = Path(page.storage_path)
-    image = load_image(page_path)
-    blocks, ocr_metadata = run_paddle_ocr(image, settings)
+    image = await asyncio.to_thread(load_image, page_path)
+    try:
+        blocks, ocr_metadata = await asyncio.to_thread(run_paddle_ocr, image, settings)
+    except Exception as exc:  # noqa: BLE001 - caption recognition is optional for cutouts.
+        blocks, ocr_metadata = [], {"ocr_engine": "paddleocr", "available": False, "error": str(exc)}
     if not blocks:
-        blocks, sidecar_metadata = run_sidecar_ocr(page_path)
+        try:
+            blocks, sidecar_metadata = await asyncio.to_thread(run_sidecar_ocr, page_path)
+        except Exception as exc:  # noqa: BLE001 - invalid sidecars must not block cutouts.
+            sidecar_metadata = {"ocr_engine": "sidecar", "available": False, "error": str(exc)}
         ocr_metadata = {"primary": ocr_metadata, "fallback": sidecar_metadata}
 
     photos = [{"id": str(photo.id), "bounding_box": photo.bounding_box} for photo in page.photos]
@@ -500,8 +634,8 @@ async def enhancement_task_logic(
 
     from app.pipeline.diffusion_restoration import premium_enhance_photo
 
-    source_img = load_image(source_path)
-    degradation_report = analyze_degradation(source_img)
+    source_img = await asyncio.to_thread(load_image, source_path)
+    degradation_report = await asyncio.to_thread(analyze_degradation, source_img)
     effective_preset = degradation_report.recommended_preset if preset in {None, "", "auto"} else preset
 
     conservative = None
@@ -509,7 +643,8 @@ async def enhancement_task_logic(
     conservative_metadata: dict = {"method": "disabled", "reason": "conservative_enhancement_disabled", "models": []}
     if settings.enable_conservative_enhancement:
         ENHANCEMENT_ROUTES.labels(route="conservative_deterministic").inc()
-        conservative, conservative_metadata = conservative_enhance_photo(
+        conservative, conservative_metadata = await asyncio.to_thread(
+            conservative_enhance_photo,
             source_img,
             preset=effective_preset,
             degradation_report=degradation_report,
@@ -572,7 +707,8 @@ async def enhancement_task_logic(
             }
             ENHANCEMENT_ROUTES.labels(route="restoration_registration_failed").inc()
         else:
-            restoration, restoration_metadata = dl_enhance_photo(
+            restoration, restoration_metadata = await asyncio.to_thread(
+                dl_enhance_photo,
                 source_img,
                 preset=effective_preset,
                 degradation_report=degradation_report,
@@ -604,7 +740,8 @@ async def enhancement_task_logic(
     premium_path = None
     premium_metadata: dict = {"method": "disabled", "reason": "premium_enhancement_feature_flag_disabled", "models": []}
     if settings.enable_premium_enhancement:
-        premium, premium_metadata = premium_enhance_photo(
+        premium, premium_metadata = await asyncio.to_thread(
+            premium_enhance_photo,
             source_img,
             base_restored=restoration if restoration is not None else conservative,
             base_metadata=restoration_metadata if restoration is not None else conservative_metadata,
@@ -634,7 +771,8 @@ async def enhancement_task_logic(
         "canary_bucket": canary_bucket,
         "canary_eligible": canary_bucket < settings.canary_percentage,
     }
-    variant_bundle = build_variant_bundle(
+    variant_bundle = await asyncio.to_thread(
+        build_variant_bundle,
         original_path=Path(photo.original_storage_path or source_path),
         original=source_img,
         premium_path=premium_path,
@@ -654,7 +792,7 @@ async def enhancement_task_logic(
         if previous_metadata.get(preserved_key):
             variant_bundle[preserved_key] = previous_metadata[preserved_key]
     prior_variants = dict(previous_metadata.get("variants") or {})
-    for name in ("source_corrected_untrimmed", "source_corrected_trimmed"):
+    for name in ("source_corrected_untrimmed", "source_corrected_trimmed", "full_print", "image_only"):
         if name in prior_variants:
             variant_bundle["variants"][name] = prior_variants[name]
     variant_bundle["degradation"] = degradation_report.as_dict()
@@ -850,62 +988,91 @@ async def persistence_task_logic(session: AsyncSession, photo_id: UUID, settings
     return {"photo_id": str(photo.id), "status": photo.status.value, "exif": exif_metadata}
 
 
-async def process_single_photo(session: AsyncSession, photo_id: UUID, settings: Settings) -> dict:
-    correction = await perspective_correction_task_logic(session, photo_id, settings, skip_if_exists=True)
-    if correction.get("review_required"):
-        return {"photo_id": str(photo_id), "status": PhotoStatus.review_needed.value, "reason": correction["reason"]}
-    await enhancement_task_logic(session, photo_id, settings)
-    await deduplication_task_logic(session, photo_id, settings)
-    return await persistence_task_logic(session, photo_id, settings)
+async def _update_album_progress(session: AsyncSession, album_id: UUID) -> None:
+    await session.flush()
+    album = await session.get(Album, album_id, with_for_update=True)
+    counts = dict(
+        (await session.execute(
+            select(Page.status, func.count(Page.id)).where(Page.album_id == album_id).group_by(Page.status)
+        )).all()
+    )
+    album.processed_pages = counts.get(PageStatus.completed, 0) + counts.get(PageStatus.review_needed, 0)
+    if any(counts.get(state) for state in (PageStatus.uploaded, PageStatus.queued, PageStatus.processing)):
+        album.status = AlbumStatus.processing
+    else:
+        album.status = AlbumStatus.failed if counts.get(PageStatus.failed) else AlbumStatus.completed
 
 
 async def process_page_pipeline(page_id: UUID, settings: Settings | None = None) -> dict:
     settings = settings or get_settings()
     async with get_session_factory()() as session:
-        existing_page = await session.get(Page, page_id)
-        if existing_page is None:
+        page = await session.get(Page, page_id)
+        if page is None:
             raise ValueError(f"Page not found: {page_id}")
-        if existing_page.status in {PageStatus.completed, PageStatus.review_needed}:
+        ready_photos: dict[UUID, dict] = {}
+        already_processed = page.status == PageStatus.completed
+        if page.status not in {PageStatus.uploaded, PageStatus.completed}:
+            photos = (await session.scalars(select(ExtractedPhoto).where(ExtractedPhoto.page_id == page_id))).all()
+            for photo in photos:
+                released_path = (photo.enhancement_applied or {}).get("released_asset_path")
+                if not photo.storage_path or not Path(photo.storage_path).is_file():
+                    continue
+                if (
+                    page.status == PageStatus.review_needed
+                    or photo.status == PhotoStatus.completed
+                    or released_path == photo.storage_path
+                ):
+                    ready_photos[photo.id] = {"photo_id": str(photo.id), "status": photo.status.value}
+            already_processed = (
+                page.status == PageStatus.review_needed and bool(photos) and len(photos) == len(ready_photos)
+            )
+        if already_processed:
             return {
                 "page_id": str(page_id),
-                "status": existing_page.status.value,
+                "status": page.status.value,
                 "photos": [],
                 "idempotent_replay": True,
             }
-        await ingestion_task_logic(session, page_id, settings)
-        segmentation = await segmentation_task_logic(session, page_id, settings)
+        page.status = PageStatus.processing
+        page.error_message = None
+        await session.flush()
+        await session.execute(update(Album).where(Album.id == page.album_id).values(status=AlbumStatus.processing))
+        await session.commit()
+        ingestion = await ingestion_task_logic(session, page_id, settings, update_page_status=False)
+        segmentation = await segmentation_task_logic(session, page_id, settings, update_page_status=False)
+        photo_ids = list(map(UUID, segmentation["photo_ids"]))
+        photo_ids = [photo_id for photo_id in photo_ids if photo_id not in ready_photos]
+        correction_source = await asyncio.to_thread(load_image, Path(page.storage_path)) if photo_ids else None
+        corrections = [
+            await perspective_correction_task_logic(
+                session, photo_id, settings, skip_if_exists=True, page_image=correction_source
+            )
+            for photo_id in photo_ids
+        ]
+        del correction_source
         await ocr_task_logic(session, page_id, settings)
-        photo_results = []
-        for photo_id in segmentation["photo_ids"]:
-            photo_results.append(await process_single_photo(session, UUID(photo_id), settings))
+        photo_results = list(ready_photos.values())
+        for photo_id, correction in zip(photo_ids, corrections):
+            if correction.get("review_required"):
+                photo_results.append({
+                    "photo_id": str(photo_id),
+                    "status": PhotoStatus.review_needed.value,
+                    "reason": correction["reason"],
+                })
+                continue
+            await enhancement_task_logic(session, photo_id, settings)
+            await deduplication_task_logic(session, photo_id, settings)
+            photo_results.append(await persistence_task_logic(session, photo_id, settings))
 
-        page = await session.scalar(select(Page).options(selectinload(Page.album)).where(Page.id == page_id))
-        if page is None:
-            raise ValueError(f"Page not found: {page_id}")
         failed_photos = [result for result in photo_results if result["status"] == PhotoStatus.failed.value]
         review_photos = [result for result in photo_results if result["status"] == PhotoStatus.review_needed.value]
         if failed_photos:
             page.status = PageStatus.failed
-        elif review_photos or page.status == PageStatus.review_needed:
+        elif review_photos or not photo_results or ingestion["blur_score"] < settings.blur_threshold:
             page.status = PageStatus.review_needed
         else:
             page.status = PageStatus.completed
-        if page.status in {PageStatus.completed, PageStatus.review_needed}:
-            page.album.processed_pages += 1
-        await session.flush()
-        remaining = await session.scalar(
-            select(Page.id)
-            .where(
-                Page.album_id == page.album_id,
-                Page.status.in_([PageStatus.uploaded, PageStatus.queued, PageStatus.processing]),
-            )
-            .limit(1)
-        )
-        if remaining is None:
-            failed_page = await session.scalar(
-                select(Page.id).where(Page.album_id == page.album_id, Page.status == PageStatus.failed).limit(1)
-            )
-            page.album.status = AlbumStatus.failed if failed_page is not None else AlbumStatus.completed
+        await _update_album_progress(session, page.album_id)
         session.add(
             AuditLog(entity_type="page", entity_id=page.id, action="completed", details={"status": page.status.value})
         )
@@ -943,6 +1110,7 @@ async def process_pages_pipeline(page_ids: list[UUID], settings: Settings | None
                         page, settings or get_settings(), reason="pipeline_exception", details={"error": str(exc)}
                     )
                     _append_metadata(page, "dlq", dlq | {"reason": "pipeline_exception"})
+                    await _update_album_progress(session, page.album_id)
                     session.add(
                         AuditLog(
                             entity_type="page", entity_id=page.id, action="failed", details={"error": str(exc), **dlq}
@@ -959,8 +1127,7 @@ async def process_pages_pipeline(page_ids: list[UUID], settings: Settings | None
 async def process_pages_serialized(page_ids: list[UUID], settings: Settings | None = None) -> dict:
     """Serialize local background inference to protect SQLite and one GPU.
 
-    Uploaded pages remain in ``uploaded`` state if the process restarts, so a
-    later catch-up run can safely replay them.
+    Uploaded and partially processed pages can be replayed after a restart.
     """
     async with _local_pipeline_lock:
         return await process_pages_pipeline(page_ids, settings)

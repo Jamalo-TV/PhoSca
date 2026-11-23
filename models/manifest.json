@@ -1,15 +1,15 @@
 {
   "models": {
     "yolov8-seg-album.onnx": {
-      "sha256": "e4168ae335a04c480c21048fa0b1f7b569bb1cc942c7e68bc4886e19d0e07242",
+      "sha256": "4d8235880ea1868a0ce6c77fd313522ae979329eed1441385cb2c256e2cf960f",
       "license": "AGPL-3.0-only (Ultralytics YOLO11 pretrained weights; fine-tuned PhoSca derivative)",
       "input": {
         "layout": "NCHW",
         "width": 1024,
         "height": 1024
       },
-      "training_run": "photo-seg-v1-40-pages",
-      "training_data": "40 manually annotated album pages; 25 train / 5 validation / 10 golden holdout"
+      "training_run": "development_visual_screen_warm_finetune",
+      "training_data": "Legacy labels and visually screened approximate development drafts only"
     }
   }
 }
