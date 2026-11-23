@@ -921,6 +921,15 @@ step. All 48 motifs stay in review without a derivative, all whole prints
 remain ready, and the three frozen runs retain their previous pass counts.
 See `runs/crop-quality/cloud-v31/shadow-amplitude.json`.
 
+Version 32 shows connected strong measurements from rejected motif sides
+in the review editor and leaves gaps between them. On Whiting 76 it adds
+four top segments with 89 samples and five right segments with 109 samples.
+Their positions agree with optical transitions in the independently scanned
+print to 0.50 and 0.60 native pixels at p95. The upper-right gap still needs
+review. A weak one-sided extension was measured separately and remains a
+diagnostic. Neither Whiting motif yields a derivative. See the paired audit
+and overlay under `runs/crop-quality/cloud-v32/`.
+
 The frozen seeded-geometry benchmark passes all 23 recoverable mode crops.
 The v21 and v22 Registered end-to-end runs match six of 18 raw instances
 at IoU 0.85. On the development white-margin and white-on-white pages the

@@ -804,14 +804,18 @@ def _dual_crop_result(
         seam_seed = diagnostics.pop("curve_seed_quad", quad)
         if seam_seed is not None and four_rim_edges and inner is None and not independent:
             native_seed = cv2.perspectiveTransform(seam_seed.reshape(1, 4, 2), np.linalg.inv(matrix))[0]
-            traces, curved, disagrees, continuously_observed = trace_motif_boundary(page, native_seed, all_edges)
+            review_fragments: list[np.ndarray] = []
+            traces, curved, disagrees, continuously_observed = trace_motif_boundary(
+                page, native_seed, all_edges, review_fragments=review_fragments,
+            )
             if curved:
                 image_reasons.append(CURVED_IMAGE_BOUNDARY)
             elif disagrees and not image_reasons:
                 image_reasons.append("IMAGE_BOUNDARY_UNCERTAIN")
             needs_native_line_support = not continuously_observed
             if curved or disagrees or needs_native_line_support or CURVED_IMAGE_BOUNDARY in image_reasons:
-                seam_traces = [_vertices_on_page(trace, page_width, page_height) for trace in traces]
+                seam_traces = [_vertices_on_page(trace, page_width, page_height)
+                               for trace in (*traces, *review_fragments)]
             if curved or disagrees or CURVED_IMAGE_BOUNDARY in image_reasons:
                 if continuously_observed and CURVED_IMAGE_BOUNDARY in image_reasons:
                     outline = close_motif_outline(native_seed, traces)

@@ -398,6 +398,12 @@ def test_motif_crop_reviews_displaced_weak_boundaries(bow, width, offset, shadow
     assert image_only["status"] == "review_needed"
     assert image_only["reason_codes"] == ["IMAGE_BOUNDARY_CURVED" if bow else "IMAGE_BOUNDARY_UNCERTAIN"]
     assert crop.image_only is None and crop.image_only_preview is None
+    if width == 91:
+        top = [trace for trace in image_only["suggested_seam_traces"]
+               if all(54 < point["y"] * 344 < 58 for point in trace)]
+        assert len(top) == 2
+        assert max(point["x"] * 499 for point in top[0]) < x[affected][0]
+        assert min(point["x"] * 499 for point in top[1]) > x[affected][-1]
 
 
 def test_outline_preview_has_no_foreign_color_and_preserves_the_projective_map() -> None:

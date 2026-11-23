@@ -86,6 +86,7 @@ def _has_competing_step(samples: np.ndarray, offsets: np.ndarray, seam: np.ndarr
 
 def _trace_side(
     image: np.ndarray, start: np.ndarray, end: np.ndarray, paper_color: list[float] | tuple[int, ...],
+    review_fragments: list[np.ndarray] | None,
 ) -> tuple[np.ndarray, float, float, bool, bool] | None:
     tangent = end - start
     length = np.linalg.norm(tangent)
@@ -130,6 +131,20 @@ def _trace_side(
     _add_bracketed_measurements(
         levels, progress, crossings, depth, paper, contrast, matches_paper, observed, locations, groups,
     )
+    def source_points(positions: np.ndarray, depths: np.ndarray) -> np.ndarray:
+        return np.float32(start + positions[:, None] * tangent + depths[:, None] * inward)
+
+    def record_fragments() -> None:
+        if review_fragments is None:
+            return
+        # Display contiguous measurements from a rejected side without
+        # interpolating across an unsupported span or a jump between edges.
+        rows = np.flatnonzero(strong_rows)
+        breaks = (np.diff(rows) != 1) | (np.abs(np.diff(locations[rows])) > 1.5)
+        for run in np.split(rows, np.flatnonzero(breaks) + 1):
+            if len(run) >= 4:
+                review_fragments.append(source_points(span[run], locations[run]))
+
     knots = []
     for group in groups:
         visible = group[observed[group]]
@@ -137,22 +152,26 @@ def _trace_side(
             knots.append((np.median(span[visible]), np.median(locations[visible])))
     knots = np.asarray(knots)
     if len(knots) < 10 or knots[0, 0] > .13 or knots[-1, 0] < .87:
+        record_fragments()
         return None
     positions, depths = knots.T
     error = np.abs(locations[observed] - np.interp(span[observed], positions, depths))
     if np.percentile(error, 80) > .8:
+        record_fragments()
         return None
     detrended = depths - np.polyval(np.polyfit(positions, depths, 1), positions)
-    polyline = start + positions[:, None] * tangent + depths[:, None] * inward
+    polyline = source_points(positions, depths)
     # Weak transitions can locate a likely seam while tracking a shadow instead
     # of a material change. Derive footprint support from the strong rows alone.
     continuous = bool(np.max(np.diff(np.flatnonzero(np.r_[True, strong_rows, True]))) <= 3)
     competing = _has_competing_step(samples, offsets, optical, strong_rows)
-    return np.float32(polyline), float(np.ptp(detrended) / 2), float(np.max(np.abs(depths))), continuous, competing
+    return polyline, float(np.ptp(detrended) / 2), float(np.max(np.abs(depths))), continuous, competing
 
 
-def trace_motif_boundary(image: np.ndarray, quad: np.ndarray, edges: dict) -> tuple[list[np.ndarray], bool, bool, bool]:
-    """Return native traces, curvature, chord disagreement and four-side continuity."""
+def trace_motif_boundary(
+    image: np.ndarray, quad: np.ndarray, edges: dict, *, review_fragments: list[np.ndarray] | None = None,
+) -> tuple[list[np.ndarray], bool, bool, bool]:
+    """Return native traces and render evidence, optionally collecting rejected fragments for review."""
     if quad.shape != (4, 2) or not np.isfinite(quad).all():
         return [], False, False, False
     traces = []
@@ -164,7 +183,7 @@ def trace_motif_boundary(image: np.ndarray, quad: np.ndarray, edges: dict) -> tu
         paper = edge.get("rim_bgr")
         if not edge.get("is_physical_border") or not paper:
             continue
-        evidence = _trace_side(image, start, end, paper)
+        evidence = _trace_side(image, start, end, paper, review_fragments)
         if evidence is None:
             continue
         polyline, deviation, distance, side_continuous, competing = evidence
