@@ -92,6 +92,50 @@ def test_partial_dense_tiles_improve_observed_print_and_keep_unobserved_pair(mon
     assert result_evidence[result.index(winner)]["score"] == .85
 
 
+def test_album_deskew_requires_page_level_orientation() -> None:
+    from app.pipeline.page_deskew import album_rotation
+
+    page = np.full((640, 840, 3), 218, np.uint8)
+    cv2.rectangle(page, (24, 18), (815, 621), (103, 105, 110), 3)
+    tilted_texture = page.copy()
+    for x in range(105, 750, 31):
+        cv2.line(tilted_texture, (x, 100), (x - 21, 550), (65, 76, 102), 2, cv2.LINE_AA)
+    for y in range(105, 500, 31):
+        cv2.line(tilted_texture, (100, y), (745, y + 31), (65, 76, 102), 2, cv2.LINE_AA)
+    assert album_rotation(tilted_texture) is None
+
+    for top in (59, 193, 327, 461):
+        for left in (64, 243, 422, 601):
+            cv2.rectangle(page, (left, top), (left + 151, top + 112), (95, 123, 161), -1)
+    assert album_rotation(page) is None
+    matrix = cv2.getRotationMatrix2D((419.5, 319.5), -3.7, .92)
+    tilted = cv2.warpAffine(page, matrix, (840, 640), borderValue=(218, 218, 218))
+    assert album_rotation(tilted) == pytest.approx(3.7, abs=.28)
+
+
+def test_deskew_reprojects_source_corners_and_rejects_padding() -> None:
+    from app.config import Settings
+    from app.pipeline.page_deskew import deskewed_view
+    from app.pipeline.segmentation import _detection_polygon, _project_deskewed_detection
+
+    image = np.full((81, 119, 3), 218, np.uint8)
+    view, inverse = deskewed_view(image, 8.)
+    forward = cv2.invertAffineTransform(inverse)
+    corners = np.float32([[0, 2], [32, 2], [32, 28], [0, 28]])
+    projected = cv2.transform(corners[None], forward)[0] / (np.array(view.shape[1::-1]) - 1)
+    box = {"x1": 0., "y1": .01, "x2": .4, "y2": .5}
+    proposal = _detection(box, .91, family="model", polygon=projected.tolist())
+    settings = Settings(DATABASE_URL="sqlite+aiosqlite:///./geometry-test.db", REDIS_URL="redis://localhost:6379/0")
+
+    mapped = _project_deskewed_detection(proposal, view.shape, image.shape, inverse, settings)
+    assert mapped is not None
+    assert mapped.mask["detector_source"] == "yolo_onnx_deskewed"
+    np.testing.assert_allclose(_detection_polygon(mapped) * [118, 80], corners, atol=1e-5)
+
+    padding = _detection({"x1": 0., "y1": 0., "x2": .015, "y2": .015}, .91, family="model")
+    assert _project_deskewed_detection(padding, view.shape, image.shape, inverse, settings) is None
+
+
 def test_quad_ordering_keeps_all_vertices_for_exact_diamond() -> None:
     from app.pipeline.geometry import order_quad_cyclic
 

@@ -15,7 +15,7 @@ from app.pipeline.confidence import is_sha256, load_confidence_calibration
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.model_registry import sha256
 
-CROP_VALIDATION_SCHEMA = 15
+CROP_VALIDATION_SCHEMA = 16
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
 
 
@@ -53,6 +53,7 @@ def crop_validation_profile(settings: Settings) -> dict:
         "dense_tile_inference": (
             2 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
+        "deskew_inference": 1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None,
         "border_analysis": settings.enable_border_trim,
         "protected_region_guard": settings.enable_protected_region_guard,
         "orientation_enabled": settings.enable_photo_orientation_correction,
@@ -71,10 +72,15 @@ def crop_validation_profile(settings: Settings) -> dict:
 
 def segmentation_matches_crop_profile(settings: Settings, segmentation: dict) -> bool:
     expected = crop_validation_profile(settings)
-    if (segmentation.get("onnx_error") or (segmentation.get("dense_tile_inference") or {}).get("error")
-            or segmentation.get("validation_profile") != expected):
+    if _inference_failed(segmentation) or segmentation.get("validation_profile") != expected:
         return False
     return _matches_refiner(expected["visible_mask_refinement"], segmentation)
+
+
+def _inference_failed(segmentation: dict) -> bool:
+    return bool(segmentation.get("onnx_error") or any(
+        (segmentation.get(stage) or {}).get("error") for stage in ("dense_tile_inference", "deskew_inference")
+    ))
 
 
 def _matches_refiner(refiner: dict | None, segmentation: dict) -> bool:
@@ -96,14 +102,14 @@ def detector_calibration_profile(settings: Settings, *, segmentation: dict | Non
     if refiner is not None and not (refiner["model_sha256"] and refiner["manifest_sha256"]):
         return None
     if segmentation is not None and (
-        segmentation.get("onnx_error") or (segmentation.get("dense_tile_inference") or {}).get("error")
+        _inference_failed(segmentation)
         or (segmentation.get("model_artifact") or {}).get("sha256") != model
         or not _matches_refiner(refiner, segmentation)
     ):
         return None
     return {"model_sha256": model, **{key: profile[key] for key in (
         "pipeline_version", "precise_photo_crops", "model_registry_sha256", "visible_mask_refinement",
-        "classical_fallback", "album_window_detection", "dense_tile_inference", "proposal_threshold",
+        "classical_fallback", "album_window_detection", "dense_tile_inference", "deskew_inference", "proposal_threshold",
         "acceptance_threshold", "min_detection_aspect_ratio",
         "max_detection_aspect_ratio", "opencv_version",
     )}}

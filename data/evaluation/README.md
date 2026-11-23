@@ -94,9 +94,9 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 15 binds
+groups, with the 90% threshold applied to each group. Report schema 16 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
-occlusion check, album-window detection, dense-page tiled inference, the
+occlusion check, album-window detection, dense-page tiled and deskewed inference, the
 configured visible mask refiner and detector-bound confidence calibration. A verified motif can
 qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
@@ -524,6 +524,23 @@ on the dense Met development scan, the paired test improved from 30 to 33
 matches and from 16 to 10 false positives. Mean matched mask IoU rose from
 0.735 to 0.819. Native results remain 44 of 48 with two false positives.
 The paired reports are `dense-cutoff-probe/dense-tracked-{control,candidate}.json`.
+
+Before classical fallback, a risky full-page result can retry on a rotated
+inference view when dispersed horizontal and vertical page boundaries agree.
+The view includes the entire source raster, runs the registered model and
+overlapping tiles, and maps the masks back to source pixel centres. Candidate
+masks from padding are discarded. The retry needs more source-supported
+small prints than the first pass. Cropping still samples the original.
+[OpenCV line detection](https://docs.opencv.org/4.x/d9/db0/tutorial_hough_lines.html)
+
+On rotated derivatives of the dense Met development scan, the retry finds
+32 of 48 prints at −3° and 25 at +3°, with seven and 13 false positives.
+The previous full pipeline exceeded 35 seconds on both cases in the paired
+run. Retries for ±5°, ±7° and ±10° also bypassed classical fallback, with
+19 to 30 matches. The native scan stays at 44 of 48. Blank and upright
+internal-line controls abstain. A frameless diagonal lattice still exceeds
+the time budget in the existing classical fallback. The cases and mask
+overlays are under `runs/crop-quality/deskew-risk-probe/`.
 
 The Emily Howland intake pairs the album page with a separate front scan
 of the same Harriet Tubman carte-de-visite. The window covers about 35% of

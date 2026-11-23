@@ -18,6 +18,7 @@ from app.pipeline.geometry import (
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, pixel_box_to_normalized
 from app.pipeline.mounted_prints import mounted_print_evidence
+from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.quality import evaluate_segmentation_geometry
 from app.pipeline.segmentation_filter import paper_and_edge_rejection_reasons, paper_around_nested_print
 
@@ -1927,6 +1928,72 @@ def _recover_dense_prints(
     )}
 
 
+def _project_deskewed_detection(
+    detection: SegmentationDetection, view_shape: tuple[int, ...], image_shape: tuple[int, ...],
+    inverse: np.ndarray, settings: Settings,
+) -> SegmentationDetection | None:
+    if detection.mask.get("source") != "yolo_seg_mask":
+        return None
+    height, width = image_shape[:2]
+    points = normalized_vertices_to_pixels(_detection_polygon(detection), view_shape[1], view_shape[0])
+    points = cv2.transform(points[None], inverse)[0]
+    if np.any(points < -1) or np.any(points > np.array([width, height])):
+        return None  # A proposal in the inference padding has no native source pixels.
+    scores = {key: value for key, value in detection.mask.get("scores", {}).items() if key != "area_ratio"}
+    return _make_detection(
+        box=detection.bounding_box, points=points, confidence=detection.confidence,
+        image_width=width, image_height=height, settings=settings,
+        source="yolo_seg_mask", detector_source="yolo_onnx_deskewed", scores=scores,
+    )
+
+
+def _deskew_retry(
+    image: np.ndarray, source: np.ndarray | None, angle: float, initial: list[SegmentationDetection],
+    initial_evidence: dict[int, dict[str, float]], inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
+    infer: Callable[[np.ndarray], list[SegmentationDetection]], settings: Settings,
+) -> tuple[list[SegmentationDetection], dict[int, dict[str, float]], dict]:
+    from app.pipeline.enhancement import prepare_for_cutout
+
+    view, inverse = deskewed_view(source if source is not None else image, angle)
+    if source is not None:
+        view, _ = prepare_for_cutout(view)
+    rotated = infer(view)
+    view_inputs = _boundary_inputs(view)
+    rotated_evidence = {index: _detection_boundary_evidence(item, *view_inputs) for index, item in enumerate(rotated)}
+    rotated, _, tiles = _recover_dense_prints(view, rotated, rotated_evidence, infer, view_inputs)
+    del view_inputs
+
+    recovered = []
+    for detection in rotated:
+        item = _project_deskewed_detection(detection, view.shape, image.shape, inverse, settings)
+        if item is not None:
+            recovered.append(item)
+    evidence = {index: _detection_boundary_evidence(item, *inputs) for index, item in enumerate(recovered)}
+
+    def supported(item: SegmentationDetection, boundary: dict[str, float]) -> bool:
+        return (item.geometry_valid and item.mask.get("source") == "yolo_seg_mask"
+                and item.confidence >= .60 and boundary["score"] >= .60)
+
+    base_support = sum(supported(item, initial_evidence[i]) for i, item in enumerate(initial))
+    small_support = sum(
+        supported(item, evidence[i]) and _score_value(item, "area_ratio") < _CLASSICAL_MIN_AREA_RATIO
+        for i, item in enumerate(recovered)
+    )
+    metadata = {"angle_degrees": round(angle, 4), "base_supported": base_support, "small_supported": small_support,
+                "view_width": view.shape[1], "view_height": view.shape[0], "tiles": tiles, "selected": False}
+    if not tiles["selected"] or small_support < max(16, base_support + 4, 1.20 * base_support):
+        return initial, initial_evidence, metadata
+
+    # Keep independently supported full-page detections at places the retry does not cover.
+    for index, item in enumerate(initial):
+        if supported(item, initial_evidence[index]) and all(
+            _normalized_box_overlap(item.bounding_box, candidate.bounding_box)[2] < .25 for candidate in recovered
+        ):
+            evidence[len(recovered)] = initial_evidence[index]
+            recovered.append(item)
+    return recovered, evidence, metadata | {"selected": True}
+
+
 def refine_album_page_result(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
     polygons = [detection.mask.get("polygon", []) for detection in result.detections]
     mount_rejections, quads = mounted_print_evidence(image, polygons)
@@ -2091,12 +2158,12 @@ def _refine_album_windows(image: np.ndarray, result: SegmentationResult) -> Segm
 def segment_album_page(
     image: np.ndarray, settings: Settings, *, source_image: np.ndarray | None = None,
 ) -> SegmentationResult:
-    result = _segment_album_page(image, settings)
+    source = source_image if source_image is not None and source_image.shape == image.shape else None
+    result = _segment_album_page(image, settings, source)
     if settings.enable_classical_segmentation_fallback:
         result = refine_album_page_result(image, result)
         if settings.enable_precise_photo_crops:
-            source = source_image if source_image is not None and source_image.shape == image.shape else image
-            result = _refine_album_windows(source, result)
+            result = _refine_album_windows(source if source is not None else image, result)
     model_path = settings.visible_mask_model_path
     if model_path is None or not settings.enable_precise_photo_crops:
         return result
@@ -2138,7 +2205,7 @@ def segment_album_page(
         })
 
 
-def _segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationResult:
+def _segment_album_page(image: np.ndarray, settings: Settings, source: np.ndarray | None = None) -> SegmentationResult:
     model_path = Path(settings.yolo_model_path)
     line_budget = min(3 * image.shape[0] * image.shape[1], 12_000_000) if settings.enable_precise_photo_crops else None
     metadata: dict = {
@@ -2202,11 +2269,12 @@ def _segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationRe
                     "fallback_used": False,
                 }
             )
-            if detections:
-                inputs = _boundary_inputs(image)
+            deskew_enabled = settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback
+            if detections or deskew_enabled:
+                inputs = _boundary_inputs(image) if detections else None
                 model_evidence = {
                     index: _detection_boundary_evidence(detection, *inputs) for index, detection in enumerate(detections)
-                }
+                } if inputs is not None else {}
                 risk_reasons = _model_set_risk_reasons(detections, settings, model_evidence)
                 metadata["model_set_risk"] = {
                     "risky": bool(risk_reasons),
@@ -2222,6 +2290,25 @@ def _segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationRe
                     and np.median([_score_value(d, "area_ratio", _normalized_box_area(d.bounding_box)) for d in detections])
                     < _CLASSICAL_MIN_AREA_RATIO
                 )
+                if deskew_enabled and risk_reasons and not dense_small_prints:
+                    retry_started = perf_counter()
+                    try:
+                        angle = album_rotation(source if source is not None else image)
+                        if angle is not None:
+                            if inputs is None:
+                                inputs = _boundary_inputs(image)
+                            recovered, recovered_evidence, retry = _deskew_retry(
+                                image, source, angle, detections, model_evidence, inputs, lambda frame: infer(frame)[0], settings,
+                            )
+                            metadata["deskew_inference"] = retry | {
+                                "runtime_ms": round((perf_counter() - retry_started) * 1000, 2),
+                            }
+                            if retry["selected"]:
+                                selected, fusion = fuse_candidate_evidence(image, recovered, [], model_evidence=recovered_evidence)
+                                metadata["fusion"] = fusion
+                                return SegmentationResult(detections=selected, metadata=metadata)
+                    except Exception as exc:  # Keep the original inference path if deskew cannot be evaluated.
+                        metadata["deskew_inference"] = {"error": str(exc)}
                 if settings.enable_classical_segmentation_fallback and risk_reasons and dense_small_prints:
                     metadata["classical_evidence_skipped"] = "dense_small_prints"
                     tile_started = perf_counter()
@@ -2238,7 +2325,7 @@ def _segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationRe
                         "runtime_ms": round((perf_counter() - tile_started) * 1000, 2),
                     }
                 del inputs
-                if settings.enable_classical_segmentation_fallback and risk_reasons and not dense_small_prints:
+                if detections and settings.enable_classical_segmentation_fallback and risk_reasons and not dense_small_prints:
                     fallback = detect_photos_classical(image, max_line_refinement_pixels=line_budget)
                     merged, fusion = fuse_candidate_evidence(
                         image, detections, fallback.detections, model_evidence=model_evidence
@@ -2254,9 +2341,10 @@ def _segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationRe
                         }
                     )
                     return SegmentationResult(detections=merged, metadata=metadata)
-                model_only, fusion = fuse_candidate_evidence(image, detections, [], model_evidence=model_evidence)
-                metadata["fusion"] = fusion
-                return SegmentationResult(detections=model_only, metadata=metadata)
+                if detections:
+                    model_only, fusion = fuse_candidate_evidence(image, detections, [], model_evidence=model_evidence)
+                    metadata["fusion"] = fusion
+                    return SegmentationResult(detections=model_only, metadata=metadata)
             metadata["onnx_parse_warning"] = "No supported detections were parsed from model outputs."
         except Exception as exc:  # noqa: BLE001 - model loading should fail into reviewable metadata.
             metadata["onnx_error"] = str(exc)
