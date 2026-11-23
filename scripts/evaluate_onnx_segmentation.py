@@ -472,10 +472,13 @@ def _legacy_mode(vertices, image, source_shape, rotation):
 
 def _render_crops(image, proposals, settings, temporary):
     from app.pipeline.image_ops import save_jpeg
-    from app.pipeline.perspective import correct_photo_crop
+    from app.pipeline.perspective import correct_photo_crop, page_plane_from_prints
     from app.pipeline.protected_regions import detect_protected_regions
 
     protected = detect_protected_regions(image) if settings.enable_protected_region_guard else []
+    page_plane = None
+    if settings.enable_precise_photo_crops:
+        page_plane = page_plane_from_prints(image, None, [mask for _, mask, _ in proposals if mask])
     rendered = []
     for index, (box, mask, geometry_valid) in enumerate(proposals):
         try:
@@ -488,6 +491,7 @@ def _render_crops(image, proposals, settings, temporary):
                 protect_regions=settings.enable_protected_region_guard,
                 allow_page_face_overlap=geometry_valid,
                 dual_mode=settings.enable_precise_photo_crops,
+                page_plane=page_plane,
                 enable_classical_retry=settings.enable_classical_segmentation_fallback,
                 neighbor_masks=[
                     neighbor_mask for n, (_, neighbor_mask, _) in enumerate(proposals) if n != index and neighbor_mask

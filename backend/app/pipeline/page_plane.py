@@ -10,6 +10,8 @@ from app.pipeline.print_edges import refine_print_boundary
 
 PRINT_ASPECT_REFERENCE_REVIEW = "PRINT_ASPECT_REFERENCE_REVIEW"
 _MAX_RECTANGLE_RESIDUAL_PX = .85
+_MIN_PAGE_PRINTS = 6
+_UNIT_QUAD = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
 
 
 @dataclass(frozen=True)
@@ -20,19 +22,31 @@ class MeasuredPrintReference:
 
 
 @dataclass(frozen=True)
-class CalibratedPagePlane:
+class PrintPagePlane:
     image_to_plane: np.ndarray
     supporting_prints: int
+    independent_fits: tuple[np.ndarray, ...] = ()
 
     def estimate_aspect(self, points: np.ndarray) -> tuple[float, dict] | None:
-        plane = _project(points, self.image_to_plane)
-        if plane is None:
-            return None
-        residual = _rectangle_residual(points, plane, self.image_to_plane)
-        aspect = _ratio(plane)
-        if not residual <= _MAX_RECTANGLE_RESIDUAL_PX or not .1 <= aspect <= 10:
-            return None
-        return aspect, {"supporting_prints": self.supporting_prints, "source_corner_residual_px": residual}
+        aspects = []
+        residuals = []
+        for matrix in (self.image_to_plane, *self.independent_fits):
+            plane = _project(points, matrix)
+            if plane is None:
+                return None
+            residual = _rectangle_residual(points, plane, matrix)
+            aspect = _ratio(plane)
+            if not residual <= _MAX_RECTANGLE_RESIDUAL_PX or not .1 <= aspect <= 10:
+                return None
+            aspects.append(aspect)
+            residuals.append(residual)
+        evidence = {"supporting_prints": self.supporting_prints, "source_corner_residual_px": residuals[0]}
+        if self.independent_fits:
+            difference = max(aspects) / min(aspects) - 1
+            if difference > .01:
+                return None
+            evidence["independent_aspect_difference"] = difference
+        return aspects[0], evidence
 
 
 def _project(points: np.ndarray, matrix: np.ndarray) -> np.ndarray | None:
@@ -74,18 +88,30 @@ def _rectangle_residual(points: np.ndarray, plane: np.ndarray, matrix: np.ndarra
     return float(np.linalg.norm(back - points, axis=1).max()) if back is not None else float("inf")
 
 
+def _supporting_quads(quads: np.ndarray, matrix: np.ndarray) -> np.ndarray:
+    return np.array([
+        (plane := _project(quad, matrix)) is not None
+        and _rectangle_residual(quad, plane, matrix) <= _MAX_RECTANGLE_RESIDUAL_PX
+        for quad in quads
+    ])
+
+
+def _distributed_support(quads: np.ndarray, required: int, image_shape: tuple[int, ...]) -> bool:
+    return len(quads) >= required and bool(np.all(
+        np.ptp(quads.mean(axis=1), axis=0) >= .25 * np.array(image_shape[1::-1])
+    ))
+
+
 def fit_calibrated_page_plane(
     quads: list[np.ndarray], camera: np.ndarray, image_shape: tuple[int, ...],
-) -> CalibratedPagePlane | None:
+) -> PrintPagePlane | None:
     """Pool normals from source-verified prints with the same camera intrinsics."""
-    minimum_prints = 6
-    if len(quads) < minimum_prints:
+    if len(quads) < _MIN_PAGE_PRINTS:
         return None
     inverse_camera = np.linalg.inv(camera)
-    unit_quad = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
     normals = []
     for quad in quads:
-        homography = cv2.getPerspectiveTransform(unit_quad, quad)
+        homography = cv2.getPerspectiveTransform(_UNIT_QUAD, quad)
         axes = inverse_camera @ homography[:, :2]
         normal = np.cross(axes[:, 0], axes[:, 1])
         normal /= np.linalg.norm(normal)
@@ -102,29 +128,83 @@ def fit_calibrated_page_plane(
         down = np.cross(normal, across)
         return np.array([across, down, normal]) @ inverse_camera
 
-    def supporting_quads(matrix: np.ndarray) -> np.ndarray:
-        return np.array([
-            (plane := _project(quad, matrix)) is not None
-            and _rectangle_residual(quad, plane, matrix) <= _MAX_RECTANGLE_RESIDUAL_PX
-            for quad in quads
-        ])
-
     normals = np.asarray(normals)
+    candidates = np.asarray(quads)
     initial = plane_map(np.median(normals, axis=0))
     if initial is None:
         return None
-    support = supporting_quads(initial)
-    required = max(minimum_prints, (2 * len(quads) + 2) // 3)
+    support = _supporting_quads(candidates, initial)
+    required = max(_MIN_PAGE_PRINTS, (2 * len(quads) + 2) // 3)
     if support.sum() < required:
         return None
     matrix = plane_map(normals[support].mean(axis=0))
     if matrix is None:
         return None
-    support &= supporting_quads(matrix)
-    centers = np.asarray(quads)[support].mean(axis=1)
-    if len(centers) < required or np.any(np.ptp(centers, axis=0) < .25 * np.array(image_shape[1::-1])):
+    support &= _supporting_quads(candidates, matrix)
+    if not _distributed_support(candidates[support], required, image_shape):
         return None
-    return CalibratedPagePlane(matrix, len(centers))
+    return PrintPagePlane(matrix, int(support.sum()))
+
+
+def _fit_uncalibrated_metric(quads: np.ndarray, image_shape: tuple[int, ...]) -> np.ndarray | None:
+    width, height = image_shape[1::-1]
+    scale = max(width, height)
+    center = np.array([width - 1, height - 1]) / 2
+    affine = np.array([[1 / scale, 0, -center[0] / scale], [0, 1 / scale, -center[1] / scale], [0, 0, 1.]])
+    # The first two columns of each print homography lie on the page's vanishing line.
+    axes = np.array([
+        cv2.getPerspectiveTransform(_UNIT_QUAD, quad)[:, :2].T
+        for quad in np.float32((quads - center) / scale)
+    ])
+    lengths = np.linalg.norm(axes[:, :, :2], axis=2)
+    weights = (lengths.min(axis=1) / lengths.max()) ** 2
+    directions = (axes / lengths[:, :, None] * weights[:, None, None]).reshape(-1, 3)
+    horizon, _, rank, _ = np.linalg.lstsq(directions[:, :2], -directions[:, 2], rcond=None)
+    if rank < 2:
+        return None
+    affine[2] = np.r_[horizon, 1.] @ affine
+    projected = _project(quads.reshape(-1, 2), affine)
+    if projected is None:
+        return None
+    plane = projected.reshape(-1, 4, 2)
+    along = plane[:, 1] + plane[:, 2] - plane[:, 0] - plane[:, 3]
+    down = plane[:, 2] + plane[:, 3] - plane[:, 0] - plane[:, 1]
+    along /= np.linalg.norm(along, axis=1, keepdims=True)
+    down /= np.linalg.norm(down, axis=1, keepdims=True)
+    # Fit a plane metric of trace two from independent right-angle constraints.
+    products = along * down
+    orthogonal = np.column_stack((products[:, 0] - products[:, 1], (along * down[:, ::-1]).sum(axis=1)))
+    (a, b), _, rank, singular = np.linalg.lstsq(orthogonal * weights[:, None], -products.sum(axis=1) * weights, rcond=None)
+    if rank < 2 or singular[-1] < .25 * singular[0] or np.hypot(a, b) >= 1 - 1e-6:
+        return None
+    metric = np.linalg.cholesky([[1 + a, b], [b, 1 - a]]).T
+    affine[:2] = metric @ affine[:2]
+    return affine
+
+
+def fit_uncalibrated_page_plane(quads: list[np.ndarray], image_shape: tuple[int, ...]) -> PrintPagePlane | None:
+    if len(quads) < _MIN_PAGE_PRINTS:
+        return None
+    candidates = np.asarray(quads)
+    required = max(_MIN_PAGE_PRINTS, (2 * len(quads) + 2) // 3)
+    matrix = _fit_uncalibrated_metric(candidates, image_shape)
+    if matrix is None:
+        return None
+    supported = candidates[_supporting_quads(candidates, matrix)]
+    if not _distributed_support(supported, required, image_shape):
+        return None
+    if len(supported) < len(candidates):
+        matrix = _fit_uncalibrated_metric(supported, image_shape)
+        if matrix is None or not _supporting_quads(supported, matrix).all():
+            return None
+    directions = supported[:, 1] - supported[:, 0]
+    angle_order = np.argsort(np.arctan2(directions[:, 1], directions[:, 0]) % (np.pi / 2), kind="stable")
+    # Each disjoint fit must explain a diverse set of print orientations.
+    first = _fit_uncalibrated_metric(supported[angle_order[::2]], image_shape)
+    second = _fit_uncalibrated_metric(supported[angle_order[1::2]], image_shape)
+    if first is None or second is None:
+        return None
+    return PrintPagePlane(matrix, len(supported), (first, second))
 
 
 def _corner_uncertainty(points: np.ndarray, reference: MeasuredPrintReference, nominal: float) -> float:

@@ -116,10 +116,10 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 17 binds
+groups, with the 90% threshold applied to each group. Report schema 18 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled and deskewed inference,
-the classical line-pair fallback, the configured visible mask refiner and
+the classical line-pair fallback, page-plane estimation, the configured visible mask refiner and
 detector-bound confidence calibration. A verified motif can
 qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
@@ -538,6 +538,23 @@ The full crop checks rose from 20 to 26 and from 21 to 27, respectively.
 Two further prints needed boundary review. See
 `gutter-split/calibrated-page-plane-comparison.json` and
 `gutter-split/calibrated-page-plane-visual.jpg` under `runs/crop-quality/`.
+
+Without camera intrinsics, several source-verified prints mounted at
+different angles can constrain the shared plane's metric. Two disjoint
+groups must support the fit and agree on the target aspect within 1%.
+The preview uses the target's own source corners and requires review.
+Aligned prints supply insufficient right-angle evidence for this estimate.
+[Metric rectification of planes](https://www.robots.ox.ac.uk/~vgg/publications/1998/Liebowitz98/)
+
+The `rotated_prints` development fixture places 12 bordered prints on one
+plane tilted by 31°. With approximate seeded masks, whole-print previews
+within 1% aspect error rose from two to 12, and motif previews from one to
+12. The 24 candidate previews have zero foreign source samples and zero
+cutoff beyond one pixel. The registered detector matches only one of the
+12 instances at mask IoU 0.85, so the normal inference run still requires
+better detection on this fixture. The paired geometry and inference reports
+are `gutter-split/uncalibrated-page-{control,candidate,registered}.json` under
+`runs/crop-quality/`.
 
 On densely mounted pages with many small masks and detector warnings,
 PhoSca reuses the registered ONNX model on four overlapping

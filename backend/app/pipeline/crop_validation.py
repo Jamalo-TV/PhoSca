@@ -15,7 +15,7 @@ from app.pipeline.confidence import is_sha256, load_confidence_calibration
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.model_registry import sha256
 
-CROP_VALIDATION_SCHEMA = 17
+CROP_VALIDATION_SCHEMA = 18
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
 
 
@@ -38,6 +38,7 @@ def crop_validation_profile(settings: Settings) -> dict:
         "pipeline_version": settings.pipeline_version,
         "precise_photo_crops": settings.enable_precise_photo_crops,
         "crop_sampling": OWNED_BILINEAR if settings.enable_precise_photo_crops else None,
+        "page_plane_preview": 1 if settings.enable_precise_photo_crops else None,
         "registered_model_required": settings.require_registered_models,
         "model_registry_sha256": _optional_hash(settings.model_manifest_path) if settings.require_registered_models else None,
         "visible_mask_refinement": None if visible_model is None else {

@@ -57,7 +57,9 @@ _CASES = {
     "negative": "negative",
     "paper_corner_mount": "hard",
     "dense_gutters": "hard",
+    "rotated_prints": "hard",
 }
+_DEVELOPMENT_ONLY = {"dense_gutters", "rotated_prints"}
 
 
 def _rectangle(x1: float, y1: float, x2: float, y2: float) -> np.ndarray:
@@ -81,12 +83,18 @@ def _photograph(height: int, width: int, rng: np.random.Generator, *, white: boo
 
 def _projected_corners(
     width: int, height: int, center: tuple[float, float], angles: tuple[float, float, float],
+    *, page_tilt: float | None = None,
 ) -> np.ndarray:
     xyz = np.c_[_rectangle(0, 0, width - 1, height - 1), np.zeros(4)]
     xyz[:, :2] -= [(width - 1) / 2, (height - 1) / 2]
     distance = _CAMERA[0, 0]
     translation = np.array([center[0] - _CAMERA[0, 2], center[1] - _CAMERA[1, 2], distance])
-    projected, _ = cv2.projectPoints(xyz, np.deg2rad(angles), translation, _CAMERA, None)
+    rotation = np.deg2rad(angles)
+    if page_tilt is not None:
+        xyz = xyz @ cv2.Rodrigues(rotation)[0].T + np.r_[translation[:2], 0]
+        rotation = np.deg2rad([page_tilt, 0, 0])
+        translation[:2] = 0
+    projected, _ = cv2.projectPoints(xyz, rotation, translation, _CAMERA, None)
     return projected.reshape(4, 2).astype(np.float32)
 
 
@@ -109,12 +117,13 @@ def _layer(
     angles: tuple[float, float, float],
     margin: int,
     paper_tone: int | None = None,
+    page_tilt: float | None = None,
 ) -> tuple[np.ndarray, dict[str, CropReference]]:
     tone = paper_tone if paper_tone is not None else (241 if case == "white_on_white" else 232)
     print_image = np.full((height, width, 3), tone, dtype=np.uint8)
     picture = _photograph(height - 2 * margin, width - 2 * margin, rng, white=case == "white_motif")
     print_image[margin:height - margin, margin:width - margin] = picture
-    corners = _projected_corners(width, height, center, angles)
+    corners = _projected_corners(width, height, center, angles, page_tilt=page_tilt)
     matrix = cv2.getPerspectiveTransform(_rectangle(0, 0, width - 1, height - 1), corners)
     rendered = cv2.warpPerspective(print_image, matrix, _PAGE_SIZE, borderMode=cv2.BORDER_REPLICATE)
     displacement = None
@@ -161,6 +170,15 @@ def _page(case: str, rng: np.random.Generator) -> PageFixture:
                 layers.append(_layer(
                     case, rng, width=124, height=84, center=tuple(centers), angles=angles,
                     margin=0 if (row + column) % 3 == 0 else 5, paper_tone=227 + (column % 3) * 7,
+                ))
+    elif case == "rotated_prints":
+        angles = ((0, -27, 24, -18), (28, 0, -24, 20), (-17, 25, 17, 0))
+        for row, row_angles in enumerate(angles):
+            for column, roll in enumerate(row_angles):
+                layers.append(_layer(
+                    case, rng, width=150 - 6 * (column % 2), height=107 + 4 * (row % 2),
+                    center=(148 + 180 * column, 155 + 175 * row), angles=(0, 0, roll), margin=7,
+                    page_tilt=31,
                 ))
     elif case != "negative":
         portrait = case == "portrait"
@@ -237,8 +255,7 @@ def synthetic_crop_pages(split: str) -> list[PageFixture]:
     """Separate development texture/jitter from locked reference seeds."""
     seeds = {"development": 30291, "locked": 85997}
     rng = np.random.default_rng(seeds[split])
-    # The dense page is available for tuning. Preserve the locked benchmark as a holdout.
-    return [_page(case, rng) for case in _CASES if split == "development" or case != "dense_gutters"]
+    return [_page(case, rng) for case in _CASES if split == "development" or case not in _DEVELOPMENT_ONLY]
 
 
 def geometry_seed(print_fixture: PrintFixture, image_shape: tuple[int, ...]) -> tuple[dict, dict]:

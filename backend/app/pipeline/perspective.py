@@ -19,9 +19,10 @@ from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.orientation import correct_photo_orientation, rotate_image
 from app.pipeline.page_plane import (
     PRINT_ASPECT_REFERENCE_REVIEW,
-    CalibratedPagePlane,
     MeasuredPrintReference,
+    PrintPagePlane,
     fit_calibrated_page_plane,
+    fit_uncalibrated_page_plane,
     measured_page_aspect,
 )
 from app.pipeline.print_edges import (
@@ -404,9 +405,9 @@ def _estimated_aspect(points: np.ndarray, center: tuple[float, float], side: int
     return _orthogonal_aspect(homography, camera)
 
 
-def calibrated_plane_from_prints(
-    image: np.ndarray, camera: np.ndarray, masks: list[dict],
-) -> CalibratedPagePlane | None:
+def page_plane_from_prints(
+    image: np.ndarray, camera: np.ndarray | None, masks: list[dict],
+) -> PrintPagePlane | None:
     if len(masks) < 6:
         return None
     height, width = image.shape[:2]
@@ -416,10 +417,13 @@ def calibrated_plane_from_prints(
             continue
         try:
             seed = _points_from_mask(mask, width, height)
-            if seed is None or _validate_quad(seed, width, height)["min_side"] < 60:
+            if seed is None:
+                continue
+            seed = _order_points(seed)
+            if _validate_quad(seed, width, height)["min_side"] < 60:
                 continue
             quad, evidence, reasons = refine_print_boundary(image, seed)
-        except (ValueError, cv2.error):
+        except (KeyError, TypeError, ValueError, cv2.error):
             continue
         if (quad is None or reasons or np.any((quad < .5) | (quad > np.array([width, height]) - 1.5))
                 or any(side["support"] < .80 or (side["corner_support"] or 0) < .65 for side in evidence.values())):
@@ -427,13 +431,15 @@ def calibrated_plane_from_prints(
         if any(cv2.intersectConvexConvex(quad, peer)[0] > 1 for peer in quads):
             continue
         quads.append(quad)
-    return fit_calibrated_page_plane(quads, camera, image.shape)
+    if camera is not None:
+        return fit_calibrated_page_plane(quads, camera, image.shape)
+    return fit_uncalibrated_page_plane(quads, image.shape)
 
 
 def _crop_dimensions(
     points: np.ndarray, width: int, height: int, *, metric: bool,
     camera_matrix: np.ndarray | None, print_aspect_ratio: float | None,
-    calibrated_page_plane: CalibratedPagePlane | None = None,
+    page_plane: PrintPagePlane | None = None,
 ) -> tuple[int, int, dict, list[str]]:
     top, right, bottom, left = np.linalg.norm(np.roll(points, -1, axis=0) - points, axis=1)
     target_width = round(float(max(top, bottom))) + 1
@@ -451,7 +457,7 @@ def _crop_dimensions(
         camera = np.asarray(camera_matrix, dtype=float)
         if camera.shape != (3, 3) or not np.isfinite(camera).all() or abs(np.linalg.det(camera)) < 1e-7:
             raise ValueError("invalid_camera_matrix")
-        estimate = calibrated_page_plane.estimate_aspect(points) if calibrated_page_plane is not None else None
+        estimate = page_plane.estimate_aspect(points) if page_plane is not None else None
         if estimate is not None:
             aspect, plane_evidence = estimate
         else:
@@ -805,7 +811,7 @@ def _dual_crop_result(
                         source, quad = refined, candidate
                 _validate_quad(source, page_width, page_height)
                 measured = metadata["aspect_ratio_estimation"]["method"] in {
-                    "known_print_aspect", "measured_page_reference", "calibrated_camera",
+                    "known_print_aspect", "measured_page_reference", "calibrated_camera", "estimated_page_plane",
                 }
                 if (independent or wide_rim) and not image_reasons and not _independent_motif_visible(page, source, neighbors):
                     image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
@@ -943,7 +949,7 @@ def correct_photo_crop(
     dual_mode: bool = False,
     enable_classical_retry: bool = False,
     camera_matrix: np.ndarray | None = None,
-    calibrated_page_plane: CalibratedPagePlane | None = None,
+    page_plane: PrintPagePlane | None = None,
     print_aspect_ratio: float | None = None,
     measured_page_references: list[MeasuredPrintReference] | None = None,
     neighbor_masks: list[dict] | None = None,
@@ -1044,7 +1050,7 @@ def correct_photo_crop(
     )
     target_width, target_height, aspect, aspect_reasons = _crop_dimensions(
         src_points, width, height, metric=dual_mode, camera_matrix=camera_matrix, print_aspect_ratio=print_aspect_ratio,
-        calibrated_page_plane=calibrated_page_plane if boundary_verified else None,
+        page_plane=page_plane if boundary_verified else None,
     )
     if (not full_reasons and aspect_reasons == ["PRINT_ASPECT_UNCERTAIN"] and camera_matrix is None
             and measured_page_references):
@@ -1056,6 +1062,17 @@ def correct_photo_crop(
                 src_points, width, height, metric=dual_mode, camera_matrix=None, print_aspect_ratio=inferred,
             )
             aspect.update(method="measured_page_reference", page_reference_estimates=estimates)
+            aspect_reasons = [PRINT_ASPECT_REFERENCE_REVIEW]
+    if (boundary_verified and camera_matrix is None and print_aspect_ratio is None
+            and page_plane is not None and page_plane.independent_fits
+            and (not aspect_reasons or aspect_reasons == ["PRINT_ASPECT_UNCERTAIN"])):
+        estimate = page_plane.estimate_aspect(src_points)
+        output_aspect = (target_width - 1) / (target_height - 1)
+        if estimate is not None and (aspect_reasons or abs(output_aspect / estimate[0] - 1) > .01):
+            target_width, target_height, aspect, _ = _crop_dimensions(
+                src_points, width, height, metric=dual_mode, camera_matrix=None, print_aspect_ratio=estimate[0],
+            )
+            aspect.update(method="estimated_page_plane", page_plane=estimate[1])
             aspect_reasons = [PRINT_ASPECT_REFERENCE_REVIEW]
     full_reasons.extend(aspect_reasons)
     if target_width * target_height > 2 * width * height:

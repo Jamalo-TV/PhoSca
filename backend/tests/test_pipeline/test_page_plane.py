@@ -105,7 +105,22 @@ def test_calibrated_page_plane_abstains_on_mixed_planes():
     assert plane.estimate_aspect(other[-1]) is None
 
 
-async def test_calibrated_plane_stabilizes_both_previews_without_automatic_release(client, tmp_path, monkeypatch):
+def test_uncalibrated_plane_abstains_for_aligned_prints_and_mixed_planes():
+    from app.evaluation.crop_fixtures import _projected_corners
+    from app.pipeline.page_plane import fit_uncalibrated_page_plane
+
+    aligned = [_projected_corners(120, 90, (x, y), (0, 0, 0), page_tilt=25)
+               for x in (120, 310, 500, 690) for y in (128, 340, 500)]
+    assert fit_uncalibrated_page_plane(aligned, (640, 840, 3)) is None
+
+    mixed = [_projected_corners(120, 90, (x, y), (0, 0, roll), page_tilt=tilt)
+             for y, tilt in ((130, 28), (450, -33))
+             for x, roll in ((120, -25), (310, 16), (500, -22), (690, 18))]
+    assert fit_uncalibrated_page_plane(mixed, (640, 840, 3)) is None
+
+
+@pytest.mark.parametrize("calibrated", (True, False), ids=("camera-model", "different-print-angles"))
+async def test_page_plane_stabilizes_both_previews_without_automatic_release(client, tmp_path, monkeypatch, calibrated):
     import json
 
     from app.config import get_settings
@@ -117,15 +132,17 @@ async def test_calibrated_plane_stabilizes_both_previews_without_automatic_relea
     monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
     monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
     monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
-    fixture = next(page for page in synthetic_crop_pages("development") if page.name == "dense_gutters")
-    path = tmp_path / "calibrated-page.png"
+    name = "dense_gutters" if calibrated else "rotated_prints"
+    fixture = next(page for page in synthetic_crop_pages("development") if page.name == name)
+    path = tmp_path / "page.png"
     assert cv2.imwrite(str(path), fixture.image)
     capture_hash = sha256_file(path)
     height, width = fixture.image.shape[:2]
     calibration = tmp_path / "camera-calibration.json"
-    calibration.write_text(json.dumps({"schema_version": 1, "captures": {capture_hash: {
-        "width": width, "height": height, "camera_matrix": fixture.camera_matrix.tolist(), "calibration_id": "test",
-    }}}), encoding="utf-8")
+    if calibrated:
+        calibration.write_text(json.dumps({"schema_version": 1, "captures": {capture_hash: {
+            "width": width, "height": height, "camera_matrix": fixture.camera_matrix.tolist(), "calibration_id": "test",
+        }}}), encoding="utf-8")
     monkeypatch.setenv("CAMERA_CALIBRATION_PATH", str(calibration))
     get_settings.cache_clear()
 
@@ -143,19 +160,30 @@ async def test_calibrated_plane_stabilizes_both_previews_without_automatic_relea
                                         bounding_box=box, segmentation_mask=mask, segmentation_confidence=.95))
         session.add_all(photos)
         await session.commit()
-        target_id = photos[4].id
+        target_index = 4 if calibrated else 11
+        target_id = photos[target_index].id
 
     response = await client.post(f"/api/v1/photos/{target_id}/reprocess")
     assert response.status_code == 200, response.text
     photo = response.json()
     correction = photo["enhancement_applied"]["correction"]
-    assert correction["camera_calibration"]["capture_sha256"] == capture_hash
-    assert correction["aspect_ratio_estimation"]["page_plane"]["supporting_prints"] >= 20
-    assert correction["aspect_ratio_estimation"]["estimated_ratio"] == pytest.approx(123 / 83, rel=.01)
-    for name in ("full_print", "image_only"):
-        mode = correction["crop_modes"][name]
-        assert "CAMERA_ASPECT_REVIEW" in mode["reason_codes"]
-        assert photo["crop_download_urls"][name] is None
+    estimate = correction["aspect_ratio_estimation"]
+    if calibrated:
+        assert correction["camera_calibration"]["capture_sha256"] == capture_hash
+        assert estimate["method"] == "calibrated_camera"
+        reason = "CAMERA_ASPECT_REVIEW"
+    else:
+        assert estimate["method"] == "estimated_page_plane"
+        assert estimate["page_plane"]["independent_aspect_difference"] <= .01
+        reason = PRINT_ASPECT_REFERENCE_REVIEW
+    assert estimate["page_plane"]["supporting_prints"] >= 6
+    for mode_name, reference in fixture.prints[target_index].reference_modes.items():
+        mode = correction["crop_modes"][mode_name]
+        assert reason in mode["reason_codes"]
+        h, w = (mode["shape"][axis] for axis in ("height", "width"))
+        rh, rw = reference.shape
+        assert (w - 1) / (h - 1) == pytest.approx((rw - 1) / (rh - 1), rel=.01)
+        assert photo["crop_download_urls"][mode_name] is None
 
 
 async def test_reviewed_peer_changes_preview_but_cannot_release_either_crop(client, tmp_path, monkeypatch):
