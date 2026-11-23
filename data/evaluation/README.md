@@ -87,9 +87,10 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 8 binds
-the per-mode eligibility checks to the source-stock occlusion check. A
-verified motif can qualify separately when its print corners require review.
+groups, with the 90% threshold applied to each group. Report schema 9 binds
+per-mode eligibility to the source-stock occlusion check and the configured
+visible mask refiner. A verified motif can qualify separately when its
+print corners require review.
 Detector calibration and the other release gates still apply.
 
 Validate the real reference files before running the detector on an independent
@@ -260,9 +261,37 @@ from 0.9885 to 0.9698 as the candidate includes more album stock.
 The ONNX export produces identical thresholded masks to PyTorch for all
 1,843,200 pixels in 18 development patches. On the test machine, CPU
 inference alone takes 28.2 ms median and 32.3 ms p95 per patch with two
-inference threads. The candidate remains experimental pending integrated
-and independent evaluation. The measurements are in the
-`local-mask-v4-*.json` reports under `runs/crop-quality/training/`.
+inference threads. The measurements are in the `local-mask-v4-*.json`
+reports under `runs/crop-quality/training/`.
+
+Set `VISIBLE_MASK_MODEL_PATH` to use a local ONNX refiner with precise
+crops. Register its filename, SHA-256 and license in the same model
+manifest as the primary detector. The refiner sees the original source
+pixels, preserves the primary geometry proposal and supplies a separate
+visible polygon. Nearby proposals compete for disputed pixels using
+distance to their primary masks. If the refiner fails, the worker keeps
+the original proposals for review. The release evidence binds the
+resolved checkpoint, its registry and the checkpoint actually run on
+the page.
+
+Evaluate the integrated path with the same configuration as the worker.
+
+```powershell
+python scripts/evaluate_onnx_segmentation.py --synthetic locked --include-classical-fallback --visible-mask-model runs/crop-quality/training/local-mask-v4.onnx --manifest runs/crop-quality/local-mask-v4-manifest.json --require-final-quality --visuals --output runs/crop-quality/integrated-source-rim-v4-locked.json
+```
+
+The report preserves the primary detector results under
+`primary_detector_metrics`. The detection gate measures the masks handed
+to cropping, before fitting physical edges. The integrated frozen test
+passes all 18 detections and all 23 recoverable crops. Source-based rim
+recovery brings final segmentation back to mean IoU 0.9953. The Golden
+comparison keeps all 29 detections. Independent album references remain
+required for automatic release.
+
+In 20 paired Golden runs, median added time from image decode to JPEG was
+115 ms per page. The p95 for that path was 2.39 s with the primary detector
+and 2.92 s with the refiner. The paired samples are in
+`runs/crop-quality/integrated-v4-paired-golden-runtime.json`.
 
 The Smithsonian and Met album examples are diagnostic pilots with draft
 annotations. An independent release benchmark still needs verified outer and

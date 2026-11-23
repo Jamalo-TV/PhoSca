@@ -1924,9 +1924,38 @@ def _page_containers(detections: list[SegmentationDetection], image: np.ndarray)
     return rejected
 
 
-def segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationResult:
+def segment_album_page(
+    image: np.ndarray, settings: Settings, *, source_image: np.ndarray | None = None,
+) -> SegmentationResult:
     result = _segment_album_page(image, settings)
-    return refine_album_page_result(image, result) if settings.enable_classical_segmentation_fallback else result
+    if settings.enable_classical_segmentation_fallback:
+        result = refine_album_page_result(image, result)
+    model_path = settings.visible_mask_model_path
+    if model_path is None or not settings.enable_precise_photo_crops:
+        return result
+
+    from app.pipeline.visible_mask_refinement import refine_visible_masks
+
+    originals = [_detection_polygon(detection) for detection in result.detections]
+    try:
+        source = source_image if source_image is not None else image
+        if source.shape != image.shape:
+            raise ValueError("source and detection images have different shapes")
+        outlines, digest = refine_visible_masks(source, originals, model_path, settings.model_manifest_path)
+        updated = [
+            detection if np.array_equal(outline, original) else replace(detection, mask={
+                **detection.mask, "visible_polygon": [{"x": float(x), "y": float(y)} for x, y in outline],
+            })
+            for detection, original, outline in zip(result.detections, originals, outlines, strict=True)
+        ]
+        details = {"model_sha256": digest, "refined_detections": sum(
+            original is not refined for original, refined in zip(result.detections, updated, strict=True)
+        )}
+        return SegmentationResult(updated, {**result.metadata, "visible_mask_refinement": details})
+    except Exception as exc:  # ONNX provider errors preserve the initial proposals for review.
+        return SegmentationResult(result.detections, {
+            **result.metadata, "visible_mask_refinement": {"error": str(exc)},
+        })
 
 
 def _segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationResult:

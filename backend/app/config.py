@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     max_request_size: int = Field(default=209_715_200, alias="MAX_REQUEST_SIZE")
     max_image_pixels: int = Field(default=40_000_000, alias="MAX_IMAGE_PIXELS")
     max_image_frames: int = Field(default=1, alias="MAX_IMAGE_FRAMES")
-    pipeline_version: str = Field(default="2026-11-precise-crops-v7", alias="PIPELINE_VERSION")
+    pipeline_version: str = Field(default="2026-11-precise-crops-v8", alias="PIPELINE_VERSION")
     auth_required: bool = Field(default=False, alias="AUTH_REQUIRED")
     blur_threshold: float = Field(default=100.0, alias="BLUR_THRESHOLD")
     yolo_confidence_threshold: float = Field(default=0.7, alias="YOLO_CONFIDENCE_THRESHOLD")
@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     segmentation_min_aspect_ratio: float = Field(default=0.5, alias="SEGMENTATION_MIN_ASPECT_RATIO")
     segmentation_max_aspect_ratio: float = Field(default=3.0, alias="SEGMENTATION_MAX_ASPECT_RATIO")
     yolo_model_path: Path = Field(default=Path("/app/models/yolov8-seg-album.onnx"), alias="YOLO_MODEL_PATH")
+    visible_mask_model_path: Path | None = Field(default=None, alias="VISIBLE_MASK_MODEL_PATH")
     model_manifest_path: Path = Field(default=Path("/app/models/manifest.json"), alias="MODEL_MANIFEST_PATH")
     require_registered_models: bool = Field(default=True, alias="REQUIRE_REGISTERED_MODELS")
     segmentation_calibration_path: Path = Field(

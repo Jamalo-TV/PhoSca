@@ -14,7 +14,7 @@ from app.pipeline.crop_sampling import OWNED_BILINEAR
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.model_registry import sha256
 
-CROP_VALIDATION_SCHEMA = 8
+CROP_VALIDATION_SCHEMA = 9
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
 
 
@@ -32,12 +32,17 @@ def _optional_hash(path: Path) -> str | None:
 
 
 def crop_validation_profile(settings: Settings) -> dict:
+    visible_model = settings.visible_mask_model_path if settings.enable_precise_photo_crops else None
     return {
         "pipeline_version": settings.pipeline_version,
         "precise_photo_crops": settings.enable_precise_photo_crops,
         "crop_sampling": OWNED_BILINEAR if settings.enable_precise_photo_crops else None,
         "registered_model_required": settings.require_registered_models,
         "model_registry_sha256": _optional_hash(settings.model_manifest_path) if settings.require_registered_models else None,
+        "visible_mask_refinement": None if visible_model is None else {
+            "model_sha256": _optional_hash(visible_model),
+            "manifest_sha256": _optional_hash(settings.model_manifest_path),
+        },
         "classical_fallback": settings.enable_classical_segmentation_fallback,
         "border_analysis": settings.enable_border_trim,
         "protected_region_guard": settings.enable_protected_region_guard,
@@ -53,6 +58,17 @@ def crop_validation_profile(settings: Settings) -> dict:
         "max_detection_aspect_ratio": settings.segmentation_max_aspect_ratio,
         "opencv_version": cv2.__version__,
     }
+
+
+def segmentation_matches_crop_profile(settings: Settings, segmentation: dict) -> bool:
+    expected = crop_validation_profile(settings)
+    if segmentation.get("onnx_error") or segmentation.get("validation_profile") != expected:
+        return False
+    refiner = expected["visible_mask_refinement"]
+    if refiner is None:
+        return True
+    used = segmentation.get("visible_mask_refinement") or {}
+    return bool(refiner["model_sha256"] and used.get("model_sha256") == refiner["model_sha256"] and not used.get("error"))
 
 
 def automatic_crop_review_reasons(
@@ -103,7 +119,11 @@ def crop_validation_evidence(settings: Settings, model_sha256: str | None) -> di
             or _optional_hash(settings.yolo_model_path) != model_sha256
         ):
             return None
-        if report.get("validation_profile") != crop_validation_profile(settings):
+        current = crop_validation_profile(settings)
+        if report.get("validation_profile") != current:
+            return None
+        refiner = current["visible_mask_refinement"]
+        if refiner is not None and not (refiner["model_sha256"] and refiner["manifest_sha256"]):
             return None
         split = report.get("split") or {}
         gates = report.get("validation_gates") or {}

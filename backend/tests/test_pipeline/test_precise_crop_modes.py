@@ -391,6 +391,29 @@ def test_album_color_at_a_missing_corner_does_not_establish_a_holder() -> None:
     assert result.image_only is None
 
 
+def test_learned_visibility_keeps_source_verified_rim_on_a_mounted_print() -> None:
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+
+    fixture = next(page for page in synthetic_crop_pages("development") if page.name == "paper_corner_mount")
+    page = fixture.image
+    primary = np.float32([[273, 215], [571, 215], [569, 408], [274, 409]])
+    learned = np.float32([
+        [252, 197], [267, 200], [263, 210], [283, 199], [588, 197], [590, 215],
+        [581, 218], [587, 229], [587, 392], [582, 407], [590, 412], [591, 428],
+        [277, 425], [272, 429], [252, 429], [252, 409], [262, 409], [254, 398],
+        [254, 230], [257, 222], [252, 217],
+    ])
+    mask = {"source": "yolo_seg_mask", "polygon": _vertices(primary, page)}
+    baseline = _crop(page, {}, mask, dual_mode=True, enable_classical_retry=True)
+    refined = _crop(page, {}, {**mask, "visible_polygon": _vertices(learned, page)},
+                    dual_mode=True, enable_classical_retry=True)
+
+    assert refined.metadata["refined_visibility_source"] == "visible_paper_rim"
+    assert refined.metadata["refined_visible_polygon"] == baseline.metadata["refined_visible_polygon"]
+    assert refined.metadata["crop_modes"]["full_print"]["status"] == "review_needed"
+    assert refined.image_only is not None and np.array_equal(refined.image_only, baseline.image_only)
+
+
 def test_camera_calibration_undoes_yaw_without_trusting_an_underconstrained_shape() -> None:
     width, height = 960, 780
     page = np.full((height, width, 3), 110, np.uint8)

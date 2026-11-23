@@ -101,6 +101,7 @@ def _runtime_settings(args: argparse.Namespace):
         DATABASE_URL="sqlite+aiosqlite:///./onnx-evaluation.db",
         REDIS_URL="redis://localhost:6379/0",
         YOLO_MODEL_PATH=args.model,
+        VISIBLE_MASK_MODEL_PATH=args.visible_mask_model,
         MODEL_MANIFEST_PATH=args.manifest,
         REQUIRE_REGISTERED_MODELS=True,
         ENABLE_CLASSICAL_SEGMENTATION_FALLBACK=args.include_classical_fallback,
@@ -613,6 +614,7 @@ def main() -> None:
     parser.add_argument("--images", type=Path, default=Path("data/golden_fixtures"))
     parser.add_argument("--labels", type=Path, default=Path("data/golden_fixtures/labels"))
     parser.add_argument("--model", type=Path, default=Path("models/yolov8-seg-album.onnx"))
+    parser.add_argument("--visible-mask-model", type=Path, help="Registered ONNX model for visible mask refinement.")
     parser.add_argument("--manifest", type=Path, default=Path("models/manifest.json"))
     parser.add_argument("--proposal-threshold", type=float, default=0.25)
     parser.add_argument("--acceptance-threshold", type=float, default=0.70)
@@ -641,6 +643,8 @@ def main() -> None:
 
     if args.geometry_only and (not args.synthetic or args.legacy_crop):
         parser.error("--geometry-only requires a synthetic split and the precise crop path")
+    if args.visible_mask_model and (args.legacy_crop or args.geometry_only or args.check_references):
+        parser.error("--visible-mask-model requires detector inference with the precise crop path")
     if args.synthetic and args.dataset_manifest:
         parser.error("--synthetic and --dataset-manifest are separate inputs")
     if args.check_references and not args.dataset_manifest:
@@ -679,6 +683,7 @@ def main() -> None:
             raise SystemExit(3)
         return
     page_metrics = []
+    primary_page_metrics = []
     final_instance_page_metrics = []
     fixtures: list[dict] = []
     page_runtimes: list[dict[str, float | bool | None]] = []
@@ -720,12 +725,15 @@ def main() -> None:
             else:
                 prepared, _ = prepare_for_cutout(image)
                 segmentation_started = perf_counter()
-                result = segment_album_page(prepared, settings)
+                result = segment_album_page(prepared, settings, source_image=image)
                 detection_metadata = result.metadata
                 page_runtime = _page_runtime(detection_metadata, (perf_counter() - segmentation_started) * 1000.0)
                 page_runtimes.append(page_runtime)
                 if detection_metadata.get("onnx_error"):
                     raise SystemExit(f"Runtime ONNX error for {record['id']}: {detection_metadata['onnx_error']}")
+                refinement_error = (detection_metadata.get("visible_mask_refinement") or {}).get("error")
+                if refinement_error:
+                    raise SystemExit(f"Visible mask ONNX error for {record['id']}: {refinement_error}")
                 proposals = [(item.bounding_box, item.mask, item.geometry_valid) for item in result.detections]
                 detected = [_detected_polygon(item) for item in result.detections]
 
@@ -803,6 +811,14 @@ def main() -> None:
                 iou_threshold=args.iou_threshold, accepted=accepted or [False] * len(detected),
             )
             page_metrics.append(metrics)
+            primary_metrics = None
+            if args.visible_mask_model:
+                primary = [_points(item.mask.get("polygon") or []) for item in result.detections]
+                primary_metrics = metrics if primary == detected else evaluate_page_crops(
+                    expected, primary, width=image.shape[1], height=image.shape[0],
+                    iou_threshold=args.iou_threshold, accepted=accepted or [False] * len(primary),
+                )
+                primary_page_metrics.append(primary_metrics)
             refined_polygons = [
                 (item.get("metadata") or {}).get("refined_visible_polygon") for item in rendered
             ]
@@ -843,6 +859,7 @@ def main() -> None:
                 "page_category": record.get("page_category"), "difficulty_tags": record.get("difficulty_tags", []),
                 "source_group": record.get("source_group"), "annotation_provenance": record.get("annotation_provenance"),
                 "metrics": metrics.as_dict(),
+                "primary_detector_metrics": primary_metrics.as_dict() if primary_metrics is not None else None,
                 "final_instance_metrics": final_metrics.as_dict(),
                 "refined_instances": refined_count,
                 "page_perfect": metrics.false_positive == metrics.false_negative == metrics.serious_failures == 0,
@@ -906,6 +923,9 @@ def main() -> None:
         "iou_threshold": args.iou_threshold,
         "classical_evidence_enabled": args.include_classical_fallback,
         "validation_profile": crop_validation_profile(settings),
+        "primary_detector_metrics": (
+            evaluate_cropping_dataset(primary_page_metrics).as_dict() if primary_page_metrics else None
+        ),
         "settings": {
             "pipeline_version": settings.pipeline_version,
             "orientation_enabled": settings.enable_photo_orientation_correction,

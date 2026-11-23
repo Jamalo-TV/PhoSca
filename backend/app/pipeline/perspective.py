@@ -1056,7 +1056,23 @@ def correct_photo_crop(
                 metadata["refined_visible_polygon"] = normalized_quad
                 metadata["refined_visibility_source"] = _PRINT_BOUNDARY_SOURCE
         elif review_visible_rim:
-            rim = refine_visible_paper_rim(page_image, visible, neighbor_polygons)
+            rim = None
+            primary = _proposal_polygon({"polygon": mask.get("polygon")}, width, height)
+            if primary is not None and not np.array_equal(primary, visible):
+                primary_neighbors = [
+                    points for neighbor in neighbor_masks or []
+                    if (points := _proposal_polygon({"polygon": neighbor.get("polygon")}, width, height)) is not None
+                ]
+                observed = refine_visible_paper_rim(page_image, primary, primary_neighbors)
+                if observed is not None:
+                    agreement = normalized_polygon_overlap(
+                        pixel_vertices_to_normalized(visible, width, height),
+                        pixel_vertices_to_normalized(observed, width, height),
+                    )
+                    if agreement.first_containment >= .90 and agreement.second_containment >= .90:
+                        rim = observed
+            if rim is None:
+                rim = refine_visible_paper_rim(page_image, visible, neighbor_polygons)
             if rim is not None:
                 metadata["refined_visible_polygon"] = _vertices_on_page(rim, width, height)
                 metadata["refined_visibility_source"] = _PAPER_RIM_SOURCE

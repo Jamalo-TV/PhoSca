@@ -631,7 +631,10 @@ async def test_review_can_remove_a_false_nested_candidate_from_occlusion_evidenc
 
 
 @pytest.mark.parametrize("corner_mount", [False, True], ids=["full-print-visible", "motif-only-visible"])
-async def test_automatic_crop_download_requires_current_album_validation(client, monkeypatch, tmp_path, corner_mount) -> None:
+@pytest.mark.parametrize("with_refiner", [False, True], ids=["primary-detector", "visible-mask-refiner"])
+async def test_automatic_crop_download_requires_current_album_validation(
+    client, monkeypatch, tmp_path, corner_mount, with_refiner,
+) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, Page
@@ -644,6 +647,15 @@ async def test_automatic_crop_download_requires_current_album_validation(client,
     digest = hashlib.sha256(model_path.read_bytes()).hexdigest()
     registry_path = tmp_path / "manifest.json"
     registry = {"models": {model_path.name: {"sha256": digest, "license": "test", "input": {"width": 640}}}}
+    refiner_metadata = {}
+    refiner = tmp_path / "visible-mask.onnx"
+    refiner_bytes = b"registered-visible-mask-for-api-test"
+    if with_refiner:
+        refiner.write_bytes(refiner_bytes)
+        refiner_digest = hashlib.sha256(refiner_bytes).hexdigest()
+        registry["models"][refiner.name] = {"sha256": refiner_digest, "license": "test"}
+        monkeypatch.setenv("VISIBLE_MASK_MODEL_PATH", str(refiner))
+        refiner_metadata = {"visible_mask_refinement": {"model_sha256": refiner_digest, "refined_detections": 1}}
     registry_path.write_text(json.dumps(registry), encoding="utf-8")
     calibration_path = tmp_path / "calibration.json"
     calibration_path.write_text(json.dumps({
@@ -678,6 +690,7 @@ async def test_automatic_crop_download_requires_current_album_validation(client,
         page = await session.get(Page, page_id)
         page.processing_metadata = {"steps": {"segmentation": {
             "model_artifact": {"sha256": digest}, "validation_profile": profile,
+            **refiner_metadata,
         }}}
         photo = await session.get(ExtractedPhoto, photo_id)
         _, calibration = calibrate_confidence(photo.segmentation_confidence, "default", calibration_path)
@@ -721,6 +734,25 @@ async def test_automatic_crop_download_requires_current_album_validation(client,
     assert all(stale[mode] is None for mode in crop_variants)
 
     validation_path.write_text(json.dumps(report), encoding="utf-8")
+    if with_refiner:
+        async with get_session_factory()() as session:
+            page = await session.get(Page, page_id)
+            steps = page.processing_metadata["steps"]
+            page.processing_metadata = {"steps": {**steps, "segmentation": {
+                **steps["segmentation"], "visible_mask_refinement": {"error": "failed to load"},
+            }}}
+            await session.commit()
+        result = await client.post(f"{url}/reprocess")
+        assert result.status_code == 200, result.text
+        unavailable = (await client.get(url)).json()["urls"]
+        assert all(unavailable[mode] is None for mode in crop_variants)
+        async with get_session_factory()() as session:
+            page = await session.get(Page, page_id)
+            steps = page.processing_metadata["steps"]
+            page.processing_metadata = {"steps": {
+                **steps, "segmentation": {**steps["segmentation"], **refiner_metadata},
+            }}
+            await session.commit()
     result = await client.post(f"{url}/reprocess")
     assert result.status_code == 200, result.text
     payload = (await client.get(url)).json()
@@ -765,6 +797,11 @@ async def test_automatic_crop_download_requires_current_album_validation(client,
     assert (await client.get(released["image_only"])).status_code == 404
     registry_path.write_text(json.dumps(registry), encoding="utf-8")
     assert (await client.get(released["image_only"])).status_code == 200
+    if with_refiner:
+        refiner.write_bytes(b"replacement-mask-model")
+        assert (await client.get(released["image_only"])).status_code == 404
+        refiner.write_bytes(refiner_bytes)
+        assert (await client.get(released["image_only"])).status_code == 200
     validation_path.unlink()
     revoked = (await client.get(url)).json()["urls"]
     for name in variants:

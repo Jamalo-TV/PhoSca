@@ -40,6 +40,7 @@ from app.pipeline.crop_validation import (
     crop_validation_evidence,
     crop_validation_profile,
     geometrically_ready_crop_modes,
+    segmentation_matches_crop_profile,
 )
 from app.pipeline.decisions import ReviewReason, component_review_reasons, confidence_components, is_reviewed_non_print
 from app.pipeline.dedup import compute_phash, hamming_distance
@@ -204,7 +205,7 @@ async def segmentation_task_logic(
     cutout_ready_image, cutout_prep_metadata = await asyncio.to_thread(prepare_for_cutout, image)
     _append_metadata(page, "pre_cutout_enhancement", cutout_prep_metadata)
     segmentation_started = perf_counter()
-    result = await asyncio.to_thread(segment_album_page, cutout_ready_image, settings)
+    result = await asyncio.to_thread(segment_album_page, cutout_ready_image, settings, source_image=image)
     SEGMENTATION_SECONDS.labels(model=str(result.metadata.get("model", "unknown"))).observe(
         perf_counter() - segmentation_started
     )
@@ -434,7 +435,7 @@ async def perspective_correction_task_logic(
         segmentation = page_steps.get("segmentation") or {}
         model = segmentation.get("model_artifact") or {}
         evidence = None
-        if not segmentation.get("onnx_error") and segmentation.get("validation_profile") == crop_validation_profile(settings):
+        if segmentation_matches_crop_profile(settings, segmentation):
             evidence = crop_validation_evidence(settings, model.get("sha256"))
         auto_review = automatic_crop_review_reasons(
             settings, photo.segmentation_confidence, photo.geometry_valid, calibration.get("calibrated") is True,
