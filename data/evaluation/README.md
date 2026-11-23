@@ -751,8 +751,13 @@ volume I. The Library of Congress catalog distinguishes the album page
 series `17161` from the separately scanned prints in `17162`. The TIFFs
 record 200 dpi for the page and 400 dpi for the print scans, with acquisition
 timestamps on different days. The independently fitted corners agree within
-0.66 native album pixels across both crop modes. Aspect ratios agree within
-0.10%. [Library of Congress catalog](https://www.loc.gov/pictures/item/2007675295/)
+0.66 native album pixels across both crop modes in the original whole-side
+fits. A local recheck of print 81's motif moved the lower-left corner 3.56
+native pixels, with all four revised corners agreeing within 0.46 px across
+the two scans. The source motif polygon now traces the curved left edge.
+Its residual from the corner-to-corner chord is 3.21 px p95. Use the
+polygon for pixel coverage and the four corners for aspect and corner error.
+[Library of Congress catalog](https://www.loc.gov/pictures/item/2007675295/)
 
 Use the three source URLs in the draft manifest to place the TIFFs at their
 pinned paths under `runs/crop-quality/whiting-diary-pair/`. The evaluation
