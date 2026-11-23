@@ -1934,7 +1934,7 @@ def segment_album_page(
     if model_path is None or not settings.enable_precise_photo_crops:
         return result
 
-    from app.pipeline.visible_mask_refinement import refine_visible_masks
+    from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks
 
     originals = [_detection_polygon(detection) for detection in result.detections]
     try:
@@ -1952,6 +1952,10 @@ def segment_album_page(
             original is not refined for original, refined in zip(result.detections, updated, strict=True)
         )}
         return SegmentationResult(updated, {**result.metadata, "visible_mask_refinement": details})
+    except UnresolvedMaskOwnership:
+        return SegmentationResult(result.detections, {
+            **result.metadata, "visible_mask_refinement": {"ownership_unresolved": True},
+        })
     except Exception as exc:  # ONNX provider errors preserve the initial proposals for review.
         return SegmentationResult(result.detections, {
             **result.metadata, "visible_mask_refinement": {"error": str(exc)},

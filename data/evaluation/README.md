@@ -278,8 +278,11 @@ crops. Register its filename, SHA-256 and license in the same model
 manifest as the primary detector. The refiner sees the original source
 pixels, preserves the primary geometry proposal and supplies a separate
 visible polygon. Nearby proposals compete for disputed pixels using
-distance to their primary masks. If the refiner fails, the worker keeps
-the original proposals for review. The release evidence binds the
+distance to their primary masks. The exported contour is rasterized again
+to check that it leaves disputed pixels excluded. If the ownership decision
+cannot be represented by one polygon, the worker keeps the original
+proposals for review. Evaluation records that review outcome separately
+from model execution errors. The release evidence binds the
 resolved checkpoint, its registry and the checkpoint actually run on
 the page.
 
@@ -388,3 +391,13 @@ component outside both adjoining sides and inside the print. A holder
 that reaches the motif sends both modes to review. A holder confined to
 the paper leaves the independently recoverable motif available. The
 locked synthetic report is `runs/crop-quality/outlined-mount-locked.json`.
+
+`runs/crop-quality/archive-reference-review-plus-nelson-figures.json`
+extends the source-only intake to 11 pages and 30 prints. Figures 7–10
+in the Nelson publication add two pages. Separate photographs show
+mounts obstructing about 1.19% of the beach print's motif and a front
+print with a paper caption obstructing about 85.53% of the rear church
+print's motif. The three visible islands of the rear print are in the
+native PNG sidecars. The draft YOLO label marks its largest visible
+component. All new mode annotations remain unverified. The exact
+source and separate exposures can be compared in the preflight sheet.

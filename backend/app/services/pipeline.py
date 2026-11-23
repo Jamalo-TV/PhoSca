@@ -40,6 +40,7 @@ from app.pipeline.crop_validation import (
     crop_validation_evidence,
     crop_validation_profile,
     geometrically_ready_crop_modes,
+    route_ready_crop_modes_to_review,
     segmentation_matches_crop_profile,
 )
 from app.pipeline.decisions import ReviewReason, component_review_reasons, confidence_components, is_reviewed_non_print
@@ -444,11 +445,7 @@ async def perspective_correction_task_logic(
         if evidence is None:
             auto_review.append(CROP_VALIDATION_UNAVAILABLE)
         if auto_review:
-            for mode in crop_modes.values():
-                if mode.get("status") == "ready":
-                    mode["geometry_status"] = "ready"
-                    mode["status"] = "review_needed"
-                    mode["reason_codes"] = auto_review.copy()
+            route_ready_crop_modes_to_review(crop_modes, auto_review)
         else:
             correction_metadata["crop_validation"] = evidence
     full_mode = crop_modes.get("full_print")

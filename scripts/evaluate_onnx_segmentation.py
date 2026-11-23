@@ -675,7 +675,8 @@ def main() -> None:
     from app.evaluation.cropping import evaluate_cropping_dataset, evaluate_page_crops, is_locked_album_manifest
     from app.pipeline.confidence import calibrate_confidence
     from app.pipeline.crop_validation import (
-        CROP_VALIDATION_SCHEMA, automatic_crop_review_reasons, crop_validation_profile, geometrically_ready_crop_modes,
+        CROP_VALIDATION_SCHEMA, CROP_VALIDATION_UNAVAILABLE, automatic_crop_review_reasons, crop_validation_profile,
+        geometrically_ready_crop_modes, route_ready_crop_modes_to_review,
     )
     from app.pipeline.decisions import component_review_reasons, confidence_components
     from app.pipeline.enhancement import prepare_for_cutout
@@ -741,6 +742,7 @@ def main() -> None:
             pipeline_started = perf_counter()
             image = synthetic.image if synthetic else load_image(record["image"])
             detection_metadata = {}
+            ownership_unresolved = False
             acceptance_evidence: list[dict] = []
             if args.geometry_only:
                 proposals = [(*geometry_seed(item, image.shape), True) for item in synthetic.prints]
@@ -755,13 +757,17 @@ def main() -> None:
                 page_runtimes.append(page_runtime)
                 if detection_metadata.get("onnx_error"):
                     raise SystemExit(f"Runtime ONNX error for {record['id']}: {detection_metadata['onnx_error']}")
-                refinement_error = (detection_metadata.get("visible_mask_refinement") or {}).get("error")
-                if refinement_error:
-                    raise SystemExit(f"Visible mask ONNX error for {record['id']}: {refinement_error}")
+                refinement = detection_metadata.get("visible_mask_refinement") or {}
+                if refinement.get("error"):
+                    raise SystemExit(f"Visible mask ONNX error for {record['id']}: {refinement['error']}")
+                ownership_unresolved = refinement.get("ownership_unresolved") is True
                 proposals = [(item.bounding_box, item.mask, item.geometry_valid) for item in result.detections]
                 detected = [_detected_polygon(item) for item in result.detections]
 
             rendered = _render_crops(image, proposals, settings, Path(temporary))
+            if ownership_unresolved:
+                for item in rendered:
+                    route_ready_crop_modes_to_review(item["modes"], [CROP_VALIDATION_UNAVAILABLE])
             pipeline_ms = (perf_counter() - pipeline_started) * 1000
             pipeline_runtimes.append(pipeline_ms)
             for item in rendered:

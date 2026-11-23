@@ -147,6 +147,38 @@ def test_benchmark_rectifies_tilt_without_generator_intrinsics(tmp_path) -> None
                and row["corner_error_max_px"] <= 2 for row in rows)
 
 
+def test_benchmark_records_review_for_unresolved_mask_ownership(monkeypatch, tmp_path) -> None:
+    import json
+    import sys
+    from pathlib import Path
+
+    from app.evaluation import crop_fixtures
+    from app.pipeline import segmentation
+    from app.pipeline.crop_validation import CROP_VALIDATION_UNAVAILABLE
+    from scripts import evaluate_onnx_segmentation as evaluator
+
+    page = next(page for page in crop_fixtures.synthetic_crop_pages("locked") if page.name == "borderless")
+    box, mask = crop_fixtures.geometry_seed(page.prints[0], page.image.shape)
+    detection = segmentation.SegmentationDetection(box, mask, .95, 1.2, True, [])
+    result = segmentation.SegmentationResult([detection], {"visible_mask_refinement": {"ownership_unresolved": True}})
+    monkeypatch.setattr(segmentation, "segment_album_page", lambda *args, **kwargs: result)
+    monkeypatch.setattr(crop_fixtures, "synthetic_crop_pages", lambda _: [page])
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    model = tmp_path / "detector.onnx"
+    model.write_bytes(b"detector-fixture")
+    output = tmp_path / "report.json"
+    monkeypatch.setattr(sys, "argv", ["evaluate", "--synthetic", "locked", "--model", str(model),
+                                      "--visible-mask-model", str(tmp_path / "local.onnx"), "--output", str(output)])
+
+    evaluator.main()
+
+    rows = json.loads(output.read_text(encoding="utf-8"))["fixtures"][0]["crop_modes"]
+    assert {row["mode"] for row in rows} == {"full_print", "image_only"}
+    assert all(row["status"] == "review_needed" and row["reason_codes"] == [CROP_VALIDATION_UNAVAILABLE]
+               and not row["automatic_release_passes"] for row in rows)
+
+
 def test_album_benchmark_counts_independent_motif_downloads(tmp_path) -> None:
     from app.config import Settings
     from app.evaluation.crop_fixtures import geometry_seed, synthetic_crop_pages

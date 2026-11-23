@@ -43,6 +43,7 @@ def crop_validation_profile(settings: Settings) -> dict:
             "model_sha256": _optional_hash(visible_model),
             "manifest_sha256": _optional_hash(settings.model_manifest_path),
             "sleeve_reflection_filter": 1,
+            "ownership_polygon_check": 1,
         },
         "classical_fallback": settings.enable_classical_segmentation_fallback,
         "border_analysis": settings.enable_border_trim,
@@ -69,7 +70,16 @@ def segmentation_matches_crop_profile(settings: Settings, segmentation: dict) ->
     if refiner is None:
         return True
     used = segmentation.get("visible_mask_refinement") or {}
-    return bool(refiner["model_sha256"] and used.get("model_sha256") == refiner["model_sha256"] and not used.get("error"))
+    return bool(
+        refiner["model_sha256"] and used.get("model_sha256") == refiner["model_sha256"]
+        and not used.get("error") and not used.get("ownership_unresolved")
+    )
+
+
+def route_ready_crop_modes_to_review(modes: dict, reasons: list[str]) -> None:
+    for mode in modes.values():
+        if mode.get("status") == "ready":
+            mode.update(status="review_needed", geometry_status="ready", reason_codes=reasons.copy())
 
 
 def automatic_crop_review_reasons(

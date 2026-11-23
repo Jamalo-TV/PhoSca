@@ -19,6 +19,10 @@ _MAX_CLAIM_PIXELS = 48_000_000
 _MAX_DISPUTED_PIXELS = 2_000_000
 
 
+class UnresolvedMaskOwnership(ValueError):
+    """The visible polygon cannot represent the pixel ownership decision."""
+
+
 @dataclass
 class _Claim:
     left: int
@@ -52,13 +56,25 @@ def _load_session(path: Path, digest: str):
     return session
 
 
-def _largest_outline(mask: np.ndarray) -> np.ndarray | None:
+def _largest_outline(mask: np.ndarray, *, preserve_ownership: bool = False) -> np.ndarray | None:
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return None
     contour = max(contours, key=cv2.contourArea)
-    outline = cv2.approxPolyDP(contour, .70, True).reshape(-1, 2)
-    return outline if len(outline) >= 4 and cv2.contourArea(outline) > 0 else None
+    simplified = cv2.approxPolyDP(contour, .70, True).reshape(-1, 2)
+    outlines = (simplified, contour.reshape(-1, 2)) if preserve_ownership else (simplified,)
+    rendered = np.zeros_like(mask) if preserve_ownership else None
+    for outline in outlines:
+        if len(outline) < 4 or cv2.contourArea(outline) <= 0:
+            continue
+        if rendered is not None:
+            # A single exterior outline can fill a hole of disputed pixels.
+            rendered.fill(0)
+            cv2.fillPoly(rendered, [outline], 1)
+            if np.any(rendered > mask):
+                continue
+        return outline
+    return None
 
 
 def _local_outline(session, image: np.ndarray, polygon: np.ndarray) -> np.ndarray | None:
@@ -164,9 +180,10 @@ def resolve_mask_ownership(
         rows, columns = np.nonzero(disputed[claim.region] & claim.mask)
         indices = np.searchsorted(flat_indices, (rows + claim.top) * width + columns + claim.left)
         claim.mask[rows, columns] = (owners[indices] == index) & separated[indices]
-        outline = _largest_outline(claim.mask)
-        if outline is not None:
-            resolved[index] = (outline + [claim.left, claim.top]) / scale
+        outline = _largest_outline(claim.mask, preserve_ownership=True)
+        if outline is None:
+            raise UnresolvedMaskOwnership
+        resolved[index] = (outline + [claim.left, claim.top]) / scale
     return resolved
 
 
@@ -211,5 +228,5 @@ def _remove_sleeve_fold(
         edge = end - start
         side = edge[0] * (yy - start[1]) - edge[1] * (xx - start[0])
         mask[(original_mask == 0) & (side <= 3 * np.linalg.norm(edge))] = 0
-    outline = _largest_outline(mask)
+    outline = _largest_outline(mask, preserve_ownership=True)
     return refined if outline is None else (outline + lower) / scale

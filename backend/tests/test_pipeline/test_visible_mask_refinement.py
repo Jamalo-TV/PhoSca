@@ -7,6 +7,7 @@ import pytest
 
 from app.config import Settings
 from app.pipeline import segmentation, visible_mask_refinement
+from app.pipeline.crop_validation import crop_validation_profile, segmentation_matches_crop_profile
 
 
 def _rect(left, top, right, bottom, scale):
@@ -25,6 +26,39 @@ def test_visible_mask_resolution_leaves_the_tie_between_neighboring_prints_unown
     assert np.rint(second[:, 0].min() * scale[0]) == 76
     assert np.rint(first[:, 0].min() * scale[0]) == 20
     assert np.rint(second[:, 0].max() * scale[0]) == 130
+
+
+@pytest.mark.parametrize("inner", [(40, 30, 90, 70), (10, 10, 140, 90)], ids=["interior-hole", "fully-disputed"])
+def test_unrepresentable_visibility_preserves_proposals_for_review(monkeypatch, tmp_path, inner):
+    model = tmp_path / "visible.onnx"
+    model.write_bytes(b"mask-refinement-fixture")
+    digest = hashlib.sha256(model.read_bytes()).hexdigest()
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"models": {model.name: {"sha256": digest, "license": "test"}}}))
+    settings = Settings(
+        DATABASE_URL="sqlite+aiosqlite://", REDIS_URL="redis://localhost:6379/0",
+        VISIBLE_MASK_MODEL_PATH=model, MODEL_MANIFEST_PATH=manifest, ENABLE_CLASSICAL_SEGMENTATION_FALLBACK=False,
+    )
+    scale = np.float32([150, 99])
+    outlines = [_rect(10, 10, 140, 90, scale), _rect(*inner, scale)]
+    detections = [
+        segmentation.SegmentationDetection(
+            {"x1": float(outline[0, 0]), "y1": float(outline[0, 1]),
+             "x2": float(outline[2, 0]), "y2": float(outline[2, 1])},
+            {"polygon": [{"x": float(x), "y": float(y)} for x, y in outline]}, .90, 1.2, True, [],
+        )
+        for outline in outlines
+    ]
+    monkeypatch.setattr(segmentation, "_segment_album_page", lambda *_: segmentation.SegmentationResult(detections, {}))
+    monkeypatch.setattr(visible_mask_refinement, "_load_session", lambda *_: object())
+    monkeypatch.setattr(visible_mask_refinement, "_local_outline", lambda _, __, polygon: polygon)
+
+    result = segmentation.segment_album_page(np.zeros((100, 151, 3), np.uint8), settings)
+
+    assert result.detections == detections
+    assert result.metadata["visible_mask_refinement"] == {"ownership_unresolved": True}
+    profile = crop_validation_profile(settings)
+    assert not segmentation_matches_crop_profile(settings, {**result.metadata, "validation_profile": profile})
 
 
 def test_optional_refiner_uses_source_pixels_and_preserves_initial_crop_geometry(monkeypatch, tmp_path):
