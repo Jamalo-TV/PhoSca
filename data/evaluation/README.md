@@ -739,6 +739,15 @@ cylindrical full print. Two samples with identical contours differ by
 error as well as the footprint before promoting a curved crop. Boundary
 remapping is also used in [document dewarping research](https://arxiv.org/abs/2501.03145).
 
+A separate cylinder fit recovered three synthetic cylinders in both modes
+with at most 0.24 px landmark error at the 95th percentile and zero strict
+boundary errors under 0.35 px trace noise. It used the true focal length
+and independently known aspect. A 5% focal-length error introduced foreign
+samples in all six crops. An interior bulge with the same outline still
+caused 11.35 px landmark error at the 95th percentile with zero strict
+boundary errors. See `curved-geometry-probe/cylinder-results.json` under
+`runs/crop-quality/`.
+
 `nmah-gardner-paired-crops-draft.json` pins two independent Smithsonian scans
 of the same Marshall House accession. The fitted aspect ratios differ by
 0.24%. After registration, the largest corresponding corner discrepancy is
