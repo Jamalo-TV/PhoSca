@@ -148,6 +148,26 @@ def test_synthetic_references_include_visible_ownership_and_review_cases() -> No
     assert not paper_mount["full_print"].recoverable and paper_mount["image_only"].recoverable
 
 
+def test_dense_development_prints_have_two_exact_nonoverlapping_references() -> None:
+    import numpy as np
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+
+    page = next(page for page in synthetic_crop_pages("development") if page.name == "dense_gutters")
+    assert len(page.prints) == 30
+    full_masks = []
+    for item in page.prints:
+        full, motif = (item.reference_modes[name] for name in ("full_print", "image_only"))
+        assert full.recoverable and motif.recoverable
+        assert np.count_nonzero(motif.mask) > 0
+        assert np.all(motif.mask <= full.mask)
+        full_masks.append(full.mask)
+    assert np.max(np.sum(full_masks, axis=0)) == 1
+    assert any(np.array_equal(item.reference_modes["full_print"].mask, item.reference_modes["image_only"].mask)
+               for item in page.prints)
+    assert any(np.any(item.reference_modes["full_print"].mask > item.reference_modes["image_only"].mask)
+               for item in page.prints)
+
+
 def test_benchmark_rectifies_tilt_without_generator_intrinsics(tmp_path) -> None:
     from app.config import Settings
     from app.evaluation.crop_fixtures import geometry_seed, synthetic_crop_pages

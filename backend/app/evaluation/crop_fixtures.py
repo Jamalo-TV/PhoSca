@@ -56,6 +56,7 @@ _CASES = {
     "curl": "review",
     "negative": "negative",
     "paper_corner_mount": "hard",
+    "dense_gutters": "hard",
 }
 
 
@@ -152,7 +153,16 @@ def _page(case: str, rng: np.random.Generator) -> PageFixture:
     page = np.clip(np.repeat((paper_color + grain)[..., None], 3, axis=-1), 0, 255).astype(np.uint8)
     owner = np.zeros((height, width), dtype=np.uint8)
     layers = []
-    if case != "negative":
+    if case == "dense_gutters":
+        for row in range(5):
+            for column in range(6):
+                centers = np.array([80 + 135 * column, 125 + 92 * row]) + rng.uniform(-1.5, 1.5, 2)
+                angles = (2.0, -3.0, -1.3 + rng.uniform(-0.65, 0.65))
+                layers.append(_layer(
+                    case, rng, width=124, height=84, center=tuple(centers), angles=angles,
+                    margin=0 if (row + column) % 3 == 0 else 5, paper_tone=227 + (column % 3) * 7,
+                ))
+    elif case != "negative":
         portrait = case == "portrait"
         width_px, height_px = (233, 330) if portrait else (332, 228)
         center = (420.2, 312.7)
@@ -177,9 +187,11 @@ def _page(case: str, rng: np.random.Generator) -> PageFixture:
             ))
     for index, (rendered, references) in enumerate(layers, start=1):
         print_mask = references["full_print"].mask
-        if case == "cast_shadow":
-            shadow = cv2.warpAffine(print_mask.astype(np.float32), np.float32([[1, 0, 10], [0, 1, 12]]), _PAGE_SIZE)
-            shadow = cv2.GaussianBlur(shadow, (13, 13), 2.7)
+        if case == "cast_shadow" or (case == "dense_gutters" and index % 3 == 2):
+            offset_x, offset_y = (10, 12) if case == "cast_shadow" else (2, 3)
+            shift = np.float32([[1, 0, offset_x], [0, 1, offset_y]])
+            shadow = cv2.warpAffine(print_mask.astype(np.float32), shift, _PAGE_SIZE)
+            shadow = cv2.GaussianBlur(shadow, (13, 13), 2.7 if case == "cast_shadow" else 1.2)
             page = np.clip(page * (1 - .44 * shadow[..., None]), 0, 255).astype(np.uint8)
         visible = print_mask != 0
         owner[visible] = index
@@ -225,7 +237,8 @@ def synthetic_crop_pages(split: str) -> list[PageFixture]:
     """Separate development texture/jitter from locked reference seeds."""
     seeds = {"development": 30291, "locked": 85997}
     rng = np.random.default_rng(seeds[split])
-    return [_page(case, rng) for case in _CASES]
+    # The dense page is available for tuning. Preserve the locked benchmark as a holdout.
+    return [_page(case, rng) for case in _CASES if split == "development" or case != "dense_gutters"]
 
 
 def geometry_seed(print_fixture: PrintFixture, image_shape: tuple[int, ...]) -> tuple[dict, dict]:

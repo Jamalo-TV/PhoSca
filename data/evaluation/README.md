@@ -57,6 +57,28 @@ ordinary uploads estimates the aspect ratio of a tilted print.
 python scripts/evaluate_onnx_segmentation.py --synthetic locked --geometry-only --require-final-quality --visuals --output runs/crop-quality/synthetic-locked.json
 ```
 
+The development split also includes `dense_gutters`, with 30 closely mounted
+prints, narrow exposed paper, shadows and a mix of bare and bordered prints.
+All 60 crop references are recoverable and have exact source masks, corners,
+aspect ratios and landmarks. With the registered detector and the v4 local
+refiner, the development baseline has 15 of 30 matches at mask IoU 0.85.
+Source geometry brings all 30 final instance footprints above 0.85, while the
+strict crop check still sends both modes to review. Missing metric aspect
+evidence and the local refiner's conflicting ownership claims account for
+those reviews. See `gutter-split/dense-development-baseline.json` under
+`runs/crop-quality/`.
+
+A four-epoch warm fine-tune of the local refiner mixed 536 synthetic dense
+patches with 480 existing training patches. Mean IoU on 166 separate dense
+validation patches rose from 0.562 to 0.907, and their mean foreign fraction
+fell from 41.8% to 4.6%. On `dense_gutters` the candidate resolved the pixel
+ownership conflict and passed four of 30 cases in each crop mode. The native
+Met development scan fell from 44 to 42 matches, and the frozen synthetic
+detection check failed. The deployed configuration retains its current
+refiner. The paired reports are `gutter-split/local-mask-dense-training.json`
+and `gutter-split/dense-model-{development,locked,golden,met}.json` under
+`runs/crop-quality/`.
+
 For a real, independently annotated benchmark pass a separate
 `--dataset-manifest`. Page paths may be relative to the manifest. A page can
 declare `expected_count: 0`. Pin each page with `image_sha256` and each YOLO
