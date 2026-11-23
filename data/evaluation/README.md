@@ -185,6 +185,17 @@ If orientation is enabled, the configured orientation classifier must provide
 a decision for an automatically eligible crop. Include
 `--include-classical-fallback` for the default production configuration.
 
+The orientation development check used 63 upright archival photos for
+training and 35 photos from different photographers for evaluation. Four
+rotations per evaluation original produced 140 cases. The repository CNN
+got 34 cases correct. An EfficientNetV2 ONNX candidate using PhoSca's runtime
+interface got 140 clean cases correct. Under simulated low resolution,
+shading, glare, contrast loss and noise it got 92 correct and applied 27
+wrong rotations, including six to already upright photos. A 0.90 confidence
+threshold still applied 10 wrong rotations. The reports are under
+`runs/crop-quality/orientation-archival-development/`. The candidates remain
+development artifacts. [Pretrained model](https://github.com/duartebarbosadev/deep-image-orientation-detection/releases/tag/v2)
+
 The local intake under `runs/crop-quality/calibration-intake-sources/`
 contains eight views with 66 draft print outlines from four source groups,
 including the [Allston album](https://nmaahc.si.edu/object/nmaahc_2009.31)
@@ -717,6 +728,28 @@ hashes and render the side-by-side review without running the detector.
 
 ```powershell
 python scripts/evaluate_onnx_segmentation.py --dataset-manifest data/evaluation/ibcc-quine-paired-crops-draft.json --check-references --visuals --output runs/crop-quality/ibcc-quine-24963-preflight.json
+```
+
+The synthetic dewarping comparison in `runs/crop-quality/curved-geometry-probe/`
+uses exact contours and known aspect for eight shapes. The boundary-guided
+remap removes all strict cutoff and contamination samples across both modes.
+Interior landmark error still reaches 42.68 px p95 for the strongly curved
+cylindrical full print. Two samples with identical contours differ by
+13.67 px p95 in interior alignment under that same remap. Score landmark
+error as well as the footprint before promoting a curved crop. Boundary
+remapping is also used in [document dewarping research](https://arxiv.org/abs/2501.03145).
+
+`nmah-gardner-paired-crops-draft.json` pins two independent Smithsonian scans
+of the same Marshall House accession. The fitted aspect ratios differ by
+0.24%. After registration, the largest corresponding corner discrepancy is
+3.29 native page pixels. Review the faint stock boundary and whether it
+coincides with the motif before confirming either mode. The museum records
+an overall size of 9 by 7 inches. The draft uses the separate scan as its
+aspect reference. The source images stay local under the museum's usage
+conditions. [Smithsonian catalog](https://www.si.edu/es/object/plate-1-marshal-house-alexandria%3Anmah_1293152)
+
+```powershell
+python scripts/evaluate_onnx_segmentation.py --dataset-manifest data/evaluation/nmah-gardner-paired-crops-draft.json --check-references --visuals --output runs/crop-quality/nmah-gardner-marshall-preflight.json
 ```
 
 A development experiment zoomed into the bounded gap on the

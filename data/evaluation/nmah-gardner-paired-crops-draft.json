@@ -1,0 +1,106 @@
+{
+  "schema_version": 2,
+  "name": "Smithsonian Gardner plate 1 source-only review",
+  "split_policy": {
+    "album_independent": false,
+    "reason": "One reserved album group, pending independent annotation and provenance review"
+  },
+  "pages": [
+    {
+      "id": "NMAH-ET2010-32670-009",
+      "image": "../../runs/crop-quality/independent-intake-gardner-source/marshall-si-2010-full.jpg",
+      "image_sha256": "5039cbb6f9f3718719f9e9631ccdb690bd65bee0275740ae4559af1973f37478",
+      "source_resolution": [3000, 2433],
+      "source_group": "NMAH:Gardner:1986.0711.0334",
+      "physical_album": "NMAH:1986.0711.0334",
+      "annotation_provenance": "paired_archive_geometry_draft",
+      "page_category": "real",
+      "difficulty_tags": [
+        "faint_top_edge",
+        "surrounding_tinted_caption_area"
+      ],
+      "expected_count": 1,
+      "annotations": "nmah-gardner-marshall-2010.txt",
+      "annotations_sha256": "2f7d08ad2679863e526ae38f6bee0f772845df77ac8ed6784208b45edca062aa",
+      "source_url": "https://americanhistory.si.edu/collections/object/nmah_1293152",
+      "expected_final_crops": [
+        {
+          "full_print": {
+            "polygon": [
+              [0.16052682640632815, 0.1287093288020084],
+              [0.8239585721282094, 0.12574746734217593],
+              [0.8277764137525009, 0.7576707036871659],
+              [0.16445934045072316, 0.7617535340158563]
+            ],
+            "warp_quad": [
+              [0.16052682640632815, 0.1287093288020084],
+              [0.8239585721282094, 0.12574746734217593],
+              [0.8277764137525009, 0.7576707036871659],
+              [0.16445934045072316, 0.7617535340158563]
+            ],
+            "recoverable": true,
+            "annotation_provenance": "paired_archive_geometry_draft",
+            "reference_image": "../../runs/crop-quality/independent-intake-gardner-source/marshall-si-2003-full.jpg",
+            "reference_image_sha256": "50d376fb5faaff06a785a7eb962f329ee93461ad2c7e099019362f64d5dc1754",
+            "reference_image_quad": [
+              [0.12221921538412221, 0.13878007485470856],
+              [0.8595581770222743, 0.139712313593388],
+              [0.8604998214024033, 0.7523974938460931],
+              [0.12383108970102458, 0.7515977121946082]
+            ],
+            "shape": [1456, 1887],
+            "reference_image_url": "https://ids.si.edu/ids/iiif/NMAH-2003-28182/full/full/0/default.jpg",
+            "reference_catalog_asset": "NMAH-2003-28182"
+          },
+          "image_only": {
+            "polygon": [
+              [0.16052682640632815, 0.1287093288020084],
+              [0.8239585721282094, 0.12574746734217593],
+              [0.8277764137525009, 0.7576707036871659],
+              [0.16445934045072316, 0.7617535340158563]
+            ],
+            "warp_quad": [
+              [0.16052682640632815, 0.1287093288020084],
+              [0.8239585721282094, 0.12574746734217593],
+              [0.8277764137525009, 0.7576707036871659],
+              [0.16445934045072316, 0.7617535340158563]
+            ],
+            "recoverable": true,
+            "annotation_provenance": "paired_archive_geometry_draft",
+            "reference_image": "../../runs/crop-quality/independent-intake-gardner-source/marshall-si-2003-full.jpg",
+            "reference_image_sha256": "50d376fb5faaff06a785a7eb962f329ee93461ad2c7e099019362f64d5dc1754",
+            "reference_image_quad": [
+              [0.12221921538412221, 0.13878007485470856],
+              [0.8595581770222743, 0.139712313593388],
+              [0.8604998214024033, 0.7523974938460931],
+              [0.12383108970102458, 0.7515977121946082]
+            ],
+            "shape": [1456, 1887],
+            "reference_image_url": "https://ids.si.edu/ids/iiif/NMAH-2003-28182/full/full/0/default.jpg",
+            "reference_catalog_asset": "NMAH-2003-28182"
+          }
+        }
+      ],
+      "image_url": "https://ids.si.edu/ids/iiif/NMAH-ET2010-32670-009/full/full/0/default.jpg",
+      "catalog_asset": "1986.0711.0334.01",
+      "iiif_manifest_url": "https://ids.si.edu/ids/manifest/edanmdm:nmah_1293152",
+      "source_rights": {
+        "statement": "Usage Conditions Apply",
+        "url": "https://americanhistory.si.edu/collections/about/rights-and-reproductions"
+      },
+      "reference_geometry_draft": {
+        "catalog_extent": {
+          "width": 9,
+          "height": 7,
+          "unit": "in",
+          "catalog_label": "overall"
+        },
+        "mounted_extent_pixel_aspect": 1.293344,
+        "paired_scan_extent_pixel_aspect": 1.296505,
+        "maximum_corner_difference_native_px": 3.286,
+        "holdout_registration_median_native_px": 0.769,
+        "notes": "All outer edges are visible in the source. Confirm the faint stock boundary and check whether the photographic motif meets all four edges."
+      }
+    }
+  ]
+}
