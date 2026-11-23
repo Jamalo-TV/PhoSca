@@ -930,6 +930,16 @@ review. A weak one-sided extension was measured separately and remains a
 diagnostic. Neither Whiting motif yields a derivative. See the paired audit
 and overlay under `runs/crop-quality/cloud-v32/`.
 
+Version 33 checks whether source observations support a straight outer edge.
+It sends both modes to review when the fitted print boundary shows a clear
+bow on one side or corroborated bowing on adjacent sides. In the 48-case
+development replay, this catches five geometrically ready failures across
+the two crop modes at moderate or strong radial distortion. All six control
+pages and the ready cases from the 18 blur-only pages retain their previous
+results. A weakly distorted tilted print still exceeds the 1% aspect
+tolerance in both modes (1.11% and 1.24%). The frozen detection and crop
+pass counts are unchanged. See `runs/crop-quality/cloud-v33/`.
+
 The frozen seeded-geometry benchmark passes all 23 recoverable mode crops.
 The v21 and v22 Registered end-to-end runs match six of 18 raw instances
 at IoU 0.85. On the development white-margin and white-on-white pages the

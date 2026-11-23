@@ -40,7 +40,7 @@ def crop_validation_profile(settings: Settings) -> dict:
         "precise_photo_crops": settings.enable_precise_photo_crops,
         "crop_sampling": OWNED_BILINEAR if settings.enable_precise_photo_crops else None,
         "page_plane_preview": 2 if settings.enable_precise_photo_crops else None,
-        "print_boundary": 3 if settings.enable_precise_photo_crops else None,
+        "print_boundary": 4 if settings.enable_precise_photo_crops else None,
         "registered_model_required": settings.require_registered_models,
         "model_registry_sha256": _optional_hash(settings.model_manifest_path) if settings.require_registered_models else None,
         "source_contour_refinement": SOURCE_CONTOUR_REVISION if settings.enable_precise_photo_crops and visible_model is None else None,

@@ -6,6 +6,27 @@ import cv2
 import numpy as np
 
 
+def _measured_side_bow(fitted: np.ndarray, length: float) -> float | None:
+    # Median offsets in separated bands suppress individual texture and mount
+    # edges. A projective transform preserves straight lines in the source.
+    fractions = fitted[:, 0] / length
+    bands = []
+    for start in np.arange(7) / 7:
+        points = fitted[(fractions >= start) & (fractions < start + 1 / 7)]
+        if len(points) >= 2:
+            bands.append(np.median(points, axis=0))
+    if len(bands) < 6:
+        return None
+    positions, depths = np.asarray(bands).T
+    positions = 2 * positions / length - 1
+    if positions[0] > -.64 or positions[-1] < .64:
+        return None
+    curve = np.polyfit(positions, depths, 2)
+    if np.max(np.abs(depths - np.polyval(curve, positions))) > .22:
+        return None
+    return round(float(curve[0]), 4)
+
+
 def _side_line(
     image: np.ndarray, start: np.ndarray, end: np.ndarray, radius: int, *, outward_only: bool = False,
     rim_color: np.ndarray | None = None,
@@ -110,6 +131,8 @@ def _side_line(
     evidence["maximum_residual_px"] = round(float(residuals.max()), 4)
     if np.percentile(residuals, 90) > 1.05:
         return None, evidence
+    if evidence["support"] >= .82:
+        evidence["measured_bow_px"] = _measured_side_bow(fitted, length)
     # The transition is measured between pixels. Start at the first print pixel center.
     first = start + inward * (origin + 0.5)
     last = end + inward * (origin + length * slope + 0.5)
@@ -475,6 +498,11 @@ def refine_print_boundary(
     if any(line is None for line, _ in fitted):
         reason = "PRINT_BOUNDARY_AMBIGUOUS" if any(item["ambiguous"] for item in evidence.values()) else "PRINT_BOUNDARY_UNSUPPORTED"
         reasons.append(reason)
+    elif search_radius is None:
+        bows = np.array([item.get("measured_bow_px") or 0 for item in evidence.values()])
+        adjacent = np.roll(bows, 1)
+        if np.max(np.abs(bows)) >= 1 or np.any((bows * adjacent > 0) & (np.minimum(np.abs(bows), np.abs(adjacent)) >= .4)):
+            reasons.append("PRINT_BOUNDARY_CURVED")
     for index, (line, item) in enumerate(fitted):
         if line is None or item["corner_support"] >= 0.44:
             continue

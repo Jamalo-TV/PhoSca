@@ -732,6 +732,34 @@ def test_mild_single_axis_tilt_requires_metric_scale(rotation) -> None:
     assert (measured.image.shape[1] - 1) / (measured.image.shape[0] - 1) == pytest.approx(aspect, rel=.004)
 
 
+@pytest.mark.parametrize("coefficient", [.025, .05])
+def test_radial_curvature_keeps_tilted_print_in_review(coefficient) -> None:
+    from app.evaluation.crop_fixtures import geometry_seed, synthetic_crop_pages
+
+    fixture = next(page for page in synthetic_crop_pages("development") if page.name == "camera_tilt")
+    height, width = fixture.image.shape[:2]
+    outer_scale = np.float32([width - 1, height - 1])
+    center = np.float32([.2 * width, .38 * height])
+    scale = max(width, height) / 2
+    yy, xx = np.mgrid[:height, :width]
+    rays = np.float32(np.stack([xx, yy], axis=-1)) - center
+    distorted_radius = np.linalg.norm(rays, axis=2) / scale
+    radius = distorted_radius.copy()
+    for _ in range(7):
+        radius -= (radius + coefficient * radius ** 3 - distorted_radius) / (1 + 3 * coefficient * radius ** 2)
+    inverse = rays / (1 + coefficient * radius[..., None] ** 2) + center
+    image = cv2.remap(fixture.image, inverse[..., 0].copy(), inverse[..., 1].copy(), cv2.INTER_LINEAR)
+    box, mask = geometry_seed(fixture.prints[0], image.shape)
+    seed = np.float32([(point["x"], point["y"]) for point in mask["polygon"]]) * outer_scale - center
+    mask["polygon"] = _vertices(center + seed * (1 + coefficient * (seed ** 2).sum(axis=1, keepdims=True) / scale ** 2), image)
+
+    crop = _crop(image, box, mask, dual_mode=True)
+    assert crop.metadata["crop_modes"]["full_print"]["status"] == "review_needed"
+    assert "PRINT_BOUNDARY_CURVED" in crop.metadata["crop_modes"]["full_print"]["reason_codes"]
+    assert crop.metadata["crop_modes"]["image_only"]["status"] == "review_needed"
+    assert crop.image_only is None
+
+
 def test_clipped_or_occluded_proposals_remain_review_previews() -> None:
     page = np.random.default_rng(830).integers(0, 256, (140, 210, 3), dtype=np.uint8)
     mask = {
