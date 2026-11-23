@@ -81,8 +81,12 @@ rectified raster) or `physical_size_mm` (measured width and height in
 millimetres for that mode). With an independent exact crop scan, provide
 `reference_image` and `reference_image_sha256`. Its decoded shape can supply
 the reference raster dimensions, and the contact sheet shows it beside the
-generated crop. A full scan that includes album stock or a holder needs its
-actual crop boundary established first. Where both types of dimensions exist,
+generated crop. To use an independently captured scan that still includes
+mounting or scanner margins, provide `reference_image_quad` in its decoded
+pixel-centre coordinate system, normalized between 0 and 1. Order the corners
+top left, top right, bottom right, bottom left and supply the independently
+measured rectified `shape`. The preflight checks the original scan hash and
+rectifies that scan for the review sheet. Where both types of dimensions exist,
 their aspect ratios must agree within the 1% benchmark tolerance. Optional
 `source_landmarks` and `landmarks` must be supplied together in source and
 rectified pixel coordinates. Set `annotation_provenance` to
@@ -506,3 +510,34 @@ at `runs/crop-quality/archive-reference-review-plus-howland.json` covers 12
 pages and 31 photos and verifies all file hashes. The annotations are still
 pending independent review. [Smithsonian dimensions](https://nmaahc.si.edu/object/nmaahc_2017.30.47)
 and [Library of Congress album and print record](https://www.loc.gov/pictures/item/2018645050/).
+
+`whiting-paired-crops-draft.json` pins the original TIFFs, the fitted
+quads and held-out landmarks for two prints in Whiting's *Diary in photos*,
+volume I. The Library of Congress catalog distinguishes the album page
+series `17161` from the separately scanned prints in `17162`. The TIFFs
+record 200 dpi for the page and 400 dpi for the print scans, with acquisition
+timestamps on different days. The independently fitted corners agree within
+0.66 native album pixels across both crop modes. Aspect ratios agree within
+0.10%. [Library of Congress catalog](https://www.loc.gov/pictures/item/2007675295/)
+
+Use the three source URLs in the draft manifest to place the TIFFs at their
+pinned paths under `runs/crop-quality/whiting-diary-pair/`. The evaluation
+command renders the four reference crops directly from those masters.
+
+```powershell
+python scripts/evaluate_onnx_segmentation.py --dataset-manifest data/evaluation/whiting-paired-crops-draft.json --check-references --visuals --output runs/crop-quality/whiting-native-reference-review.json
+```
+
+The source-only intake at `runs/crop-quality/archive-reference-review-plus-native-whiting.json`
+still needs independent review. It has 13 missing metric references, down
+from 17 before adding the Whiting pairs.
+
+A development experiment zoomed into the bounded gap on the
+[sparsely mounted Met page](https://www.metmuseum.org/art/collection/search/289066).
+It found the central fifth print in the original scan at 0.904 mask IoU.
+Its uncertain top edge left 9.6% of the draft footprint outside the proposal.
+The new branch added no detections in 14 modified negative cases, but missed
+all 13 resized, recompressed or geometrically transformed positives in the
+robustness check. The diagnostic reports are in
+`runs/crop-quality/dense-tiles-probe/gap-negatives-v2/`. The runtime keeps the
+validated detection path while this case remains unresolved.

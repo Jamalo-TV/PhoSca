@@ -6,6 +6,7 @@ import argparse
 from collections import Counter
 from hashlib import sha256
 from html import escape
+from io import BytesIO
 import json
 import sys
 from pathlib import Path
@@ -193,6 +194,31 @@ def _read_page_truth(record, parse_labels, hash_file):
     return expected, pinned
 
 
+def _reference_scan_crop(payload, quad, shape, *, render):
+    from app.pipeline.image_ops import load_image
+
+    source = load_image(BytesIO(payload))
+    invalid = "Reference scan needs four convex corners within the decoded raster"
+    try:
+        normalized = np.asarray(_points(quad), dtype=np.float32)
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(invalid) from error
+    if (normalized.shape != (4, 2) or not np.isfinite(normalized).all()
+            or np.any(normalized < 0) or np.any(normalized > 1) or not cv2.isContourConvex(normalized)):
+        raise ValueError(invalid)
+    corners = normalized * np.float32([source.shape[1] - 1, source.shape[0] - 1])
+    if cv2.contourArea(corners, oriented=True) < 4:
+        raise ValueError("Reference scan corners must be clockwise and enclose a crop")
+    height, width = shape
+    if height * width > 2 * source.shape[0] * source.shape[1]:
+        raise ValueError("Reference scan crop exceeds the source raster budget")
+    if render:
+        target = np.float32([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]])
+        transform = cv2.getPerspectiveTransform(corners, target)
+        return cv2.warpPerspective(source, transform, (width, height))
+    return None
+
+
 def _reference_masks(record, expected, image_shape, manifest, *, include_reference_images=False):
     from app.evaluation.cropping import _mask
     from app.schemas.common import PrintSizeMM
@@ -231,17 +257,25 @@ def _reference_masks(record, expected, image_shape, manifest, *, include_referen
             if shape is not None and (len(shape) != 2 or not all(isinstance(size, int) and size >= 2 for size in shape)):
                 raise ValueError(f"{record['id']}: {name} has invalid rectified reference dimensions")
             reference_image = None
+            reference_quad = annotation.get("reference_image_quad")
+            if reference_quad is not None and (shape is None or not annotation.get("reference_image")):
+                raise ValueError(f"{record['id']}: {name} reference scan corners need a scan and rectified dimensions")
             if annotation.get("reference_image"):
                 reference_path = _record_path(annotation["reference_image"], manifest)
                 reference_hash = annotation.get("reference_image_sha256")
                 payload = _reference_bytes(reference_path, reference_hash)
-                reference_image = cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), cv2.IMREAD_COLOR) if payload else None
                 sidecar_pinned &= reference_hash is not None
-                if reference_image is None or min(reference_image.shape[:2]) < 2:
-                    raise ValueError(f"{record['id']}: {name} has an invalid rectified reference image")
-                if shape is not None and reference_image.shape[:2] != shape:
-                    raise ValueError(f"{record['id']}: {name} reference image does not match its stated shape")
-                shape = reference_image.shape[:2]
+                if reference_quad is not None:
+                    if (reference_hash or sha256(payload).hexdigest()) == record.get("image_sha256"):
+                        raise ValueError(f"{record['id']}: {name} must use a separate scan as its metric reference")
+                    reference_image = _reference_scan_crop(payload, reference_quad, shape, render=include_reference_images)
+                else:
+                    reference_image = cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), cv2.IMREAD_COLOR) if payload else None
+                    if reference_image is None or min(reference_image.shape[:2]) < 2:
+                        raise ValueError(f"{record['id']}: {name} has an invalid rectified reference image")
+                    if shape is not None and reference_image.shape[:2] != shape:
+                        raise ValueError(f"{record['id']}: {name} reference image does not match its stated shape")
+                    shape = reference_image.shape[:2]
             measurement = annotation.get("physical_size_mm")
             ratio = PrintSizeMM.model_validate(measurement).aspect_ratio if measurement is not None else None
             if ratio is not None and shape is not None and abs((shape[1] - 1) / (shape[0] - 1) / ratio - 1) > .01:

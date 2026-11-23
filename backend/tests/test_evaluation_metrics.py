@@ -405,6 +405,45 @@ def test_paired_reference_image_is_pinned_and_consistent_with_measurements(tmp_p
         reference()
 
 
+def test_paired_native_scan_is_warped_in_its_own_coordinates(tmp_path) -> None:
+    from hashlib import sha256
+
+    import cv2
+    import numpy as np
+    from scripts.evaluate_onnx_segmentation import _reference_masks
+
+    path = tmp_path / "master.tif"
+    raster = np.full((21, 31, 3), 215, np.uint8)
+    raster[4:17, 5:26] = (35, 90, 150)
+    path.write_bytes(cv2.imencode(".tif", raster)[1].tobytes())
+    digest = sha256(path.read_bytes()).hexdigest()
+    polygon = rectangle(.1, .1, .75, .6)
+    scan_quad = rectangle(5 / 30, 4 / 20, 25 / 30, 16 / 20)
+    annotation = {
+        "recoverable": True, "polygon": polygon, "warp_quad": polygon, "shape": [13, 21],
+        "reference_image": path.name, "reference_image_sha256": digest, "reference_image_quad": scan_quad,
+    }
+    record = {"id": "native-reference", "image_sha256": "f" * 64, "expected_final_crops": [{"full_print": annotation}]}
+
+    def reference(*, render=False):
+        return _reference_masks(record, [polygon], (70, 90, 3), tmp_path / "album.json",
+                                include_reference_images=render)[0]["full_print"]
+
+    assert reference()["shape"] == (13, 21)
+    assert reference()["image"] is None
+    assert reference()["sidecar_pinned"] is True
+    assert np.array_equal(reference(render=True)["image"], raster[4:17, 5:26])
+
+    annotation["reference_image_quad"] = scan_quad[::-1]
+    with pytest.raises(ValueError, match="clockwise"):
+        reference()
+
+    record["image_sha256"] = digest
+    annotation["reference_image_quad"] = scan_quad
+    with pytest.raises(ValueError, match="separate scan"):
+        reference()
+
+
 def test_real_reference_mask_pin_detects_changed_bytes(tmp_path) -> None:
     from hashlib import sha256
 
