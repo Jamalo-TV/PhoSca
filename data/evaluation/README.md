@@ -87,10 +87,10 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 9 binds
-per-mode eligibility to the source-stock occlusion check and the configured
-visible mask refiner. A verified motif can qualify separately when its
-print corners require review.
+groups, with the 90% threshold applied to each group. Report schema 10 binds
+per-mode eligibility to the source-stock occlusion check, including outlined
+mounts, and the configured visible mask refiner. A verified motif can
+qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
 
 Validate the real reference files before running the detector on an independent
@@ -365,11 +365,26 @@ The draft has rectified reference images and landmark pairs held out of
 the registration fit used to check match accuracy. Print 0072a has corroborating
 outer corners, with up to 1.13 px of disagreement. Its observed aspect
 differs from the catalog aspect by 1.51%, so its metric reference is
-pending. Prints 0072b and 0072c have visible corner mounts and need
-further motif review.
+pending. A cross-check using print 0072d to measure the same page plane
+agrees with the observed aspect of 0072a, but still conflicts with the
+catalogued size. The faint top motif edge also remains unresolved.
 
 `runs/crop-quality/archive-reference-drafts-with-nelson.json` now covers
 nine pages with 23 prints. Its preflight pins the input and reference
 files and reports the open review and measurement items. The Nelson
 page remains reserved from detector evaluation while those reviews
 are pending.
+
+The follow-up at `runs/crop-quality/archive-reference-drafts-with-occlusions.json`
+also includes visible motif masks for prints 0072b and 0072c, transferred
+from the separately photographed details. In both drafts the gold corner
+mounts cover printed content. Approximate covered areas are 0.64% and
+0.66%, respectively. The current preflight report is
+`runs/crop-quality/archive-reference-review-corner-mounts.json`.
+
+A synthetic regression reproduces a light holder with a colored outline
+on matching print stock. The corner check requires the same colored
+component outside both adjoining sides and inside the print. A holder
+that reaches the motif sends both modes to review. A holder confined to
+the paper leaves the independently recoverable motif available. The
+locked synthetic report is `runs/crop-quality/outlined-mount-locked.json`.

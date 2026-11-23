@@ -391,6 +391,50 @@ def test_album_color_at_a_missing_corner_does_not_establish_a_holder() -> None:
     assert result.image_only is None
 
 
+@pytest.mark.parametrize(("reach", "motif_covered"), [(0, False), (20, False), (27, True), (35, True)])
+def test_pale_corner_holder_with_colored_outline_requires_review_only_where_it_covers(reach, motif_covered) -> None:
+    from app.evaluation.crop_fixtures import _layer
+    from app.evaluation.cropping import evaluate_rendered_crop
+
+    print_image, references = _layer(
+        "white_margin", np.random.default_rng(341), width=432, height=290,
+        center=(420.5, 319.5), angles=(0., 0., 0.), margin=12,
+    )
+    outer, motif = (references[name] for name in ("full_print", "image_only"))
+    page = np.full_like(print_image, 31)
+    page[outer.mask != 0] = print_image[outer.mask != 0]
+    if reach:
+        holder = np.rint(outer.corners[0] + np.float32([[-5, -5], [reach, -5], [-5, reach]])).astype(np.int32)
+        covered = cv2.fillConvexPoly(np.zeros(page.shape[:2], np.uint8), holder, 1)
+        cv2.polylines(covered, [holder], True, 1, 2)
+        assert bool(np.any(covered & motif.mask)) is motif_covered
+        cv2.fillConvexPoly(page, holder, (229, 229, 229))
+        cv2.polylines(page, [holder], True, (92, 155, 205), 2)
+
+    # The detector mask can fill the corner even when the holder covers ink.
+    mask = {
+        "source": "yolo_seg_mask", "polygon": _vertices(motif.corners, page),
+        "visible_polygon": _vertices(outer.corners, page),
+    }
+    result = _crop(page, {}, mask, dual_mode=True, enable_classical_retry=True)
+    modes = result.metadata["crop_modes"]
+    assert modes["full_print"]["status"] == ("review_needed" if reach else "ready")
+    if reach:
+        assert "PRINT_POSSIBLY_OCCLUDED" in modes["full_print"]["reason_codes"]
+    mode = modes["image_only"]
+    if motif_covered:
+        assert mode["status"] == "review_needed" and result.image_only is None
+        return
+    assert mode["status"] == "ready" and result.image_only is not None
+    assert mode.get("independent_of_full_print", False) is bool(reach)
+    measured = evaluate_rendered_crop(
+        motif.mask, [(p["x"], p["y"]) for p in mode["warp_quad"]], np.array(mode["page_to_output"]),
+        result.image_only.shape[:2], expected_corners=motif.corners, expected_shape=motif.shape,
+        sampling=mode["sampling"],
+    )
+    assert measured["foreign_source_samples"] == measured["cutoff_beyond_1px"] == 0
+
+
 def test_learned_visibility_keeps_source_verified_rim_on_a_mounted_print() -> None:
     from app.evaluation.crop_fixtures import synthetic_crop_pages
 

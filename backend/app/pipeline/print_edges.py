@@ -258,6 +258,12 @@ def print_corner_coverage(image: np.ndarray, quad: np.ndarray) -> tuple[bool, bo
     support = (np.linalg.norm(edges - stock, axis=2) <= 13).mean(axis=1)
     if not _is_pale_stock(stock) or np.min(support) < .78:
         return False, False
+    height, width = image.shape[:2]
+    outside = edge_positions - 5.5 * inward[:, None, :]
+    outside_in_frame = ((outside >= 0) & (outside <= [width - 1, height - 1])).all(axis=(1, 2))
+    background = np.median(_sample_lab(image, outside.reshape(-1, 2)).reshape(4, 32, 3), axis=1)
+    adjoining = np.stack((background, np.roll(background, 1, axis=0)), axis=1)
+    known_background = outside_in_frame & np.roll(outside_in_frame, 1)
     previous = -np.roll(directions, 1, axis=0)
     offsets = np.array([[2.5, 2.5], [5.0, 2.5], [2.5, 5.0]])
     tips = quad[:, None] + directions[:, None] * offsets[None, :, :1] + previous[:, None] * offsets[None, :, 1:]
@@ -266,29 +272,52 @@ def print_corner_coverage(image: np.ndarray, quad: np.ndarray) -> tuple[bool, bo
     different = np.linalg.norm(material - stock, axis=1) >= 24
     coherent = np.max(np.linalg.norm(tips - material[:, None], axis=2), axis=1) <= 15
     candidates = different & coherent
-    if not candidates.any():
-        return False, False
-    # A corner holder crosses the outside of both adjoining edges. Print detail
-    # on the stock and the end of a neighboring seam do not establish a cover.
-    exterior = np.stack((quad + 4 * directions - 2 * inward,
-                         quad + 4 * previous - 2 * np.roll(inward, 1, axis=0)), axis=1)[candidates]
-    height, width = image.shape[:2]
-    in_frame = ((exterior >= 0) & (exterior <= [width - 1, height - 1])).all(axis=(1, 2))
-    colors = _sample_lab(image, exterior.reshape(-1, 2)).reshape(-1, 2, 3)
-    same_material = (np.linalg.norm(colors - material[candidates, None], axis=2) <= 18).all(axis=1)
-    covered = in_frame & same_material
-    if not covered.any():
-        return False, False
+    stock_covered = False
+    if candidates.any():
+        # A holder crosses the outside of both adjoining edges.
+        exterior = np.stack((quad + 4 * directions - 2 * inward,
+                             quad + 4 * previous - 2 * np.roll(inward, 1, axis=0)), axis=1)[candidates]
+        in_frame = ((exterior >= 0) & (exterior <= [width - 1, height - 1])).all(axis=(1, 2))
+        colors = _sample_lab(image, exterior.reshape(-1, 2)).reshape(-1, 2, 3)
+        same_material = (np.linalg.norm(colors - material[candidates, None], axis=2) <= 18).all(axis=1)
+        covered = in_frame & same_material
+        stock_covered = bool(np.any(covered))
+        # A clipped corner can expose backing on both sides of the missing stock.
+        distinct_holder = (np.linalg.norm(adjoining[candidates] - material[candidates, None], axis=2) >= 20).all(axis=1)
+        if np.any(covered & known_background[candidates] & distinct_holder):
+            return True, True
+    outlined = _outlined_corner_mount(image, quad, directions, previous, stock, adjoining, known_background)
+    return stock_covered or outlined, outlined
 
-    outside = edge_positions - 5.5 * inward[:, None, :]
-    outside_in_frame = ((outside >= 0) & (outside <= [width - 1, height - 1])).all(axis=(1, 2))
-    background = np.median(_sample_lab(image, outside.reshape(-1, 2)).reshape(4, 32, 3), axis=1)
-    adjoining = np.stack((background, np.roll(background, 1, axis=0)), axis=1)[candidates]
-    known_background = (outside_in_frame & np.roll(outside_in_frame, 1))[candidates]
-    # A shifted seam can expose the album page at a fitted corner. Only a
-    # separate material that differs from both adjoining backgrounds is a holder.
-    distinct_holder = (np.linalg.norm(adjoining - material[candidates, None], axis=2) >= 20).all(axis=1)
-    return True, bool(np.any(covered & known_background & distinct_holder))
+
+def _outlined_corner_mount(
+    image: np.ndarray, quad: np.ndarray, directions: np.ndarray, previous: np.ndarray,
+    stock: np.ndarray, adjoining: np.ndarray, known_background: np.ndarray,
+) -> bool:
+    """Trace an outline of different color from both outside arms into a print corner."""
+    shortest = np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min()
+    reach = int(np.clip(round(.14 * shortest), 16, 50))
+    offsets = np.arange(-10, reach + 1, dtype=np.float32)
+    first, second = np.meshgrid(offsets, offsets)
+    first_arm = (first >= 5) & (second <= -2)
+    second_arm = (second >= 5) & (first <= -2)
+    interior = (first >= 3) & (second >= 3)
+    upper = np.array(image.shape[1::-1]) - 1
+    for index in np.flatnonzero(known_background):
+        points = quad[index] + first[..., None] * directions[index] + second[..., None] * previous[index]
+        in_frame = ((points >= 0) & (points <= upper)).all(axis=2)
+        colors = _sample_lab(image, points.reshape(-1, 2)).reshape(*points.shape[:2], 3)[..., 1:]
+        colored = np.linalg.norm(colors - stock[1:], axis=2) >= 22
+        for neighbor in adjoining[index]:
+            colored &= np.linalg.norm(colors - neighbor[1:], axis=2) >= 18
+        count, labels = cv2.connectedComponents((colored & in_frame).astype(np.uint8))
+        crosses = np.ones(count, dtype=bool)
+        crosses[0] = False
+        for region in (first_arm, second_arm, interior):
+            crosses &= np.bincount(labels[region], minlength=count) >= 5
+        if crosses.any():
+            return True
+    return False
 
 
 def continuous_motif_rim(image: np.ndarray, quad: np.ndarray) -> bool:
