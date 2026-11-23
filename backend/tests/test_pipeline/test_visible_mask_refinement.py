@@ -3,6 +3,7 @@ import json
 
 import cv2
 import numpy as np
+import pytest
 
 from app.config import Settings
 from app.pipeline import segmentation, visible_mask_refinement
@@ -69,3 +70,29 @@ def test_optional_refiner_uses_source_pixels_and_preserves_initial_crop_geometry
 
     assert unavailable.detections == initial.detections
     assert "hash mismatch" in unavailable.metadata["visible_mask_refinement"]["error"]
+
+
+@pytest.mark.parametrize("scene", ["sleeve_fold", "print_surface_glare", "pale_print_border", "pale_border_under_fold"])
+def test_only_reflections_continuing_onto_the_album_can_shorten_learned_masks(scene):
+    image = np.full((240, 380, 3), 160, dtype=np.uint8)
+    image[32:177, 74:302] = (76, 110, 150)
+    if scene == "sleeve_fold":
+        image[189:192] = 247
+    elif scene == "print_surface_glare":
+        image[177:192, 74:302] = (76, 110, 150)
+        image[189:192, 74:302] = 247
+    else:
+        image[177:192, 74:302] = 230
+        image[192:, :] = 222
+        if scene == "pale_border_under_fold":
+            image[189:192] = 247
+    scale = np.float32([379, 239])
+    primary = _rect(74, 32, 301, 176, scale)
+    learned = _rect(74, 32, 301, 191, scale)
+    occupied = [primary * scale, learned * scale]
+
+    refined = visible_mask_refinement._remove_sleeve_fold(image, primary, learned, occupied)
+
+    assert min(refined[:, 1]) == pytest.approx(min(primary[:, 1]))
+    expected = primary if scene == "sleeve_fold" else learned
+    assert max(refined[:, 1]) == pytest.approx(max(expected[:, 1]))

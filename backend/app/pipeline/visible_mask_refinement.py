@@ -10,6 +10,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from app.pipeline.album_sleeve import sleeve_reflection_sides
 from app.pipeline.geometry import normalized_polygon_overlap
 from app.pipeline.model_registry import ModelArtifactError, verify_model_artifact
 
@@ -181,4 +182,34 @@ def refine_visible_masks(
     candidates = [original if proposal is None else proposal for original, proposal in zip(originals, proposals, strict=True)]
     if all(proposal is None for proposal in proposals):
         return originals, digest
-    return resolve_mask_ownership(image.shape, originals, candidates), digest
+    resolved = resolve_mask_ownership(image.shape, originals, candidates)
+    scale = np.array(image.shape[1::-1]) - 1
+    occupied = [np.float32(polygon * scale) for polygon in (*originals, *resolved)]
+    return [
+        _remove_sleeve_fold(image, original, refined, occupied)
+        for original, refined in zip(originals, resolved, strict=True)
+    ], digest
+
+
+def _remove_sleeve_fold(
+    image: np.ndarray, original: np.ndarray, refined: np.ndarray, occupied: list[np.ndarray],
+) -> np.ndarray:
+    if np.array_equal(original, refined):
+        return refined
+    sides = sleeve_reflection_sides(image, original, refined, occupied)
+    if not sides:
+        return refined
+    scale = np.array(image.shape[1::-1]) - 1
+    proposed = np.rint(refined * scale).astype(np.int32)
+    primary = np.rint(original * scale).astype(np.int32)
+    lower, upper = proposed.min(axis=0), proposed.max(axis=0)
+    mask = np.zeros(tuple((upper - lower + 1)[::-1]), np.uint8)
+    original_mask = cv2.fillPoly(np.zeros_like(mask), [primary - lower], 1)
+    cv2.fillPoly(mask, [proposed - lower], 1)
+    yy, xx = np.ogrid[lower[1] : upper[1] + 1, lower[0] : upper[0] + 1]
+    for start, end in sides:
+        edge = end - start
+        side = edge[0] * (yy - start[1]) - edge[1] * (xx - start[0])
+        mask[(original_mask == 0) & (side <= 3 * np.linalg.norm(edge))] = 0
+    outline = _largest_outline(mask)
+    return refined if outline is None else (outline + lower) / scale

@@ -42,6 +42,7 @@ def crop_validation_profile(settings: Settings) -> dict:
         "visible_mask_refinement": None if visible_model is None else {
             "model_sha256": _optional_hash(visible_model),
             "manifest_sha256": _optional_hash(settings.model_manifest_path),
+            "sleeve_reflection_filter": 1,
         },
         "classical_fallback": settings.enable_classical_segmentation_fallback,
         "border_analysis": settings.enable_border_trim,

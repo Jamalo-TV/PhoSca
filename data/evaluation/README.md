@@ -288,6 +288,17 @@ recovery brings final segmentation back to mean IoU 0.9953. The Golden
 comparison keeps all 29 detections. Independent album references remain
 required for automatic release.
 
+The optional refiner also checks for a sleeve reflection when its mask
+extends past the primary mask. It removes the added band only when the
+bright ridge continues outside the prints and the strip matches exposed
+album backing at the same distance from the ridge. The tests cover glare
+confined to a print and pale print stock directly beneath a fold. On
+Golden page 26 the mask IoU rises from 0.9698 to 0.9832. The frozen
+synthetic detection and both crop-mode gates still pass. The reports
+are `sleeve-reflections-golden.json` and `sleeve-reflections-locked.json`
+under `runs/crop-quality/`. With both masks already available, the
+reflection check adds a median of 3.6 ms per Golden page across 50 runs.
+
 In 20 paired Golden runs, median added time from image decode to JPEG was
 115 ms per page. The p95 for that path was 2.39 s with the primary detector
 and 2.92 s with the refiner. The paired samples are in
