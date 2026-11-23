@@ -1,0 +1,242 @@
+{
+  "schema_version": 2,
+  "name": "Getty Talbot mounted salted-paper photographs with measured physical image geometry",
+  "status": "reserved_reference_draft",
+  "split_policy": {
+    "album_independent": false,
+    "reason": "Source groups and both crop modes await independent review."
+  },
+  "pages": [
+    {
+      "id": "Getty:84.XZ.571.3.2",
+      "image": "../../runs/crop-quality/independent-intake-mounted-alternatives/talbot-ladder-native-size.jpg",
+      "image_url": "https://media.getty.edu/iiif/image/43573acc-b72c-44af-8486-bd8f738a304f/full/8887,/0/default.jpg",
+      "image_sha256": "b563a318d4d32efc6663ce8d920f397715965160789cd07bffbd764defd4da3e",
+      "source_resolution": [
+        8887,
+        7016
+      ],
+      "source_group": "Getty:84.XZ.571",
+      "physical_album": "The Pencil of Nature, by H. Fox Talbot. (84.XZ.571)",
+      "source_url": "https://www.getty.edu/art/collection/object/107R3B",
+      "annotations": "talbot-ladder-labels.txt",
+      "annotations_sha256": "3c60c4e815a537ddb07b772543f2889bbdd849a0e6611ec0844e7d9a8a0be14a",
+      "expected_count": 1,
+      "annotation_provenance": "measured_stock_and_motif_draft",
+      "expected_final_crops": [
+        {
+          "full_print": {
+            "polygon": [
+              [
+                0.1992290667684771,
+                0.14803465926808623
+              ],
+              [
+                0.7849045263441087,
+                0.1504308220665538
+              ],
+              [
+                0.7829381035652994,
+                0.8449616196320385
+              ],
+              [
+                0.19929238232894442,
+                0.8410958799224876
+              ]
+            ],
+            "warp_quad": [
+              [
+                0.1992290667684771,
+                0.14803465926808623
+              ],
+              [
+                0.7849045263441087,
+                0.1504308220665538
+              ],
+              [
+                0.7829381035652994,
+                0.8449616196320385
+              ],
+              [
+                0.19929238232894442,
+                0.8410958799224876
+              ]
+            ],
+            "recoverable": true,
+            "physical_size_mm": {
+              "width": 181,
+              "height": 170
+            },
+            "annotation_provenance": "measured_stock_and_motif_draft"
+          },
+          "image_only": {
+            "polygon": [
+              [
+                0.1992290667684771,
+                0.14803465926808623
+              ],
+              [
+                0.7849045263441087,
+                0.1504308220665538
+              ],
+              [
+                0.7829381035652994,
+                0.8449616196320385
+              ],
+              [
+                0.19929238232894442,
+                0.8410958799224876
+              ]
+            ],
+            "warp_quad": [
+              [
+                0.1992290667684771,
+                0.14803465926808623
+              ],
+              [
+                0.7849045263441087,
+                0.1504308220665538
+              ],
+              [
+                0.7829381035652994,
+                0.8449616196320385
+              ],
+              [
+                0.19929238232894442,
+                0.8410958799224876
+              ]
+            ],
+            "recoverable": true,
+            "physical_size_mm": {
+              "width": 181,
+              "height": 170
+            },
+            "annotation_provenance": "measured_stock_and_motif_draft"
+          }
+        }
+      ],
+      "difficulty_tags": [
+        "original_salted_paper",
+        "faint_stock_transition",
+        "decorative_ruled_mount"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+    },
+    {
+      "id": "Getty:84.XO.1369.1",
+      "image": "../../runs/crop-quality/independent-intake-mounted-alternatives/talbot-queens-original.jpg",
+      "image_url": "https://media.getty.edu/iiif/image/9c281e5d-784a-493d-9661-ad429866e009/full/full/0/default.jpg",
+      "image_sha256": "e16dfe67dff82ecb69b9e6e76929bcd390c971b3ded989285d169b7a813a058c",
+      "source_resolution": [
+        6208,
+        4284
+      ],
+      "source_group": "Getty:84.XO.1369",
+      "physical_album": "The Pencil of Nature, by H. Fox Talbot. (84.XO.1369)",
+      "source_url": "https://www.getty.edu/art/collection/object/108GG5",
+      "annotations": "talbot-queens-labels.txt",
+      "annotations_sha256": "55ab9c3be9eb6b9255b6aeb499ee062715c3fccb17c3b9acf19f2ea25c996676",
+      "expected_count": 1,
+      "annotation_provenance": "measured_stock_and_motif_draft",
+      "expected_final_crops": [
+        {
+          "full_print": {
+            "polygon": [
+              [
+                0.16784093705317585,
+                0.1812911157209462
+              ],
+              [
+                0.8266363203842436,
+                0.169509349736604
+              ],
+              [
+                0.832290219208152,
+                0.9514968448116099
+              ],
+              [
+                0.17190721381857177,
+                0.961728121169449
+              ]
+            ],
+            "warp_quad": [
+              [
+                0.16784093705317585,
+                0.1812911157209462
+              ],
+              [
+                0.8266363203842436,
+                0.169509349736604
+              ],
+              [
+                0.832290219208152,
+                0.9514968448116099
+              ],
+              [
+                0.17190721381857177,
+                0.961728121169449
+              ]
+            ],
+            "recoverable": true,
+            "physical_size_mm": {
+              "width": 203,
+              "height": 166
+            },
+            "annotation_provenance": "measured_stock_and_motif_draft"
+          },
+          "image_only": {
+            "polygon": [
+              [
+                0.16784093705317585,
+                0.1812911157209462
+              ],
+              [
+                0.8266363203842436,
+                0.169509349736604
+              ],
+              [
+                0.832290219208152,
+                0.9514968448116099
+              ],
+              [
+                0.17190721381857177,
+                0.961728121169449
+              ]
+            ],
+            "warp_quad": [
+              [
+                0.16784093705317585,
+                0.1812911157209462
+              ],
+              [
+                0.8266363203842436,
+                0.169509349736604
+              ],
+              [
+                0.832290219208152,
+                0.9514968448116099
+              ],
+              [
+                0.17190721381857177,
+                0.961728121169449
+              ]
+            ],
+            "recoverable": true,
+            "physical_size_mm": {
+              "width": 203,
+              "height": 166
+            },
+            "annotation_provenance": "measured_stock_and_motif_draft"
+          }
+        }
+      ],
+      "difficulty_tags": [
+        "original_salted_paper",
+        "faint_stock_transition",
+        "decorative_ruled_mount"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+    }
+  ],
+  "source_intake_manifest_sha256": "e84139cb2c9542164e267b6c09c86e5896c407d4c0012e5ce5e35881ede93936"
+}

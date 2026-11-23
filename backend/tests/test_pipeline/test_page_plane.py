@@ -48,6 +48,65 @@ def _mask(page, outer, motif):
     return {"source": "manual_quad", "polygon": vertices(outer), "warp_quad": vertices(outer), "image_quad": vertices(motif)}
 
 
+def _aligned_scene(center_height=110):
+    width, height = 2050, 1470
+    page = np.full((height, width, 3), (75, 78, 87), np.uint8)
+    camera = np.float64([[2080, 0, (width - 1) / 2], [0, 2080, (height - 1) / 2], [0, 0, 1]])
+    rotation = np.float64([np.deg2rad(13), 0, 0])
+    translation = np.float64([0, 0, 1330])
+    prints = []
+    for row, y in enumerate((-270, 0, 280)):
+        for column, x in enumerate((-430, 0, 430)):
+            w, h = 174 - 9 * column + 3 * row, 104 + 6 * row
+            if row == column == 1:
+                h = center_height
+            xy = np.float32([[0, 0], [w, 0], [w, h], [0, h]])
+            world = np.column_stack((xy + [x - w / 2, y - h / 2], np.zeros(4)))
+            pixels, _ = cv2.projectPoints(world, rotation, translation, camera, None)
+            quad = pixels.reshape(4, 2).astype(np.float32)
+            transform = cv2.getPerspectiveTransform(xy, quad)
+            motif = cv2.perspectiveTransform(np.float32([[[10, 10], [w - 10, 10], [w - 10, h - 10], [10, h - 10]]]), transform)[0]
+            cv2.fillConvexPoly(page, np.rint(quad * 16).astype(np.int32), (239, 239, 239), cv2.LINE_AA, shift=4)
+            cv2.fillConvexPoly(page, np.rint(motif * 16).astype(np.int32), (60, 112, 150), cv2.LINE_AA, shift=4)
+            prints.append((quad, motif, (w, h)))
+    return page, prints
+
+
+def test_measured_print_anchors_a_shared_horizon_for_aligned_neighbors():
+    from app.pipeline.page_plane import fit_measured_page_plane, fit_uncalibrated_page_plane
+    from app.pipeline.perspective import page_plane_from_prints
+
+    page, prints = _aligned_scene()
+    masks = [{"source": "yolo_seg_mask", "polygon": _mask(page, quad, motif)["polygon"]}
+             for quad, motif, _ in prints]
+    quads = [quad for quad, _, _ in prints]
+    measured, _, (w, h) = prints[4]
+    reference = MeasuredPrintReference("measured", measured, w / h)
+    assert fit_uncalibrated_page_plane(quads, page.shape) is None
+    assert measured_page_aspect(page, quads[-1], [reference]) == (None, [])
+    plane = page_plane_from_prints(page, None, masks, measured_references=[reference])
+    assert plane is not None and plane.supporting_prints >= 6
+
+    for index in (1, 8):
+        quad, _, (w, h) = prints[index]
+        result = correct_photo_crop(page, {}, masks[index], dual_mode=True, auto_orient=False,
+                                    protect_regions=False, page_plane=plane, measured_page_references=[reference])
+        evidence = result.metadata["aspect_ratio_estimation"]
+        assert evidence["method"] == "measured_page_plane"
+        assert evidence["page_plane"]["reference_photo_id"] == "measured"
+        for mode, output, ratio in (("full_print", result.image, w / h),
+                                    ("image_only", result.image_only, (w - 20) / (h - 20))):
+            state = result.metadata["crop_modes"][mode]
+            assert state["status"] == "review_needed" and state["reason_codes"] == [PRINT_ASPECT_REFERENCE_REVIEW]
+            assert (output.shape[1] - 1) / (output.shape[0] - 1) == pytest.approx(ratio, rel=.01)
+
+    conflicting_size = MeasuredPrintReference("inconsistent", quads[0], 1.07 * prints[0][2][0] / prints[0][2][1])
+    assert fit_measured_page_plane(page, quads, [reference, conflicting_size]) is None
+    off_plane = quads[-1].copy()
+    off_plane[1] += [3, 7]
+    assert plane.estimate_aspect(off_plane) is None
+
+
 def test_review_preview_recovers_both_aspects_from_measured_neighbor():
     page, ((peer, _, physical), (target, motif, expected)) = _scene()
     mask = _mask(page, target, motif)
@@ -88,6 +147,21 @@ def test_conflicting_measured_peers_prevent_aspect_transfer():
 
     assert ratio is None
     assert {entry["photo_id"] for entry in estimates} == {"first", "conflict"}
+
+
+def test_weak_perspective_measurement_can_veto_local_transfer():
+    page, prints = _aligned_scene(center_height=300)
+    weak, _, (weak_width, weak_height) = prints[0]
+    strong, _, (strong_width, strong_height) = prints[4]
+    target, _, _ = prints[1]
+    weak_reference = MeasuredPrintReference("weak", weak, weak_width / weak_height)
+    strong_reference = MeasuredPrintReference("strong", strong, strong_width / strong_height)
+    wrong_reference = MeasuredPrintReference("wrong", strong, 1.08 * strong_reference.aspect)
+
+    assert measured_page_aspect(page, target, [weak_reference]) == (None, [])
+    assert measured_page_aspect(page, target, [strong_reference, weak_reference])[0] is not None
+    assert measured_page_aspect(page, target, [wrong_reference])[0] is not None
+    assert measured_page_aspect(page, target, [wrong_reference, weak_reference])[0] is None
 
 
 def test_calibrated_page_plane_abstains_on_mixed_planes():
@@ -246,3 +320,58 @@ async def test_reviewed_peer_changes_preview_but_cannot_release_either_crop(clie
     assert confirmed.status_code == 200, confirmed.text
     for name in ("full_print", "image_only"):
         assert (await client.get(f"{target_url}/image?variant={name}")).status_code == 200
+
+
+async def test_measured_page_plane_applies_and_invalidates_on_reprocess(client, tmp_path, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import Album, ExtractedPhoto, Page
+    from app.pipeline.image_ops import sha256_file
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    monkeypatch.setenv("CAMERA_CALIBRATION_PATH", str(tmp_path / "absent.json"))
+    get_settings.cache_clear()
+    image, prints = _aligned_scene()
+    filename = tmp_path / "aligned.png"
+    assert cv2.imwrite(str(filename), image)
+    box = {"x1": 0, "y1": 0, "x2": 1, "y2": 1}
+    async with get_session_factory()() as session:
+        album = Album(name="Measured aligned page")
+        session.add(album)
+        await session.flush()
+        page = Page(album_id=album.id, original_filename=filename.name, storage_path=str(filename),
+                    file_hash_sha256=sha256_file(filename))
+        session.add(page)
+        await session.flush()
+        photos = [ExtractedPhoto(
+            album_id=album.id, page_id=page.id, storage_path=str(filename), bounding_box=box,
+            segmentation_mask={"source": "yolo_seg_mask", "polygon": _mask(image, quad, motif)["polygon"]},
+            segmentation_confidence=.95,
+        ) for quad, motif, _ in prints]
+        session.add_all(photos)
+        await session.commit()
+        anchor_url, target_url = (f"/api/v1/photos/{photos[index].id}" for index in (4, 8))
+
+    quad, motif, (width, height) = prints[4]
+    measured_mask = {**_mask(image, quad, motif), "print_size_mm": {"width": width, "height": height}}
+    anchor = await client.patch(f"{anchor_url}/bounding-box", json={"bounding_box": box, "segmentation_mask": measured_mask})
+    assert anchor.status_code == 200, anchor.text
+    response = await client.post(f"{target_url}/reprocess")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    correction = payload["enhancement_applied"]["correction"]
+    assert correction["aspect_ratio_estimation"]["page_plane"]["reference_photo_id"] == anchor.json()["id"]
+    for mode in ("full_print", "image_only"):
+        assert correction["crop_modes"][mode]["reason_codes"] == [PRINT_ASPECT_REFERENCE_REVIEW]
+        assert payload["crop_download_urls"][mode] is None
+
+    measured_mask["print_size_mm"] = None
+    removed = await client.patch(f"{anchor_url}/bounding-box", json={"bounding_box": box, "segmentation_mask": measured_mask})
+    assert removed.status_code == 200, removed.text
+    rerun = await client.post(f"{target_url}/reprocess")
+    assert rerun.status_code == 200, rerun.text
+    refreshed = rerun.json()["enhancement_applied"]["correction"]
+    assert refreshed["aspect_ratio_estimation"]["method"] != "measured_page_plane"
+    assert refreshed["crop_modes"]["full_print"]["reason_codes"] == ["PRINT_ASPECT_UNCERTAIN"]

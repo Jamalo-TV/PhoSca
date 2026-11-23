@@ -419,7 +419,7 @@ async def perspective_correction_task_logic(
         if loads_source and settings.enable_precise_photo_crops and automatic_detection and len(neighbor_masks) >= 5:
             page_plane = await asyncio.to_thread(
                 page_plane_from_prints, page_image, page_camera.matrix if page_camera is not None else None,
-                [photo.segmentation_mask or {}, *neighbor_masks],
+                [photo.segmentation_mask or {}, *neighbor_masks], measured_references=measured_references,
             )
         crop_result = await asyncio.to_thread(
             correct_photo_crop,
@@ -1119,14 +1119,25 @@ async def process_page_pipeline(page_id: UUID, settings: Settings | None = None)
             )
             if settings.enable_precise_photo_crops:
                 rows = await session.execute(select(
+                    ExtractedPhoto.id,
                     ExtractedPhoto.segmentation_mask,
                     ExtractedPhoto.bounding_box,
                     ExtractedPhoto.enhancement_applied["review_rejected_detection"],
+                    ExtractedPhoto.segmentation_confidence,
+                    ExtractedPhoto.enhancement_applied["correction"],
                 ).where(ExtractedPhoto.page_id == page.id))
-                masks = [mask for mask, box, rejection in rows if mask and not is_reviewed_non_print(rejection, box, mask)]
+                masks, references = [], []
+                for row_id, mask, box, rejection, confidence, correction in rows:
+                    if not mask or is_reviewed_non_print(rejection, box, mask):
+                        continue
+                    masks.append(mask)
+                    reference = _measured_print_reference(row_id, mask, confidence, correction, *correction_source.shape[1::-1])
+                    if reference is not None:
+                        references.append(reference)
                 if len(masks) >= 6:
                     page_plane = await asyncio.to_thread(
-                        page_plane_from_prints, correction_source, page_camera.matrix if page_camera is not None else None, masks,
+                        page_plane_from_prints, correction_source, page_camera.matrix if page_camera is not None else None,
+                        masks, measured_references=references,
                     )
         corrections = [
             await perspective_correction_task_logic(

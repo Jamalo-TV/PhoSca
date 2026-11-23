@@ -26,6 +26,8 @@ class PrintPagePlane:
     image_to_plane: np.ndarray
     supporting_prints: int
     independent_fits: tuple[np.ndarray, ...] = ()
+    reference_photo_id: str | None = None
+    reference_half_pixel_variation: float | None = None
 
     def estimate_aspect(self, points: np.ndarray) -> tuple[float, dict] | None:
         aspects = []
@@ -46,6 +48,9 @@ class PrintPagePlane:
             if difference > .01:
                 return None
             evidence["independent_aspect_difference"] = difference
+        if self.reference_photo_id is not None:
+            evidence.update(reference_photo_id=self.reference_photo_id,
+                            reference_half_pixel_variation=self.reference_half_pixel_variation)
         return aspects[0], evidence
 
 
@@ -146,7 +151,7 @@ def fit_calibrated_page_plane(
     return PrintPagePlane(matrix, int(support.sum()))
 
 
-def _fit_uncalibrated_metric(quads: np.ndarray, image_shape: tuple[int, ...]) -> np.ndarray | None:
+def _affine_page_map(quads: np.ndarray, image_shape: tuple[int, ...]) -> tuple[np.ndarray, np.ndarray] | None:
     width, height = image_shape[1::-1]
     scale = max(width, height)
     center = np.array([width - 1, height - 1]) / 2
@@ -157,12 +162,22 @@ def _fit_uncalibrated_metric(quads: np.ndarray, image_shape: tuple[int, ...]) ->
         for quad in np.float32((quads - center) / scale)
     ])
     lengths = np.linalg.norm(axes[:, :, :2], axis=2)
+    if not np.isfinite(axes).all() or np.any(lengths <= 1e-8):
+        return None
     weights = (lengths.min(axis=1) / lengths.max()) ** 2
     directions = (axes / lengths[:, :, None] * weights[:, None, None]).reshape(-1, 3)
     horizon, _, rank, _ = np.linalg.lstsq(directions[:, :2], -directions[:, 2], rcond=None)
     if rank < 2:
         return None
     affine[2] = np.r_[horizon, 1.] @ affine
+    return affine, weights
+
+
+def _fit_uncalibrated_metric(quads: np.ndarray, image_shape: tuple[int, ...]) -> np.ndarray | None:
+    result = _affine_page_map(quads, image_shape)
+    if result is None:
+        return None
+    affine, weights = result
     projected = _project(quads.reshape(-1, 2), affine)
     if projected is None:
         return None
@@ -207,6 +222,112 @@ def fit_uncalibrated_page_plane(quads: list[np.ndarray], image_shape: tuple[int,
     return PrintPagePlane(matrix, len(supported), (first, second))
 
 
+def _anchor_metric(affine: np.ndarray, quad: np.ndarray, aspect: float) -> np.ndarray | None:
+    points = _project(quad, affine)
+    if points is None:
+        return None
+    along = (points[1] + points[2] - points[0] - points[3]) / 2
+    down = (points[2] + points[3] - points[0] - points[1]) / 2
+    try:
+        metric = np.linalg.solve(np.column_stack((along, down)).T, np.diag([aspect, 1])).T
+    except np.linalg.LinAlgError:
+        return None
+    matrix = affine.copy()
+    matrix[:2] = metric @ affine[:2]
+    return matrix
+
+
+def _anchor_uncertainty(affine: np.ndarray, reference: MeasuredPrintReference, matrix: np.ndarray) -> float:
+    # Sum local stretch sensitivities to account for prints at any orientation.
+    inverse = np.linalg.inv(matrix)
+    variation = 0.0
+    for vertex, axis in np.ndindex(reference.quad.shape):
+        variations = []
+        for sign in (-1, 1):
+            shifted = reference.quad.copy()
+            shifted[vertex, axis] += sign * .5
+            alternative = _anchor_metric(affine, shifted, reference.aspect)
+            if alternative is None:
+                return float("inf")
+            stretch = np.linalg.cond((alternative @ inverse)[:2, :2])
+            variations.append(stretch - 1)
+        variation += max(variations)
+    return float(variation)
+
+
+def _verified_reference(image: np.ndarray, reference: MeasuredPrintReference) -> np.ndarray | None:
+    quad = np.float32(reference.quad)
+    if (
+        quad.shape != (4, 2) or not np.isfinite(quad).all() or not .1 <= reference.aspect <= 10
+        or np.any(quad < 0) or np.any(quad > np.array(image.shape[1::-1]) - 1)
+        or not cv2.isContourConvex(quad) or cv2.contourArea(quad, oriented=True) <= 0
+        or np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min() < 60
+    ):
+        return None
+    refined, evidence, reasons = refine_print_boundary(image, quad, search_radius=4)
+    if (refined is None or reasons or np.linalg.norm(refined - quad, axis=1).max() > 1.25
+            or any(edge["support"] < .86 or (edge["corner_support"] or 0) < .75 for edge in evidence.values())):
+        return None
+    return refined
+
+
+def _matches_measurements(references: list[MeasuredPrintReference], matrix: np.ndarray) -> bool:
+    for reference in references:
+        plane = _project(reference.quad, matrix)
+        if (plane is None or _rectangle_residual(reference.quad, plane, matrix) > _MAX_RECTANGLE_RESIDUAL_PX
+                or abs(_ratio(plane) / reference.aspect - 1) > .01):
+            return False
+    return True
+
+
+def fit_measured_page_plane(
+    image: np.ndarray, quads: list[np.ndarray], references: list[MeasuredPrintReference],
+) -> PrintPagePlane | None:
+    """Fit the sampled page horizon, then fix its metric with an observed measured print."""
+    if len(quads) < _MIN_PAGE_PRINTS or not references:
+        return None
+    candidates = np.asarray(quads)
+    result = _affine_page_map(candidates, image.shape)
+    if result is None:
+        return None
+    affine, _ = result
+    verified = [MeasuredPrintReference(reference.photo_id, refined, reference.aspect)
+                for reference in references if (refined := _verified_reference(image, reference)) is not None]
+    required = max(_MIN_PAGE_PRINTS, (2 * len(quads) + 2) // 3)
+    for reference in sorted(verified, key=lambda item: (-cv2.contourArea(item.quad), item.photo_id)):
+        matrix = _anchor_metric(affine, reference.quad, reference.aspect)
+        if matrix is None or not _matches_measurements(verified, matrix):
+            continue
+        supported = candidates[_supporting_quads(candidates, matrix)]
+        if not _distributed_support(supported, required, image.shape):
+            continue
+        refit = _affine_page_map(supported, image.shape)
+        if refit is None:
+            continue
+        page_affine, _ = refit
+        matrix = _anchor_metric(page_affine, reference.quad, reference.aspect)
+        if matrix is None or not _supporting_quads(supported, matrix).all() or not _matches_measurements(verified, matrix):
+            continue
+        variation = _anchor_uncertainty(page_affine, reference, matrix)
+        if not variation <= .02:
+            continue
+        centers = supported.mean(axis=1)
+        order = np.lexsort((centers[:, 0], centers[:, 1]))
+        fits = []
+        for offset in (0, 1):
+            sample = supported[order[offset::2]]
+            if not _distributed_support(sample, 3, image.shape):
+                break
+            partial = _affine_page_map(sample, image.shape)
+            fit = _anchor_metric(partial[0], reference.quad, reference.aspect) if partial is not None else None
+            if fit is None or not _supporting_quads(sample, fit).all() or not _matches_measurements(verified, fit):
+                break
+            fits.append(fit)
+        if len(fits) == 2:
+            return PrintPagePlane(matrix, len(supported), tuple(fits), reference.photo_id, variation)
+    return None
+
+
 def _corner_uncertainty(points: np.ndarray, reference: MeasuredPrintReference, nominal: float) -> float:
     # Sum the local sensitivity across independent half-pixel corner errors.
     total = 0.0
@@ -231,23 +352,14 @@ def measured_page_aspect(
     image: np.ndarray, points: np.ndarray, references: list[MeasuredPrintReference],
 ) -> tuple[float | None, list[dict]]:
     estimates = []
+    conflicting_measurement = False
     points = np.float32(points)
-    for reference in references:
-        quad = reference.quad
-        if (
-            quad.shape != (4, 2) or not np.isfinite(quad).all() or not .1 <= reference.aspect <= 10
-            or np.any(quad < 0) or np.any(quad > np.array(image.shape[1::-1]) - 1)
-            or not cv2.isContourConvex(np.float32(quad)) or cv2.contourArea(np.float32(quad), oriented=True) <= 0
-            or np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min() < 60
-            or cv2.intersectConvexConvex(points, np.float32(quad))[0] > 1
-        ):
-            continue
+    verified = [reference for reference in references if _verified_reference(image, reference) is not None
+                and cv2.intersectConvexConvex(points, np.float32(reference.quad))[0] <= 1]
+    for reference in verified:
+        quad = np.float32(reference.quad)
         edges = np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1)
         if np.max(np.abs(np.log(edges[:2] / edges[2:]))) < .02:
-            continue
-        refined, evidence, reasons = refine_print_boundary(image, quad, search_radius=4)
-        if (refined is None or reasons or np.linalg.norm(refined - quad, axis=1).max() > 1.25
-                or any(edge["support"] < .86 or (edge["corner_support"] or 0) < .75 for edge in evidence.values())):
             continue
         matrix = _plane_map(quad, reference.aspect)
         projected = _project(np.vstack((quad, points)), matrix)
@@ -261,11 +373,21 @@ def measured_page_aspect(
         variation = _corner_uncertainty(points, reference, ratio)
         if not variation <= .02:
             continue
+        # A peer with weak perspective can still contradict the metric of a compatible plane.
+        for peer in verified:
+            if peer is reference:
+                continue
+            peer_plane = _project(peer.quad, matrix)
+            if (peer_plane is not None
+                    and _rectangle_residual(peer.quad, peer_plane, matrix) <= _MAX_RECTANGLE_RESIDUAL_PX
+                    and abs(_ratio(peer_plane) / peer.aspect - 1) > .01):
+                conflicting_measurement = True
+                break
         estimates.append({"photo_id": reference.photo_id, "aspect_ratio": ratio,
                           "source_corner_residual_px": residual, "relative_half_pixel_variation": variation})
 
     estimates.sort(key=lambda item: item["photo_id"])
     ratios = [item["aspect_ratio"] for item in estimates]
-    if not ratios or max(ratios) / min(ratios) > 1.01:
+    if conflicting_measurement or not ratios or max(ratios) / min(ratios) > 1.01:
         return None, estimates
     return float(np.median(ratios)), estimates

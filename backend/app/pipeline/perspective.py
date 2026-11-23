@@ -22,6 +22,7 @@ from app.pipeline.page_plane import (
     MeasuredPrintReference,
     PrintPagePlane,
     fit_calibrated_page_plane,
+    fit_measured_page_plane,
     fit_uncalibrated_page_plane,
     measured_page_aspect,
 )
@@ -406,7 +407,8 @@ def _estimated_aspect(points: np.ndarray, center: tuple[float, float], side: int
 
 
 def page_plane_from_prints(
-    image: np.ndarray, camera: np.ndarray | None, masks: list[dict],
+    image: np.ndarray, camera: np.ndarray | None, masks: list[dict], *,
+    measured_references: list[MeasuredPrintReference] | None = None,
 ) -> PrintPagePlane | None:
     if len(masks) < 6:
         return None
@@ -433,7 +435,8 @@ def page_plane_from_prints(
         quads.append(quad)
     if camera is not None:
         return fit_calibrated_page_plane(quads, camera, image.shape)
-    return fit_uncalibrated_page_plane(quads, image.shape)
+    plane = fit_uncalibrated_page_plane(quads, image.shape)
+    return plane if plane is not None else fit_measured_page_plane(image, quads, measured_references or [])
 
 
 def _crop_dimensions(
@@ -816,6 +819,7 @@ def _dual_crop_result(
                 _validate_quad(source, page_width, page_height)
                 measured = metadata["aspect_ratio_estimation"]["method"] in {
                     "known_print_aspect", "measured_page_reference", "calibrated_camera", "estimated_page_plane",
+                    "measured_page_plane",
                 }
                 if (independent or wide_rim) and not image_reasons and not _independent_motif_visible(page, source, neighbors):
                     image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
@@ -1142,7 +1146,8 @@ def correct_photo_crop(
             target_width, target_height, aspect, _ = _crop_dimensions(
                 src_points, width, height, metric=dual_mode, camera_matrix=None, print_aspect_ratio=estimate[0],
             )
-            aspect.update(method="estimated_page_plane", page_plane=estimate[1])
+            method = "measured_page_plane" if page_plane.reference_photo_id is not None else "estimated_page_plane"
+            aspect.update(method=method, page_plane=estimate[1])
             aspect_reasons = [PRINT_ASPECT_REFERENCE_REVIEW]
     full_reasons.extend(aspect_reasons)
     if target_width * target_height > 2 * width * height:

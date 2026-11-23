@@ -116,7 +116,7 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 22 binds
+groups, with the 90% threshold applied to each group. Report schema 23 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled and deskewed inference,
 the classical line-pair fallback, separated contrast recovery, empty drawn
@@ -590,8 +590,10 @@ can map a nearby print into the measured plane of a reviewed print on the
 same capture. It verifies the reference edges at source resolution, checks
 the target rectangle by reprojection, and checks sensitivity to half-pixel
 corner changes. Conflicting applicable measurements keep the original
-uncertain aspect. The workflow keeps the rectified full preview and the
-applicable geometry of both modes in review until the target is measured.
+uncertain aspect, including when a peer has too little perspective to
+estimate the plane on its own. The workflow keeps the rectified full
+preview and the applicable geometry of both modes in review until the
+target is measured.
 
 The independent test in `runs/crop-quality/plane-reference-agent/` covers
 2200 px and 4400 px views with one-axis tilt. A 0.45 px perturbation of one
@@ -623,6 +625,19 @@ groups must support the fit and agree on the target aspect within 1%.
 The preview uses the target's own source corners and requires review.
 Aligned prints supply insufficient right-angle evidence for this estimate.
 [Metric rectification of planes](https://www.robots.ox.ac.uk/~vgg/publications/1998/Liebowitz98/)
+
+For aligned prints, v24 can estimate a shared horizon from at least six
+source-verified print quads and set the metric from a measured print on the
+same capture. Two disjoint groups must support the horizon. Each fit must
+also agree with the applicable reference measurements, and the target's own
+corners still have to fit the plane. Both previews require review.
+
+On a synthetic 2050 × 1470 capture with 13° tilt and one measured reference,
+all eight whole-print and eight motif previews land within 1% aspect error.
+The maximum error is 0.21% for whole prints and 0.59% for motifs. None of the
+16 previews samples foreign pixels or cuts into the subject beyond the
+one-source-pixel tolerance. See `measured-aligned-page-geometry.json` and
+`measured-aligned-page-preview.png` in `runs/crop-quality/curved-geometry-probe/`.
 
 The `rotated_prints` development fixture places 12 bordered prints on one
 plane tilted by 31°. With approximate seeded masks, whole-print previews
@@ -857,6 +872,15 @@ coincides with the motif before confirming either mode. The museum records
 an overall size of 9 by 7 inches. The draft uses the separate scan as its
 aspect reference. The source images stay local under the museum's usage
 conditions. [Smithsonian catalog](https://www.si.edu/es/object/plate-1-marshal-house-alexandria%3Anmah_1293152)
+
+`getty-talbot-measured-review-draft.json` pins two native Getty images with
+catalogued print dimensions of 181 × 170 mm and 203 × 166 mm. The provisional
+source fits differ from these aspect ratios by 0.26% and 0.06%, respectively.
+The draft requires independent verification of whether the outer stock and
+motif boundaries coincide on each print. Download the two `image_url` assets
+to the paths in the manifest before running `--check-references --visuals`.
+[The Ladder](https://www.getty.edu/art/collection/object/107R3B) ·
+[Part of Queen’s College, Oxford](https://www.getty.edu/art/collection/object/108GG5)
 
 The Brady/Pedro II volume published by the Library of Congress repackages
 individual card scans. Four paired volume and catalog image requests
