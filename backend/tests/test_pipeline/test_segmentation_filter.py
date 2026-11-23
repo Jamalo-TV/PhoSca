@@ -41,3 +41,22 @@ def test_retains_pale_sepia_print_against_dark_album_backing():
     cv2.ellipse(page, (310, 210), (25, 65), 0, 0, 360, (94, 112, 130), 2)
 
     assert paper_and_edge_rejection_reasons(page, [_rectangle(0.125, 0.04, 0.59, 0.953)]) == {}
+
+
+def test_rejects_empty_ink_rectangle_and_retains_faint_or_sparse_prints():
+    height, width = 390, 700
+    page = np.full((height, width, 3), 195, np.uint8)
+    polygons = []
+    top, bottom = 100, 251
+    for index, left in enumerate((72, 281, 490)):
+        right = left + 125
+        if index == 1:
+            page[top:bottom + 1, left:right + 1] = 198
+        if index == 2:
+            cv2.circle(page, (left + 62, 176), 4, (133, 132, 130), -1)
+        cv2.rectangle(page, (left, top), (right, bottom), (79, 85, 94), 4)
+        polygons.append(_rectangle(left / (width - 1), top / (height - 1), right / (width - 1), bottom / (height - 1)))
+
+    # The source still contains the texture and stock transitions that preparation can change.
+    prepared = np.full_like(page, 195)
+    assert paper_and_edge_rejection_reasons(prepared, polygons, source_image=page) == {0: "empty_drawn_frame"}

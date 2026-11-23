@@ -116,11 +116,11 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 19 binds
+groups, with the 90% threshold applied to each group. Report schema 20 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled and deskewed inference,
-the classical line-pair fallback, separated contrast recovery, page-plane
-estimation, the configured visible mask refiner and
+the classical line-pair fallback, separated contrast recovery, empty drawn
+frame rejection, page-plane estimation, the configured visible mask refiner and
 detector-bound confidence calibration. A verified motif can
 qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
@@ -623,6 +623,24 @@ On `dense_gutters`, matches at IoU 0.85 rise from 15 to 21 of 30. The native
 Met development page remains at 44 of 48. The paired end-to-end reports are
 `gutter-split/uncalibrated-page-registered.json` and
 `gutter-split/separated-contrast-development.json` under `runs/crop-quality/`.
+
+An outline can resemble a photo mask even when it is only ink on an album
+page. The source check samples both sides of the candidate after rectifying
+the quadrilateral. It fits a local paper colour gradient and rejects the
+candidate when narrow strokes trace all four sides on the same empty paper.
+[OpenCV projective sampling](https://docs.opencv.org/4.x/da/d54/group__imgproc__transform.html)
+
+The registered detector produces 56 false proposals on the drawn-frame
+development page. The source check removes all 56 in the original and in
+the rotated, recompressed, gradient-lit and grain controls. On the mixed
+synthetic page it removes 53 drawings and retains all three faint or sparse
+print examples.
+The comparisons are `deskew-risk-probe/ink-frame-end-to-end.json`,
+`deskew-risk-probe/ink-frame-native-comparison.jpg` and
+`deskew-risk-probe/ink-frame-mixed-comparison.jpg` under `runs/crop-quality/`.
+A separate ruled-label experiment also flags striped photographs and a
+faint Met portrait. Its scores remain exploratory in
+`gutter-split/label-artifact-probe.json`.
 
 The Emily Howland intake pairs the album page with a separate front scan
 of the same Harriet Tubman carte-de-visite. The window covers about 35% of

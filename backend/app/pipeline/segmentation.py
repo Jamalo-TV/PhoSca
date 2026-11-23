@@ -2070,11 +2070,13 @@ def _deskew_retry(
     return recovered, evidence, metadata | {"selected": True}
 
 
-def refine_album_page_result(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+def refine_album_page_result(
+    image: np.ndarray, result: SegmentationResult, *, source_image: np.ndarray | None = None,
+) -> SegmentationResult:
     polygons = [detection.mask.get("polygon", []) for detection in result.detections]
     mount_rejections, quads = mounted_print_evidence(image, polygons)
     mount_polygons = [_normalized_polygon(order_quad_cyclic(quad), 1, 1) for quad in quads]
-    paper_rejections = paper_and_edge_rejection_reasons(image, polygons + mount_polygons)
+    paper_rejections = paper_and_edge_rejection_reasons(image, polygons + mount_polygons, source_image=source_image)
     rejected = {index: reason for index, reason in paper_rejections.items() if index < len(polygons)} | mount_rejections
 
     height, width = image.shape[:2]
@@ -2306,13 +2308,14 @@ def segment_album_page(
     source = source_image if source_image is not None and source_image.shape == image.shape else None
     result = _segment_album_page(image, settings, source)
     if settings.enable_classical_segmentation_fallback:
+        evidence_source = source if source is not None else image
         if settings.enable_precise_photo_crops and (
             result.metadata.get("fallback_used") or (result.metadata.get("model_set_risk") or {}).get("risky")
         ):
-            result = _recover_separated_contrast_prints(source if source is not None else image, result, settings)
-        result = refine_album_page_result(image, result)
+            result = _recover_separated_contrast_prints(evidence_source, result, settings)
+        result = refine_album_page_result(image, result, source_image=evidence_source if settings.enable_precise_photo_crops else None)
         if settings.enable_precise_photo_crops:
-            result = _refine_album_windows(source if source is not None else image, result)
+            result = _refine_album_windows(evidence_source, result)
     model_path = settings.visible_mask_model_path
     if model_path is None or not settings.enable_precise_photo_crops:
         return result

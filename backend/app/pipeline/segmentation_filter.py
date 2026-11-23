@@ -3,6 +3,52 @@ from collections.abc import Sequence
 import cv2
 import numpy as np
 
+from app.pipeline.geometry import normalized_vertices_to_pixels, quad_from_polygon
+
+
+_FRAME_SIZE = 96
+_FRAME_QUAD = np.float32([[15, 15], [80, 15], [80, 80], [15, 80]])
+_FRAME_CORNERS = np.float32([[0, 0], [95, 0], [95, 95], [0, 95]])
+_FRAME_Y, _FRAME_X = np.mgrid[:_FRAME_SIZE, :_FRAME_SIZE]
+_FRAME_PLANE = np.stack(
+    (np.ones_like(_FRAME_X), (_FRAME_X - 47.5) / _FRAME_SIZE, (_FRAME_Y - 47.5) / _FRAME_SIZE), axis=2,
+).astype(np.float32)
+_FRAME_EXTERIOR = (
+    ((_FRAME_X >= 25) & (_FRAME_X <= 70) & ((_FRAME_Y <= 7) | (_FRAME_Y >= 88)))
+    | ((_FRAME_Y >= 25) & (_FRAME_Y <= 70) & ((_FRAME_X <= 7) | (_FRAME_X >= 88)))
+)
+_FRAME_EXTERIOR_FIT = np.linalg.pinv(_FRAME_PLANE[_FRAME_EXTERIOR]).astype(np.float32)
+
+
+def _empty_drawn_frame(image: np.ndarray, polygon: np.ndarray) -> bool:
+    height, width = image.shape[:2]
+    try:
+        quad, _ = quad_from_polygon(normalized_vertices_to_pixels(polygon, width, height))
+        if np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min() < 30:
+            return False
+        mapping = cv2.getPerspectiveTransform(_FRAME_QUAD, quad)
+        if np.any(_FRAME_CORNERS @ mapping[2, :2] + mapping[2, 2] <= 1e-6):
+            return False
+        outside = cv2.perspectiveTransform(_FRAME_CORNERS[None], mapping)[0]
+    except (ValueError, cv2.error):
+        return False
+    if not np.isfinite(outside).all() or np.any((outside < 0) | (outside > [width - 1, height - 1])):
+        return False
+    patch = cv2.warpPerspective(image, mapping, (_FRAME_SIZE, _FRAME_SIZE), flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR)
+    lab = cv2.cvtColor(patch, cv2.COLOR_BGR2LAB).astype(np.float32)
+    # Fit the surrounding paper so a small lighting gradient is not mistaken for a stock change.
+    difference = lab - _FRAME_PLANE @ (_FRAME_EXTERIOR_FIT @ lab[_FRAME_EXTERIOR])
+    error = np.linalg.norm(difference, axis=2)
+    interior = np.s_[23:73, 23:73]
+    if (np.quantile(error[_FRAME_EXTERIOR], .95) > 3 or np.mean(error[interior] > 5) > .012
+            or np.any(error[interior] > 11) or np.linalg.norm(np.median(difference[interior], axis=(0, 1))) > 1.2):
+        return False
+    # A printed stroke has the same backing on both sides and traces all four edges.
+    strokes = np.array([np.rot90(error, turn)[8:23, 25:71] >= 13 for turn in range(4)])
+    thickness = strokes.sum(axis=1)
+    runs = strokes[:, 0] + np.sum(strokes[:, 1:] & ~strokes[:, :-1], axis=1)
+    return bool(np.all(np.mean((runs == 1) & (thickness <= 8), axis=1) >= .83))
+
 
 def _paper_reference(lab: np.ndarray) -> np.ndarray | None:
     shortest = min(lab.shape[:2])
@@ -29,8 +75,10 @@ def _paper_reference(lab: np.ndarray) -> np.ndarray | None:
 def paper_and_edge_rejection_reasons(
     image: np.ndarray,
     polygons: Sequence[Sequence[dict[str, float]]],
+    *,
+    source_image: np.ndarray | None = None,
 ) -> dict[int, str]:
-    """Identify clear paper boxes and capture-edge strips by proposal index."""
+    """Identify paper boxes, edge strips and source-confirmed empty ink frames."""
     height, width = image.shape[:2]
     if not polygons or min(height, width) < 16:
         return {}
@@ -67,6 +115,9 @@ def paper_and_edge_rejection_reasons(
         )
         if horizontal_strip or vertical_strip:
             rejected[index] = "thin_image_edge_fragment"
+            continue
+        if source_image is not None and _empty_drawn_frame(source_image, points):
+            rejected[index] = "empty_drawn_frame"
             continue
         if paper is None:
             continue
