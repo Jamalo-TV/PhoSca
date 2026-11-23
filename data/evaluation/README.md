@@ -116,7 +116,7 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 25 binds
+groups, with the 90% threshold applied to each group. Report schema 26 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled and deskewed inference,
 the classical line-pair fallback, separated contrast recovery, empty drawn
@@ -844,6 +844,32 @@ ready motifs with strict cutoff or paper samples to review. All four safe
 motif crops and all 24 ready full-print crops still pass the strict pixel
 checks. The traces and visual comparison are under
 `runs/crop-quality/curved-geometry-probe/`.
+
+Version 27 samples the paper-to-picture transition again in native pixels
+when four paper margins support the motif estimate. It compares measured
+segments against the proposed straight side, including bends that a single
+quadratic fails to capture. A clear disagreement keeps **Nur Bildmotiv** in
+review. The desktop editor and evaluation contact sheet draw the measured
+segments on the original page.
+
+In a geometry-only replay from the pinned TIFFs with known print corners,
+the former unmeasured Whiting 76 motif lost 422 source pixels beyond the
+one-pixel band against its draft reference. The new check puts it in review.
+For Whiting 81 with a measured outer aspect, the left trace is within
+0.55 native pixels at p95 of the paired draft contour. The replay isolates
+the boundary logic from detector and face-guard behavior. See
+`whiting-v27-runtime-native-traces.json` under
+`runs/crop-quality/whiting-independent-review/`.
+
+The same archive pair shows why the native outline and the deformation must
+be tested separately. A perspective warp that preserves the silhouette on
+an expanded transparent canvas keeps all measured source coverage. An
+opaque rectangular warp following all four curved edges also clears the
+one-pixel coverage check, but its landmark error against the independently
+captured print reaches 5.13 output pixels at p95. Both captures contain the
+bent edge. See `whiting-81-planar-alpha-vs-curved.json` in the same directory.
+For a genuinely uneven surface, interior evidence is needed to validate
+flattening. [Grid regularization study](https://openaccess.thecvf.com/content/CVPR2022/papers/Jiang_Revisiting_Document_Image_Dewarping_by_Grid_Regularization_CVPR_2022_paper.pdf)
 
 The frozen seeded-geometry benchmark passes all 23 recoverable mode crops.
 The v21 and v22 Registered end-to-end runs match six of 18 raw instances

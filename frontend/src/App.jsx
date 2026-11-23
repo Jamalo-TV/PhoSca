@@ -1356,9 +1356,9 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
   const pageId = page?.id;
   const selected = photos.find((photo) => photo.id === selectedPhotoId);
   const selectedShape = selected && (draftShapes[selected.id] || draftShapeFromPhoto(selected));
-  const imageSuggestion = cyclicQuad(sanitizePolygon(
-    (selected?.crop_modes || getCropModes(selected))?.image_only?.suggested_warp_quad,
-  ));
+  const motifReview = (selected?.crop_modes || getCropModes(selected))?.image_only;
+  const imageSuggestion = cyclicQuad(sanitizePolygon(motifReview?.suggested_warp_quad));
+  const seamTraces = motifReview?.suggested_seam_traces;
   const needsMotifSelection = editingImage && Boolean(imageSuggestion) && !selectedShape?.imageQuad;
   const measurement = selectedShape && parsePrintSize(selectedShape.printSizeFields);
   const sizeError = editingImage ? "" : measurement?.error;
@@ -1418,6 +1418,19 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
         handles.slice(1).forEach((point) => context.lineTo(point.x, point.y));
         context.closePath();
         context.stroke();
+        if (Array.isArray(seamTraces)) {
+          context.save();
+          context.strokeStyle = "#a21caf";
+          context.lineWidth = 2;
+          context.setLineDash([5, 3]);
+          seamTraces.map(sanitizePolygon).filter(Boolean).forEach((trace) => {
+            context.beginPath();
+            context.moveTo(trace[0].x * canvas.width, trace[0].y * canvas.height);
+            trace.slice(1).forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
+            context.stroke();
+          });
+          context.restore();
+        }
       }
       context.fillStyle = "#ffffff";
       handles.forEach((point, index) => {
@@ -1439,7 +1452,7 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
         }
       });
     });
-  }, [draftShapes, editingImage, pageId, pageImage, photos, selectedPhotoId]);
+  }, [draftShapes, editingImage, pageId, pageImage, photos, selectedPhotoId, seamTraces]);
 
   useEffect(() => {
     draw();
@@ -1548,7 +1561,13 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
           </button>
         ))}
       </div>
-      {editingImage && selected && <p className="crop-editor-hint">Setze die vier blauen Eckpunkte an die Grenze des Bildmotivs.</p>}
+      {editingImage && selected && (
+        <p className="crop-editor-hint">
+          {seamTraces?.length
+            ? "Gestrichelt sind die gemessenen Abschnitte der Motivkante. Die vier blauen Punkte definieren einen geraden Zuschnitt."
+            : "Setze die vier blauen Eckpunkte an die Grenze des Bildmotivs."}
+        </p>
+      )}
       {editingImage && imageSuggestion && (
         <button className="text-button compact" type="button" disabled={saveState?.saving} onClick={() => {
           setDraftShapes((current) => ({ ...current, [selected.id]: { ...selectedShape, imageQuad: imageSuggestion } }));

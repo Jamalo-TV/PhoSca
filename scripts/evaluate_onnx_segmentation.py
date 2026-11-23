@@ -665,6 +665,9 @@ def _contact_sheet(directory, image, expected, native_truth_masks, detected, ren
             if quad:
                 points = np.rint(np.asarray(quad) * [width - 1, height - 1]).astype(np.int32)
                 cv2.polylines(annotated, [points], True, color, max(2, width // 500))
+        for trace in item["modes"].get("image_only", {}).get("suggested_seam_traces", []):
+            points = np.rint(np.asarray(_points(trace)) * [width - 1, height - 1]).astype(np.int32)
+            cv2.polylines(annotated, [points], False, (235, 65, 190), max(1, width // 800), cv2.LINE_AA)
         refined = _points((item.get("metadata") or {}).get("refined_visible_polygon") or [])
         if refined:
             points = np.rint(np.asarray(refined) * [width - 1, height - 1]).astype(np.int32)
@@ -678,7 +681,7 @@ def _contact_sheet(directory, image, expected, native_truth_masks, detected, ren
         cv2.imwrite(str(directory / path), thumbnail)
         return f'<figure><img src="{path}" alt=""><figcaption>{escape(caption)}</figcaption></figure>'
 
-    items = [figure(annotated, "page", "Truth green · detector blue · visible mask magenta · full red · motif yellow", 920)]
+    items = [figure(annotated, "page", "Truth green · detector blue · visible mask magenta · full red · motif yellow · seam trace purple", 920)]
     for prediction_index, item in enumerate(rendered):
         for mode, crop in item["images"].items():
             row = next((r for r in rows if r["prediction_index"] == prediction_index and r["mode"] == mode), {})

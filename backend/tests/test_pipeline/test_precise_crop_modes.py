@@ -297,6 +297,28 @@ def test_coherent_motif_bow_routes_only_image_mode_to_review(width, bow, needs_r
             assert metrics["cutoff_beyond_1px"] == metrics["foreign_beyond_1px"] == 0
 
 
+def test_native_motif_trace_follows_a_nonparabolic_boundary() -> None:
+    page = np.full((345, 500, 3), (67, 78, 70), np.uint8)
+    page[35:306, 45:456] = 236
+    x = np.arange(65, 436)
+    y = np.arange(50, 288)
+    top = 56 + 3.5 * np.sin(2 * np.pi * (x - 65) / 370)
+    foreground = np.clip(y[:, None] - top + .5, 0, 1)[..., None]
+    page[50:288, 65:436] = np.rint(foreground * np.array([131, 108, 145]) + (1 - foreground) * 236)
+    mask = {"source": "manual_quad", "warp_quad": _vertices(_rect(45, 35, 455, 305), page)}
+    crop = _crop(page, {}, mask, dual_mode=True)
+    full, motif = (crop.metadata["crop_modes"][name] for name in ("full_print", "image_only"))
+    assert full["status"] == "ready"
+    assert motif["reason_codes"] == ["IMAGE_BOUNDARY_CURVED"]
+    assert motif["status"] == "review_needed" and crop.image_only is None
+
+    traces = motif["suggested_seam_traces"]
+    top_trace = min(traces, key=lambda trace: np.median([point["y"] for point in trace]))
+    points = normalized_vertices_to_pixels([(point["x"], point["y"]) for point in top_trace], *page.shape[1::-1])
+    true_top = 56 + 3.5 * np.sin(2 * np.pi * (points[:, 0] - 65) / 370)
+    assert np.max(np.abs(points[:, 1] - (true_top + .5))) < 1
+
+
 @pytest.mark.parametrize("ranked_contours_available", [True, False])
 def test_local_outer_contour_recovers_white_image_content_outside_the_model_seed(
     monkeypatch, ranked_contours_available: bool,

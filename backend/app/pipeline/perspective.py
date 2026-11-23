@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN
-from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, find_physical_border, wide_paper_motif_proposal
+from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop
 from app.pipeline.geometry import (
     normalized_polygon_overlap,
@@ -16,6 +16,7 @@ from app.pipeline.geometry import (
     rectify_crop_quad,
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
+from app.pipeline.motif_boundary import trace_motif_boundary
 from app.pipeline.orientation import correct_photo_orientation, rotate_image
 from app.pipeline.page_plane import (
     PRINT_ASPECT_REFERENCE_REVIEW,
@@ -698,7 +699,10 @@ def _inner_crop_plan(
         regions = merge_protected_regions(regions, detect_protected_regions(corrected))
     plan = find_physical_border(corrected, protected_regions=regions)
     if CURVED_IMAGE_BOUNDARY in plan.reason_codes:
-        return None, plan.metadata(), [CURVED_IMAGE_BOUNDARY]
+        diagnostics = plan.metadata()
+        if all(edge.is_physical_border for edge in plan.edges.values()):
+            diagnostics["curve_seed_quad"] = border_chord_quad(plan.edges, width, height)
+        return None, diagnostics, [CURVED_IMAGE_BOUNDARY]
     near_outline = {
         name for name, edge in plan.edges.items() if edge.is_physical_border and max(edge.insets) <= 2.2
     }
@@ -790,8 +794,20 @@ def _dual_crop_result(
         )
         wide_rim = diagnostics["method"] == "wide_paper_rim"
         suggested_quad = None
+        seam_traces = []
         all_edges = diagnostics.get("edges", {})
         four_rim_edges = len(all_edges) == 4 and all(edge.get("is_physical_border") for edge in all_edges.values())
+        seam_seed = diagnostics.pop("curve_seed_quad", quad)
+        if seam_seed is not None and four_rim_edges and inner is None and not independent:
+            native_seed = cv2.perspectiveTransform(seam_seed.reshape(1, 4, 2), np.linalg.inv(matrix))[0]
+            traces, curved, disagrees = trace_motif_boundary(page, native_seed, all_edges)
+            if curved:
+                image_reasons.append(CURVED_IMAGE_BOUNDARY)
+            elif disagrees and not image_reasons:
+                image_reasons.append("IMAGE_BOUNDARY_UNCERTAIN")
+            if curved or disagrees or CURVED_IMAGE_BOUNDARY in image_reasons:
+                seam_traces = [_vertices_on_page(trace, page_width, page_height) for trace in traces]
+                quad = None
         if independent and (quad is None or (inner is None and not four_rim_edges)):
             image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
             quad = None
@@ -868,6 +884,8 @@ def _dual_crop_result(
             image_mode = {"status": "review_needed", "reason_codes": list(dict.fromkeys(image_reasons))}
             if suggested_quad is not None:
                 image_mode["suggested_warp_quad"] = suggested_quad
+            if seam_traces:
+                image_mode["suggested_seam_traces"] = seam_traces
 
     metadata.update(
         crop_modes={"full_print": full_mode, "image_only": image_mode},

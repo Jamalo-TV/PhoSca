@@ -443,7 +443,7 @@ def _blended_paper_edge(view: np.ndarray, paper: np.ndarray) -> float:
     return float(np.mean(steps[0] > np.maximum(14.0, 1.65 * local_texture)))
 
 
-def _edge_quad(edges: dict[str, BorderEdgeAssessment], width: int, height: int) -> np.ndarray:
+def border_chord_quad(edges: dict[str, BorderEdgeAssessment], width: int, height: int) -> np.ndarray:
     # Lines in the untrimmed ROI. Intersect neighboring sides instead of
     # assuming that a seam ends on the original frame's axis-aligned side.
     lines = {}
@@ -529,7 +529,7 @@ def find_physical_border(
     supported = [edge.confidence for edge in edges.values() if edge.is_physical_border]
     if not supported:
         return BorderTrimPlan(offsets, 0.0, False, reasons, edges, None)
-    quad = _edge_quad(edges, width, height)
+    quad = border_chord_quad(edges, width, height)
     quad = np.clip(quad, [-x1, -y1], [analysis_width - x1 - 1, analysis_height - y1 - 1]).astype(np.float32)
     widths = quad[[1, 2], 0] - quad[[0, 3], 0] + 1
     heights = quad[[3, 2], 1] - quad[[0, 1], 1] + 1
