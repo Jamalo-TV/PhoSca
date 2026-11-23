@@ -94,10 +94,11 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 16 binds
+groups, with the 90% threshold applied to each group. Report schema 17 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
-occlusion check, album-window detection, dense-page tiled and deskewed inference, the
-configured visible mask refiner and detector-bound confidence calibration. A verified motif can
+occlusion check, album-window detection, dense-page tiled and deskewed inference,
+the classical line-pair fallback, the configured visible mask refiner and
+detector-bound confidence calibration. A verified motif can
 qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
 
@@ -538,9 +539,18 @@ On rotated derivatives of the dense Met development scan, the retry finds
 The previous full pipeline exceeded 35 seconds on both cases in the paired
 run. Retries for ±5°, ±7° and ±10° also bypassed classical fallback, with
 19 to 30 matches. The native scan stays at 44 of 48. Blank and upright
-internal-line controls abstain. A frameless diagonal lattice still exceeds
-the time budget in the existing classical fallback. The cases and mask
-overlays are under `runs/crop-quality/deskew-risk-probe/`.
+internal-line controls abstain. The cases and mask overlays are under
+`runs/crop-quality/deskew-risk-probe/`.
+
+The classical fallback now requires the line segments to end near the four
+candidate corners and preserves separate collinear traces from neighbouring
+prints. The frameless diagonal lattice previously generated 55,350 line-pair
+proposals. The new pipeline returns zero detections on that input in about
+0.6 seconds in the local run. On an aligned synthetic pair with broken
+corners, the two seed quads reach 0.996 IoU and at most 1 px corner error.
+The locked synthetic and same-album Golden metrics match the previous run.
+See `classical-line-{locked,golden}.json` and
+`classical-fallback-v17/fallback-verification.jpg` under `runs/crop-quality/`.
 
 The Emily Howland intake pairs the album page with a separate front scan
 of the same Harriet Tubman carte-de-visite. The window covers about 35% of

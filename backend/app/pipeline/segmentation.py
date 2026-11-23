@@ -730,23 +730,37 @@ def _candidate_from_contour(
     return _ContourCandidate(box=(x, y, w, h), contour=contour, area_ratio=area_ratio, source=source)
 
 
-def _overlap_1d(a_start: float, a_end: float, b_start: float, b_end: float) -> float:
-    return max(0.0, min(a_end, b_end) - max(a_start, b_start))
-
-
 def _merge_axis_lines(lines: list[_AxisLine], tolerance: float) -> list[_AxisLine]:
     if not lines:
         return []
     merged: list[_AxisLine] = []
     current = sorted(lines, key=lambda line: line.position)
     group: list[_AxisLine] = [current[0]]
+    position_sum = current[0].position
     for line in current[1:]:
-        if abs(line.position - np.mean([item.position for item in group])) <= tolerance:
+        if abs(line.position - position_sum / len(group)) <= tolerance:
             group.append(line)
+            position_sum += line.position
             continue
-        merged.append(_merge_axis_line_group(group))
+        merged.extend(_merge_overlapping_axis_lines(group))
         group = [line]
-    merged.append(_merge_axis_line_group(group))
+        position_sum = line.position
+    merged.extend(_merge_overlapping_axis_lines(group))
+    return sorted(merged, key=lambda line: line.position)
+
+
+def _merge_overlapping_axis_lines(group: list[_AxisLine]) -> list[_AxisLine]:
+    ordered = sorted(group, key=lambda line: line.span_start)
+    merged: list[_AxisLine] = []
+    overlapping = [ordered[0]]
+    end = ordered[0].span_end
+    for line in ordered[1:]:
+        if line.span_start > end:
+            merged.append(_merge_axis_line_group(overlapping))
+            overlapping = []
+        overlapping.append(line)
+        end = max(end, line.span_end)
+    merged.append(_merge_axis_line_group(overlapping))
     return merged
 
 
@@ -802,56 +816,50 @@ def _find_line_pair_candidates(image: np.ndarray, min_area_ratio: float) -> list
 
     horizontal = _merge_axis_lines(horizontal, max(10.0, min_dimension * 0.018))
     vertical = _merge_axis_lines(vertical, max(10.0, min_dimension * 0.018))
+    if len(vertical) < 2:
+        return []
+
+    positions = np.array([line.position for line in vertical])
+    starts = np.array([line.span_start for line in vertical])
+    ends = np.array([line.span_end for line in vertical])
     candidates: list[_ContourCandidate] = []
     for top_index, top in enumerate(horizontal):
         for bottom in horizontal[top_index + 1 :]:
-            y1 = min(top.position, bottom.position)
-            y2 = max(top.position, bottom.position)
+            y1, y2 = top.position, bottom.position
             rect_height = y2 - y1
             if rect_height < min_dimension * 0.10:
                 continue
-            for left_index, left in enumerate(vertical):
-                for right in vertical[left_index + 1 :]:
-                    x1 = min(left.position, right.position)
-                    x2 = max(left.position, right.position)
-                    rect_width = x2 - x1
-                    if rect_width < min_dimension * 0.10:
-                        continue
-                    area_ratio = (rect_width * rect_height) / image_area
-                    if area_ratio < min_area_ratio or area_ratio > 0.35:
-                        continue
-                    aspect_ratio = rect_width / rect_height if rect_height else 0
-                    if aspect_ratio < 0.4 or aspect_ratio > 2.35:
-                        continue
-                    horizontal_overlap = min(
-                        _overlap_1d(top.span_start, top.span_end, x1, x2),
-                        _overlap_1d(bottom.span_start, bottom.span_end, x1, x2),
-                    )
-                    vertical_overlap = min(
-                        _overlap_1d(left.span_start, left.span_end, y1, y2),
-                        _overlap_1d(right.span_start, right.span_end, y1, y2),
-                    )
-                    if horizontal_overlap < rect_width * 0.35 or vertical_overlap < rect_height * 0.35:
-                        continue
-                    contour = np.array(
-                        [
-                            [[int(round(x1)), int(round(y1))]],
-                            [[int(round(x2)), int(round(y1))]],
-                            [[int(round(x2)), int(round(y2))]],
-                            [[int(round(x1)), int(round(y2))]],
-                        ],
-                        dtype=np.int32,
-                    )
-                    candidate = _candidate_from_contour(
-                        contour,
-                        width=width,
-                        height=height,
-                        image_area=image_area,
-                        min_area_ratio=min_area_ratio,
-                        source="line_pairs",
-                    )
-                    if candidate is not None:
-                        candidates.append(candidate)
+            estimated_width = (top.span_end - top.span_start + bottom.span_end - bottom.span_start) / 2
+            x_tolerance = min(min_dimension * 0.045, max(8.0, estimated_width * 0.16))
+            y_tolerance = min(min_dimension * 0.045, max(8.0, rect_height * 0.16))
+            if max(abs(top.span_start - bottom.span_start), abs(top.span_end - bottom.span_end)) > 2 * x_tolerance:
+                continue
+
+            # Each side must end near both corners. Long, crossing lines in a texture
+            # can cover a rectangle without supporting any of its corners.
+            vertical_error = np.maximum(abs(starts - y1), abs(ends - y2)) / y_tolerance
+            left_error = np.maximum(abs(positions - top.span_start), abs(positions - bottom.span_start)) / x_tolerance
+            right_error = np.maximum(abs(positions - top.span_end), abs(positions - bottom.span_end)) / x_tolerance
+            left_scores = np.maximum(left_error, vertical_error)
+            right_scores = np.maximum(right_error, vertical_error)
+            left_index, right_index = int(left_scores.argmin()), int(right_scores.argmin())
+            if max(left_scores[left_index], right_scores[right_index]) > 1.0:
+                continue
+            x1, x2 = positions[left_index], positions[right_index]
+            rect_width = x2 - x1
+            if rect_width < min_dimension * 0.10 or rect_width * rect_height / image_area > 0.35:
+                continue
+            contour = np.rint([[x1, y1], [x2, y1], [x2, y2], [x1, y2]]).astype(np.int32).reshape(-1, 1, 2)
+            candidate = _candidate_from_contour(
+                contour,
+                width=width,
+                height=height,
+                image_area=image_area,
+                min_area_ratio=min_area_ratio,
+                source="line_pairs",
+            )
+            if candidate is not None:
+                candidates.append(candidate)
     return candidates
 
 

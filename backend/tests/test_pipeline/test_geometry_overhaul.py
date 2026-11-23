@@ -136,6 +136,34 @@ def test_deskew_reprojects_source_corners_and_rejects_padding() -> None:
     assert _project_deskewed_detection(padding, view.shape, image.shape, inverse, settings) is None
 
 
+def test_classical_line_pairs_find_adjacent_prints_with_broken_corners() -> None:
+    from app.pipeline.segmentation import _find_line_pair_candidates
+
+    page = np.full((640, 840, 3), 220, np.uint8)
+    for left, right in ((130, 360), (425, 680)):
+        for y in (155, 385):
+            cv2.line(page, (left + 10, y), (right - 10, y), (85, 85, 85), 2, cv2.LINE_AA)
+        for x in (left, right):
+            cv2.line(page, (x, 165), (x, 375), (85, 85, 85), 2, cv2.LINE_AA)
+
+    candidates = _find_line_pair_candidates(page, .02)
+    assert len(candidates) == 2
+    boxes = sorted(candidate.box for candidate in candidates)
+    np.testing.assert_allclose(boxes, [(130, 155, 231, 231), (425, 155, 256, 231)], atol=3)
+
+
+def test_classical_line_pairs_reject_rectangle_interiors_of_crossing_texture() -> None:
+    from app.pipeline.segmentation import _find_line_pair_candidates
+
+    page = np.full((640, 840, 3), 220, np.uint8)
+    for x in range(80, 800, 36):
+        cv2.line(page, (x, 20), (x - 15, 620), (85, 85, 85), 2, cv2.LINE_AA)
+    for y in range(60, 600, 36):
+        cv2.line(page, (20, y), (820, y + 20), (85, 85, 85), 2, cv2.LINE_AA)
+
+    assert _find_line_pair_candidates(page, .02) == []
+
+
 def test_quad_ordering_keeps_all_vertices_for_exact_diamond() -> None:
     from app.pipeline.geometry import order_quad_cyclic
 
