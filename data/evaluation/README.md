@@ -90,9 +90,10 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 11 binds
+groups, with the 90% threshold applied to each group. Report schema 12 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
-occlusion check and the configured visible mask refiner. A verified motif can
+occlusion check, the configured visible mask refiner and detector-bound
+confidence calibration. A verified motif can
 qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
 
@@ -117,13 +118,37 @@ Open `index.html` in the report's sibling `-visuals` directory. The SHA-256
 at the top identifies the exact manifest under review. These visuals use
 the annotations and source files only and leave the release checks unchanged.
 
-Generate the report using the deployed model, calibration, OpenCV version and
-crop settings. Supply the calibration fitter with an album-level `source_group`
-for each labelled prediction. The release evaluator checks the fitted group's
-identifiers against the real benchmark groups. If orientation is enabled, the
-configured orientation classifier must provide a decision for an automatically
-eligible crop. Include `--include-classical-fallback` for the default production
-configuration.
+Export calibration scores from a separate manifest with `split_policy.role`
+set to `calibration` and `split_policy.album_independent` set to `true`.
+Use verified page annotations, page and label SHA-256 hashes and physical
+album `source_group` identifiers. Reserve the final release test albums
+before exporting scores. Each eligible prediction gets its raw score and
+a correctness label from one-to-one matching at IoU 0.85 with the reviewed
+instance boundaries. Each fitted detector source needs at least 20 predictions
+with both correct and incorrect examples. With calibration required, sources
+without enough examples stay in review.
+
+```powershell
+python scripts/evaluate_onnx_segmentation.py --dataset-manifest path/to/calibration-albums.json --include-classical-fallback --calibration-output runs/crop-quality/calibration-scores.json --output runs/crop-quality/calibration-diagnostics.json
+python scripts/fit_confidence_calibration.py runs/crop-quality/calibration-scores.json --holdout-id calibration-albums-v1 --output models/segmentation-calibration.json
+```
+
+Use the deployed detector, registry, optional refiner, OpenCV version and
+detector settings for the fit and the release report. Calibration schema 2
+binds the fit to that configuration. The release evaluator checks both album
+identifiers and page hashes for overlap with the calibration sources.
+If orientation is enabled, the configured orientation classifier must provide
+a decision for an automatically eligible crop. Include
+`--include-classical-fallback` for the default production configuration.
+
+The local intake under `runs/crop-quality/calibration-intake-sources/`
+contains eight views with 66 draft print outlines from four source groups,
+including the [Allston album](https://nmaahc.si.edu/object/nmaahc_2009.31)
+and the [Baxter leaf](https://nmaahc.si.edu/object/nmaahc_2021.13.13a-f).
+The duplicate screen compares those views with the available training,
+Golden and reserved pages. Both detector profiles produced 66 YOLO and five
+classical edge-contour predictions. A single crowded page contributes 49 of
+the 71 predictions. The draft remains pending independent review before fit.
 
 ```powershell
 python scripts/evaluate_onnx_segmentation.py --dataset-manifest path/to/locked-album-manifest.json --include-classical-fallback --require-final-quality --visuals --output runs/crop-quality/real-release.json

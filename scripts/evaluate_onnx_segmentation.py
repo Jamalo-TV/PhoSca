@@ -136,21 +136,19 @@ def _reference_bytes(path: Path, pinned_hash: str | None) -> bytes:
     return payload
 
 
-def _has_disjoint_calibration_holdout(settings, records) -> bool:
+def _has_disjoint_calibration_holdout(settings, records, detector_profile) -> bool:
+    from app.pipeline.confidence import load_confidence_calibration
+
     path = settings.segmentation_calibration_path
     if not path.is_file():
         return not settings.require_confidence_calibration
     try:
-        artifact = json.loads(path.read_bytes())
-        groups = artifact.get("source_groups")
-        digest = artifact.get("input_sha256")
-        if (
-            not isinstance(groups, list) or not groups or not all(isinstance(group, str) and group.strip() for group in groups)
-            or not isinstance(digest, str) or len(digest) != 64 or set(digest) - set("0123456789abcdef")
-        ):
-            return False
+        artifact = load_confidence_calibration(path, detector_profile)
         reference_groups = {str(record.get("source_group") or "").strip().casefold() for record in records}
-        return reference_groups.isdisjoint(group.strip().casefold() for group in groups)
+        reference_images = {record.get("image_sha256") for record in records}
+        return reference_images.isdisjoint(artifact["source_images"]) and reference_groups.isdisjoint(
+            group.strip().casefold() for group in artifact["source_groups"]
+        )
     except (OSError, ValueError, AttributeError):
         return False
 
@@ -368,8 +366,10 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file,
                 review_directory, index, record, page, expected, references, issues, issues_by_mode,
             )
             sections.append((str(record["id"]), section))
-    locked = is_locked_album_manifest(records, split)
+    locked = split.get("role") != "calibration" and is_locked_album_manifest(records, split)
     dataset_issues = []
+    if split.get("role") == "calibration":
+        dataset_issues.append("CALIBRATION_SPLIT_RESERVED")
     if split.get("album_independent") is not True:
         dataset_issues.append("ALBUM_INDEPENDENCE_UNCONFIRMED")
     if len(groups) < 2:
@@ -646,6 +646,7 @@ def main() -> None:
     parser.add_argument("--acceptance-threshold", type=float, default=0.70)
     parser.add_argument("--include-classical-fallback", action="store_true")
     parser.add_argument("--dataset-manifest", type=Path)
+    parser.add_argument("--calibration-output", type=Path, help="Export labelled detector scores from a verified calibration split.")
     parser.add_argument("--check-references", action="store_true", help="Validate real reference files and report readiness without running inference.")
     parser.add_argument("--synthetic", choices=("development", "locked"))
     parser.add_argument("--geometry-only", action="store_true", help="Seed approximate proposals on synthetic pages.")
@@ -666,6 +667,12 @@ def main() -> None:
         args.output = Path("runs/crop-quality") / ("reference-check.json" if args.check_references else "evaluation.json")
     if args.dataset_manifest and args.output.resolve() == args.dataset_manifest.resolve():
         parser.error("--output must be separate from the input reference manifest")
+    if args.calibration_output:
+        if (not args.dataset_manifest or args.synthetic or args.geometry_only or args.legacy_crop or args.check_references
+                or args.require_final_quality or args.iou_threshold != 0.85):
+            parser.error("--calibration-output needs a separate real calibration manifest and the default IoU threshold")
+        if args.calibration_output.resolve() in {args.dataset_manifest.resolve(), args.output.resolve()}:
+            parser.error("--calibration-output must be separate from both the manifest and the report")
 
     if args.geometry_only and (not args.synthetic or args.legacy_crop):
         parser.error("--geometry-only requires a synthetic split and the precise crop path")
@@ -679,10 +686,10 @@ def main() -> None:
         raise SystemExit(f"ONNX model missing: {args.model}")
     settings = _runtime_settings(args)
     from app.evaluation.cropping import evaluate_cropping_dataset, evaluate_page_crops, is_locked_album_manifest
-    from app.pipeline.confidence import calibrate_confidence
+    from app.pipeline.confidence import CALIBRATION_INPUT_SCHEMA, calibrate_confidence
     from app.pipeline.crop_validation import (
         CROP_VALIDATION_SCHEMA, CROP_VALIDATION_UNAVAILABLE, automatic_crop_review_reasons, crop_validation_profile,
-        geometrically_ready_crop_modes, route_ready_crop_modes_to_review,
+        detector_calibration_profile, geometrically_ready_crop_modes, route_ready_crop_modes_to_review,
     )
     from app.pipeline.decisions import component_review_reasons, confidence_components
     from app.pipeline.enhancement import prepare_for_cutout
@@ -700,6 +707,16 @@ def main() -> None:
         records, split = _load_cases(args)
     if not records:
         raise SystemExit("No evaluation pages")
+    expected_calibration_detector = None
+    calibration_rows: list[dict] = []
+    calibration_excluded_pages: list[str] = []
+    if not args.check_references and not args.geometry_only:
+        expected_calibration_detector = detector_calibration_profile(settings)
+    if args.calibration_output:
+        if split.get("role") != "calibration" or not is_locked_album_manifest(records, split):
+            raise SystemExit("Calibration export requires a verified, album-independent calibration split.")
+        if expected_calibration_detector is None:
+            raise SystemExit("Calibration export requires the registered detector configuration.")
     if args.check_references:
         review_directory = args.output.parent / f"{args.output.stem}-visuals" if args.visuals else None
         checked = _check_references(
@@ -749,6 +766,7 @@ def main() -> None:
             image = synthetic.image if synthetic else load_image(record["image"])
             detection_metadata = {}
             ownership_unresolved = False
+            calibration_detector = None
             acceptance_evidence: list[dict] = []
             if args.geometry_only:
                 proposals = [(*geometry_seed(item, image.shape), True) for item in synthetic.prints]
@@ -767,6 +785,9 @@ def main() -> None:
                 if refinement.get("error"):
                     raise SystemExit(f"Visible mask ONNX error for {record['id']}: {refinement['error']}")
                 ownership_unresolved = refinement.get("ownership_unresolved") is True
+                calibration_detector = detector_calibration_profile(settings, segmentation=detection_metadata)
+                if args.calibration_output and not ownership_unresolved and calibration_detector != expected_calibration_detector:
+                    raise SystemExit(f"Calibration detector configuration changed on {record['id']}.")
                 proposals = [(item.bounding_box, item.mask, item.geometry_valid) for item in result.detections]
                 detected = [_detected_polygon(item) for item in result.detections]
 
@@ -788,6 +809,7 @@ def main() -> None:
                     detector_source = str(mask.get("detector_source", "default"))
                     calibrated, calibration = calibrate_confidence(
                         item.confidence, detector_source, settings.segmentation_calibration_path,
+                        detector_profile=calibration_detector,
                     )
                     boundary = mask.get("boundary_evidence") or {}
                     geometry = mask.get("geometry_evidence") or {}
@@ -859,6 +881,25 @@ def main() -> None:
                 truth_masks=native_truth_masks,
             )
             page_metrics.append(metrics)
+            if args.calibration_output:
+                if not pinned or any(
+                    mask is not None and (
+                        not reference["sidecar_pinned"] or "MODE_ANNOTATION_UNVERIFIED" in reference["reference_issues"]
+                    )
+                    for mask, reference in zip(native_truth_masks, full_print_references, strict=True)
+                ):
+                    raise SystemExit(f"Calibration requires verified, pinned instance annotations for {record['id']}.")
+                if ownership_unresolved:
+                    calibration_excluded_pages.append(record["id"])
+                else:
+                    correct = {match["prediction_index"] for match in metrics.matches
+                               if match["valid_detection"] and not match["serious_failure"]}
+                    calibration_rows.extend({
+                        "page_id": record["id"], "image_sha256": record["image_sha256"],
+                        "source_group": str(record["source_group"]).strip().casefold(), "prediction_index": index,
+                        "source": (item.mask or {}).get("detector_source") or "default",
+                        "score": item.confidence, "correct": index in correct,
+                    } for index, item in enumerate(result.detections))
             primary_metrics = None
             if args.visible_mask_model:
                 primary = [_points(item.mask.get("polygon") or []) for item in result.detections]
@@ -929,10 +970,12 @@ def main() -> None:
     quality = _quality_summary(crop_rows)
     detector_gate_passed = _detection_passes(aggregate, args)
     final_instance_gate_passed = _detection_passes(final_instances, args)
-    calibration_holdout_disjoint = None if args.synthetic else _has_disjoint_calibration_holdout(settings, records)
+    calibration_holdout_disjoint = None if args.synthetic else _has_disjoint_calibration_holdout(
+        settings, records, expected_calibration_detector,
+    )
     real_manifest_locked = (
         not args.synthetic and reference_files_locked and calibration_holdout_disjoint
-        and is_locked_album_manifest(records, split)
+        and split.get("role") != "calibration" and is_locked_album_manifest(records, split)
     )
     rendered_gates = {
         name: _rendered_mode_passes(
@@ -1034,6 +1077,16 @@ def main() -> None:
                       "validation_gates": validation_gates,
                       "crop_mode_availability": report["crop_mode_availability"],
                       "image_to_jpeg": runtime["image_to_jpeg"]}, indent=2))
+    if args.calibration_output:
+        args.calibration_output.parent.mkdir(parents=True, exist_ok=True)
+        args.calibration_output.write_text(json.dumps({
+            "schema_version": CALIBRATION_INPUT_SCHEMA,
+            "role": "calibration", "dataset_manifest_sha256": args.dataset_manifest_sha256,
+            "detector_profile": expected_calibration_detector,
+            "source_images": {record["image_sha256"]: str(record["source_group"]).strip().casefold() for record in records},
+            "excluded_pages": calibration_excluded_pages, "rows": calibration_rows,
+        }, indent=2) + "\n", encoding="utf-8")
+        return
     if not detector_gate_passed:
         raise SystemExit(2)
     if args.require_final_quality and (not final_instance_gate_passed or not all(rendered_gates.values())):

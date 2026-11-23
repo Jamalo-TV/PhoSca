@@ -11,10 +11,11 @@ import cv2
 
 from app.config import Settings
 from app.pipeline.crop_sampling import OWNED_BILINEAR
+from app.pipeline.confidence import is_sha256, load_confidence_calibration
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.model_registry import sha256
 
-CROP_VALIDATION_SCHEMA = 11
+CROP_VALIDATION_SCHEMA = 12
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
 
 
@@ -66,7 +67,10 @@ def segmentation_matches_crop_profile(settings: Settings, segmentation: dict) ->
     expected = crop_validation_profile(settings)
     if segmentation.get("onnx_error") or segmentation.get("validation_profile") != expected:
         return False
-    refiner = expected["visible_mask_refinement"]
+    return _matches_refiner(expected["visible_mask_refinement"], segmentation)
+
+
+def _matches_refiner(refiner: dict | None, segmentation: dict) -> bool:
     if refiner is None:
         return True
     used = segmentation.get("visible_mask_refinement") or {}
@@ -74,6 +78,26 @@ def segmentation_matches_crop_profile(settings: Settings, segmentation: dict) ->
         refiner["model_sha256"] and used.get("model_sha256") == refiner["model_sha256"]
         and not used.get("error") and not used.get("ownership_unresolved")
     )
+
+
+def detector_calibration_profile(settings: Settings, *, segmentation: dict | None = None) -> dict | None:
+    profile = crop_validation_profile(settings)
+    model = _optional_hash(settings.yolo_model_path)
+    if not is_sha256(model) or not profile["model_registry_sha256"]:
+        return None
+    refiner = profile["visible_mask_refinement"]
+    if refiner is not None and not (refiner["model_sha256"] and refiner["manifest_sha256"]):
+        return None
+    if segmentation is not None and (
+        segmentation.get("onnx_error") or (segmentation.get("model_artifact") or {}).get("sha256") != model
+        or not _matches_refiner(refiner, segmentation)
+    ):
+        return None
+    return {"model_sha256": model, **{key: profile[key] for key in (
+        "pipeline_version", "precise_photo_crops", "model_registry_sha256", "visible_mask_refinement",
+        "classical_fallback", "proposal_threshold", "acceptance_threshold", "min_detection_aspect_ratio",
+        "max_detection_aspect_ratio", "opencv_version",
+    )}}
 
 
 def route_ready_crop_modes_to_review(modes: dict, reasons: list[str]) -> None:
@@ -133,6 +157,8 @@ def crop_validation_evidence(settings: Settings, model_sha256: str | None) -> di
         current = crop_validation_profile(settings)
         if report.get("validation_profile") != current:
             return None
+        if current["require_confidence_calibration"] or current["calibration_sha256"] is not None:
+            load_confidence_calibration(settings.segmentation_calibration_path, detector_calibration_profile(settings))
         refiner = current["visible_mask_refinement"]
         if refiner is not None and not (refiner["model_sha256"] and refiner["manifest_sha256"]):
             return None
@@ -140,14 +166,10 @@ def crop_validation_evidence(settings: Settings, model_sha256: str | None) -> di
         gates = report.get("validation_gates") or {}
         modes = gates.get("rendered_crop_modes") or {}
         manifest_sha256 = report.get("dataset_manifest_sha256")
-        manifest_pinned = (
-            isinstance(manifest_sha256, str) and len(manifest_sha256) == 64
-            and set(manifest_sha256) <= set("0123456789abcdef")
-        )
         if (
             report.get("legacy_crop") is not False or report.get("geometry_only") is not False
             or split.get("synthetic") or split.get("album_independent") is not True
-            or not manifest_pinned
+            or not is_sha256(manifest_sha256)
             or gates.get("locked_real_album_manifest") is not True
             or gates.get("locked_reference_artifacts") is not True
             or gates.get("calibration_holdout_disjoint") is not True

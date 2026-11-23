@@ -39,6 +39,7 @@ from app.pipeline.crop_validation import (
     automatic_crop_review_reasons,
     crop_validation_evidence,
     crop_validation_profile,
+    detector_calibration_profile,
     geometrically_ready_crop_modes,
     route_ready_crop_modes_to_review,
     segmentation_matches_crop_profile,
@@ -229,10 +230,12 @@ async def segmentation_task_logic(
 
     created_photo_ids: list[str] = []
     review_reasons_by_photo: dict[str, list[str]] = {}
+    calibration_detector = detector_calibration_profile(settings, segmentation=result.metadata)
     for detection in result.detections:
         detector_source = str((detection.mask or {}).get("detector_source", "default"))
         calibrated_confidence, calibration = calibrate_confidence(
-            detection.confidence, detector_source, settings.segmentation_calibration_path
+            detection.confidence, detector_source, settings.segmentation_calibration_path,
+            detector_profile=calibration_detector,
         )
         review_reasons = segmentation_review_reasons(
             confidence=calibrated_confidence,
@@ -439,7 +442,9 @@ async def perspective_correction_task_logic(
         if segmentation_matches_crop_profile(settings, segmentation):
             evidence = crop_validation_evidence(settings, model.get("sha256"))
         auto_review = automatic_crop_review_reasons(
-            settings, photo.segmentation_confidence, photo.geometry_valid, calibration.get("calibrated") is True,
+            settings, photo.segmentation_confidence, photo.geometry_valid,
+            calibration.get("calibrated") is True and model.get("sha256") is not None
+            and calibration.get("model_sha256") == model["sha256"],
             prediction.get("segmentation_review_reasons") or [], orientation_reason,
         )
         if evidence is None:

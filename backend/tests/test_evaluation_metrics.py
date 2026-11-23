@@ -435,16 +435,103 @@ def test_real_release_requires_disjoint_calibration_album_groups(tmp_path) -> No
     import json
     from types import SimpleNamespace
 
+    from app.pipeline.confidence import CALIBRATION_SCHEMA
     from scripts.evaluate_onnx_segmentation import _has_disjoint_calibration_holdout
 
     path = tmp_path / "calibration.json"
     settings = SimpleNamespace(segmentation_calibration_path=path, require_confidence_calibration=True)
     records = [{"source_group": "Album-A"}, {"source_group": "Album-B"}]
-    assert not _has_disjoint_calibration_holdout(settings, records)
-    path.write_text(json.dumps({"source_groups": [" album-b "], "input_sha256": "a" * 64}), encoding="utf-8")
-    assert not _has_disjoint_calibration_holdout(settings, records)
-    path.write_text(json.dumps({"source_groups": ["album-calibration"], "input_sha256": "a" * 64}), encoding="utf-8")
-    assert _has_disjoint_calibration_holdout(settings, records)
+    detector = {"model_sha256": "a" * 64}
+    assert not _has_disjoint_calibration_holdout(settings, records, detector)
+    artifact = {
+        "schema_version": CALIBRATION_SCHEMA, "independent_holdout_id": "calibration-only", "sample_count": 20,
+        "source_groups": [" album-b "], "input_sha256": "a" * 64, "dataset_manifest_sha256": "b" * 64,
+        "source_images": {"c" * 64: "album-b"},
+        "detector_profile": detector, "strata": {"default": {"raw": [0, 1], "calibrated": [0, 1]}},
+    }
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+    assert not _has_disjoint_calibration_holdout(settings, records, detector)
+    path.write_text(json.dumps(artifact | {
+        "source_groups": ["album-calibration"], "source_images": {"c" * 64: "album-calibration"},
+    }), encoding="utf-8")
+    assert _has_disjoint_calibration_holdout(settings, records, detector)
+    duplicate_page = {"source_group": "album-with-a-different-id", "image_sha256": "c" * 64}
+    assert not _has_disjoint_calibration_holdout(settings, [*records, duplicate_page], detector)
+    assert not _has_disjoint_calibration_holdout(settings, records, {"model_sha256": "e" * 64})
+
+
+def test_calibration_export_and_fit_use_reviewed_album_predictions(monkeypatch, tmp_path) -> None:
+    import hashlib
+    import json
+    import sys
+    from pathlib import Path
+
+    import cv2
+    import numpy as np
+
+    from app.pipeline import segmentation
+    from app.pipeline.confidence import calibrate_confidence
+    from scripts import evaluate_onnx_segmentation as evaluator, fit_confidence_calibration as fitter
+
+    model = tmp_path / "detector.onnx"
+    model.write_bytes(b"calibration-detector")
+    model_digest = hashlib.sha256(model.read_bytes()).hexdigest()
+    registry = tmp_path / "models.json"
+    registry.write_text(json.dumps({"models": {model.name: {"sha256": model_digest, "license": "test"}}}), encoding="utf-8")
+    truth = rectangle(.05, .1, .45, .5)
+    labels = tmp_path / "page.txt"
+    labels.write_text("0 " + " ".join(str(value) for point in truth for value in point), encoding="utf-8")
+    pages = []
+    for index in range(2):
+        image = tmp_path / f"page-{index}.png"
+        assert cv2.imwrite(str(image), np.full((100, 100, 3), 120 + index, np.uint8))
+        pages.append({
+            "id": image.stem, "image": image.name, "image_sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
+            "annotations": labels.name, "annotations_sha256": hashlib.sha256(labels.read_bytes()).hexdigest(),
+            "annotation_provenance": "manually_verified", "source_group": f"album-{index}", "expected_count": 1,
+        })
+    inference_calls = []
+
+    def detect(*_, **__):
+        inference_calls.append(True)
+        detections = []
+        for index in range(10):
+            points = truth if index == 0 else rectangle(.6, .65, .95, .96)
+            mask = {"polygon": [{"x": x, "y": y} for x, y in points], "detector_source": "yolo_onnx"}
+            detections.append(segmentation.SegmentationDetection({}, mask, .95 if index == 0 else .3, 1.2, True, []))
+        return segmentation.SegmentationResult(detections, {"model_artifact": {"sha256": model_digest}})
+
+    monkeypatch.setattr(segmentation, "segment_album_page", detect)
+    monkeypatch.setattr(evaluator, "_render_crops", lambda _, proposals, *__: [
+        {"images": {}, "modes": {}, "metadata": {}} for _ in proposals
+    ])
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    manifest = tmp_path / "dataset.json"
+    export = tmp_path / "scores.json"
+    report = tmp_path / "report.json"
+    monkeypatch.setattr(sys, "argv", ["evaluate", "--dataset-manifest", str(manifest), "--model", str(model),
+                                      "--manifest", str(registry), "--calibration-output", str(export),
+                                      "--output", str(report)])
+    split = {"album_independent": True, "role": "test"}
+    manifest.write_text(json.dumps({"split_policy": split, "pages": pages}), encoding="utf-8")
+    with pytest.raises(SystemExit, match="album-independent calibration split"):
+        evaluator.main()
+    assert inference_calls == [] and not export.exists()
+
+    manifest.write_text(json.dumps({"split_policy": split | {"role": "calibration"}, "pages": pages}), encoding="utf-8")
+    evaluator.main()
+    rows = json.loads(export.read_bytes())
+    assert len(rows["rows"]) == 20
+    assert {row["score"] for row in rows["rows"] if row["correct"]} == {.95}
+    assert sum(row["correct"] for row in rows["rows"]) == 2
+    assert not json.loads(report.read_bytes())["validation_gates"]["locked_real_album_manifest"]
+
+    output = tmp_path / "calibration.json"
+    monkeypatch.setattr(sys, "argv", ["fit", str(export), "--holdout-id", "fixture", "--output", str(output)])
+    assert fitter.main() == 0
+    value, evidence = calibrate_confidence(.95, "yolo_onnx", output, detector_profile=rows["detector_profile"])
+    assert evidence["calibrated"] and value == 1
+    assert calibrate_confidence(.3, "yolo_onnx", output, detector_profile=rows["detector_profile"])[0] == 0
 
 
 def test_real_mode_coverage_counts_only_eligible_passing_crops() -> None:

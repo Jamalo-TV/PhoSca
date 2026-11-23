@@ -160,12 +160,12 @@ python scripts/validate_segmentation.py --album-id <album-id>
 python scripts/validate_ocr.py --album-id <album-id>
 ```
 
-Safety and operations evidence:
+Safety and operations evidence. See [crop evaluation data](data/evaluation/README.md) for exporting calibration scores from reviewed albums.
 
 ```bash
 python scripts/evaluate_onnx_segmentation.py --include-classical-fallback --output runs/cropping-current.json
 python scripts/evaluate_enhancement.py --output-dir runs/enhancement-current
-python scripts/fit_confidence_calibration.py labelled-predictions.json --holdout-id <independent-holdout-id>
+python scripts/fit_confidence_calibration.py runs/crop-quality/calibration-scores.json --holdout-id <independent-holdout-id>
 python scripts/evaluate_shadow_drift.py stable.json shadow.json --output evidence/shadow-drift.json
 python scripts/run_retention.py
 python scripts/verify_launch_gates.py evidence/launch-gates.json

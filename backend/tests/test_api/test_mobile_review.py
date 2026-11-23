@@ -638,8 +638,8 @@ async def test_automatic_crop_download_requires_current_album_validation(
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, Page
-    from app.pipeline.confidence import calibrate_confidence
-    from app.pipeline.crop_validation import CROP_VALIDATION_SCHEMA, crop_validation_profile
+    from app.pipeline.confidence import CALIBRATION_SCHEMA, calibrate_confidence
+    from app.pipeline.crop_validation import CROP_VALIDATION_SCHEMA, crop_validation_profile, detector_calibration_profile
     from app.services.pipeline import perspective_correction_task_logic
 
     model_path = tmp_path / "registered.onnx"
@@ -658,11 +658,6 @@ async def test_automatic_crop_download_requires_current_album_validation(
         refiner_metadata = {"visible_mask_refinement": {"model_sha256": refiner_digest, "refined_detections": 1}}
     registry_path.write_text(json.dumps(registry), encoding="utf-8")
     calibration_path = tmp_path / "calibration.json"
-    calibration_path.write_text(json.dumps({
-        "schema_version": 1,
-        "independent_holdout_id": "fixture-confidence-holdout",
-        "strata": {"default": {"raw": [0, 1], "calibrated": [0, 1]}},
-    }), encoding="utf-8")
     validation_path = tmp_path / "crop-validation.json"
     monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
     monkeypatch.setenv("ENABLE_BORDER_TRIM", "false")
@@ -675,6 +670,16 @@ async def test_automatic_crop_download_requires_current_album_validation(
     monkeypatch.setenv("SEGMENTATION_CALIBRATION_PATH", str(calibration_path))
     monkeypatch.setenv("CROP_VALIDATION_REPORT_PATH", str(validation_path))
     get_settings.cache_clear()
+    detector = detector_calibration_profile(get_settings())
+    calibration_path.write_text(json.dumps({
+        "schema_version": CALIBRATION_SCHEMA,
+        "independent_holdout_id": "fixture-confidence-holdout",
+        "source_groups": ["test-calibration-album"], "sample_count": 20,
+        "input_sha256": "a" * 64, "dataset_manifest_sha256": "b" * 64,
+        "source_images": {"e" * 64: "test-calibration-album"},
+        "detector_profile": detector,
+        "strata": {"default": {"raw": [0, 1], "calibrated": [0, 1]}},
+    }), encoding="utf-8")
     profile = crop_validation_profile(get_settings())
     image = np.full((120, 160, 3), 105, dtype=np.uint8)
     image[24:108, 16:128] = 240
@@ -693,7 +698,9 @@ async def test_automatic_crop_download_requires_current_album_validation(
             **refiner_metadata,
         }}}
         photo = await session.get(ExtractedPhoto, photo_id)
-        _, calibration = calibrate_confidence(photo.segmentation_confidence, "default", calibration_path)
+        _, calibration = calibrate_confidence(
+            photo.segmentation_confidence, "default", calibration_path, detector_profile=detector,
+        )
         assert calibration["calibrated"] is True
         photo.enhancement_applied = {**photo.enhancement_applied, "segmentation_confidence": calibration}
         photo.segmentation_mask = {"source": "classical_boundary", "polygon": outer, "warp_quad": outer, "image_quad": inner}
