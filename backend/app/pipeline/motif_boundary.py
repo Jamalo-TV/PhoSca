@@ -68,8 +68,7 @@ def _has_competing_step(samples: np.ndarray, offsets: np.ndarray, seam: np.ndarr
     noise = np.median(np.max(np.abs(np.diff(samples[:, :7], axis=1)), axis=2), axis=1)
     distance = offsets[6:-6] - seam[:, None]
     localized = collar_variation <= np.maximum(1.25, .22 * change)
-    primary = np.max(np.where(np.abs(distance) <= .75, change, 0), axis=1)
-    minimum_strength = np.maximum(np.maximum(4.5, 4 * noise), .18 * primary)
+    minimum_strength = np.maximum(4.5, 4 * noise)
     rows = np.arange(len(seam))
     for direction in (-1, 1):
         separated = (direction * distance >= 2.5) & (direction * distance <= 6)

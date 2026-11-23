@@ -375,6 +375,8 @@ def test_motif_preview_requires_source_evidence_at_an_inferred_corner(curved_mot
     (0, 21, -4, 0), (0, 91, -4, 0),
     (0, 29, -4, 22), (0, 29, 4, 22),
     (3.5, 29, -4, 22), (3.5, 29, 4, 22),
+    (0, 29, -4, 70), (0, 29, 4, 70),
+    (3.5, 29, -4, 70), (3.5, 29, 4, 70),
 ])
 def test_motif_crop_reviews_displaced_weak_boundaries(bow, width, offset, shadow) -> None:
     page = np.full((345, 500, 3), (67, 78, 70), np.uint8)

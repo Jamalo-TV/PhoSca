@@ -912,6 +912,15 @@ of landmark p95 error. All have zero cutoff past one source pixel and zero
 foreign interpolation samples. Reports and overlays are under
 `runs/crop-quality/cloud-v30/`.
 
+The wider shadow probe varies shadow contrast from 22 to 70 gray levels,
+weak-run width from 15 to 47 pixels, and edge displacement in both directions
+on straight and curved motifs. Version 30 produced a faulty derivative in
+24 of 48 cases when the second step was small relative to the shadow.
+Version 31 uses local noise and spatial consistency to assess that weaker
+step. All 48 motifs stay in review without a derivative, all whole prints
+remain ready, and the three frozen runs retain their previous pass counts.
+See `runs/crop-quality/cloud-v31/shadow-amplitude.json`.
+
 The frozen seeded-geometry benchmark passes all 23 recoverable mode crops.
 The v21 and v22 Registered end-to-end runs match six of 18 raw instances
 at IoU 0.85. On the development white-margin and white-on-white pages the
