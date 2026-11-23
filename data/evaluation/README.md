@@ -698,6 +698,27 @@ CC BY-NC 4.0. [Quine page 24962](https://ibccdigitalarchive.lincoln.ac.uk/collec
 [page 25096](https://ibccdigitalarchive.lincoln.ac.uk/collections/document/25096),
 and [Langworthy page 34635](https://ibccdigitalarchive.lincoln.ac.uk/collections/document/34635).
 
+`ibcc-quine-paired-crops-draft.json` pins the mounted page 24963 and its four
+individual scans. The page EXIF identifies a Nikon D750 capture. The catalog
+identifies the larger images as individual scans and all four show stock
+hidden by the red mounts on the page. Each whole-print reference is marked
+obstructed. Each motif is visible, with the source corners for print 0015
+left open because the upper edge is too faint. The mounted top edge of
+print 0016 bows 5.72 native pixels from the chord between its corners,
+with 0.94 px 95th-percentile residual across 30 supported edge samples.
+The draft traces that bow in the source polygon and measures aspect from
+the separate scan. A single homography maps straight lines to straight
+lines, so this is a real case for the one-pixel cutoff and contamination
+checks. All annotations await independent review.
+
+Download the page's `image_url` and the `reference_image_url` for each print
+to the paths pinned in the manifest. The source files stay local. Check
+hashes and render the side-by-side review without running the detector.
+
+```powershell
+python scripts/evaluate_onnx_segmentation.py --dataset-manifest data/evaluation/ibcc-quine-paired-crops-draft.json --check-references --visuals --output runs/crop-quality/ibcc-quine-24963-preflight.json
+```
+
 A development experiment zoomed into the bounded gap on the
 [sparsely mounted Met page](https://www.metmuseum.org/art/collection/search/289066).
 It found the central fifth print in the original scan at 0.904 mask IoU.
