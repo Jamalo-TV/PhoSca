@@ -94,7 +94,7 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 14 binds
+groups, with the 90% threshold applied to each group. Report schema 15 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled inference, the
 configured visible mask refiner and detector-bound confidence calibration. A verified motif can
@@ -500,8 +500,8 @@ aspect unresolved. A wrongly measured aligned reference can still produce
 a plausible rectangle, so the correction records which measurement was used
 and keeps both downloads in review.
 
-On densely mounted pages with many small masks and borderline detector
-confidence, PhoSca reuses the registered ONNX model on four overlapping
+On densely mounted pages with many small masks and detector warnings,
+PhoSca reuses the registered ONNX model on four overlapping
 windows. It excludes proposals that reach an artificial tile boundary and
 compares masks back in source coordinates. Agreement across views helps
 resolve competing proposals, while separately observed overlapping prints
@@ -516,6 +516,14 @@ detector. The locked synthetic regression passes 18 detections and all 23
 recoverable crops. The same-album Golden regression matches all 29 prints.
 The reports are `met-pilot/dense-final-registered.json`, `dense-tiles-locked.json`
 and `dense-tiles-golden.json` under `runs/crop-quality/`.
+
+Partial tile coverage now contributes local evidence on dense pages,
+including when the initial proposals have invalid geometry. Full-page pairs
+remain available where no tile replaces either proposal. At 66% resolution
+on the dense Met development scan, the paired test improved from 30 to 33
+matches and from 16 to 10 false positives. Mean matched mask IoU rose from
+0.735 to 0.819. Native results remain 44 of 48 with two false positives.
+The paired reports are `dense-cutoff-probe/dense-tracked-{control,candidate}.json`.
 
 The Emily Howland intake pairs the album page with a separate front scan
 of the same Harriet Tubman carte-de-visite. The window covers about 35% of

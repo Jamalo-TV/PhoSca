@@ -66,6 +66,32 @@ def test_dense_view_fusion_retains_separately_observed_overlaps() -> None:
     assert winners == [first, second, other]
 
 
+def test_partial_dense_tiles_improve_observed_print_and_keep_unobserved_pair(monkeypatch) -> None:
+    from app.pipeline import segmentation
+
+    def box(left, top, right, bottom, confidence):
+        return _detection({"x1": left, "y1": top, "x2": right, "y2": bottom}, confidence, family="model")
+
+    first = box(.08, .13, .24, .26, .90)
+    second = box(.11, .13, .27, .26, .88)
+    approximate = box(.42, .42, .50, .50, .62)
+    tiled = box(.42 / .7, .42 / .7, .50 / .7, .50 / .7, .97)
+    views = iter(([tiled], [], [], []))
+    evidence = {index: {"score": .7} for index in range(3)}
+    monkeypatch.setattr(segmentation, "_detection_boundary_evidence", lambda *_: {"score": .85})
+
+    result, result_evidence, meta = segmentation._recover_dense_prints(
+        np.zeros((1001, 1001, 3), np.uint8), [first, second, approximate], evidence,
+        lambda _: next(views), (),
+    )
+
+    assert meta == {"tiles": 4, "proposals": 1, "selected": 1}
+    assert len(result) == 3 and first in result and second in result and approximate not in result
+    winner = next(item for item in result if item.mask["detector_source"] == "yolo_onnx_tiled")
+    assert winner.bounding_box == pytest.approx(approximate.bounding_box)
+    assert result_evidence[result.index(winner)]["score"] == .85
+
+
 def test_quad_ordering_keeps_all_vertices_for_exact_diamond() -> None:
     from app.pipeline.geometry import order_quad_cyclic
 

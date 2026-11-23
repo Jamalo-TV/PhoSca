@@ -1853,6 +1853,7 @@ def _tile_detections_on_page(
 
 def _fuse_dense_views(
     views: list[list[SegmentationDetection]], evidence: list[list[dict[str, float]]],
+    *, preserve_full_page: bool = False,
 ) -> list[tuple[SegmentationDetection, dict[str, float]]]:
     detections = [detection for view in views for detection in view]
     polygons = [_detection_polygon(detection) for detection in detections]
@@ -1882,6 +1883,8 @@ def _fuse_dense_views(
     ), reverse=True)
 
     def duplicate(first: int, second: int) -> bool:
+        if preserve_full_page and view_ids[first] == view_ids[second] == 0:
+            return False
         box_iou, same = comparison(min(first, second), max(first, second))
         # Two views that each resolve both overlapping prints support keeping both.
         separate = box_iou < .60 and len(agreements[first] & agreements[second]) >= 2
@@ -1910,12 +1913,13 @@ def _recover_dense_prints(
                 infer(image[top:bottom, left:right]), (left, top, right, bottom), width, height,
             ))
     tile_proposals = sum(len(view) for view in views[1:])
-    if tile_proposals < len(detections):
+    if not tile_proposals:
         return detections, model_evidence, {"tiles": 4, "proposals": tile_proposals, "selected": 0}
     evidence = [[model_evidence[index] for index in range(len(detections))]] + [
         [_detection_boundary_evidence(detection, *inputs) for detection in view] for view in views[1:]
     ]
-    winners = _fuse_dense_views(views, evidence)
+    # Partial tile coverage may improve individual prints, but cannot resolve pairs seen only on the full page.
+    winners = _fuse_dense_views(views, evidence, preserve_full_page=tile_proposals < len(detections))
     selected = [item for item, _ in winners]
     selected_evidence = {index: evidence for index, (_, evidence) in enumerate(winners)}
     return selected, selected_evidence, {"tiles": 4, "proposals": tile_proposals, "selected": sum(
@@ -2215,12 +2219,11 @@ def _segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationRe
                 dense_small_prints = (
                     settings.enable_precise_photo_crops
                     and len(detections) >= 16
-                    and all(reason.startswith("MODEL_CONFIDENCE_MARGIN_LOW:") for reason in risk_reasons)
                     and np.median([_score_value(d, "area_ratio", _normalized_box_area(d.bounding_box)) for d in detections])
                     < _CLASSICAL_MIN_AREA_RATIO
                 )
                 if settings.enable_classical_segmentation_fallback and risk_reasons and dense_small_prints:
-                    metadata["classical_evidence_skipped"] = "dense_small_prints_confidence_only"
+                    metadata["classical_evidence_skipped"] = "dense_small_prints"
                     tile_started = perf_counter()
                     try:
                         recovered, recovered_evidence, tile_metadata = _recover_dense_prints(

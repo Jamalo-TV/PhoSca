@@ -15,7 +15,7 @@ from app.pipeline.confidence import is_sha256, load_confidence_calibration
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.model_registry import sha256
 
-CROP_VALIDATION_SCHEMA = 14
+CROP_VALIDATION_SCHEMA = 15
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
 
 
@@ -51,7 +51,7 @@ def crop_validation_profile(settings: Settings) -> dict:
             1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "dense_tile_inference": (
-            1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+            2 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "border_analysis": settings.enable_border_trim,
         "protected_region_guard": settings.enable_protected_region_guard,
