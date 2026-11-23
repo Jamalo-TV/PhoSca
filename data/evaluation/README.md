@@ -947,6 +947,17 @@ strict whole-print cutoff counts from 565 to zero on print 76 and from 501 to
 81's remaining cutoff is on its ambiguous right edge. These measurements use
 draft references. See `runs/crop-quality/cloud-reference-raster/whiting.json`.
 
+Version 34 keeps both crop modes in review when the native print transition
+is too broad to certify ownership. The Registered replay on 31 development
+pages with blur, distortion, overlap and mounts routes all four previously
+incorrect ready whole-print crops to review. A passing blurred cast-shadow
+crop is also withheld. Registered and Local both pass every remaining ready
+crop in this replay. The detection results still include misses and extra
+instances. Switching to original pixels or sharpening the detector input
+reduces some mask errors while losing passing crops or adding duplicates.
+The frozen runs retain 18 detections and 11 whole-print and 12 motif passes.
+See `runs/crop-quality/cloud-v34/`.
+
 The frozen seeded-geometry benchmark passes all 23 recoverable mode crops.
 The v21 and v22 Registered end-to-end runs match six of 18 raw instances
 at IoU 0.85. On the development white-margin and white-on-white pages the

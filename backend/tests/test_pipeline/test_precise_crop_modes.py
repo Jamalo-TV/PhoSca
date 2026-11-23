@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import pytest
 
+from app.pipeline.crop_sampling import OWNED_BILINEAR
 from app.pipeline.geometry import normalized_vertices_to_pixels
 from app.pipeline.perspective import correct_photo_crop, validate_review_quads
 
@@ -216,6 +217,26 @@ def test_native_white_on_white_boundary_preserves_the_original_print_rim() -> No
     )
     assert np.max(np.linalg.norm(motif - _rect(57, 52, 272, 179), axis=1)) < 0.3
     assert np.mean(np.abs(result.image_only[1:-1, 1:-1].astype(int) - page[53:179, 58:272])) < 0.15
+
+
+@pytest.mark.parametrize("sigma", [0, 1.4, 2.4])
+def test_soft_edge_keeps_white_on_white_motif_seed_from_ready_whole_crop(sigma) -> None:
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+
+    fixture = next(page for page in synthetic_crop_pages("development") if page.name == "white_on_white")
+    page = cv2.GaussianBlur(fixture.image, (0, 0), sigma) if sigma else fixture.image
+    motif = fixture.prints[0].reference_modes["image_only"]
+    mask = {"source": "yolo_seg_mask", "polygon": _vertices(motif.corners, page)}
+
+    crop = _crop(page, {}, mask, dual_mode=True)
+    modes = crop.metadata["crop_modes"]
+    if sigma == 2.4:
+        assert modes["full_print"]["reason_codes"] == ["PRINT_BOUNDARY_BLURRED"]
+        assert modes["full_print"]["status"] == modes["image_only"]["status"] == "review_needed"
+        assert modes["full_print"]["sampling"] == OWNED_BILINEAR
+        assert crop.image_only is None
+    else:
+        assert modes["full_print"]["status"] == "ready"
 
 
 def test_outward_retry_requires_a_distinct_print_rim() -> None:

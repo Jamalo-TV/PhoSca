@@ -27,6 +27,24 @@ def _measured_side_bow(fitted: np.ndarray, length: float) -> float | None:
     return round(float(curve[0]), 4)
 
 
+def _median_edge_width(lab: np.ndarray, valid: np.ndarray, columns: np.ndarray, inliers: np.ndarray) -> float | None:
+    # Measure the spread of a single color transition on either side of the
+    # fitted edge. Unrelated color changes and out-of-frame collars give no vote.
+    inside_strip = (columns >= 4) & (columns + 5 < lab.shape[1])
+    rows = np.flatnonzero(inliers & inside_strip)
+    columns = columns[rows]
+    profiles = lab[rows[:, None], columns[:, None] + np.arange(-4, 6)]
+    transition = profiles[:, -1] - profiles[:, 0]
+    contrast = np.linalg.norm(transition, axis=1)
+    components = (np.diff(profiles, axis=1) * transition[:, None]).sum(axis=2) / np.maximum(contrast[:, None], 1)
+    usable = ((contrast > 8) & (components.min(axis=1) >= -1.5)
+              & valid[rows, columns - 4] & valid[rows, columns + 5])
+    if np.count_nonzero(usable) < .5 * len(inliers):
+        return None
+    width = contrast[usable] / np.maximum(components[usable].max(axis=1), 1)
+    return round(float(np.median(width)), 4)
+
+
 def _side_line(
     image: np.ndarray, start: np.ndarray, end: np.ndarray, radius: int, *, outward_only: bool = False,
     rim_color: np.ndarray | None = None,
@@ -117,7 +135,9 @@ def _side_line(
         evidence["ambiguous"] = True
         return None, evidence
 
-    nearest = distances[np.arange(len(positions)), delta[winner].argmin(axis=1)]
+    closest = delta[winner].argmin(axis=1)
+    rows = np.arange(len(positions))
+    nearest = distances[rows, closest]
     chosen = inliers[winner]
     corner_span = int(np.ceil(0.12 * len(chosen)))
     start_support = round(float(chosen[:corner_span].mean()), 4)
@@ -131,6 +151,7 @@ def _side_line(
     evidence["maximum_residual_px"] = round(float(residuals.max()), 4)
     if np.percentile(residuals, 90) > 1.05:
         return None, evidence
+    evidence["edge_width_px"] = _median_edge_width(lab, valid, columns[rows, closest], chosen)
     if evidence["support"] >= .82:
         evidence["measured_bow_px"] = _measured_side_bow(fitted, length)
     # The transition is measured between pixels. Start at the first print pixel center.

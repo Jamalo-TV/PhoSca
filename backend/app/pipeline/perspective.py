@@ -1202,6 +1202,10 @@ def correct_photo_crop(
     )
     src_points, quad_metrics = inspection.quad, inspection.metrics
     boundary_refinement, full_reasons = inspection.boundary, inspection.reasons.copy()
+    blurred_boundary = not full_reasons and any(
+        (edge.get("edge_width_px") or 0) >= 4.75
+        for edge in boundary_refinement.values() if isinstance(edge, dict)
+    )
     protection, corner_mount_detected = inspection.protection, inspection.corner_mount
     boundary_supports_preview = bool(boundary_refinement and set(full_reasons) <= _CROP_PREVIEW_REASONS and visible is not None)
     target_width, target_height, aspect, aspect_reasons = _crop_dimensions(
@@ -1275,6 +1279,9 @@ def correct_photo_crop(
             page_image, page_to_analysis, (left + target_width + right, top + target_height + bottom),
             borderMode=cv2.BORDER_CONSTANT if dual_mode else cv2.BORDER_REPLICATE,
         )
+    if blurred_boundary:
+        # Retain the measured warp as a preview and keep its sampling guard.
+        full_reasons.append("PRINT_BOUNDARY_BLURRED")
     corrected = analysis[top : top + target_height, left : left + target_width]
     if corrected.size == 0 or min(corrected.shape[:2]) < 2:
         raise ValueError("empty_perspective_output")
