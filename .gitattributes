@@ -1,2 +1,3 @@
 # Evaluation manifests pin label bytes across checkouts.
-data/evaluation/*.txt text eol=lf
+data/evaluation/**/*.txt text eol=lf
+data/evaluation/orientation-archival-holdout.json text eol=lf

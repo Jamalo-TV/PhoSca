@@ -1,0 +1,2607 @@
+{
+  "schema_version": 1,
+  "split_role": "orientation_holdout",
+  "frozen_utc": "2026-11-23T15:03:05.631563+00:00",
+  "scope": "Only historical scans or archival studio photographs of real prints. No quality or pose augmentation was applied to the source crops. Pose evaluation may apply diagnostic exact right-angle turns. History and studio materials differ from a present-day scan through a plastic sleeve. No crops from designated segmentation release, calibration or orientation development sources.",
+  "source_archive": "Rijksmuseum, Amsterdam",
+  "source_asset_description": "Source JPEG hashes cover the exact downloaded 1400-pixel-wide IIIF archive derivatives, not an unverified full-size master. Lossless PNG crops do not apply blur, retouching, perspective warp or synthetic effects.",
+  "excluded_development_groups": [
+    "breitner",
+    "greiner",
+    "frith",
+    "beato",
+    "witsen",
+    "jager",
+    "olie",
+    "piek"
+  ],
+  "source_group_provenance": {
+    "RIJKS:van-den-berg-family-photographs-RP-F-2016-135": [
+      "https://id.rijksmuseum.nl/2004689",
+      "https://id.rijksmuseum.nl/2004691",
+      "https://id.rijksmuseum.nl/2004693",
+      "https://id.rijksmuseum.nl/2004700",
+      "https://id.rijksmuseum.nl/2004704",
+      "https://id.rijksmuseum.nl/2004705",
+      "https://id.rijksmuseum.nl/2004714",
+      "https://id.rijksmuseum.nl/2004719"
+    ],
+    "RIJKS:cheetham-family-RP-F-F01050": [
+      "https://id.rijksmuseum.nl/200319558"
+    ],
+    "RIJKS:military-photo-album-NG-2010-42": [
+      "https://id.rijksmuseum.nl/200521036"
+    ],
+    "RIJKS:dutch-family-album-RP-F-F01006": [
+      "https://id.rijksmuseum.nl/200322538"
+    ],
+    "RIJKS:dutch-family-album-RP-F-F00816": [
+      "https://id.rijksmuseum.nl/200322352"
+    ],
+    "RIJKS:regout-and-beduwe-RP-F-F00647": [
+      "https://id.rijksmuseum.nl/200321081"
+    ]
+  },
+  "source_object_count": 47,
+  "samples": [
+    {
+      "id": "van-den-berg-2005477-1",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005477-1.png",
+      "image_sha256": "cb944b341523ade9f74f96fcef6b1008ac7134bff54b64a1d8474c1605879622",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        873,
+        534
+      ],
+      "upright_evidence": "street, vertical masonry and pedestrians",
+      "difficulty_tags": [
+        "pocket",
+        "architecture",
+        "rounded-border"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005477",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005477?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-27-16",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004704"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005477.jpg",
+      "source_image_sha256": "7a4ccbae018c563fe247d5fdbc47baba60c8c3bedefbd22e0a7b2fd421245d57",
+      "source_image_url": "https://iiif.micr.io/ZGuVw/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/ZGuVw/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1705
+      ],
+      "source_rect_pixels_exif_canonical": [
+        332,
+        253,
+        1205,
+        787
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005477-2",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005477-2.png",
+      "image_sha256": "8a586da457846c415f2bb6d0ac85aa1b38f2da825ece4af8610ccb7165dbf415",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        887,
+        577
+      ],
+      "upright_evidence": "vertical snowy trees and walking people",
+      "difficulty_tags": [
+        "pocket",
+        "snow",
+        "high-contrast"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005477",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005477?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-27-16",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004704"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005477.jpg",
+      "source_image_sha256": "7a4ccbae018c563fe247d5fdbc47baba60c8c3bedefbd22e0a7b2fd421245d57",
+      "source_image_url": "https://iiif.micr.io/ZGuVw/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/ZGuVw/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1705
+      ],
+      "source_rect_pixels_exif_canonical": [
+        325,
+        918,
+        1212,
+        1495
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005413-1",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005413-1.png",
+      "image_sha256": "e010660532b61b9a9547608937c9be22a568a6cbb976f4da2926a8d62f198a8c",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        419,
+        578
+      ],
+      "upright_evidence": "garden, sitting people below an upright tree",
+      "difficulty_tags": [
+        "pocket",
+        "portrait",
+        "small-print"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005413",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005413?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-16-5",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004693"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005413.jpg",
+      "source_image_sha256": "39aedd67c70558cfbcb2e6e72d8706550eeed21a64be94efffaffb397c3e40f3",
+      "source_image_url": "https://iiif.micr.io/GbBTm/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/GbBTm/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1622
+      ],
+      "source_rect_pixels_exif_canonical": [
+        755,
+        144,
+        1174,
+        722
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005413-2",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005413-2.png",
+      "image_sha256": "4e6358e24d990416c040b3590f36d4898bb4b3cac4fb1f33aa8aafbef5c7124f",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        398,
+        584
+      ],
+      "upright_evidence": "walking person aligned with the house",
+      "difficulty_tags": [
+        "pocket",
+        "portrait",
+        "small-print"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005413",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005413?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-16-5",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004693"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005413.jpg",
+      "source_image_sha256": "39aedd67c70558cfbcb2e6e72d8706550eeed21a64be94efffaffb397c3e40f3",
+      "source_image_url": "https://iiif.micr.io/GbBTm/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/GbBTm/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1622
+      ],
+      "source_rect_pixels_exif_canonical": [
+        769,
+        832,
+        1167,
+        1416
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2004782-1",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2004782-1.png",
+      "image_sha256": "8dd55c1f7fd8339a2a6b14cb281888932db7ac477c9fff4666297814423ab41f",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        1093,
+        824
+      ],
+      "upright_evidence": "seated and standing portrait group",
+      "difficulty_tags": [
+        "board-mount",
+        "portrait",
+        "shadow"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2004782",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2004782?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-2-16-4",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004719"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2004782.jpg",
+      "source_image_sha256": "4940b3fa8b840357bc28219541d0b7a8b4e2cf38e12d552f76fd2b1a1ec5d2d9",
+      "source_image_url": "https://iiif.micr.io/uTeNp/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/uTeNp/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1020
+      ],
+      "source_rect_pixels_exif_canonical": [
+        146,
+        106,
+        1239,
+        930
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005421-1",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005421-1.png",
+      "image_sha256": "7767b7e5ca9e15df6076b2c8232f4c2474645979904f347b994b259ece34a1c4",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        383,
+        593
+      ],
+      "upright_evidence": "faint standing adults visible against the background",
+      "difficulty_tags": [
+        "pocket",
+        "portrait",
+        "low-contrast"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005421",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005421?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-16-11",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004693"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005421.jpg",
+      "source_image_sha256": "cf9ce27db9765fce79f20099db7fd8e9003c4d50a24640bd552c824abb791fa2",
+      "source_image_url": "https://iiif.micr.io/wMFAt/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/wMFAt/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1645
+      ],
+      "source_rect_pixels_exif_canonical": [
+        244,
+        160,
+        627,
+        753
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005421-2",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005421-2.png",
+      "image_sha256": "968ab899a169a890000861e3a69cc30ef6d601c1493dc875bd9a2f844de14289",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        404,
+        586
+      ],
+      "upright_evidence": "standing group with hats",
+      "difficulty_tags": [
+        "pocket",
+        "portrait",
+        "low-contrast"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005421",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005421?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-16-11",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004693"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005421.jpg",
+      "source_image_sha256": "cf9ce27db9765fce79f20099db7fd8e9003c4d50a24640bd552c824abb791fa2",
+      "source_image_url": "https://iiif.micr.io/wMFAt/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/wMFAt/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1645
+      ],
+      "source_rect_pixels_exif_canonical": [
+        738,
+        836,
+        1142,
+        1422
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005416-1",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005416-1.png",
+      "image_sha256": "99d1fa2d7fadcc903a64ee3ec6b43be9a46148f85444aa61fe8e10960c802605",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        489,
+        337
+      ],
+      "upright_evidence": "two people walking in a garden",
+      "difficulty_tags": [
+        "pocket",
+        "white-border"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005416",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005416?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-16-6",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004693"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005416.jpg",
+      "source_image_sha256": "f3ea2a6f9c53d7683c49a159429d19667cee91110fca1891b80ec3625f0f4017",
+      "source_image_url": "https://iiif.micr.io/FfTeo/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/FfTeo/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1184
+      ],
+      "source_rect_pixels_exif_canonical": [
+        181,
+        212,
+        670,
+        549
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005416-2",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005416-2.png",
+      "image_sha256": "e2af4de0f44e04c527f3f95b8364933f998f18badc1bc9b92169b5f4e516602b",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        484,
+        342
+      ],
+      "upright_evidence": "people upright in dark rural scene",
+      "difficulty_tags": [
+        "pocket",
+        "shadow",
+        "low-contrast"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005416",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005416?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-16-6",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004693"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005416.jpg",
+      "source_image_sha256": "f3ea2a6f9c53d7683c49a159429d19667cee91110fca1891b80ec3625f0f4017",
+      "source_image_url": "https://iiif.micr.io/FfTeo/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/FfTeo/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1184
+      ],
+      "source_rect_pixels_exif_canonical": [
+        760,
+        630,
+        1244,
+        972
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005736-1",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005736-1.png",
+      "image_sha256": "f401e0b4503f7e35ade7b90d794d6f827847a8460e1d6c4da3fa148bfe2f378f",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        509,
+        352
+      ],
+      "upright_evidence": "upright building facade",
+      "difficulty_tags": [
+        "pocket",
+        "architecture",
+        "faded"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005736",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005736?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-28-16",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004705"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005736.jpg",
+      "source_image_sha256": "0d3459a24ef754b5ef3d9c2358c57b2eaf26a1ae55ffeee2f70edee57274f402",
+      "source_image_url": "https://iiif.micr.io/DbUrS/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/DbUrS/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        926
+      ],
+      "source_rect_pixels_exif_canonical": [
+        846,
+        126,
+        1355,
+        478
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005736-2",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005736-2.png",
+      "image_sha256": "fb41fd6c89cc65870e2790acbd3e33882079074219f334e05bf9980dfc60346e",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        519,
+        327
+      ],
+      "upright_evidence": "standing group with dark vegetation",
+      "difficulty_tags": [
+        "pocket",
+        "portrait",
+        "low-contrast"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005736",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005736?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-28-16",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004705"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005736.jpg",
+      "source_image_sha256": "0d3459a24ef754b5ef3d9c2358c57b2eaf26a1ae55ffeee2f70edee57274f402",
+      "source_image_url": "https://iiif.micr.io/DbUrS/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/DbUrS/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        926
+      ],
+      "source_rect_pixels_exif_canonical": [
+        841,
+        493,
+        1360,
+        820
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005305-1",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005305-1.png",
+      "image_sha256": "f1518ad0247beecb38fcc867d36898b9d6a505c6ac154d303f3c808b57dd7de0",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        795,
+        1042
+      ],
+      "upright_evidence": "standing girl alongside door jamb",
+      "difficulty_tags": [
+        "pocket",
+        "portrait",
+        "shadow",
+        "rounded-border"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005305",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005305?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-12-16",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004689"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005305.jpg",
+      "source_image_sha256": "a72166581a26eb437c699a109b5a41e7739e52a835fc4e0a099882d246dff879",
+      "source_image_url": "https://iiif.micr.io/OhXNt/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/OhXNt/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1720
+      ],
+      "source_rect_pixels_exif_canonical": [
+        321,
+        445,
+        1116,
+        1487
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005414-1",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005414-1.png",
+      "image_sha256": "949387c394a144d64648cc2ea8c6c3a84bb740603e02e9c984d60e07fddd02ef",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        378,
+        563
+      ],
+      "upright_evidence": "upright palm trees and people",
+      "difficulty_tags": [
+        "corner-mount",
+        "faded",
+        "architecture"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005414",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005414?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-23-16",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004700"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005414.jpg",
+      "source_image_sha256": "9404c58689c8182832c429b89c4555c25d14629cc37fa9f3a73c85a45e843758",
+      "source_image_url": "https://iiif.micr.io/NLqXM/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/NLqXM/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1097
+      ],
+      "source_rect_pixels_exif_canonical": [
+        347,
+        106,
+        725,
+        669
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005414-2",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005414-2.png",
+      "image_sha256": "c9deab7ac5385e798b4712148e574f0dfb987fcc3c81a4d805d8f83e7cb3a2e8",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        564,
+        388
+      ],
+      "upright_evidence": "stairway and arches aligned vertically",
+      "difficulty_tags": [
+        "corner-mount",
+        "shadow",
+        "architecture"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005414",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005414?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-23-16",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004700"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005414.jpg",
+      "source_image_sha256": "9404c58689c8182832c429b89c4555c25d14629cc37fa9f3a73c85a45e843758",
+      "source_image_url": "https://iiif.micr.io/NLqXM/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/NLqXM/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1097
+      ],
+      "source_rect_pixels_exif_canonical": [
+        765,
+        548,
+        1329,
+        936
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005771-1",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005771-1.png",
+      "image_sha256": "125a93c5fe7b9dd61ab7c7fa07bc0207f0877e6c66971fbe367edae8c062cac1",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        741,
+        427
+      ],
+      "upright_evidence": "upright stone memorial and people",
+      "difficulty_tags": [
+        "board-mount",
+        "faded",
+        "architecture"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005771",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005771?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-37-16",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004714"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005771.jpg",
+      "source_image_sha256": "62ea6d63594fc40b61df93ce008cb6550c14f60013a10d506119195a1326b91a",
+      "source_image_url": "https://iiif.micr.io/aaxdB/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/aaxdB/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1176
+      ],
+      "source_rect_pixels_exif_canonical": [
+        604,
+        101,
+        1345,
+        528
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005360-1",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005360-1.png",
+      "image_sha256": "cfbf0dc0fec64c4aa6f8e54064ed6b37f71b996fcd1898c3bc0550e578917110",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        775,
+        578
+      ],
+      "upright_evidence": "pram with wheels below the infant",
+      "difficulty_tags": [
+        "pocket",
+        "asymmetric-border",
+        "rounded-border"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005360",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005360?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-14-16",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004691"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005360.jpg",
+      "source_image_sha256": "82531ae996693c625668282bcd3aa0fe3f5ac3d37aa4565289ec2ebb2af20ebd",
+      "source_image_url": "https://iiif.micr.io/VadSD/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/VadSD/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1067
+      ],
+      "source_rect_pixels_exif_canonical": [
+        217,
+        247,
+        992,
+        825
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005433-1",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005433-1.png",
+      "image_sha256": "55970b71381bb5185e33416802282850cb8cdb4ff1d73858f2c63d017c8c1cf6",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        468,
+        322
+      ],
+      "upright_evidence": "people standing in the open field",
+      "difficulty_tags": [
+        "pocket",
+        "faded",
+        "white-border"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005433",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005433?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-16-23",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004693"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005433.jpg",
+      "source_image_sha256": "1b5fab715dba2f67af6321cf6cc2f6451ab6e37d21269b6cb38604dab77fae0c",
+      "source_image_url": "https://iiif.micr.io/YkqRk/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/YkqRk/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1172
+      ],
+      "source_rect_pixels_exif_canonical": [
+        156,
+        206,
+        624,
+        528
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "van-den-berg-2005433-2",
+      "source_group": "RIJKS:van-den-berg-family-photographs-RP-F-2016-135",
+      "group_label": "van-den-berg",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/van-den-berg-2005433-2.png",
+      "image_sha256": "e97ba8c25bbac74ccc2e28f5e0af5f6222561015417f5e269816dacf658587dc",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        484,
+        332
+      ],
+      "upright_evidence": "upright seated and standing family group",
+      "difficulty_tags": [
+        "pocket",
+        "portrait",
+        "shadow"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/2005433",
+      "source_catalog_json": "https://data.rijksmuseum.nl/2005433?_profile=la-framed",
+      "source_accession": "RP-F-2016-135-16-23",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/2004693"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/van-den-berg-2005433.jpg",
+      "source_image_sha256": "1b5fab715dba2f67af6321cf6cc2f6451ab6e37d21269b6cb38604dab77fae0c",
+      "source_image_url": "https://iiif.micr.io/YkqRk/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/YkqRk/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1172
+      ],
+      "source_rect_pixels_exif_canonical": [
+        730,
+        629,
+        1214,
+        961
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "cheetham-200335834-1",
+      "source_group": "RIJKS:cheetham-family-RP-F-F01050",
+      "group_label": "cheetham",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/cheetham-200335834-1.png",
+      "image_sha256": "73d476c1d3affbb4f3a7d69ad19059a9565d460ec3eb437dc1df606a752a54f3",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        1115,
+        1696
+      ],
+      "upright_evidence": "standing man in cap and uniform",
+      "difficulty_tags": [
+        "board-mount",
+        "portrait",
+        "faded"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200335834",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200335834?_profile=la-framed",
+      "source_accession": "RP-F-F01050-AF",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200319558"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/cheetham-200335834.jpg",
+      "source_image_sha256": "72e22ee9a34ec610de3a613c21931e82ae46dd01cca5809a375e392990b99076",
+      "source_image_url": "https://iiif.micr.io/vBtsa/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/vBtsa/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1870
+      ],
+      "source_rect_pixels_exif_canonical": [
+        127,
+        63,
+        1242,
+        1759
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "cheetham-200335873-1",
+      "source_group": "RIJKS:cheetham-family-RP-F-F01050",
+      "group_label": "cheetham",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/cheetham-200335873-1.png",
+      "image_sha256": "dd65f0d18ec409a13b44aba3df515fd4d1da87dcffb9d79b030db9a4a1e0e829",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        1305,
+        941
+      ],
+      "upright_evidence": "facade grounded below the open sky",
+      "difficulty_tags": [
+        "board-mount",
+        "architecture",
+        "faded"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200335873",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200335873?_profile=la-framed",
+      "source_accession": "RP-F-F01050-BR",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200319558"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/cheetham-200335873.jpg",
+      "source_image_sha256": "2b323fec8f5ba5ab460bbedb56da519523363eb4b56f18d54cc1501e680909b7",
+      "source_image_url": "https://iiif.micr.io/gULPZ/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/gULPZ/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1077
+      ],
+      "source_rect_pixels_exif_canonical": [
+        40,
+        45,
+        1345,
+        986
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "cheetham-200335899-1",
+      "source_group": "RIJKS:cheetham-family-RP-F-F01050",
+      "group_label": "cheetham",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/cheetham-200335899-1.png",
+      "image_sha256": "97a6f74cab4556948596964aabc177e966aac688831c4790c40035bbeb20599a",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        1259,
+        996
+      ],
+      "upright_evidence": "standing workers and room structure",
+      "difficulty_tags": [
+        "board-mount",
+        "portrait",
+        "low-contrast"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200335899",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200335899?_profile=la-framed",
+      "source_accession": "RP-F-F01050-V",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200319558"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/cheetham-200335899.jpg",
+      "source_image_sha256": "37058d0f3ad696a0afeb54d157d9f528a7696f4cacd38b78b15ff6bb787436cb",
+      "source_image_url": "https://iiif.micr.io/ZsutX/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/ZsutX/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1162
+      ],
+      "source_rect_pixels_exif_canonical": [
+        60,
+        60,
+        1319,
+        1056
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "cheetham-200335840-1",
+      "source_group": "RIJKS:cheetham-family-RP-F-F01050",
+      "group_label": "cheetham",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/cheetham-200335840-1.png",
+      "image_sha256": "02c982460f1b5cdb4cebc716ddb19de6946fe368d76c9bf1ea05b810098b797c",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        1233,
+        901
+      ],
+      "upright_evidence": "horse standing with rider and carriage",
+      "difficulty_tags": [
+        "board-mount",
+        "shadow"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200335840",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200335840?_profile=la-framed",
+      "source_accession": "RP-F-F01050-AL",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200319558"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/cheetham-200335840.jpg",
+      "source_image_sha256": "3ba88292851bbaa1d903b8e7c791dae17803da62f05d7e83701307446a229265",
+      "source_image_url": "https://iiif.micr.io/okwwb/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/okwwb/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1047
+      ],
+      "source_rect_pixels_exif_canonical": [
+        81,
+        55,
+        1314,
+        956
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "cheetham-200335853-1",
+      "source_group": "RIJKS:cheetham-family-RP-F-F01050",
+      "group_label": "cheetham",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/cheetham-200335853-1.png",
+      "image_sha256": "cc651c2a9d19c9993fd6f701b6611a4302c5d9d78f66338d36bc9cff27b5e7b2",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        1305,
+        830
+      ],
+      "upright_evidence": "river boat below roofline and trees",
+      "difficulty_tags": [
+        "board-mount",
+        "faded"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200335853",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200335853?_profile=la-framed",
+      "source_accession": "RP-F-F01050-AY",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200319558"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/cheetham-200335853.jpg",
+      "source_image_sha256": "664e47089d9ff03b82bde3fe631e4391709731589f7f70d840294ea029949c9a",
+      "source_image_url": "https://iiif.micr.io/ejqAr/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/ejqAr/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        940
+      ],
+      "source_rect_pixels_exif_canonical": [
+        40,
+        30,
+        1345,
+        860
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "cheetham-200335845-1",
+      "source_group": "RIJKS:cheetham-family-RP-F-F01050",
+      "group_label": "cheetham",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/cheetham-200335845-1.png",
+      "image_sha256": "8b14cb09637c002f21b15f72328265beb0850aae6714e74ae198542d8da9142b",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        1239,
+        868
+      ],
+      "upright_evidence": "boat on upright shore with trees",
+      "difficulty_tags": [
+        "board-mount",
+        "shadow"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200335845",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200335845?_profile=la-framed",
+      "source_accession": "RP-F-F01050-AQ",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200319558"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/cheetham-200335845.jpg",
+      "source_image_sha256": "9a08a554d7510f1b906f4b99b0637b7b7678ae44f36dd887f71561d08d906979",
+      "source_image_url": "https://iiif.micr.io/ScBJE/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/ScBJE/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1044
+      ],
+      "source_rect_pixels_exif_canonical": [
+        65,
+        35,
+        1304,
+        903
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "cheetham-200335878-1",
+      "source_group": "RIJKS:cheetham-family-RP-F-F01050",
+      "group_label": "cheetham",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/cheetham-200335878-1.png",
+      "image_sha256": "ff63c6c92a211c54b40d148563cb0bc2334b7ff4198871a1b47b868ebc72bdbf",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        1306,
+        1735
+      ],
+      "upright_evidence": "multi-storey facade with door and foundation",
+      "difficulty_tags": [
+        "board-mount",
+        "architecture",
+        "faded"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200335878",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200335878?_profile=la-framed",
+      "source_accession": "RP-F-F01050-BW",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200319558"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/cheetham-200335878.jpg",
+      "source_image_sha256": "f6cf6baecb5c3544ce1ab183d652476c247fb28cd685947e867a1039a3ffd83d",
+      "source_image_url": "https://iiif.micr.io/fREgF/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/fREgF/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1844
+      ],
+      "source_rect_pixels_exif_canonical": [
+        55,
+        39,
+        1361,
+        1774
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "cheetham-200335870-1",
+      "source_group": "RIJKS:cheetham-family-RP-F-F01050",
+      "group_label": "cheetham",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/cheetham-200335870-1.png",
+      "image_sha256": "34bbc56948d47f621ecfd779b8f9de85cbfb38c57c161486171fdd8403a5fb3e",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        1144,
+        1468
+      ],
+      "upright_evidence": "church spire above ground and walking people",
+      "difficulty_tags": [
+        "board-mount",
+        "architecture",
+        "faded"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200335870",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200335870?_profile=la-framed",
+      "source_accession": "RP-F-F01050-BO",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200319558"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/cheetham-200335870.jpg",
+      "source_image_sha256": "68a49e4c1f52ebe8360762d8c3fdd69042d3bdb79bc782f10b4db92701ec6120",
+      "source_image_url": "https://iiif.micr.io/aPZkD/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/aPZkD/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1590
+      ],
+      "source_rect_pixels_exif_canonical": [
+        148,
+        7,
+        1292,
+        1475
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "cheetham-200335892-1",
+      "source_group": "RIJKS:cheetham-family-RP-F-F01050",
+      "group_label": "cheetham",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/cheetham-200335892-1.png",
+      "image_sha256": "aaf63fdebe0679b195cd65bc8e6d0a2fc90499127a75315a376becd863f0e478",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        1248,
+        759
+      ],
+      "upright_evidence": "horizontal bridge supported above the ground",
+      "difficulty_tags": [
+        "board-mount",
+        "architecture",
+        "low-contrast"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200335892",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200335892?_profile=la-framed",
+      "source_accession": "RP-F-F01050-O",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200319558"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/cheetham-200335892.jpg",
+      "source_image_sha256": "fb74a35ed54f1c66f0967cc8ea0b6cde56c91ac9447862bd0b75ffe2487fc79b",
+      "source_image_url": "https://iiif.micr.io/DsWeo/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/DsWeo/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        925
+      ],
+      "source_rect_pixels_exif_canonical": [
+        81,
+        25,
+        1329,
+        784
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "cheetham-200335898-1",
+      "source_group": "RIJKS:cheetham-family-RP-F-F01050",
+      "group_label": "cheetham",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/cheetham-200335898-1.png",
+      "image_sha256": "ec64e3a4897c307d82d5ee07f2bb2c05d7828b5d6df5e4937c087a5a913e6f66",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        1183,
+        983
+      ],
+      "upright_evidence": "two people standing with visible shoes and heads",
+      "difficulty_tags": [
+        "board-mount",
+        "portrait",
+        "low-contrast"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200335898",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200335898?_profile=la-framed",
+      "source_accession": "RP-F-F01050-U",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200319558"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/cheetham-200335898.jpg",
+      "source_image_sha256": "f0de8244eebdd68283def0f9489a6ff282edbd3c3b14c177fefc13db6cd4a7ab",
+      "source_image_url": "https://iiif.micr.io/cRNFj/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/cRNFj/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1094
+      ],
+      "source_rect_pixels_exif_canonical": [
+        91,
+        45,
+        1274,
+        1028
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "cheetham-200335867-1",
+      "source_group": "RIJKS:cheetham-family-RP-F-F01050",
+      "group_label": "cheetham",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/cheetham-200335867-1.png",
+      "image_sha256": "b9709ece5d3f33313d522f689aaf052b2030266911f2515f0a22ce018a2e6cd8",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        1010,
+        1234
+      ],
+      "upright_evidence": "upright seated woman and samovar visible in faded print",
+      "difficulty_tags": [
+        "board-mount",
+        "portrait",
+        "severe-fading"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200335867",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200335867?_profile=la-framed",
+      "source_accession": "RP-F-F01050-BL",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200319558"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/cheetham-200335867.jpg",
+      "source_image_sha256": "801fbbc67ccde63c23adfd57a76b1c695bab3eb9a99cff97f308763eec72f7b3",
+      "source_image_url": "https://iiif.micr.io/jeQIh/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/jeQIh/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1354
+      ],
+      "source_rect_pixels_exif_canonical": [
+        86,
+        34,
+        1096,
+        1268
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "cheetham-200335857-1",
+      "source_group": "RIJKS:cheetham-family-RP-F-F01050",
+      "group_label": "cheetham",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/cheetham-200335857-1.png",
+      "image_sha256": "ccd9a5155821b19cf174d766eff803a3c5d0059effcb4ce575c0b2154a8b8446",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        1280,
+        893
+      ],
+      "upright_evidence": "dark walking figure and tree-lined road in snow",
+      "difficulty_tags": [
+        "board-mount",
+        "snow",
+        "low-contrast"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200335857",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200335857?_profile=la-framed",
+      "source_accession": "RP-F-F01050-BB",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200319558"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/cheetham-200335857.jpg",
+      "source_image_sha256": "39fdf45efcf40e43b6396655293a1c15a82b74a668f1fb9f8a7406970deb91f8",
+      "source_image_url": "https://iiif.micr.io/AvvrV/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/AvvrV/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1044
+      ],
+      "source_rect_pixels_exif_canonical": [
+        60,
+        30,
+        1340,
+        923
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200522099-1",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200522099-1.png",
+      "image_sha256": "0d4e6844ce040afe5d7e46eeeb76e18152d9ef095aa68ca0ba80b596ddb2ddc7",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        584,
+        398
+      ],
+      "upright_evidence": "upright buildings and standing people",
+      "difficulty_tags": [
+        "board-mount",
+        "white-border",
+        "shadow"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200522099",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200522099?_profile=la-framed",
+      "source_accession": "NG-2010-42-15",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200522099.jpg",
+      "source_image_sha256": "96203a4eac521fa64dc7c6403be3b5dcc99efe031ffd544cb0004b8c67b5a5ce",
+      "source_image_url": "https://iiif.micr.io/SxcRE/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/SxcRE/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1043
+      ],
+      "source_rect_pixels_exif_canonical": [
+        363,
+        474,
+        947,
+        872
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200522099-2",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200522099-2.png",
+      "image_sha256": "c6fb95bab91f3404fe667f7bc21101c4110cf8cca117a62773be9abfd2cdea79",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        317,
+        458
+      ],
+      "upright_evidence": "standing person and vertical structural slats",
+      "difficulty_tags": [
+        "board-mount",
+        "small-print",
+        "shadow"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200522099",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200522099?_profile=la-framed",
+      "source_accession": "NG-2010-42-15",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200522099.jpg",
+      "source_image_sha256": "96203a4eac521fa64dc7c6403be3b5dcc99efe031ffd544cb0004b8c67b5a5ce",
+      "source_image_url": "https://iiif.micr.io/SxcRE/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/SxcRE/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1043
+      ],
+      "source_rect_pixels_exif_canonical": [
+        947,
+        464,
+        1264,
+        922
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200800754-1",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200800754-1.png",
+      "image_sha256": "fe5a2b1f80514fefecae593601916cfca72640072bc46c9e0ed5acd83803506e",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        464,
+        322
+      ],
+      "upright_evidence": "upright silhouettes beneath trees",
+      "difficulty_tags": [
+        "board-mount",
+        "shadow",
+        "white-border"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200800754",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200800754?_profile=la-framed",
+      "source_accession": "NG-2010-42-1",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200800754.jpg",
+      "source_image_sha256": "ca6ac71b0a682d476ca21a3b368c579dc245f7c4f87d48065d86a5a26fa40033",
+      "source_image_url": "https://iiif.micr.io/gHxsp/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/gHxsp/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1031
+      ],
+      "source_rect_pixels_exif_canonical": [
+        176,
+        126,
+        640,
+        448
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200800754-2",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200800754-2.png",
+      "image_sha256": "357b4e90685ef06a99467317e2f6b5a1bf78fedcad06f30bc18eff4f6a5ffeb4",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        433,
+        337
+      ],
+      "upright_evidence": "raised house with walls resting above the ground",
+      "difficulty_tags": [
+        "board-mount",
+        "shadow",
+        "white-border"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200800754",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200800754?_profile=la-framed",
+      "source_accession": "NG-2010-42-1",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200800754.jpg",
+      "source_image_sha256": "ca6ac71b0a682d476ca21a3b368c579dc245f7c4f87d48065d86a5a26fa40033",
+      "source_image_url": "https://iiif.micr.io/gHxsp/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/gHxsp/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1031
+      ],
+      "source_rect_pixels_exif_canonical": [
+        458,
+        518,
+        891,
+        855
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200800767-1",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200800767-1.png",
+      "image_sha256": "9cce0fe29301e007054048a3a760cfdb88797d8e6410ce409e4eaba7e4cf86d0",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        438,
+        322
+      ],
+      "upright_evidence": "people standing in open country",
+      "difficulty_tags": [
+        "board-mount",
+        "portrait",
+        "white-border"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200800767",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200800767?_profile=la-framed",
+      "source_accession": "NG-2010-42-4",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200800767.jpg",
+      "source_image_sha256": "92085ecc6a99fc7ab64e136c5b9aa44f86cce91695a321515d2196c3737c287d",
+      "source_image_url": "https://iiif.micr.io/LefZc/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/LefZc/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1012
+      ],
+      "source_rect_pixels_exif_canonical": [
+        131,
+        136,
+        569,
+        458
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200800767-2",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200800767-2.png",
+      "image_sha256": "9c497b5dceff32c0e3d150f13aa37aaa740a892b21a6ef21193072bfe46c21cc",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        444,
+        312
+      ],
+      "upright_evidence": "group of people standing with sky above",
+      "difficulty_tags": [
+        "board-mount",
+        "portrait",
+        "white-border"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200800767",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200800767?_profile=la-framed",
+      "source_accession": "NG-2010-42-4",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200800767.jpg",
+      "source_image_sha256": "92085ecc6a99fc7ab64e136c5b9aa44f86cce91695a321515d2196c3737c287d",
+      "source_image_url": "https://iiif.micr.io/LefZc/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/LefZc/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1012
+      ],
+      "source_rect_pixels_exif_canonical": [
+        891,
+        131,
+        1335,
+        443
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200522097-1",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200522097-1.png",
+      "image_sha256": "1bdb67b3ed6a5159bf80bc1ad0bf10dcdf76bebf8e41de8e39bd5bfd7f36ee3c",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        448,
+        332
+      ],
+      "upright_evidence": "portrait of seated and standing people",
+      "difficulty_tags": [
+        "board-mount",
+        "portrait",
+        "shadow"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200522097",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200522097?_profile=la-framed",
+      "source_accession": "NG-2010-42-3",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200522097.jpg",
+      "source_image_sha256": "9f8489524f9cd31891949838b97c905b2d6d159a82ac0225d4f7c33e95dc4b68",
+      "source_image_url": "https://iiif.micr.io/nCEaX/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/nCEaX/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1012
+      ],
+      "source_rect_pixels_exif_canonical": [
+        71,
+        111,
+        519,
+        443
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200522097-2",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200522097-2.png",
+      "image_sha256": "5201a89cea26b17278f8834d30305f69fdd381d70d45d9a738ef162bb2f1431a",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        317,
+        443
+      ],
+      "upright_evidence": "vehicle wheels on the ground beneath upright structure",
+      "difficulty_tags": [
+        "board-mount",
+        "scalloped-border"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200522097",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200522097?_profile=la-framed",
+      "source_accession": "NG-2010-42-3",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200522097.jpg",
+      "source_image_sha256": "9f8489524f9cd31891949838b97c905b2d6d159a82ac0225d4f7c33e95dc4b68",
+      "source_image_url": "https://iiif.micr.io/nCEaX/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/nCEaX/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1012
+      ],
+      "source_rect_pixels_exif_canonical": [
+        514,
+        101,
+        831,
+        544
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200800777-1",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200800777-1.png",
+      "image_sha256": "bc463c1cded2b19db29b4a8dec8cd5952f8bced1ee5a425ca830f19b720b2455",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        468,
+        343
+      ],
+      "upright_evidence": "upright buildings in light sky",
+      "difficulty_tags": [
+        "board-mount",
+        "architecture",
+        "white-border"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200800777",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200800777?_profile=la-framed",
+      "source_accession": "NG-2010-42-8",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200800777.jpg",
+      "source_image_sha256": "3e5c4215281dd4f5fb008625ae7d27eae8929b82a4b5b47275a8660b54e5e061",
+      "source_image_url": "https://iiif.micr.io/JHNvm/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/JHNvm/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1013
+      ],
+      "source_rect_pixels_exif_canonical": [
+        156,
+        136,
+        624,
+        479
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200800777-2",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200800777-2.png",
+      "image_sha256": "95d0a6b02eae0c8443e6304830355499697a9549df845161f5b96567b317be20",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        322,
+        468
+      ],
+      "upright_evidence": "grove and upright path standing below trees",
+      "difficulty_tags": [
+        "board-mount",
+        "landscape",
+        "white-border"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200800777",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200800777?_profile=la-framed",
+      "source_accession": "NG-2010-42-8",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200800777.jpg",
+      "source_image_sha256": "3e5c4215281dd4f5fb008625ae7d27eae8929b82a4b5b47275a8660b54e5e061",
+      "source_image_url": "https://iiif.micr.io/JHNvm/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/JHNvm/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1013
+      ],
+      "source_rect_pixels_exif_canonical": [
+        584,
+        459,
+        906,
+        927
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200800781-1",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200800781-1.png",
+      "image_sha256": "d7d6efda1ae97e54e15f0c87c47ad134f037972dd1fdbaaca58fb99ff37ebfb9",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        478,
+        333
+      ],
+      "upright_evidence": "people visibly standing in dark vegetation",
+      "difficulty_tags": [
+        "board-mount",
+        "portrait",
+        "shadow"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200800781",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200800781?_profile=la-framed",
+      "source_accession": "NG-2010-42-9",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200800781.jpg",
+      "source_image_sha256": "08168f572e00d18df3b9a7fb071b15d0e9e97a6e6d27a249f7b6664ca90bf729",
+      "source_image_url": "https://iiif.micr.io/qKnrT/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/qKnrT/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1048
+      ],
+      "source_rect_pixels_exif_canonical": [
+        423,
+        161,
+        901,
+        494
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200800781-2",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200800781-2.png",
+      "image_sha256": "800c63c204acd1d9a7138b8dd4a425fa9fbab1f4d384f266dc768cb5f2578eca",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        488,
+        317
+      ],
+      "upright_evidence": "seated and standing people framed next to a house",
+      "difficulty_tags": [
+        "board-mount",
+        "portrait",
+        "shadow"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200800781",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200800781?_profile=la-framed",
+      "source_accession": "NG-2010-42-9",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200800781.jpg",
+      "source_image_sha256": "08168f572e00d18df3b9a7fb071b15d0e9e97a6e6d27a249f7b6664ca90bf729",
+      "source_image_url": "https://iiif.micr.io/qKnrT/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/qKnrT/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1048
+      ],
+      "source_rect_pixels_exif_canonical": [
+        121,
+        610,
+        609,
+        927
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200800801-1",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200800801-1.png",
+      "image_sha256": "38436525e0873e6173c4d7bae3192095171442971ca19a0febcb09a7ed6b7266",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        569,
+        403
+      ],
+      "upright_evidence": "vertical veranda columns supporting roof over floor",
+      "difficulty_tags": [
+        "board-mount",
+        "architecture",
+        "shadow"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200800801",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200800801?_profile=la-framed",
+      "source_accession": "NG-2010-42-22",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200800801.jpg",
+      "source_image_sha256": "e1991cebad837e04e1fb5fa5ff22c0a57f139cb5590a8774acad4c73143a58fd",
+      "source_image_url": "https://iiif.micr.io/DNEJM/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/DNEJM/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1043
+      ],
+      "source_rect_pixels_exif_canonical": [
+        237,
+        519,
+        806,
+        922
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200800801-2",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200800801-2.png",
+      "image_sha256": "697e80ec9e560bd633f41b99220ea97892109109fb1474de915dee21297d0503",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        494,
+        338
+      ],
+      "upright_evidence": "dark outdoor view with bright bloom in sky and upright tree trunks",
+      "difficulty_tags": [
+        "board-mount",
+        "low-contrast",
+        "bright-bloom"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200800801",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200800801?_profile=la-framed",
+      "source_accession": "NG-2010-42-22",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200800801.jpg",
+      "source_image_sha256": "e1991cebad837e04e1fb5fa5ff22c0a57f139cb5590a8774acad4c73143a58fd",
+      "source_image_url": "https://iiif.micr.io/DNEJM/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/DNEJM/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1043
+      ],
+      "source_rect_pixels_exif_canonical": [
+        861,
+        529,
+        1355,
+        867
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200800804-1",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200800804-1.png",
+      "image_sha256": "498bc426b2fbdd5c3ff0d308cf4f753000ccf302adb6326b09930df9fa8eca9c",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        483,
+        328
+      ],
+      "upright_evidence": "bowing steel bridge with supporting foundations",
+      "difficulty_tags": [
+        "board-mount",
+        "low-contrast",
+        "architecture"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200800804",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200800804?_profile=la-framed",
+      "source_accession": "NG-2010-42-24",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200800804.jpg",
+      "source_image_sha256": "f35b48e8f9f61f47e74c352b034b9a9e22fb846a2ea1272476828ffa7b91db05",
+      "source_image_url": "https://iiif.micr.io/nXHkn/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/nXHkn/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1043
+      ],
+      "source_rect_pixels_exif_canonical": [
+        277,
+        156,
+        760,
+        484
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "military-1948-200800770-1",
+      "source_group": "RIJKS:military-photo-album-NG-2010-42",
+      "group_label": "military-1948",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/military-1948-200800770-1.png",
+      "image_sha256": "63e7022541d9834d2ed89fa7ebc7e452be4438c62be263654cafdeea8ed329a3",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        352,
+        328
+      ],
+      "upright_evidence": "seated individuals with clearly oriented faces and arms",
+      "difficulty_tags": [
+        "board-mount",
+        "portrait",
+        "shadow"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200800770",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200800770?_profile=la-framed",
+      "source_accession": "NG-2010-42-6",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200521036"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/military-1948-200800770.jpg",
+      "source_image_sha256": "c3c25e0d7f1d3f458ebf3293813c0e36a1529bd1ad7c0396758f8d07765db919",
+      "source_image_url": "https://iiif.micr.io/qOKDu/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/qOKDu/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1029
+      ],
+      "source_rect_pixels_exif_canonical": [
+        272,
+        590,
+        624,
+        918
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "dutch-family-71-200757983-1",
+      "source_group": "RIJKS:dutch-family-album-RP-F-F01006",
+      "group_label": "dutch-family-71",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/dutch-family-71-200757983-1.png",
+      "image_sha256": "6f2149d41bee7a32622d2603afa10106142877f208f5d77f026c6c1e94e900d3",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        673,
+        976
+      ],
+      "upright_evidence": "upright studio portrait of man",
+      "difficulty_tags": [
+        "slot-mat",
+        "portrait",
+        "faded"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200757983",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200757983?_profile=la-framed",
+      "source_accession": "RP-F-F01006-19-1",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200322538"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/dutch-family-71-200757983.jpg",
+      "source_image_sha256": "91133c4dc4ed363b2523ad0f1ecc08e105e8e2a7275c1e61c0b6bd91283bcb91",
+      "source_image_url": "https://iiif.micr.io/HvyKe/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/HvyKe/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1634
+      ],
+      "source_rect_pixels_exif_canonical": [
+        367,
+        69,
+        1040,
+        1045
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "dutch-family-71-200757775-1",
+      "source_group": "RIJKS:dutch-family-album-RP-F-F01006",
+      "group_label": "dutch-family-71",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/dutch-family-71-200757775-1.png",
+      "image_sha256": "df390414ee2aa5ec0ff96dee2407a194de369cebb03795988f98ea58d750477d",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        696,
+        963
+      ],
+      "upright_evidence": "upright child on a chair",
+      "difficulty_tags": [
+        "slot-mat",
+        "portrait",
+        "low-contrast"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200757775",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200757775?_profile=la-framed",
+      "source_accession": "RP-F-F01006-6-1",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200322538"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/dutch-family-71-200757775.jpg",
+      "source_image_sha256": "c298b832f2eecff7c3c3e1744645d3bb158d3d0123c341fcbd982b6338eaeb66",
+      "source_image_url": "https://iiif.micr.io/DQXmr/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/DQXmr/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1624
+      ],
+      "source_rect_pixels_exif_canonical": [
+        338,
+        69,
+        1034,
+        1032
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "dutch-family-71-200757776-1",
+      "source_group": "RIJKS:dutch-family-album-RP-F-F01006",
+      "group_label": "dutch-family-71",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/dutch-family-71-200757776-1.png",
+      "image_sha256": "23fef4c12e894d9c859a6199424f5966733c3ad84c7c81d39f05c69bfed978f0",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        700,
+        958
+      ],
+      "upright_evidence": "upright two children with legs visible",
+      "difficulty_tags": [
+        "slot-mat",
+        "portrait",
+        "low-contrast"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200757776",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200757776?_profile=la-framed",
+      "source_accession": "RP-F-F01006-5-3",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200322538"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/dutch-family-71-200757776.jpg",
+      "source_image_sha256": "2590a99837d9f1456f0d24db0fef31210866659d54dc7828fe315ab20afc66e1",
+      "source_image_url": "https://iiif.micr.io/UTeGz/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/UTeGz/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1603
+      ],
+      "source_rect_pixels_exif_canonical": [
+        347,
+        68,
+        1047,
+        1026
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "dutch-family-71-200758018-1",
+      "source_group": "RIJKS:dutch-family-album-RP-F-F01006",
+      "group_label": "dutch-family-71",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/dutch-family-71-200758018-1.png",
+      "image_sha256": "9378522c22bcc9b47ed1a3d6ed8317b7748c26fd0a450780d98306cc031089ca",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        1323,
+        956
+      ],
+      "upright_evidence": "sitting and standing group with top of heads clearly visible",
+      "difficulty_tags": [
+        "loose-print",
+        "portrait",
+        "faded"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200758018",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200758018?_profile=la-framed",
+      "source_accession": "RP-F-F01006-33",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200322538"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/dutch-family-71-200758018.jpg",
+      "source_image_sha256": "6b9b13df2c8915b8612675c48c289efa65da89eddb8ad722da79f070e090c7c2",
+      "source_image_url": "https://iiif.micr.io/AmhJO/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/AmhJO/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1402
+      ],
+      "source_rect_pixels_exif_canonical": [
+        30,
+        30,
+        1353,
+        986
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "dutch-family-71-200757986-1",
+      "source_group": "RIJKS:dutch-family-album-RP-F-F01006",
+      "group_label": "dutch-family-71",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/dutch-family-71-200757986-1.png",
+      "image_sha256": "0d599368af247d3573b62827196fce9e05170aba81a063ed57fcd58a7632ff86",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        763,
+        1152
+      ],
+      "upright_evidence": "upright woman visible through oval opening",
+      "difficulty_tags": [
+        "slot-mat",
+        "portrait",
+        "oval"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200757986",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200757986?_profile=la-framed",
+      "source_accession": "RP-F-F01006-20-1",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200322538"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/dutch-family-71-200757986.jpg",
+      "source_image_sha256": "90458ad6ef50ecd20ee1e1676ed8a31f50b23e34e11bfd7a9e7c696857709219",
+      "source_image_url": "https://iiif.micr.io/hhYxN/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/hhYxN/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1241
+      ],
+      "source_rect_pixels_exif_canonical": [
+        358,
+        63,
+        1121,
+        1215
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "dutch-family-106-200746025-1",
+      "source_group": "RIJKS:dutch-family-album-RP-F-F00816",
+      "group_label": "dutch-family-106",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/dutch-family-106-200746025-1.png",
+      "image_sha256": "e534f29f343d089871cca79e9e02fa5dbc6967ab94c274a108224eb3f3ea5e91",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        689,
+        1019
+      ],
+      "upright_evidence": "upright woman with visible face beneath headpiece",
+      "difficulty_tags": [
+        "slot-mat",
+        "portrait",
+        "faded"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200746025",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200746025?_profile=la-framed",
+      "source_accession": "RP-F-F00816-BV",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200322352"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/dutch-family-106-200746025.jpg",
+      "source_image_sha256": "478d493fe328b524d0bfc47be457cf7d3d6ddad70c8dffac33ef9d443ddf2696",
+      "source_image_url": "https://iiif.micr.io/hAgzd/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/hAgzd/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1279
+      ],
+      "source_rect_pixels_exif_canonical": [
+        331,
+        76,
+        1020,
+        1095
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "dutch-family-106-200361860-1",
+      "source_group": "RIJKS:dutch-family-album-RP-F-F00816",
+      "group_label": "dutch-family-106",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/dutch-family-106-200361860-1.png",
+      "image_sha256": "363612c46db173a1b8f995a9bb6549439e5b21759208bd203156b692ed1e25e9",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        712,
+        1077
+      ],
+      "upright_evidence": "vertical historic building grounded on street",
+      "difficulty_tags": [
+        "slot-mat",
+        "oval",
+        "architecture",
+        "faded"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200361860",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200361860?_profile=la-framed",
+      "source_accession": "RP-F-F00816-CM",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200322352"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/dutch-family-106-200361860.jpg",
+      "source_image_sha256": "cc84fb84f8ac2aa8b7d0ab9f872534c7aad7c51a5ba9ca138ec719202439f7b0",
+      "source_image_url": "https://iiif.micr.io/AmqNn/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/AmqNn/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1311
+      ],
+      "source_rect_pixels_exif_canonical": [
+        294,
+        56,
+        1006,
+        1133
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "dutch-family-106-200745922-1",
+      "source_group": "RIJKS:dutch-family-album-RP-F-F00816",
+      "group_label": "dutch-family-106",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/dutch-family-106-200745922-1.png",
+      "image_sha256": "c9b8c29b8c76a09d461bcab84d487b0ac4a1fdf21fd3d742c8a56e1864a02b69",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        734,
+        1074
+      ],
+      "upright_evidence": "upright military portrait with visible face",
+      "difficulty_tags": [
+        "slot-mat",
+        "oval",
+        "portrait"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200745922",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200745922?_profile=la-framed",
+      "source_accession": "RP-F-F00816-W",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200322352"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/dutch-family-106-200745922.jpg",
+      "source_image_sha256": "6d8608eaad660418312f77d023f8f6edda27deea87ba1d95514c6349a0bb8fa5",
+      "source_image_url": "https://iiif.micr.io/ZIIAE/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/ZIIAE/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1334
+      ],
+      "source_rect_pixels_exif_canonical": [
+        339,
+        62,
+        1073,
+        1136
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "dutch-family-106-200745923-1",
+      "source_group": "RIJKS:dutch-family-album-RP-F-F00816",
+      "group_label": "dutch-family-106",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/dutch-family-106-200745923-1.png",
+      "image_sha256": "75bae98cde52195337f82670d485d0280b105c5780b5cc46313e471209003d2d",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        760,
+        1075
+      ],
+      "upright_evidence": "upright man head and shoulders",
+      "difficulty_tags": [
+        "slot-mat",
+        "oval",
+        "portrait"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200745923",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200745923?_profile=la-framed",
+      "source_accession": "RP-F-F00816-Z",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200322352"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/dutch-family-106-200745923.jpg",
+      "source_image_sha256": "a79676bad541fdcbec772ef0c2375a9d4443d35faecc0c6c76334e889c782ca7",
+      "source_image_url": "https://iiif.micr.io/pPZnp/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/pPZnp/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1335
+      ],
+      "source_rect_pixels_exif_canonical": [
+        289,
+        62,
+        1049,
+        1137
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "dutch-family-106-200361840-1",
+      "source_group": "RIJKS:dutch-family-album-RP-F-F00816",
+      "group_label": "dutch-family-106",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/dutch-family-106-200361840-1.png",
+      "image_sha256": "0a1a823dd07c2ae507fa6b6ca9c662836bfe8782c5b77fe24f2590b2a099640d",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        745,
+        1002
+      ],
+      "upright_evidence": "upright woman with hair and necklace",
+      "difficulty_tags": [
+        "slot-mat",
+        "oval",
+        "portrait"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200361840",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200361840?_profile=la-framed",
+      "source_accession": "RP-F-F00816-X",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200322352"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/dutch-family-106-200361840.jpg",
+      "source_image_sha256": "c2d09476ea66e57e21768ac6c6f8e82f71608548c52f011d9afa7191f42168ed",
+      "source_image_url": "https://iiif.micr.io/gwgLo/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/gwgLo/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1321
+      ],
+      "source_rect_pixels_exif_canonical": [
+        302,
+        73,
+        1047,
+        1075
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "dutch-family-106-200746028-1",
+      "source_group": "RIJKS:dutch-family-album-RP-F-F00816",
+      "group_label": "dutch-family-106",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/dutch-family-106-200746028-1.png",
+      "image_sha256": "67eb2f533d72152fe6bc64939557e9177c6e4b098ba449c664a76d1f76b8cfc8",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        706,
+        1019
+      ],
+      "upright_evidence": "upright female portrait with folded hands",
+      "difficulty_tags": [
+        "slot-mat",
+        "portrait",
+        "low-contrast"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200746028",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200746028?_profile=la-framed",
+      "source_accession": "RP-F-F00816-BX",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200322352"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/dutch-family-106-200746028.jpg",
+      "source_image_sha256": "d91473434995b82b821734fb32e3c53569ca05f92555dfe5ebcbb4bf3ccfce79",
+      "source_image_url": "https://iiif.micr.io/KNzXX/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/KNzXX/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1293
+      ],
+      "source_rect_pixels_exif_canonical": [
+        366,
+        71,
+        1072,
+        1090
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "dutch-family-106-200361835-1",
+      "source_group": "RIJKS:dutch-family-album-RP-F-F00816",
+      "group_label": "dutch-family-106",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/dutch-family-106-200361835-1.png",
+      "image_sha256": "47d0fe0c3260f5a532690ee63498df5e4c598df88c3c7404c55559cfcbaf9ec8",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        711,
+        1044
+      ],
+      "upright_evidence": "standing men in hats in archival group portrait",
+      "difficulty_tags": [
+        "slot-mat",
+        "portrait",
+        "shadow"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200361835",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200361835?_profile=la-framed",
+      "source_accession": "RP-F-F00816-M",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200322352"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/dutch-family-106-200361835.jpg",
+      "source_image_sha256": "ecff80c75d3315ba88b674219a7890461af2b80de2c7305598ba818b2636f56b",
+      "source_image_url": "https://iiif.micr.io/SkbQx/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/SkbQx/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1332
+      ],
+      "source_rect_pixels_exif_canonical": [
+        305,
+        85,
+        1016,
+        1129
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "dutch-family-106-200745851-1",
+      "source_group": "RIJKS:dutch-family-album-RP-F-F00816",
+      "group_label": "dutch-family-106",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/dutch-family-106-200745851-1.png",
+      "image_sha256": "b16dbdc19001e33fc41d9657c968443942d66b194201c8ce6c05534ce3676c83",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        693,
+        1137
+      ],
+      "upright_evidence": "upright face and neck against light background",
+      "difficulty_tags": [
+        "slot-mat",
+        "portrait",
+        "low-contrast"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200745851",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200745851?_profile=la-framed",
+      "source_accession": "RP-F-F00816-I",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200322352"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/dutch-family-106-200745851.jpg",
+      "source_image_sha256": "4e052abe365be048cb69aab8ae328a050d1e8c26f600d599fd598f2d9013ee56",
+      "source_image_url": "https://iiif.micr.io/tgTTC/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/tgTTC/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1688
+      ],
+      "source_rect_pixels_exif_canonical": [
+        314,
+        100,
+        1007,
+        1237
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "dutch-family-106-200745962-1",
+      "source_group": "RIJKS:dutch-family-album-RP-F-F00816",
+      "group_label": "dutch-family-106",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/dutch-family-106-200745962-1.png",
+      "image_sha256": "59d115cd48ca157f5eb6cb369256e97e0bd3f94ed05b354a1ef94b275dccfba8",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        691,
+        1068
+      ],
+      "upright_evidence": "upright head and shoulders studio portrait",
+      "difficulty_tags": [
+        "slot-mat",
+        "portrait"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200745962",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200745962?_profile=la-framed",
+      "source_accession": "RP-F-F00816-AQ",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200322352"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/dutch-family-106-200745962.jpg",
+      "source_image_sha256": "c225c686a6de329842bdb2f02e4292f542d1818aff26a556c343bf190dc5f58b",
+      "source_image_url": "https://iiif.micr.io/uEZLN/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/uEZLN/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1362
+      ],
+      "source_rect_pixels_exif_canonical": [
+        363,
+        69,
+        1054,
+        1137
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    },
+    {
+      "id": "fire-engines-1868-200411095-1",
+      "source_group": "RIJKS:regout-and-beduwe-RP-F-F00647",
+      "group_label": "fire-engines-1868",
+      "image": "../../runs/crop-quality/orientation-archival-holdout/upright/fire-engines-1868-200411095-1.png",
+      "image_sha256": "18f0d94b9f8e16e3ac9c01eb2a2e73137c000a5463a67f0f287e124e2435e0d8",
+      "upright_clockwise_degrees": 0,
+      "sample_resolution": [
+        382,
+        277
+      ],
+      "upright_evidence": "wheel rims rest on street under upright wagon body",
+      "difficulty_tags": [
+        "board-mount",
+        "technical-photo",
+        "severe-fading"
+      ],
+      "manual_inspection": "Visually screened by Codex before inference; curator view orientation confirmed from visible scene. Manual rectangle isolates one photograph including a narrow natural border where present.",
+      "source_object": "https://id.rijksmuseum.nl/200411095",
+      "source_catalog_json": "https://data.rijksmuseum.nl/200411095?_profile=la-framed",
+      "source_accession": "RP-F-F00647-D",
+      "source_parent_records": [
+        "https://id.rijksmuseum.nl/200321081"
+      ],
+      "source_image": "../../runs/crop-quality/orientation-archival-holdout/archive/fire-engines-1868-200411095.jpg",
+      "source_image_sha256": "3b21d7df77e1fdde0c3d857037b0a77247f5380ccb8cbe1cb04555b9535def54",
+      "source_image_url": "https://iiif.micr.io/gHvXP/full/1400,/0/default.jpg",
+      "source_native_image_url": "https://iiif.micr.io/gHvXP/full/max/0/default.jpg",
+      "source_image_resolution": [
+        1400,
+        1113
+      ],
+      "source_rect_pixels_exif_canonical": [
+        101,
+        191,
+        483,
+        468
+      ],
+      "rights": [
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+      ]
+    }
+  ],
+  "source_intake_manifest_sha256": "d80a798477227f5dcd43099386543f70e0e8df6e45fc79fe75ff52a38a873416"
+}

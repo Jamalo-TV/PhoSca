@@ -3,6 +3,54 @@ from __future__ import annotations
 import pytest
 
 
+def test_orientation_evaluation_applies_the_reference_correction_after_each_rotation(tmp_path, monkeypatch) -> None:
+    from hashlib import sha256
+    import json
+
+    import cv2
+    import numpy as np
+
+    from app.pipeline import orientation
+    from scripts.evaluate_photo_orientation import evaluate, read_manifest
+
+    image = np.arange(24, dtype=np.uint8).reshape(2, 4, 3)
+    image_path = tmp_path / "sideways.png"
+    assert cv2.imwrite(str(image_path), image)
+    manifest = tmp_path / "test.json"
+    manifest.write_text(json.dumps({"schema_version": 1, "samples": [{
+        "id": "sideways", "source_group": "Album A", "image": image_path.name,
+        "image_sha256": sha256(image_path.read_bytes()).hexdigest(), "upright_clockwise_degrees": 90,
+    }]}), encoding="utf-8")
+    samples, _ = read_manifest(manifest)
+    rotations = iter([(0, 90, "auto_rotate"), (90, 0, "preserve_and_review"),
+                      (180, 180, "auto_rotate"), (270, 0, "confidently_preserve")])
+
+    def decide(observed, *, model_path):
+        applied, result, decision = next(rotations)
+        assert np.array_equal(observed, orientation.rotate_image(image, applied))
+        return orientation.rotate_image(observed, result), {
+            "method": "onnx_orientation", "rotation_degrees": result, "confidence": .7, "decision": decision,
+        }
+
+    monkeypatch.setattr(orientation, "correct_photo_orientation", decide)
+    result = evaluate(tmp_path / "test.onnx", samples)
+    assert [case["expected_clockwise_degrees"] for case in result["cases"]] == [90, 0, 270, 180]
+    assert result["by_source_group"]["album a"] == result["overall"] == {
+        "cases": 4, "correct_final": 2, "accepted": 3, "accepted_wrong": 2,
+        "wrong_rotations": 1, "wrongly_rotated_upright": 0, "review": 1,
+    }
+
+
+@pytest.mark.parametrize("key", ["source_group", "image_sha256"])
+def test_orientation_evaluation_rejects_overlapping_training_sources(key) -> None:
+    from scripts.evaluate_photo_orientation import check_disjoint
+
+    test = {"source_group": "album a", "image_sha256": "first"}
+    train = {"source_group": "album b", "image_sha256": "second", key: test[key]}
+    with pytest.raises(ValueError, match=key):
+        check_disjoint([test], [train])
+
+
 def rectangle(x1: float, y1: float, x2: float, y2: float) -> list[tuple[float, float]]:
     return [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
 

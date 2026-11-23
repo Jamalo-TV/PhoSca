@@ -1,0 +1,450 @@
+{
+  "schema_version": 2,
+  "name": "Getty, Kessler and Disderi crop-detector calibration reserve",
+  "status": "source_only_review_draft",
+  "split_policy": {
+    "role": "calibration",
+    "album_independent": false,
+    "reserved_for": "crop_detector_calibration_only",
+    "reason": "Independent source review and provenance approval are pending. Keep the three physical albums out of training and locked release evaluation."
+  },
+  "count_policy": "One visible photographic print is one instance, including a composite contact proof printed on one piece of paper. Captions, album ornament, covers, and the frame displaying only the written card back on the Getty spread are background.",
+  "source_manifests": {
+    "Getty": {
+      "url": "https://media.getty.edu/iiif/manifest/2/a093bae7-1aa3-42bc-b3dd-68b2728c0d88",
+      "sha256": "8398a717de6fb0e7915a257d944784d6a6827ea0a67d3689969c3c02cfd262c7"
+    },
+    "Rijksmuseum": {
+      "url": "https://data.rijksmuseum.nl/200900511?_profile=la-framed",
+      "sha256": "b33782b8676c20bd188e6837a176ee5608aaeb10ddcf4d8dd16dd3a040d074aa"
+    }
+  },
+  "pages": [
+    {
+      "id": "getty-cover",
+      "source_group": "Getty:84.XD.824.4",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/getty-cover.jpg",
+      "image_sha256": "bab10a57d6e7adfbdc817fcdda44227222724c478339f17743c1f470551a7a6c",
+      "source_resolution": [
+        1404,
+        1800
+      ],
+      "source_url": "https://www.getty.edu/art/collection/object/104J2V",
+      "image_url": "https://media.getty.edu/iiif/image/8d8a59d0-5d82-4507-9a1d-acafcbefb004/full/!1800,1800/0/default.jpg",
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "expected_count": 0,
+      "annotations": "getty-cover.txt",
+      "annotations_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "negative",
+        "embossed_gold_album_cover"
+      ],
+      "archive_canvas_label": "front cover",
+      "archive_native_wh": [
+        6813,
+        8735
+      ]
+    },
+    {
+      "id": "getty-inside-cover",
+      "source_group": "Getty:84.XD.824.4",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/getty-inside-cover.jpg",
+      "image_sha256": "6b05c04011c4acc366af1a3d2d092e435d420ec12dfab522c7dda4c2bf51f772",
+      "source_resolution": [
+        1264,
+        1800
+      ],
+      "source_url": "https://www.getty.edu/art/collection/object/104J2V",
+      "image_url": "https://media.getty.edu/iiif/image/e08e834b-84ec-405d-9fa1-308a539401c6/full/!1800,1800/0/default.jpg",
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "expected_count": 0,
+      "annotations": "getty-inside-cover.txt",
+      "annotations_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "negative",
+        "album_outline",
+        "aged_paper"
+      ],
+      "archive_canvas_label": "Inside front cover",
+      "archive_native_wh": [
+        6225,
+        8864
+      ]
+    },
+    {
+      "id": "getty-spread-124-130",
+      "source_group": "Getty:84.XD.824.4",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/getty-spread-124-130.jpg",
+      "image_sha256": "6b2a69012e18345f90dfed81e7ed9988f72079b5e96f57456f4260cfe784bca4",
+      "source_resolution": [
+        1800,
+        1189
+      ],
+      "source_url": "https://www.getty.edu/art/collection/object/104J2V",
+      "image_url": "https://media.getty.edu/iiif/image/a0480fd4-2a95-4099-b4f3-9f8d310f51dd/full/!1800,1800/0/default.jpg",
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "expected_count": 7,
+      "annotations": "getty-spread-124-130.txt",
+      "annotations_sha256": "1ec5d5b1fda47ecfe446290fc87a5bd4dd0ee66021a74dfae9009011677f315d",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "album_windows",
+        "both_leaves",
+        "printed_card_verso_as_negative",
+        "paper_caption_frames"
+      ],
+      "archive_canvas_label": "Two page spread .124-.130",
+      "archive_native_wh": [
+        9819,
+        6485
+      ]
+    },
+    {
+      "id": "getty-page-001-004",
+      "source_group": "Getty:84.XD.824.4",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/getty-page-001-004.jpg",
+      "image_sha256": "8b078525e8b69e00d26ab2d0e7d85f08a3a50aefd64a17ced31c5a5f261cdaf5",
+      "source_resolution": [
+        1383,
+        1800
+      ],
+      "source_url": "https://www.getty.edu/art/collection/object/104J2V",
+      "image_url": "https://media.getty.edu/iiif/image/d60d850c-7a13-4fd3-838e-e0da951e83be/full/!1800,1800/0/default.jpg",
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "expected_count": 4,
+      "annotations": "getty-page-001-004.txt",
+      "annotations_sha256": "c1d98a2ddb1f0628f7789c52f6b5482aa72df7efecd67515160e6142468b5e97",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "album_windows",
+        "multiple_exposures_on_one_print",
+        "pale_print"
+      ],
+      "archive_canvas_label": "Overall album page (.1-.4)",
+      "archive_native_wh": [
+        6458,
+        8408
+      ]
+    },
+    {
+      "id": "getty-page-088-091",
+      "source_group": "Getty:84.XD.824.4",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/getty-page-088-091.jpg",
+      "image_sha256": "da3414e2fbe4ba82213558d589d84b75e98e10d75513be56dd787daaa9b929d7",
+      "source_resolution": [
+        1394,
+        1800
+      ],
+      "source_url": "https://www.getty.edu/art/collection/object/104J2V",
+      "image_url": "https://media.getty.edu/iiif/image/141fba3a-fbdb-4b12-8f4c-db3bbe1f5fa2/full/!1800,1800/0/default.jpg",
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "expected_count": 4,
+      "annotations": "getty-page-088-091.txt",
+      "annotations_sha256": "15626bad31c7b06b17a809f12ca244f24c5b82380ac2176aff8be13abe4c361a",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "album_windows",
+        "pale_print",
+        "paper_caption_frames"
+      ],
+      "archive_canvas_label": "Overall album page (.88-.91)",
+      "archive_native_wh": [
+        6511,
+        8408
+      ]
+    },
+    {
+      "id": "getty-page-187-190",
+      "source_group": "Getty:84.XD.824.4",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/getty-page-187-190.jpg",
+      "image_sha256": "6d49a3739d86592a54b14bfb1fb20033b3fa74f84e626f0d130159003d093e12",
+      "source_resolution": [
+        1361,
+        1800
+      ],
+      "source_url": "https://www.getty.edu/art/collection/object/104J2V",
+      "image_url": "https://media.getty.edu/iiif/image/7f09ccbc-46ae-4833-b28f-f2277df361da/full/!1800,1800/0/default.jpg",
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "expected_count": 4,
+      "annotations": "getty-page-187-190.txt",
+      "annotations_sha256": "f2bc2467ad4c6a09fc16deb2ea45a2343446116a22c9773c6f80ccc960b457c7",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "album_windows",
+        "rotated_photographs",
+        "paper_caption_frames"
+      ],
+      "archive_canvas_label": "Overall album page (.187-.190)",
+      "archive_native_wh": [
+        6409,
+        8478
+      ]
+    },
+    {
+      "id": "RP-F-2025-71-10",
+      "source_group": "Rijksmuseum:RP-F-2025-71",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/RP-F-2025-71-10.jpg",
+      "image_sha256": "25092e6d596eda7ad09873ccd2a6ffb3173bd3ffa300a29599fa0f07cc2ff446",
+      "source_resolution": [
+        1800,
+        1541
+      ],
+      "source_url": "https://data.rijksmuseum.nl/200903145?_profile=la-framed",
+      "image_url": "https://iiif.micr.io/EocEX/full/!1800,1800/0/default.jpg",
+      "license": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "expected_count": 1,
+      "annotations": "RP-F-2025-71-10.txt",
+      "annotations_sha256": "5efbc5532fda84bb49b49729b63376da33f05350b28e34d49272583e25c950a9",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "chalk_frame",
+        "dark_stock"
+      ]
+    },
+    {
+      "id": "RP-F-2025-71-14",
+      "source_group": "Rijksmuseum:RP-F-2025-71",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/RP-F-2025-71-14.jpg",
+      "image_sha256": "961fba62793edd8af5cb51c0c5e008d17c4005c2b383448b2d7ba2c323906e88",
+      "source_resolution": [
+        1800,
+        1638
+      ],
+      "source_url": "https://data.rijksmuseum.nl/200903158?_profile=la-framed",
+      "image_url": "https://iiif.micr.io/yexRR/full/!1800,1800/0/default.jpg",
+      "license": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "expected_count": 1,
+      "annotations": "RP-F-2025-71-14.txt",
+      "annotations_sha256": "596e5cfd175f31eb6f1ebbe3a029c266570936e0cc7f4fcf4f784d7509fd14f4",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "chalk_frame",
+        "faint_photo_edge",
+        "dark_stock"
+      ]
+    },
+    {
+      "id": "RP-F-2025-71-20",
+      "source_group": "Rijksmuseum:RP-F-2025-71",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/RP-F-2025-71-20.jpg",
+      "image_sha256": "e86ae97ecbb6a9ff5c576478576da698de61cc67f6b0de5b18f6129568a09b1a",
+      "source_resolution": [
+        1800,
+        1571
+      ],
+      "source_url": "https://data.rijksmuseum.nl/200903169?_profile=la-framed",
+      "image_url": "https://iiif.micr.io/kPRhB/full/!1800,1800/0/default.jpg",
+      "license": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "expected_count": 1,
+      "annotations": "RP-F-2025-71-20.txt",
+      "annotations_sha256": "2a46f48fdee38184365ee83fa6af24ba6d88f6caa3f80925a3d13a112adfeee1",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "circular_photo",
+        "chalk_frame",
+        "dark_stock"
+      ]
+    },
+    {
+      "id": "RP-F-2025-71-23",
+      "source_group": "Rijksmuseum:RP-F-2025-71",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/RP-F-2025-71-23.jpg",
+      "image_sha256": "38a5138cf84bcd678150724adabb9686b810a4276b858e42573cab543de0bc70",
+      "source_resolution": [
+        1800,
+        1492
+      ],
+      "source_url": "https://data.rijksmuseum.nl/200903182?_profile=la-framed",
+      "image_url": "https://iiif.micr.io/OvjHc/full/!1800,1800/0/default.jpg",
+      "license": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "expected_count": 2,
+      "annotations": "RP-F-2025-71-23.txt",
+      "annotations_sha256": "b109c2f71f3a5a183a85bfa1e0088486563bc8dc69ff4e99370c8479a2a10493",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "chalk_frame",
+        "dark_stock",
+        "nearby_prints"
+      ]
+    },
+    {
+      "id": "RP-F-2025-71-24",
+      "source_group": "Rijksmuseum:RP-F-2025-71",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/RP-F-2025-71-24.jpg",
+      "image_sha256": "b122b8cf3ad5c82a280ce1ad5643f73331e98839fdf9b04f71b4c61a2ff3057e",
+      "source_resolution": [
+        1800,
+        1587
+      ],
+      "source_url": "https://data.rijksmuseum.nl/200903184?_profile=la-framed",
+      "image_url": "https://iiif.micr.io/WOrpJ/full/!1800,1800/0/default.jpg",
+      "license": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "expected_count": 2,
+      "annotations": "RP-F-2025-71-24.txt",
+      "annotations_sha256": "ed0c2cc165643609ea932b4476a44b2cedc06a072ea7752d5bffe772b99eba05",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "chalk_frame",
+        "dark_stock",
+        "mixed_print_sizes"
+      ]
+    },
+    {
+      "id": "RP-F-2025-71-32",
+      "source_group": "Rijksmuseum:RP-F-2025-71",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/RP-F-2025-71-32.jpg",
+      "image_sha256": "227a24e2dc0f57645bf6ba85500fbdb7e08c7bbb7dc5b5bb29af273a8bb668b2",
+      "source_resolution": [
+        1800,
+        1604
+      ],
+      "source_url": "https://data.rijksmuseum.nl/200903224?_profile=la-framed",
+      "image_url": "https://iiif.micr.io/GfDBx/full/!1800,1800/0/default.jpg",
+      "license": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "expected_count": 1,
+      "annotations": "RP-F-2025-71-32.txt",
+      "annotations_sha256": "59f8b71b48254a12221a518faef01879ef91b48b341f0df97c08a2290e1911c0",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "chalk_frame",
+        "faint_photo_edge",
+        "dark_stock"
+      ]
+    },
+    {
+      "id": "RP-F-2025-71-40",
+      "source_group": "Rijksmuseum:RP-F-2025-71",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/RP-F-2025-71-40.jpg",
+      "image_sha256": "76d1834ed544916977810168c103a645c4ed48a95db85b2a5a923a0dc1a7609d",
+      "source_resolution": [
+        1800,
+        1628
+      ],
+      "source_url": "https://data.rijksmuseum.nl/200903273?_profile=la-framed",
+      "image_url": "https://iiif.micr.io/SHOwf/full/!1800,1800/0/default.jpg",
+      "license": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "expected_count": 2,
+      "annotations": "RP-F-2025-71-40.txt",
+      "annotations_sha256": "58e32523f672fc22b1bcffe2127a3c81f019adfa12431ebf66875f37591cfc56",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "chalk_frame",
+        "dark_stock",
+        "nearby_prints"
+      ]
+    },
+    {
+      "id": "met-704889",
+      "source_group": "Met:2005.100.588.1",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/met-704889.jpg",
+      "image_sha256": "b5a6743079c404b2a3a6ae4200ae6b1f18cbe13c6c25311e250dd47a92c899a3",
+      "source_resolution": [
+        1200,
+        857
+      ],
+      "source_url": "https://www.metmuseum.org/art/collection/search/704889",
+      "image_url": "https://collectionapi.metmuseum.org/api/collection/v1/iiif/704889/2113455/main-image",
+      "license": "The Met Open Access / Public Domain",
+      "expected_count": 1,
+      "annotations": "met-704889.txt",
+      "annotations_sha256": "9d3469196c23a00c25dd89f5c0971f7d1a03b5c39a24379b509bcf11702b7a5d",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "clipped_or_inset_corners",
+        "albumen",
+        "contact_proof_multi_exposures"
+      ]
+    },
+    {
+      "id": "met-704898",
+      "source_group": "Met:2005.100.588.1",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/met-704898.jpg",
+      "image_sha256": "3917b2895c34e51e639fb38795da6ffd6f49c7718257b3f784a76e3346c49279",
+      "source_resolution": [
+        1200,
+        879
+      ],
+      "source_url": "https://www.metmuseum.org/art/collection/search/704898",
+      "image_url": "https://collectionapi.metmuseum.org/api/collection/v1/iiif/704898/2113464/main-image",
+      "license": "The Met Open Access / Public Domain",
+      "expected_count": 1,
+      "annotations": "met-704898.txt",
+      "annotations_sha256": "ff75412cee97623a1a227ebe2a964702cf6e26e4acc14a0c61af10863a888c58",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "clipped_or_inset_corners",
+        "albumen",
+        "contact_proof_multi_exposures"
+      ]
+    },
+    {
+      "id": "met-704901",
+      "source_group": "Met:2005.100.588.1",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/met-704901.jpg",
+      "image_sha256": "2d5ac42cc8f5cb3da5268bb667021c30fd239d9ddf6b7d2f8fc33f716c7e0046",
+      "source_resolution": [
+        1200,
+        886
+      ],
+      "source_url": "https://www.metmuseum.org/art/collection/search/704901",
+      "image_url": "https://collectionapi.metmuseum.org/api/collection/v1/iiif/704901/2113467/main-image",
+      "license": "The Met Open Access / Public Domain",
+      "expected_count": 3,
+      "annotations": "met-704901.txt",
+      "annotations_sha256": "33436519e7d82b7ec3ac44a17ca09a8f9abf547fab9488162b9f0fbf7ced476a",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "clipped_or_inset_corners",
+        "albumen",
+        "contact_proof_multi_exposures"
+      ]
+    },
+    {
+      "id": "met-704915",
+      "source_group": "Met:2005.100.588.1",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/met-704915.jpg",
+      "image_sha256": "7b16b69869468e7d5953ce1612d9a7410f2cb39aa060d3d666c06c691ec03c70",
+      "source_resolution": [
+        1200,
+        871
+      ],
+      "source_url": "https://www.metmuseum.org/art/collection/search/704915",
+      "image_url": "https://collectionapi.metmuseum.org/api/collection/v1/iiif/704915/2113481/main-image",
+      "license": "The Met Open Access / Public Domain",
+      "expected_count": 2,
+      "annotations": "met-704915.txt",
+      "annotations_sha256": "0b9905a70d4e3603efe14f79498cefff5a86a4657d598e5b732b2611ac9e238e",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "clipped_or_inset_corners",
+        "albumen",
+        "contact_proof_multi_exposures"
+      ]
+    },
+    {
+      "id": "met-704917",
+      "source_group": "Met:2005.100.588.1",
+      "image": "../../../runs/crop-quality/calibration-intake-expansion/met-704917.jpg",
+      "image_sha256": "d8b3c4e9780a6cc93a9bb31429cf9c0d1233644fc7304c18be8bcfab1f99a56b",
+      "source_resolution": [
+        1200,
+        884
+      ],
+      "source_url": "https://www.metmuseum.org/art/collection/search/704917",
+      "image_url": "https://collectionapi.metmuseum.org/api/collection/v1/iiif/704917/2113483/main-image",
+      "license": "The Met Open Access / Public Domain",
+      "expected_count": 1,
+      "annotations": "met-704917.txt",
+      "annotations_sha256": "f3791e5aa948562c0ac77af7b21c4375ed50e324757b19026e35b48880dfef2e",
+      "annotation_provenance": "source_only_visual_outline_draft",
+      "difficulty_tags": [
+        "clipped_or_inset_corners",
+        "albumen",
+        "contact_proof_multi_exposures"
+      ]
+    }
+  ],
+  "source_intake_manifest_sha256": "ac98399559f2507ea3e02cd65f19cc3247676dccede11d36e0fe753bdd9bf8df"
+}

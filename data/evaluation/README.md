@@ -196,6 +196,32 @@ threshold still applied 10 wrong rotations. The reports are under
 `runs/crop-quality/orientation-archival-development/`. The candidates remain
 development artifacts. [Pretrained model](https://github.com/duartebarbosadev/deep-image-orientation-detection/releases/tag/v2)
 
+`orientation-archival-holdout.json` pins 61 oriented crops from 47 Rijksmuseum
+scans across six album groups. It records source URLs, archive and crop
+hashes, crop rectangles and visual evidence for each upright label. The set
+includes faded, shadowed, low-contrast and mounted photos. To restore the
+samples, retrieve each `source_image_url` to its `source_image` path, verify
+the digest, apply Pillow's `ImageOps.exif_transpose`, convert to RGB, and
+save `source_rect_pixels_exif_canonical` as a lossless PNG at `image`.
+
+The orientation evaluator uses the production ONNX path. It checks image
+hashes and reported pixel rotations, scores each input as acquired and
+after all four right-angle turns, and reports correct outputs, accepted
+errors, and cases preserved for review. Pass a training manifest with the
+same sample fields to check for overlapping image hashes and source groups.
+
+```powershell
+python scripts/evaluate_photo_orientation.py --manifest data/evaluation/orientation-archival-holdout.json --model path/to/orientation.onnx --output runs/crop-quality/orientation-holdout.json
+```
+
+On 244 rotations from this frozen set, the converted upstream EfficientNetV2
+scored 242 correct, with one wrong rotation and one review. All 61
+as-acquired photos stayed upright. The eight- and eighteen-epoch fine-tunes
+from 63 development originals scored 237 and 238 correct, each with four
+wrong rotations. The eight-epoch model increased correct outputs from 91
+to 96 of 140 on the fixed synthetic stress diagnostic. The real-scan pilot
+and synthetic stress results support keeping these models under evaluation.
+
 The local intake under `runs/crop-quality/calibration-intake-sources/`
 contains eight views with 66 draft print outlines from four source groups,
 including the [Allston album](https://nmaahc.si.edu/object/nmaahc_2009.31)
@@ -204,6 +230,33 @@ The duplicate screen compares those views with the available training,
 Golden and reserved pages. Both detector profiles produced 66 YOLO and five
 classical edge-contour predictions. A single crowded page contributes 49 of
 the 71 predictions. The draft remains pending independent review before fit.
+
+`calibration-archive-expansion/dataset-draft.json` adds 18 views and 37
+draft outlines from the Getty album, Kessler family album and the Met
+Disdéri proof album. Two cover views contain no prints. The manifest pins
+the archive images and label files. Retrieve each `image_url` to the
+matching `image` path to render the reference review locally.
+
+```powershell
+python scripts/evaluate_onnx_segmentation.py --dataset-manifest data/evaluation/calibration-archive-expansion/dataset-draft.json --check-references --visuals --output runs/crop-quality/calibration-archive-expansion-preflight.json
+```
+
+Across the prior and added views, the Registered detector with OpenCV 4.10
+produced 144 predictions. The provisional matching rule uses IoU 0.85 and
+excludes serious failures. Correctness still depends on independent review
+of the source outlines and counts.
+
+| Detector source | Provisional matches | Provisional nonmatches |
+| --- | ---: | ---: |
+| `yolo_onnx` | 39 | 47 |
+| `edge_contour` | 5 | 28 |
+| `yolo_onnx_tiled` | 23 | 1 |
+| `contrast_region` | 0 | 1 |
+
+The 33 edge-contour predictions span five albums. All 24 tiled YOLO
+predictions come from the same dense page. The only contrast prediction
+does not support a fit. The draft digest, profiles, and per-album counts
+are in `runs/crop-quality/calibration-intake-expansion/registered-expansion-source-census.json`.
 
 ```powershell
 python scripts/evaluate_onnx_segmentation.py --dataset-manifest path/to/locked-album-manifest.json --include-classical-fallback --require-final-quality --visuals --output runs/crop-quality/real-release.json
