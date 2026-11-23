@@ -340,3 +340,27 @@ The combined draft manifest at
 eight native pages with 19 prints. Its reference preflight confirms the file
 hashes and lists 38 unverified mode annotations and 13 missing independent
 aspect references. These drafts are reserved for reference review.
+
+The Nelson album intake adds page GEM 1978.1292.0072 and four separately
+photographed prints from the George Eastman Museum conservation study.
+The publication-embedded JPEGs are pinned in
+`runs/crop-quality/independent-intake-nelson/publication-assets.json`.
+The catalog and image files preserve the distinction between the page
+and separate close-up exposures. [Stephanie Becker's 2017 University of Rochester study](https://urresearch.rochester.edu/fileDownloadForInstitutionalItem.action?itemFileId=184123&itemId=33603)
+
+For print 0072d, fitting the page and independent close-up separately
+puts the maximum source-corner disagreement at 0.85 px for the complete
+print and 0.78 px for the motif. The measured overall aspect agrees
+with the catalog's 3 11/16 by 2 11/16 inch dimensions within 0.40%.
+The draft has rectified reference images and landmark pairs held out of
+the registration fit used to check match accuracy. Print 0072a has corroborating
+outer corners, with up to 1.13 px of disagreement. Its observed aspect
+differs from the catalog aspect by 1.51%, so its metric reference is
+pending. Prints 0072b and 0072c have visible corner mounts and need
+further motif review.
+
+`runs/crop-quality/archive-reference-drafts-with-nelson.json` now covers
+nine pages with 23 prints. Its preflight pins the input and reference
+files and reports the open review and measurement items. The Nelson
+page remains reserved from detector evaluation while those reviews
+are pending.
