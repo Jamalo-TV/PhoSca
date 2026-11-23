@@ -187,6 +187,43 @@ def test_uncertain_uniform_motif_keeps_full_print_available() -> None:
     assert result.image_only is None
 
 
+@pytest.mark.parametrize(("width", "bow", "needs_review"), [
+    (680, -3, True), (680, 3, True), (1460, 5, True), (680, -2, False), (680, 0, False),
+])
+def test_coherent_motif_bow_routes_only_image_mode_to_review(width, bow, needs_review) -> None:
+    from app.evaluation.cropping import evaluate_rendered_crop
+
+    height, rim = round(.72 * width), round(.054 * width)
+    x0, y0 = 85, 67
+    x1, y1 = x0 + width - 1, y0 + height - 1
+    y, x = np.mgrid[:y1 + 80, :x1 + 95].astype(np.float32)
+    u = np.clip((x - x0 - rim) / (width - 2 * rim - 1), 0, 1)
+    v = np.clip((y - y0 - rim) / (height - 2 * rim - 1), 0, 1)
+    stock = (x >= x0) & (x <= x1) & (y >= y0) & (y <= y1)
+    depth = np.minimum.reduce((x - x0 - rim, x1 - rim - x, y - y0 - rim - 4 * u * (1 - u) * bow, y1 - rim - y))
+    rng = np.random.default_rng(61)
+    grain = cv2.resize(rng.normal(0, 9, (height // 9, width // 9)).astype(np.float32), x.shape[::-1])
+    color = np.stack((160 + 23 * u - 31 * v, 149 + 25 * u - 28 * v, 151 + 19 * u - 19 * v), axis=2)
+    alpha = np.clip(2 * depth + 1, 0, 1)[..., None]
+    page = np.where(stock[..., None], alpha * (color + grain[..., None]) + (1 - alpha) * 235, (55, 61, 56))
+    page = np.uint8(np.clip(np.rint(page + rng.normal(0, .6, x.shape)[..., None]), 0, 255))
+    mask = {"source": "yolo_seg_mask", "polygon": _vertices(_rect(x0, y0, x1, y1), page)}
+    crop = _crop(page, {}, mask, dual_mode=True, print_aspect_ratio=(width - 1) / (height - 1))
+    full, image_only = (crop.metadata["crop_modes"][name] for name in ("full_print", "image_only"))
+    assert full["status"] == "ready"
+    if needs_review:
+        assert image_only["status"] == "review_needed"
+        assert image_only["reason_codes"] == ["IMAGE_BOUNDARY_CURVED"] and crop.image_only is None
+    else:
+        assert image_only["status"] == "ready" and crop.image_only is not None
+    for mode, rendered, truth in ((full, crop.image, stock), (image_only, crop.image_only, depth >= 0)):
+        if rendered is not None:
+            quad = [(point["x"], point["y"]) for point in mode["warp_quad"]]
+            metrics = evaluate_rendered_crop(truth, quad, np.asarray(mode["page_to_output"]), rendered.shape[:2],
+                                             sampling=mode.get("sampling"))
+            assert metrics["cutoff_beyond_1px"] == metrics["foreign_beyond_1px"] == 0
+
+
 @pytest.mark.parametrize("ranked_contours_available", [True, False])
 def test_local_outer_contour_recovers_white_image_content_outside_the_model_seed(
     monkeypatch, ranked_contours_available: bool,

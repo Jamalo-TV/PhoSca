@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN
-from app.pipeline.border_removal import find_physical_border, wide_paper_motif_proposal
+from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop
 from app.pipeline.geometry import (
     normalized_polygon_overlap,
@@ -690,6 +690,8 @@ def _inner_crop_plan(
     if protect_regions:
         regions = merge_protected_regions(regions, detect_protected_regions(corrected))
     plan = find_physical_border(corrected, protected_regions=regions)
+    if CURVED_IMAGE_BOUNDARY in plan.reason_codes:
+        return None, plan.metadata(), [CURVED_IMAGE_BOUNDARY]
     near_outline = {
         name for name, edge in plan.edges.items() if edge.is_physical_border and max(edge.insets) <= 2.2
     }
@@ -700,6 +702,8 @@ def _inner_crop_plan(
         # Exclude that row during measurement while retaining the original source pixels.
         left, top, right, bottom = (3 if name in near_outline else 0 for name in ("left", "top", "right", "bottom"))
         retry = find_physical_border(corrected[top : height - bottom, left : width - right])
+        if CURVED_IMAGE_BOUNDARY in retry.reason_codes:
+            return None, retry.metadata(), [CURVED_IMAGE_BOUNDARY]
         if retry.crop_quad is None or any(not retry.edges[name].is_physical_border for name in near_outline):
             return None, {**plan.metadata(), "applied": False}, ["IMAGE_BOUNDARY_UNCERTAIN"]
         if any(reason.endswith("_VETO") for reason in plan.reason_codes):

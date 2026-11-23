@@ -24,6 +24,7 @@ const reviewMessages = {
   PRINT_BOUNDARY_SAMPLING_UNCERTAIN: "An einer Abzugsecke fehlen eindeutig zuordenbare Bildpixel.",
   IMAGE_BOUNDARY_SAMPLING_UNCERTAIN: "An einer Motivecke fehlen eindeutig zuordenbare Bildpixel.",
   IMAGE_BOUNDARY_UNCERTAIN: "Die Grenze zwischen Rahmen und Bildmotiv muss geprüft werden.",
+  IMAGE_BOUNDARY_CURVED: "Die Motivkante ist gewölbt. Prüfe den Zuschnitt am Original.",
   WIDE_MOTIF_CONFIRMATION_REQUIRED: "Prüfe den Motivvorschlag im Desktop-Editor und speichere die Motivecken.",
   IMAGE_VISIBILITY_UNCERTAIN: "Das vollständige Bildmotiv konnte nicht bestätigt werden.",
   IMAGE_BORDER_CLASSIFICATION_DISABLED: "Die automatische Bestimmung der Motivgrenze ist deaktiviert.",

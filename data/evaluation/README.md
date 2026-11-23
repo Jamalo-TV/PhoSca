@@ -116,12 +116,12 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 20 binds
+groups, with the 90% threshold applied to each group. Report schema 21 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled and deskewed inference,
 the classical line-pair fallback, separated contrast recovery, empty drawn
-frame rejection, page-plane estimation, the configured visible mask refiner and
-detector-bound confidence calibration. A verified motif can
+frame rejection, page-plane estimation, curved motif checks, the configured
+visible mask refiner and detector-bound confidence calibration. A verified motif can
 qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
 
@@ -801,6 +801,20 @@ caused 11.35 px landmark error at the 95th percentile with zero strict
 boundary errors. See `curved-geometry-probe/cylinder-results.json` under
 `runs/crop-quality/`.
 
+The motif guard measures supported paper-to-picture crossings across the
+edge and checks for coherent bowing in rectified pixels. A bow above 2.25 px
+stops the straight motif crop and leaves the full-print mode available when
+its own geometry passes. The same check applies to the legacy border-trim
+plan. Version 22 in the 28-case development probe sends eight previously
+ready motifs with strict cutoff or paper samples to review. All four safe
+motif crops and all 24 ready full-print crops still pass the strict pixel
+checks. The traces and visual comparison are under
+`runs/crop-quality/curved-geometry-probe/`.
+
+The frozen seeded-geometry benchmark passes all 23 recoverable mode crops.
+The Registered end-to-end run matches six of 18 initial instances at IoU
+0.85 in both v21 and v22. That run still fails the initial detection gate.
+
 `nmah-gardner-paired-crops-draft.json` pins two independent Smithsonian scans
 of the same Marshall House accession. The fitted aspect ratios differ by
 0.24%. After registration, the largest corresponding corner discrepancy is
@@ -809,6 +823,13 @@ coincides with the motif before confirming either mode. The museum records
 an overall size of 9 by 7 inches. The draft uses the separate scan as its
 aspect reference. The source images stay local under the museum's usage
 conditions. [Smithsonian catalog](https://www.si.edu/es/object/plate-1-marshal-house-alexandria%3Anmah_1293152)
+
+The Brady/Pedro II volume published by the Library of Congress repackages
+individual card scans. Four paired volume and catalog image requests
+returned identical rasters and point to the same TIFF assets. Its catalog
+dimensions are rounded to millimetres, giving up to 1.55% aspect uncertainty
+under nearest-millimetre rounding. The source needs a separate mounted
+album view to establish the two crop modes. [Volume catalog](https://www.loc.gov/item/2021670872/)
 
 ```powershell
 python scripts/evaluate_onnx_segmentation.py --dataset-manifest data/evaluation/nmah-gardner-paired-crops-draft.json --check-references --visuals --output runs/crop-quality/nmah-gardner-marshall-preflight.json

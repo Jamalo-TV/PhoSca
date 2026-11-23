@@ -9,6 +9,12 @@ from app.pipeline.geometry import rectify_crop_quad
 from app.pipeline.protected_regions import region_box_in_pixels
 
 
+CURVED_IMAGE_BOUNDARY = "IMAGE_BOUNDARY_CURVED"
+# A bow above two pixels cannot stay within a one-pixel band around a line.
+# Allow a quarter pixel for uncertainty in the optical crossing estimates.
+_MAX_PLANAR_SEAM_BOW_PX = 2.25
+
+
 @dataclass(frozen=True)
 class BorderEdgeAssessment:
     edge: str
@@ -194,10 +200,36 @@ def wide_paper_motif_proposal(image: np.ndarray) -> np.ndarray | None:
     return ((quad + .5) * np.float32([width / w, height / h]) - .5).astype(np.float32)
 
 
+def _coherent_seam_bow(points: np.ndarray, span: int, total_samples: int) -> float | None:
+    """Estimate the departure from a chord only for a distributed, smooth seam."""
+    x = 2 * points[:, 0] / span - 1
+    bins = np.clip(((x + 1) * 4).astype(int), 0, 7)
+    minimum = max(3, round(total_samples / 18))
+    samples = np.column_stack((x, points[:, 1]))
+    bands = []
+    for index in range(8):
+        observed = samples[bins == index]
+        if len(observed) >= minimum:
+            bands.append(np.median(observed, axis=0))
+    if len(bands) < 6:
+        return None
+    positions, depths = np.asarray(bands).T
+    if positions[-1] - positions[0] < 1.4:
+        return None
+    curve = np.polynomial.polynomial.polyfit(positions, depths, 2)
+    residual = np.abs(np.polynomial.polynomial.polyval(positions, curve) - depths)
+    if np.percentile(residual, 80) > .6:
+        return None
+    # Use only the observed seam's span. The paper rim at its ends may
+    # extend beyond the motif and otherwise exaggerate the reported bow.
+    half_span = (x.max() - x.min()) / 2
+    return float(abs(curve[2]) * half_span ** 2)
+
+
 def _picture_side_line(
     smooth: np.ndarray, columns: np.ndarray, line: tuple[float, float], paper_tone: float, direction: float,
     sample_step: int = 1,
-) -> tuple[float, float] | None:
+) -> tuple[float, float, float | None] | None:
     """Locate the paper-to-picture crossing, excluding peaks that lead back into paper."""
     start, end = line
     predicted = start + (end - start) * columns / columns[-1]
@@ -225,7 +257,8 @@ def _picture_side_line(
     vx, vy, cx, cy = cv2.fitLine(points.astype(np.float32), cv2.DIST_HUBER, 0, 0.01, 0.01).ravel()
     if abs(vy) > 0.10 * vx:
         return None
-    return float(cy - cx * vy / vx), float(cy + (columns[-1] - cx) * vy / vx)
+    bow = _coherent_seam_bow(points, int(columns[-1]), len(columns))
+    return float(cy - cx * vy / vx), float(cy + (columns[-1] - cx) * vy / vx), bow
 
 
 def _measure_strip(
@@ -325,9 +358,10 @@ def _measure_strip(
     if winning_line is None:
         return BorderEdgeAssessment(edge, 0, 0.0, False, ("NO_SUPPORTED_PHYSICAL_BORDER",), {})
 
-    fitted = _picture_side_line(smooth, columns, winning_line, winning_tone, winning_direction)
-    if fitted is None:
-        fitted = fits.get(winning_line) or _fit_seam(smooth, columns, *winning_line)
+    seam = _picture_side_line(smooth, columns, winning_line, winning_tone, winning_direction)
+    fitted = seam[:2] if seam is not None else (fits.get(winning_line) or _fit_seam(smooth, columns, *winning_line))
+    if seam is not None and seam[2] is not None:
+        candidate_measurements["coherent_bow_px"] = seam[2]
     # Move from the measured transition to the first picture pixel center.
     # Keep the two distances independent when the paper narrows to a corner.
     insets = np.asarray(fitted) + 0.5 - origin
@@ -366,11 +400,17 @@ def _assess_edge(
             a, b = (v + coarse_origin for v in result.insets)
             x = (np.array([0, strip.shape[1] - 1]) + 0.5) / sample_step - 0.5
             prediction = (a + (b - a) * x / (preview.shape[1] - 1)) * sample_step - 0.5
-            fitted = _picture_side_line(
+            seam = _picture_side_line(
                 smooth, columns, tuple(prediction), result.measurements["rim_luminance"],
                 result.measurements["transition_direction"], sample_step,
             )
-            insets = np.asarray(fitted if fitted is not None else prediction) + 0.5 - origin
+            insets = np.asarray(seam[:2] if seam is not None else prediction) + 0.5 - origin
+            measurements = result.measurements.copy()
+            if seam is not None and seam[2] is not None:
+                measurements["coherent_bow_px"] = seam[2]
+            elif "coherent_bow_px" in measurements:
+                measurements["coherent_bow_px"] *= sample_step
+            result = replace(result, measurements=measurements)
         else:
             # A single native row can disappear or take on scene color in an area average.
             near_origin = min(origin, 3 * sample_step)
@@ -483,6 +523,9 @@ def find_physical_border(
 
     offsets = {name: edge.trim_pixels for name, edge in edges.items()}
     reasons = tuple(dict.fromkeys(reason for edge in edges.values() for reason in edge.reason_codes))
+    if any(edge.is_physical_border and edge.measurements.get("coherent_bow_px", 0) > _MAX_PLANAR_SEAM_BOW_PX
+           for edge in edges.values()):
+        return BorderTrimPlan(dict.fromkeys(edges, 0), 0.0, False, (CURVED_IMAGE_BOUNDARY, *reasons), edges, None)
     supported = [edge.confidence for edge in edges.values() if edge.is_physical_border]
     if not supported:
         return BorderTrimPlan(offsets, 0.0, False, reasons, edges, None)
