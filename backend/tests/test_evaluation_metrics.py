@@ -60,7 +60,7 @@ def test_matching_maximizes_threshold_qualified_pairs(monkeypatch) -> None:
     predictions = [rectangle(0.3, 0.3, 0.7, 0.7), rectangle(0.4, 0.4, 0.8, 0.8)]
     scores = [[0.99, 0.87], [0.86, 0.80]]
 
-    def overlap(expected, detected, width, height):
+    def overlap(expected, detected, width, height, *, truth_mask=None):
         iou = scores[truth.index(expected)][predictions.index(detected)]
         return iou, iou, 0.0, 0.0
 
@@ -69,6 +69,27 @@ def test_matching_maximizes_threshold_qualified_pairs(monkeypatch) -> None:
 
     assert page.true_positive == 2
     assert [match["prediction_index"] for match in page.matches] == [1, 0]
+
+
+@pytest.mark.parametrize("lower_visible", [False, True])
+def test_native_instance_truth_counts_all_visible_components(lower_visible) -> None:
+    import numpy as np
+
+    from app.evaluation.cropping import evaluate_page_crops
+
+    scale = np.array([99, 99])
+    upper = (np.array(rectangle(20, 10, 69, 19)) / scale).tolist()
+    lower = (np.array(rectangle(20, 70, 69, 79)) / scale).tolist()
+    mask = np.zeros((100, 100), np.uint8)
+    mask[10:20, 20:70] = mask[70:80, 20:70] = 255
+
+    page = evaluate_page_crops([upper], [lower if lower_visible else upper], width=100, height=100, truth_masks=[mask])
+
+    match, = page.matches
+    assert match["mask_iou"] == match["content_cutoff"] == .5
+    assert match["background_retained"] == 0
+    assert match["corner_error"] is None
+    assert page.false_negative == 1
 
 
 def test_rendered_quality_measures_sampler_footprint_and_landmarks() -> None:
@@ -177,6 +198,58 @@ def test_benchmark_records_review_for_unresolved_mask_ownership(monkeypatch, tmp
     assert {row["mode"] for row in rows} == {"full_print", "image_only"}
     assert all(row["status"] == "review_needed" and row["reason_codes"] == [CROP_VALIDATION_UNAVAILABLE]
                and not row["automatic_release_passes"] for row in rows)
+
+
+def test_benchmark_uses_native_instance_mask_for_detection_and_refined_scores(monkeypatch, tmp_path) -> None:
+    import hashlib
+    import json
+    import sys
+    from pathlib import Path
+
+    import cv2
+    import numpy as np
+
+    from app.pipeline import segmentation
+    from scripts import evaluate_onnx_segmentation as evaluator
+
+    raster = np.zeros((100, 100), np.uint8)
+    assert cv2.imwrite(str(tmp_path / "page.png"), raster)
+    raster[10:20, 20:70] = raster[70:80, 20:70] = 255
+    mask_path = tmp_path / "full.png"
+    assert cv2.imwrite(str(mask_path), raster)
+    upper = np.array(rectangle(20, 10, 69, 19)) / 99
+    (tmp_path / "labels.txt").write_text("0 " + " ".join(map(str, upper.ravel())), encoding="utf-8")
+    manifest = tmp_path / "dataset.json"
+    manifest.write_text(json.dumps({"pages": [{
+        "id": "occluded", "image": "page.png", "annotations": "labels.txt", "expected_count": 1,
+        "expected_final_crops": [{"full_print": {
+            "mask": mask_path.name, "mask_sha256": hashlib.sha256(mask_path.read_bytes()).hexdigest(),
+            "recoverable": False,
+        }}],
+    }]}), encoding="utf-8")
+    polygon = [{"x": float(x), "y": float(y)} for x, y in upper]
+    item = segmentation.SegmentationDetection({}, {"polygon": polygon}, .95, 1.2, True, [])
+    monkeypatch.setattr(segmentation, "segment_album_page", lambda *_, **__: segmentation.SegmentationResult([item], {}))
+    monkeypatch.setattr(evaluator, "_render_crops", lambda *_: [{
+        "images": {}, "modes": {}, "metadata": {"refined_visible_polygon": polygon},
+    }])
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    model = tmp_path / "detector.onnx"
+    model.write_bytes(b"detector-fixture")
+    output = tmp_path / "report.json"
+    monkeypatch.setattr(sys, "argv", ["evaluate", "--dataset-manifest", str(manifest), "--model", str(model),
+                                      "--visible-mask-model", str(tmp_path / "local.onnx"), "--visuals",
+                                      "--output", str(output)])
+
+    with pytest.raises(SystemExit) as rejected:
+        evaluator.main()
+
+    assert rejected.value.code == 2
+    result = json.loads(output.read_text(encoding="utf-8"))["fixtures"][0]
+    assert result["native_instance_mask_count"] == 1
+    for measurement in ("metrics", "primary_detector_metrics", "final_instance_metrics"):
+        assert result[measurement]["false_negative"] == 1
+        assert result[measurement]["mask_iou"] == .5
 
 
 def test_album_benchmark_counts_independent_motif_downloads(tmp_path) -> None:

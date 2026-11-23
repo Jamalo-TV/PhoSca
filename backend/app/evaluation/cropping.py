@@ -98,8 +98,11 @@ def _mask(polygon: Polygon, width: int, height: int) -> np.ndarray:
     return result
 
 
-def _mask_overlap(truth: Polygon, prediction: Polygon, width: int, height: int) -> tuple[float, float, float, float]:
-    truth_mask = _mask(truth, width, height)
+def _mask_overlap(
+    truth: Polygon, prediction: Polygon, width: int, height: int, *, truth_mask: np.ndarray | None = None,
+) -> tuple[float, float, float, float]:
+    if truth_mask is None:
+        truth_mask = _mask(truth, width, height)
     prediction_mask = _mask(prediction, width, height)
     truth_area = int(truth_mask.sum())
     prediction_area = int(prediction_mask.sum())
@@ -111,7 +114,12 @@ def _mask_overlap(truth: Polygon, prediction: Polygon, width: int, height: int) 
     return iou, iou, cutoff, background
 
 
-def _pixel_bounds(polygon: Polygon, width: int, height: int) -> tuple[int, int, int, int] | None:
+def _pixel_bounds(
+    polygon: Polygon, width: int, height: int, *, truth_mask: np.ndarray | None = None,
+) -> tuple[int, int, int, int] | None:
+    if truth_mask is not None:
+        left, top, span_x, span_y = cv2.boundingRect(truth_mask)
+        return left, top, left + span_x - 1, top + span_y - 1
     points = _safe_polygon(polygon)
     if not len(points):
         return None
@@ -130,9 +138,11 @@ def _bounds_intersect(first, second) -> bool:
 
 
 def _boundary_f_score(
-    truth: Polygon, prediction: Polygon, width: int, height: int, tolerance_ratio: float = 0.0025
+    truth: Polygon, prediction: Polygon, width: int, height: int, tolerance_ratio: float = 0.0025,
+    *, truth_mask: np.ndarray | None = None,
 ) -> float:
-    truth_mask = _mask(truth, width, height)
+    if truth_mask is None:
+        truth_mask = _mask(truth, width, height)
     prediction_mask = _mask(prediction, width, height)
     kernel = np.ones((3, 3), dtype=np.uint8)
     truth_boundary = cv2.morphologyEx(truth_mask, cv2.MORPH_GRADIENT, kernel)
@@ -376,19 +386,28 @@ def evaluate_page_crops(
     height: int,
     iou_threshold: float = 0.85,
     accepted: Sequence[bool] | None = None,
+    truth_masks: Sequence[np.ndarray | None] | None = None,
 ) -> PageCroppingMetrics:
-    """Evaluate a page with one-to-one matching and content-safety metrics."""
+    """Match each instance once, using its native truth mask when provided."""
     size = max(len(truth), len(predictions))
     accepted = list(accepted) if accepted is not None else [True] * len(predictions)
-    truth_bounds = [_pixel_bounds(polygon, width, height) for polygon in truth]
+    native = [None] * len(truth) if truth_masks is None else [
+        None if mask is None else np.asarray(mask != 0, dtype=np.uint8) for mask in truth_masks
+    ]
+    if len(native) != len(truth) or any(
+        mask is not None and (mask.shape != (height, width) or not mask.any()) for mask in native
+    ):
+        raise ValueError("Native instance masks must match the page size and follow the truth instance order")
+    truth_bounds = [_pixel_bounds(polygon, width, height, truth_mask=mask)
+                    for polygon, mask in zip(truth, native, strict=True)]
     prediction_bounds = [_pixel_bounds(polygon, width, height) for polygon in predictions]
     overlaps: list[list[tuple[float, float, float, float]]] = [
         [
-            _mask_overlap(expected, detected, width, height)
+            _mask_overlap(expected, detected, width, height, truth_mask=mask)
             if _bounds_intersect(expected_bounds, detected_bounds) else (0.0, 0.0, 1.0, 1.0)
             for detected, detected_bounds in zip(predictions, prediction_bounds)
         ]
-        for expected, expected_bounds in zip(truth, truth_bounds)
+        for expected, expected_bounds, mask in zip(truth, truth_bounds, native, strict=True)
     ]
     cost = [[1.0] * size for _ in range(size)]
     for truth_index, row in enumerate(overlaps):
@@ -407,8 +426,9 @@ def evaluate_page_crops(
             continue
         assigned_predictions.add(prediction_index)
         polygon_iou, mask_iou, cutoff, background = overlaps[truth_index][prediction_index]
-        boundary = _boundary_f_score(truth[truth_index], predictions[prediction_index], width, height)
-        corner = _corner_error(truth[truth_index], predictions[prediction_index], width, height)
+        mask = native[truth_index]
+        boundary = _boundary_f_score(truth[truth_index], predictions[prediction_index], width, height, truth_mask=mask)
+        corner = _corner_error(truth[truth_index], predictions[prediction_index], width, height) if mask is None else None
         is_valid = polygon_iou >= iou_threshold
         if is_valid:
             valid_truth.add(truth_index)

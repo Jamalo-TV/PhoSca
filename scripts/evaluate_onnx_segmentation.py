@@ -274,6 +274,7 @@ def _reference_masks(record, expected, image_shape, manifest, *, include_referen
                 issues.append("INDEPENDENT_ASPECT_MISSING")
             modes[name] = {
                 "mask": reference_mask,
+                "native_instance_mask": name == "full_print" and bool(annotation.get("mask")),
                 "sidecar_pinned": sidecar_pinned,
                 "verified": record.get("annotation_provenance") == "manually_verified" and not issues,
                 "reference_issues": issues,
@@ -577,14 +578,19 @@ def _detection_passes(metrics, args) -> bool:
     )
 
 
-def _contact_sheet(directory, image, expected, detected, rendered, rows, references, index, name):
+def _contact_sheet(directory, image, expected, native_truth_masks, detected, rendered, rows, references, index, name):
     height, width = image.shape[:2]
     annotated = image.copy()
-    for polygons, color in ((expected, (65, 225, 25)), (detected, (255, 125, 25))):
-        for polygon in polygons:
-            points = np.rint(np.asarray(polygon) * [width - 1, height - 1]).astype(np.int32)
-            if len(points):
-                cv2.polylines(annotated, [points], True, color, max(2, width // 500))
+    for polygon, mask in zip(expected, native_truth_masks, strict=True):
+        if mask is None:
+            contours = [np.rint(np.asarray(polygon) * [width - 1, height - 1]).astype(np.int32)]
+        else:
+            contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.polylines(annotated, contours, True, (65, 225, 25), max(2, width // 500))
+    for polygon in detected:
+        points = np.rint(np.asarray(polygon) * [width - 1, height - 1]).astype(np.int32)
+        if len(points):
+            cv2.polylines(annotated, [points], True, (255, 125, 25), max(2, width // 500))
     for item in rendered:
         for mode, color in (("full_print", (25, 75, 255)), ("image_only", (15, 210, 240))):
             quad = _points(item["modes"].get(mode, {}).get("warp_quad") or [])
@@ -836,9 +842,21 @@ def main() -> None:
                         "confidence_components": components.as_dict(),
                         "review_reasons": list(dict.fromkeys(reasons)),
                     })
+            if not synthetic:
+                references = _reference_masks(record, expected, image.shape, args.dataset_manifest,
+                                              include_reference_images=visuals is not None)
+                reference_files_locked &= all(
+                    reference.get("sidecar_pinned", True) for modes in references for reference in modes.values()
+                )
+            full_print_references = [modes.get("full_print", {}) for modes in references]
+            native_truth_masks = [
+                reference["mask"] if reference.get("native_instance_mask") else None
+                for reference in full_print_references
+            ]
             metrics = evaluate_page_crops(
                 expected, detected, width=image.shape[1], height=image.shape[0],
                 iou_threshold=args.iou_threshold, accepted=accepted or [False] * len(detected),
+                truth_masks=native_truth_masks,
             )
             page_metrics.append(metrics)
             primary_metrics = None
@@ -847,6 +865,7 @@ def main() -> None:
                 primary_metrics = metrics if primary == detected else evaluate_page_crops(
                     expected, primary, width=image.shape[1], height=image.shape[0],
                     iou_threshold=args.iou_threshold, accepted=accepted or [False] * len(primary),
+                    truth_masks=native_truth_masks,
                 )
                 primary_page_metrics.append(primary_metrics)
             refined_polygons = [
@@ -861,14 +880,9 @@ def main() -> None:
                 final_metrics = evaluate_page_crops(
                     expected, final_polygons, width=image.shape[1], height=image.shape[0],
                     iou_threshold=args.iou_threshold, accepted=accepted or [False] * len(detected),
+                    truth_masks=native_truth_masks,
                 )
             final_instance_page_metrics.append(final_metrics)
-            if not synthetic:
-                references = _reference_masks(record, expected, image.shape, args.dataset_manifest,
-                                              include_reference_images=visuals is not None)
-                reference_files_locked &= all(
-                    reference.get("sidecar_pinned", True) for modes in references for reference in modes.values()
-                )
             rows = _rendered_quality(
                 references, final_metrics.matches, rendered, synthetic.difficulty if synthetic else "real",
                 eligible_modes or [frozenset()] * len(detected),
@@ -882,10 +896,11 @@ def main() -> None:
             transform_attempts += len(rendered)
             if visuals:
                 sheets.append(_contact_sheet(
-                    visuals, image, expected, detected, rendered, rows, references, page_index, record["id"],
+                    visuals, image, expected, native_truth_masks, detected, rendered, rows, references, page_index, record["id"],
                 ))
             fixtures.append({
                 "fixture": record["id"], "expected": len(expected), "detected": len(detected),
+                "native_instance_mask_count": sum(mask is not None for mask in native_truth_masks),
                 "page_category": record.get("page_category"), "difficulty_tags": record.get("difficulty_tags", []),
                 "source_group": record.get("source_group"), "annotation_provenance": record.get("annotation_provenance"),
                 "metrics": metrics.as_dict(),

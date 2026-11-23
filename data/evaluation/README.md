@@ -70,8 +70,11 @@ verified annotations for every page.
 
 `expected_final_crops` follows the order of the YOLO instances. Each item
 contains a `full_print` and `image_only` record. Each mode has a normalized
-`polygon` or a source-resolution mask PNG and a boolean `recoverable`. A
-recoverable reference needs `warp_quad` with four verified normalized source
+`polygon` or a source-resolution mask PNG and a boolean `recoverable`.
+When `full_print` supplies a PNG, instance matching and boundary scores
+use that native visible mask, including any disconnected regions and holes.
+The YOLO label supplies the instance index and annotation order.
+A recoverable reference needs `warp_quad` with four verified normalized source
 corners in upright output order (top left, top right, bottom right, bottom
 left). Supply metric geometry as `shape` (height and width of an independently
 rectified raster) or `physical_size_mm` (measured width and height in
@@ -87,9 +90,9 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 10 binds
-per-mode eligibility to the source-stock occlusion check, including outlined
-mounts, and the configured visible mask refiner. A verified motif can
+groups, with the 90% threshold applied to each group. Report schema 11 binds
+per-mode eligibility to native instance-mask scoring, the source-stock
+occlusion check and the configured visible mask refiner. A verified motif can
 qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
 
@@ -399,5 +402,6 @@ mounts obstructing about 1.19% of the beach print's motif and a front
 print with a paper caption obstructing about 85.53% of the rear church
 print's motif. The three visible islands of the rear print are in the
 native PNG sidecars. The draft YOLO label marks its largest visible
-component. All new mode annotations remain unverified. The exact
-source and separate exposures can be compared in the preflight sheet.
+component, which covers 49.84% of the visible print area. The evaluator
+reads all three from the PNG. All new mode annotations remain unverified.
+The source and separate exposures can be compared in the preflight sheet.

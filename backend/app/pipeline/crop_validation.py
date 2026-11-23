@@ -14,7 +14,7 @@ from app.pipeline.crop_sampling import OWNED_BILINEAR
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.model_registry import sha256
 
-CROP_VALIDATION_SCHEMA = 10
+CROP_VALIDATION_SCHEMA = 11
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
 
 
