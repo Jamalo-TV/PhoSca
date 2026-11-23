@@ -62,6 +62,41 @@ def test_ambiguous_paper_rim_requires_clear_backing_beyond_the_edge() -> None:
         assert all(mode["status"] == "review_needed" for mode in crop.metadata["crop_modes"].values())
 
 
+def test_faint_outer_edge_extends_review_preview_unless_a_neighbor_claims_the_band() -> None:
+    from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE
+
+    page = np.full((280, 360, 3), 150, np.uint8)
+    page[60:171, 60:261] = 233
+    page[70:161, 70:251] = (64, 109, 140)
+    inner_stock = _rect(60, 60, 260, 170)
+    mask = {"source": "classical_border_quad", "detector_source": CONTRAST_COMPONENT_SOURCE,
+            "polygon": _vertices(inner_stock, page)}
+    plain = _crop(page, {}, mask, dual_mode=True, print_aspect_ratio=200 / 110)
+    assert all(mode["status"] == "ready" for mode in plain.metadata["crop_modes"].values())
+
+    page[171:177, 60:261] = 152
+    extended = _crop(page, {}, mask, dual_mode=True, print_aspect_ratio=200 / 116)
+    assert extended.metadata["boundary_refinement"]["bottom"]["outer_stock_candidate"]
+    corners = normalized_vertices_to_pixels([
+        (point["x"], point["y"]) for point in extended.metadata["source_quad"]
+    ], *page.shape[1::-1])
+    assert np.allclose(corners, _rect(60, 60, 260, 176), atol=.5)
+    assert extended.image_only is not None
+    assert all(mode["reason_codes"] == ["PRINT_EDGE_CONFIRMATION_REQUIRED"] and mode["status"] == "review_needed"
+               for mode in extended.metadata["crop_modes"].values())
+
+    neighbor = {"polygon": _vertices(_rect(60, 171, 260, 176), page)}
+    isolated = _crop(page, {}, mask, dual_mode=True, print_aspect_ratio=200 / 110, neighbor_masks=[neighbor])
+    assert isolated.metadata["source_quad"] == plain.metadata["source_quad"]
+    assert all(mode["status"] == "ready" for mode in isolated.metadata["crop_modes"].values())
+
+    page[171:177, 60:69] = page[171:177, 252:261] = 150
+    unresolved = _crop(page, {}, mask, dual_mode=True, print_aspect_ratio=200 / 110)
+    assert unresolved.metadata["boundary_refinement"]["bottom"]["ambiguous_stock_step"]
+    assert unresolved.metadata["source_quad"] == plain.metadata["source_quad"]
+    assert all(mode["status"] == "review_needed" for mode in unresolved.metadata["crop_modes"].values())
+
+
 def test_half_open_box_and_explicit_outer_quad_have_exact_pixel_centers() -> None:
     page = np.random.default_rng(830).integers(0, 256, (100, 150, 3), dtype=np.uint8)
     box = _box(10, 11, 90, 76, page)

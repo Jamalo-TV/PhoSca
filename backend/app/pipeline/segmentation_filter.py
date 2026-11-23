@@ -6,7 +6,7 @@ import numpy as np
 from app.pipeline.geometry import normalized_vertices_to_pixels, quad_from_polygon
 
 
-SOURCE_CONTOUR_REVISION = 2
+SOURCE_CONTOUR_REVISION = 3
 CONTRAST_COMPONENT_SOURCE = "contrast_component"
 
 

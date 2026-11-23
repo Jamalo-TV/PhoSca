@@ -116,7 +116,7 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 24 binds
+groups, with the 90% threshold applied to each group. Report schema 25 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled and deskewed inference,
 the classical line-pair fallback, separated contrast recovery, empty drawn
@@ -887,6 +887,22 @@ stress test with fresh contrast proposals, all 47 affected retries require
 review. See `dense-v25-production.json` and
 `edge-retry-production-regenerated.json` under
 `runs/crop-quality/curved-geometry-probe/`.
+
+Version 26 also checks for a faint step outside an apparently complete
+contrast-component boundary. The proposed edge must carry a consistent
+luminance step along its span. For an extended review preview, both adjoining
+sides must show the same material change up to that edge. Known neighboring
+prints can veto the added strip. When a coherent step remains unresolved,
+the old quad stays in review. A similar strip can belong to a shadow or an
+unrecognized neighbor, so either result requires confirmation at the source.
+
+In 29 synthetic cases with freshly generated contrast proposals, previous
+geometry with calibrated intrinsics cut off content while marking all 29
+whole prints ready. Version 26 reduces that count to 11. Without camera
+intrinsics it reduces the count from eight to four. Fourteen calibrated
+previews meet the one-pixel footprint tolerance, with a maximum corner
+error of 0.790 px. Twelve of those also have zero foreign interpolation
+samples. See `edge-v26-production.json` in the same report directory.
 
 `nmah-gardner-paired-crops-draft.json` pins two independent Smithsonian scans
 of the same Marshall House accession. The fitted aspect ratios differ by

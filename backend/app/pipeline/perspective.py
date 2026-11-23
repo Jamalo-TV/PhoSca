@@ -34,6 +34,7 @@ from app.pipeline.print_edges import (
     refine_print_boundary,
     retry_ambiguous_stock_edge,
 )
+from app.pipeline.print_stock import find_outer_stock_candidate
 from app.pipeline.protected_regions import detect_protected_regions, merge_protected_regions, validate_protected_regions
 from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE, refine_visible_paper_rim
 
@@ -968,13 +969,20 @@ def _inspect_print(
     edge_confirmation = False
     if dual_mode and not manual and mask.get("warp_quad") is None:
         refined, boundary, reasons = refine_print_boundary(page, quad)
-        if (refined is not None and reasons == ["PRINT_BOUNDARY_AMBIGUOUS"]
-                and mask.get("detector_source") == CONTRAST_COMPONENT_SOURCE):
-            recovered = retry_ambiguous_stock_edge(page, quad, refined, boundary)
-            if recovered is not None:
-                refined, boundary = recovered
-                reasons = []
-                edge_confirmation = True
+        if refined is not None and mask.get("detector_source") == CONTRAST_COMPONENT_SOURCE:
+            if not reasons:
+                extension = find_outer_stock_candidate(page, refined, neighbors)
+                if extension is not None:
+                    refined, side, evidence = extension
+                    key = "outer_stock_candidate" if evidence["flanks_confirmed"] else "ambiguous_stock_step"
+                    boundary[side][key] = evidence
+                    edge_confirmation = True
+            elif reasons == ["PRINT_BOUNDARY_AMBIGUOUS"]:
+                recovered = retry_ambiguous_stock_edge(page, quad, refined, boundary)
+                if recovered is not None:
+                    refined, boundary = recovered
+                    reasons = []
+                    edge_confirmation = True
         if enable_classical_retry and "PRINT_OUTER_RIM_UNCERTAIN" in reasons:
             hypothesis = _outer_contour_hypothesis(page, quad)
             if hypothesis is not None:
