@@ -683,6 +683,21 @@ checks all pinned files and leaves eight missing metric references and 61
 mode annotations awaiting independent review. [Whiting album catalog](https://www.loc.gov/item/2007675298/)
 and [American Colony album catalog](https://www.loc.gov/pictures/item/2007675258/).
 
+The International Bomber Command Centre catalog pairs four mounted Quine
+album pages with larger images of all 14 prints. A separate Langworthy
+album page has six represented prints and multiple close-ups of one print.
+Matching image features and withholding each spatial quadrant from its
+homography fit gave a per-pair 95th-percentile reprojection error of
+0.75–1.66 native page pixels for the Quine images and 0.96–2.26 for the
+Langworthy images. This identifies corresponding prints. Review capture
+provenance, mount occlusion, and both sets of crop boundaries before using
+the pairs as benchmark truth. The archive publishes these images under
+CC BY-NC 4.0. [Quine page 24962](https://ibccdigitalarchive.lincoln.ac.uk/collections/document/24962),
+[page 24963](https://ibccdigitalarchive.lincoln.ac.uk/collections/document/24963),
+[page 24973](https://ibccdigitalarchive.lincoln.ac.uk/collections/document/24973),
+[page 25096](https://ibccdigitalarchive.lincoln.ac.uk/collections/document/25096),
+and [Langworthy page 34635](https://ibccdigitalarchive.lincoln.ac.uk/collections/document/34635).
+
 A development experiment zoomed into the bounded gap on the
 [sparsely mounted Met page](https://www.metmuseum.org/art/collection/search/289066).
 It found the central fifth print in the original scan at 0.904 mask IoU.
