@@ -34,8 +34,9 @@ missing content, foreign samples, samples outside the capture, and corner
 error in source pixels when annotated corners exist. Aspect and landmark
 errors require paired reference geometry. For banded cutoff and contamination,
 one source pixel around the annotation boundary accounts for annotation and
-raster uncertainty. The evaluator replays the sampler recorded for each mode
-against the source ownership mask. It counts every output sample with a foreign
+raster uncertainty. Reference crop polygons are sampled at the original pixel
+centers using their subpixel coordinates. The evaluator replays each mode's
+sampler against the source ownership mask. It counts every output sample with a foreign
 contribution and requires zero such samples on the synthetic references.
 The footprint uses the inverse-mapped output pixel centers, which avoids an
 extra half-output-pixel margin on downsized crops. The gate also checks output
@@ -117,7 +118,7 @@ requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. At least two
 of the same physical album groups must have recoverable references in both
 modes. The 90% threshold also applies to each group with recoverable examples
-in the mode being scored. Report schema 29 binds
+in the mode being scored. Report schema 30 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled and deskewed inference,
 the classical line-pair fallback, separated contrast recovery, empty drawn
@@ -939,6 +940,12 @@ pages and the ready cases from the 18 blur-only pages retain their previous
 results. A weakly distorted tilted print still exceeds the 1% aspect
 tolerance in both modes (1.11% and 1.24%). The frozen detection and crop
 pass counts are unchanged. See `runs/crop-quality/cloud-v33/`.
+
+Sampling the Whiting reference polygons at source pixel centers changes the
+strict whole-print cutoff counts from 565 to zero on print 76 and from 501 to
+124 on print 81, with the same rendered crops and one-pixel tolerance. Print
+81's remaining cutoff is on its ambiguous right edge. These measurements use
+draft references. See `runs/crop-quality/cloud-reference-raster/whiting.json`.
 
 The frozen seeded-geometry benchmark passes all 23 recoverable mode crops.
 The v21 and v22 Registered end-to-end runs match six of 18 raw instances

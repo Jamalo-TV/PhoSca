@@ -222,6 +222,7 @@ def _reference_scan_crop(payload, quad, shape, *, render):
 
 def _reference_masks(record, expected, image_shape, manifest, *, include_reference_images=False):
     from app.evaluation.cropping import _mask
+    from app.pipeline.crop_sampling import _outline_mask
     from app.schemas.common import PrintSizeMM
 
     height, width = image_shape[:2]
@@ -249,7 +250,10 @@ def _reference_masks(record, expected, image_shape, manifest, *, include_referen
                 if reference_mask is None or reference_mask.shape != (height, width):
                     raise ValueError(f"{record['id']}: invalid source-resolution reference mask")
             else:
-                reference_mask = _mask(_points(annotation["polygon"]), width, height)
+                # Preserve the annotated boundary in source coordinates. Rounding
+                # vertices before filling can add a row outside the physical edge.
+                vertices = np.asarray(_points(annotation["polygon"]), dtype=np.float64) * [width - 1, height - 1]
+                reference_mask = _outline_mask(vertices, (height, width))
             recoverable = annotation.get("recoverable")
             if not isinstance(recoverable, bool) or not np.any(reference_mask):
                 raise ValueError(f"{record['id']}: {name} needs a recoverability flag and a nonempty reference mask")

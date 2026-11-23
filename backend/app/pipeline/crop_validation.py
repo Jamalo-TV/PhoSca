@@ -16,7 +16,7 @@ from app.pipeline.decisions import ReviewReason
 from app.pipeline.model_registry import sha256
 from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
 
-CROP_VALIDATION_SCHEMA = 29
+CROP_VALIDATION_SCHEMA = 30
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
 
 

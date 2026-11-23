@@ -512,6 +512,19 @@ def test_paired_native_scan_is_warped_in_its_own_coordinates(tmp_path) -> None:
         reference()
 
 
+def test_final_crop_polygon_owns_only_pixels_inside_its_subpixel_boundary(tmp_path) -> None:
+    import numpy as np
+
+    from scripts.evaluate_onnx_segmentation import _reference_masks
+
+    outline = rectangle(.24, .24, .76, .76)
+    record = {"expected_final_crops": [{"full_print": {"polygon": outline, "recoverable": True}}]}
+    actual = _reference_masks(record, [outline], (6, 6, 3), tmp_path / "album.json")[0]["full_print"]["mask"]
+    expected = np.zeros((6, 6), dtype=np.uint8)
+    expected[2:4, 2:4] = 1
+    np.testing.assert_array_equal(actual, expected)
+
+
 def test_real_reference_mask_pin_detects_changed_bytes(tmp_path) -> None:
     from hashlib import sha256
 
