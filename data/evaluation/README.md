@@ -247,13 +247,22 @@ An alternating two-pass run on the same ten pages measured p95 at 2.49 s
 for precise crops and 2.66 s for the rollback path. Its paired samples are
 in `runs/crop-quality/paired-concavity-runtime.json`.
 
-With the experimental local mask and exclusive ownership between neighbors,
-the frozen synthetic comparison matches 18 of 18 visible instances at IoU
-0.85, with mean IoU 0.9725. With the registered geometry proposals, both
-rendered modes pass. The same-album golden comparison still favors the
-registered model, with mean IoU 0.9786 and boundary F-score 0.8926 compared
-with 0.9662 and 0.8402 for the experimental masks. The local mask remains
-experimental. The paired results are under `runs/crop-quality/training/`.
+The experimental local mask uses 320-pixel patches and adds registered
+detector proposals from the training split. With exclusive pixel ownership
+between neighbors it matches 18 of 18 visible instances at IoU 0.85 in the
+frozen synthetic split, with mean IoU 0.9750 and boundary F-score 0.8767.
+Keeping the registered geometry proposals yields 11 of 11 passing whole
+prints and 12 of 12 passing motifs. The same-album golden comparison keeps
+all 29 matches. Mean IoU is 0.9788 and boundary F-score is 0.9185, compared
+with 0.9786 and 0.8926 for the registered model. On page 26, IoU drops
+from 0.9885 to 0.9698 as the candidate includes more album stock.
+
+The ONNX export produces identical thresholded masks to PyTorch for all
+1,843,200 pixels in 18 development patches. On the test machine, CPU
+inference alone takes 28.2 ms median and 32.3 ms p95 per patch with two
+inference threads. The candidate remains experimental pending integrated
+and independent evaluation. The measurements are in the
+`local-mask-v4-*.json` reports under `runs/crop-quality/training/`.
 
 The Smithsonian and Met album examples are diagnostic pilots with draft
 annotations. An independent release benchmark still needs verified outer and
