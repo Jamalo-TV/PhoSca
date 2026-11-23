@@ -202,7 +202,7 @@ def _reference_masks(record, expected, image_shape, manifest, *, include_referen
     crops = record.get("expected_final_crops")
     if crops is None:
         return [
-            {"full_print": {"mask": _mask(polygon, width, height), "verified": False}}
+            {"full_print": {"mask": _mask(polygon, width, height), "verified": False, "present": False}}
             for polygon in expected
         ]
     if len(crops) != len(expected):
@@ -260,19 +260,22 @@ def _reference_masks(record, expected, image_shape, manifest, *, include_referen
                     or np.any((landmarks < 0) | (landmarks > [shape[1] - 1, shape[0] - 1]))
                 ):
                     raise ValueError(f"{record['id']}: {name} needs paired landmarks in the source and rectified pixel grids")
-            reference_geometry = bool(
+            valid_corners = bool(
                 corners is not None and corners.shape == (4, 2) and np.isfinite(corners).all()
                 and np.all((corners >= 0) & (corners <= 1)) and cv2.isContourConvex(corners)
-                and (ratio is not None or shape is not None)
             )
+            issues = []
+            if annotation.get("annotation_provenance") != "manually_verified":
+                issues.append("MODE_ANNOTATION_UNVERIFIED")
+            if recoverable and not valid_corners:
+                issues.append("MODE_CORNERS_MISSING_OR_INVALID")
+            if recoverable and ratio is None and shape is None:
+                issues.append("INDEPENDENT_ASPECT_MISSING")
             modes[name] = {
                 "mask": reference_mask,
                 "sidecar_pinned": sidecar_pinned,
-                "verified": (
-                    record.get("annotation_provenance") == "manually_verified"
-                    and annotation.get("annotation_provenance") == "manually_verified"
-                    and (not recoverable or reference_geometry)
-                ),
+                "verified": record.get("annotation_provenance") == "manually_verified" and not issues,
+                "reference_issues": issues,
                 "recoverable": recoverable,
                 "corners": corners * [width - 1, height - 1] if corners is not None else None,
                 "shape": shape,
@@ -295,16 +298,49 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file)
     positives = {name: set() for name in MODES}
     expected_photos = 0
     files_pinned = True
+    page_issues = []
+    mode_issues = []
+    groups = set()
+    hashes = set()
     for record in records:
         expected, pinned = _read_page_truth(record, parse_labels, hash_file)
         expected_photos += len(expected)
-        files_pinned &= pinned and bool(record.get("image_sha256"))
+        digest = record.get("image_sha256")
+        files_pinned &= pinned and bool(digest)
         page = load_image(record["image"])
         group = str(record.get("source_group") or "").strip().casefold()
+        issues = []
+        if group:
+            groups.add(group)
+        else:
+            issues.append("SOURCE_GROUP_MISSING")
+        if not digest:
+            issues.append("PAGE_IMAGE_HASH_MISSING")
+        elif digest in hashes:
+            issues.append("DUPLICATE_PAGE_IMAGE")
+        else:
+            hashes.add(digest)
+        if not pinned:
+            issues.append("LABEL_FILE_MISSING_OR_UNPINNED")
+        if record.get("annotation_provenance") != "manually_verified":
+            issues.append("PAGE_ANNOTATION_UNVERIFIED")
+        if issues:
+            page_issues.append({"page_id": record["id"], "source_group": group or None, "issues": issues})
         references = _reference_masks(record, expected, page.shape, args.dataset_manifest)
-        for modes in references:
-            for name, reference in modes.items():
-                files_pinned &= reference.get("sidecar_pinned", True)
+        for instance_index, modes in enumerate(references):
+            for name in MODES:
+                reference = modes.get(name)
+                identity = {"page_id": record["id"], "instance_index": instance_index, "mode": name}
+                if not reference or not reference.get("present", True):
+                    mode_issues.append(identity | {"issues": ["MODE_ANNOTATION_MISSING"]})
+                    continue
+                sidecar_pinned = reference.get("sidecar_pinned", True)
+                files_pinned &= sidecar_pinned
+                issues = reference["reference_issues"]
+                if not sidecar_pinned:
+                    issues = [*issues, "MODE_SIDECAR_UNPINNED"]
+                if issues:
+                    mode_issues.append(identity | {"issues": issues})
                 totals[name]["present"] += 1
                 totals[name]["verified"] += int(reference["verified"])
                 if reference["verified"] and reference.get("recoverable") is True:
@@ -314,6 +350,12 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file)
                 if reference.get("aspect_reference") == "physical_size_mm":
                     totals[name]["physical_dimensions"] += 1
     locked = is_locked_album_manifest(records, split)
+    dataset_issues = []
+    if split.get("album_independent") is not True:
+        dataset_issues.append("ALBUM_INDEPENDENCE_UNCONFIRMED")
+    if len(groups) < 2:
+        dataset_issues.append("FEWER_THAN_TWO_SOURCE_GROUPS")
+    insufficient_groups = [name for name in MODES if len(positives[name]) < 2]
     return {
         "reference_check_only": True,
         "dataset_manifest_sha256": args.dataset_manifest_sha256,
@@ -324,6 +366,10 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file)
         "ready_for_locked_evaluation": locked and files_pinned and all(
             totals[name]["verified"] == expected_photos and len(positives[name]) >= 2 for name in MODES
         ),
+        "reference_issues": {
+            "dataset": dataset_issues, "pages": page_issues, "modes": mode_issues,
+            "modes_with_fewer_than_two_verified_recoverable_groups": insufficient_groups,
+        },
         "modes": {name: dict(totals[name]) | {"verified_recoverable_groups": sorted(positives[name])} for name in MODES},
     }
 
@@ -386,7 +432,7 @@ def _render_crops(image, proposals, settings, temporary):
     return rendered
 
 
-def _rendered_quality(references, matches, rendered, difficulty, eligible):
+def _rendered_quality(references, matches, rendered, difficulty, eligible_modes):
     from app.evaluation.cropping import evaluate_rendered_crop
 
     rows = []
@@ -403,6 +449,7 @@ def _rendered_quality(references, matches, rendered, difficulty, eligible):
                 "mode": name, "status": state, "valid_detection": bool(match and match["valid_detection"]),
                 "matched_instance": bool(match and match["mask_iou"] >= .50),
                 "verified": reference["verified"], "recoverable": reference.get("recoverable"),
+                "independent_of_full_print": evidence.get("independent_of_full_print") is True,
                 "aspect_reference": reference.get("aspect_reference") or ("rectified_pixels" if reference.get("shape") else None),
                 "difficulty": difficulty, "reason_codes": evidence.get("reason_codes") or
                 ([render["reason"]] if render and render.get("reason") else []),
@@ -419,7 +466,7 @@ def _rendered_quality(references, matches, rendered, difficulty, eligible):
                     sampling=evidence.get("sampling"),
                 ))
             row["passes"] = bool(
-                row["matched_instance"] and state == "ready" and "footprint_iou" in row
+                row["recoverable"] is not False and row["matched_instance"] and state == "ready" and "footprint_iou" in row
                 and row["cutoff_beyond_1px"] == row["foreign_beyond_1px"] == row["outside_source_samples"] == 0
                 and row["sampling_shortfall_px"] <= 1
                 and row["warp_metadata_error_max_px"] <= 1
@@ -429,7 +476,7 @@ def _rendered_quality(references, matches, rendered, difficulty, eligible):
                     row.get("orientation_matches_reference") is True and row.get("corner_error_max_px", np.inf) <= 2
                 ))
             )
-            row["automatic_release_passes"] = bool(row["passes"] and eligible[match["prediction_index"]])
+            row["automatic_release_passes"] = bool(row["passes"] and name in eligible_modes[match["prediction_index"]])
             rows.append(row)
     return rows
 
@@ -603,7 +650,9 @@ def main() -> None:
     settings = _runtime_settings(args)
     from app.evaluation.cropping import evaluate_cropping_dataset, evaluate_page_crops, is_locked_album_manifest
     from app.pipeline.confidence import calibrate_confidence
-    from app.pipeline.crop_validation import CROP_VALIDATION_SCHEMA, automatic_crop_review_reasons, crop_validation_profile
+    from app.pipeline.crop_validation import (
+        CROP_VALIDATION_SCHEMA, automatic_crop_review_reasons, crop_validation_profile, geometrically_ready_crop_modes,
+    )
     from app.pipeline.decisions import component_review_reasons, confidence_components
     from app.pipeline.enhancement import prepare_for_cutout
     from app.pipeline.image_ops import load_image, sha256_file
@@ -688,6 +737,7 @@ def main() -> None:
                     unavailable = "review_needed" if item.get("reason") else "unavailable"
                     mode_availability[mode][item["modes"].get(mode, {}).get("status") or unavailable] += 1
             accepted: list[bool] = []
+            eligible_modes: list[set[str]] = []
             if not args.geometry_only:
                 for item, crop in zip(result.detections, rendered):
                     mask = item.mask or {}
@@ -730,13 +780,20 @@ def main() -> None:
                         settings, calibrated, item.geometry_valid, calibration.get("calibrated") is True,
                         item.review_reasons, orientation_reason,
                     )
-                    release_eligible = full_mode.get("status") == "ready" and not crop_review
+                    motif_image = crop["images"].get("image_only")
+                    modes = geometrically_ready_crop_modes(
+                        crop["modes"], image_only_present=motif_image is not None,
+                        image_only_is_full_print=motif_image is crop["images"].get("full_print"),
+                    ) if not crop_review else set()
+                    eligible_modes.append(modes)
+                    release_eligible = "full_print" in modes
                     quality_gate_acceptances += int(quality_accepted)
                     evaluated_detections += 1
                     accepted.append(release_eligible or bool(args.legacy_crop and quality_accepted and not crop_review))
                     acceptance_evidence.append({
                         "quality_gate_accepted": quality_accepted,
                         "eligible_before_album_validation": release_eligible,
+                        "eligible_crop_modes": sorted(modes),
                         "calibrated": bool(calibration.get("calibrated")),
                         "confidence_components": components.as_dict(),
                         "review_reasons": list(dict.fromkeys(reasons)),
@@ -768,7 +825,7 @@ def main() -> None:
                 )
             rows = _rendered_quality(
                 references, final_metrics.matches, rendered, synthetic.difficulty if synthetic else "real",
-                accepted or [False] * len(detected),
+                eligible_modes or [frozenset()] * len(detected),
             )
             if not synthetic:
                 for row in rows:

@@ -123,6 +123,8 @@ def test_synthetic_references_include_visible_ownership_and_review_cases() -> No
     assert not np.any(top.mask & bottom.mask)
     mount = pages["photo_corners"].prints[0].reference_modes
     assert not mount["full_print"].recoverable and not mount["image_only"].recoverable
+    paper_mount = pages["paper_corner_mount"].prints[0].reference_modes
+    assert not paper_mount["full_print"].recoverable and paper_mount["image_only"].recoverable
 
 
 def test_benchmark_rectifies_tilt_without_generator_intrinsics(tmp_path) -> None:
@@ -139,10 +141,35 @@ def test_benchmark_rectifies_tilt_without_generator_intrinsics(tmp_path) -> None
     assert rendered[0]["metadata"]["aspect_ratio_estimation"]["method"] == "estimated_pinhole_camera"
     reference = {mode: {**vars(ref), "verified": True} for mode, ref in print_fixture.reference_modes.items()}
     matches = [{"truth_index": 0, "prediction_index": 0, "mask_iou": 1.0, "valid_detection": True}]
-    rows = _rendered_quality([reference], matches, rendered, page.difficulty, [True])
+    rows = _rendered_quality([reference], matches, rendered, page.difficulty, [{"full_print", "image_only"}])
     assert {row["mode"] for row in rows} == {"full_print", "image_only"}
     assert all(row["passes"] and row["aspect_ratio_relative_error"] <= .01
                and row["corner_error_max_px"] <= 2 for row in rows)
+
+
+def test_album_benchmark_counts_independent_motif_downloads(tmp_path) -> None:
+    from app.config import Settings
+    from app.evaluation.crop_fixtures import geometry_seed, synthetic_crop_pages
+    from app.pipeline.crop_validation import geometrically_ready_crop_modes
+    from scripts.evaluate_onnx_segmentation import _render_crops, _rendered_quality
+
+    settings = Settings(DATABASE_URL="sqlite+aiosqlite://", REDIS_URL="redis://localhost:6379/15",
+                        ENABLE_PRECISE_PHOTO_CROPS=True, ENABLE_PHOTO_ORIENTATION_CORRECTION=False)
+    page = next(page for page in synthetic_crop_pages("development") if page.name == "paper_corner_mount")
+    print_fixture = page.prints[0]
+    rendered = _render_crops(page.image, [(*geometry_seed(print_fixture, page.image.shape), True)], settings, tmp_path)
+    modes = rendered[0]["modes"]
+    assert modes["full_print"]["status"] == "review_needed"
+    assert geometrically_ready_crop_modes(modes, image_only_present=False, image_only_is_full_print=False) == set()
+    assert geometrically_ready_crop_modes(modes, image_only_present=True, image_only_is_full_print=True) == set()
+    ready = geometrically_ready_crop_modes(modes, image_only_present=True, image_only_is_full_print=False)
+    assert ready == {"image_only"}
+
+    reference = {mode: {**vars(ref), "verified": True} for mode, ref in print_fixture.reference_modes.items()}
+    matches = [{"truth_index": 0, "prediction_index": 0, "mask_iou": 1.0, "valid_detection": True}]
+    rows = _rendered_quality([reference], matches, rendered, "real", [ready])
+    assert {row["mode"]: row["automatic_release_passes"] for row in rows} == {"full_print": False, "image_only": True}
+    assert not any(row["automatic_release_passes"] for row in _rendered_quality([reference], matches, rendered, "real", [set()]))
 
 
 def test_subsampled_crop_cannot_hide_lost_source_pixels() -> None:
@@ -161,7 +188,7 @@ def test_subsampled_crop_cannot_hide_lost_source_pixels() -> None:
         rendered = [{"modes": {"full_print": geometry}, "images": {"full_print": np.zeros((11, 11, 3), np.uint8)}}]
         refs = [{"full_print": {"mask": reference, "corners": truth, "shape": (60, 60), "verified": True, "recoverable": True}}]
         matches = [{"truth_index": 0, "prediction_index": 0, "mask_iou": 1.0, "valid_detection": True}]
-        evidence = _rendered_quality(refs, matches, rendered, "real", [True])[0]
+        evidence = _rendered_quality(refs, matches, rendered, "real", [{"full_print"}])[0]
 
         assert evidence["cutoff_beyond_1px"] == (0 if source_corners is truth else 448)
         assert evidence["sampling_shortfall_px"] >= 43
@@ -223,7 +250,7 @@ def test_measured_physical_aspect_is_evaluated_without_a_reference_pixel_grid(tm
         "images": {"full_print": np.zeros((9, 17, 3), np.uint8)},
     }]
     matches = [{"truth_index": 0, "prediction_index": 0, "mask_iou": 1.0, "valid_detection": True}]
-    row = _rendered_quality(refs, matches, rendered, "real", [True])[0]
+    row = _rendered_quality(refs, matches, rendered, "real", [{"full_print"}])[0]
     assert row["aspect_reference"] == "physical_size_mm"
     assert row["reference_aspect_ratio"] == 2
     assert row["aspect_ratio_relative_error"] == 0
@@ -375,9 +402,22 @@ def test_reference_check_requires_verified_positive_modes_from_both_albums(tmp_p
     complete = check()
     assert complete["ready_for_locked_evaluation"] is True
     assert complete["modes"]["full_print"]["physical_dimensions"] == 2
-    pages[1]["expected_final_crops"][0]["image_only"]["annotation_provenance"] = "draft"
+    assert not any(complete["reference_issues"].values())
+    draft = pages[1]["expected_final_crops"][0]["image_only"]
+    draft["annotation_provenance"] = "draft"
+    draft.pop("physical_size_mm")
     partial = check()
     assert partial["ready_for_locked_evaluation"] is False
     assert partial["modes"]["image_only"]["verified_recoverable_groups"] == ["album-a"]
+    assert partial["reference_issues"]["modes_with_fewer_than_two_verified_recoverable_groups"] == ["image_only"]
+    assert partial["reference_issues"]["modes"] == [{
+        "page_id": "album-b", "instance_index": 0, "mode": "image_only",
+        "issues": ["MODE_ANNOTATION_UNVERIFIED", "INDEPENDENT_ASPECT_MISSING"],
+    }]
     pages[1].pop("image_sha256")
-    assert check()["reference_files_pinned"] is False
+    pages[1].pop("expected_final_crops")
+    unpinned = check()
+    assert unpinned["reference_files_pinned"] is False
+    assert unpinned["reference_issues"]["pages"][0]["issues"] == ["PAGE_IMAGE_HASH_MISSING"]
+    assert unpinned["modes"]["full_print"]["present"] == 1
+    assert {entry["mode"] for entry in unpinned["reference_issues"]["modes"]} == {"full_print", "image_only"}

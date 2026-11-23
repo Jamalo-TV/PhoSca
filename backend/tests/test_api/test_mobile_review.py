@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from uuid import uuid4
 
 import cv2
@@ -629,12 +630,14 @@ async def test_review_can_remove_a_false_nested_candidate_from_occlusion_evidenc
     assert (await client.get(f"{whole}/image?variant=full_print")).status_code == 404
 
 
-async def test_automatic_crop_download_requires_current_album_validation(client, monkeypatch, tmp_path) -> None:
+@pytest.mark.parametrize("corner_mount", [False, True], ids=["full-print-visible", "motif-only-visible"])
+async def test_automatic_crop_download_requires_current_album_validation(client, monkeypatch, tmp_path, corner_mount) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, Page
     from app.pipeline.confidence import calibrate_confidence
     from app.pipeline.crop_validation import CROP_VALIDATION_SCHEMA, crop_validation_profile
+    from app.services.pipeline import perspective_correction_task_logic
 
     model_path = tmp_path / "registered.onnx"
     model_path.write_bytes(b"registered-checkpoint-for-api-test")
@@ -663,10 +666,14 @@ async def test_automatic_crop_download_requires_current_album_validation(client,
     profile = crop_validation_profile(get_settings())
     image = np.full((120, 160, 3), 105, dtype=np.uint8)
     image[24:108, 16:128] = 240
-    image[30:101, 22:121] = (50, 90, 150)
-    _, page_id, photo_id = await _seed_review_data(image)
+    margin = 13 if corner_mount else 6
+    left, right, top, bottom = 16 + margin, 127 - margin, 24 + margin, 107 - margin
+    image[top:bottom + 1, left:right + 1] = (50, 90, 150)
+    if corner_mount:
+        cv2.fillConvexPoly(image, np.int32([[13, 21], [36, 21], [13, 44]]), (48, 55, 61))
+    album_id, page_id, photo_id = await _seed_review_data(image)
     outer = [{"x": x / 159, "y": y / 119} for x, y in [(16, 24), (127, 24), (127, 107), (16, 107)]]
-    inner = [{"x": x / 159, "y": y / 119} for x, y in [(22, 30), (120, 30), (120, 100), (22, 100)]]
+    inner = [{"x": x / 159, "y": y / 119} for x, y in [(left, top), (right, top), (right, bottom), (left, bottom)]]
     async with get_session_factory()() as session:
         page = await session.get(Page, page_id)
         page.processing_metadata = {"steps": {"segmentation": {
@@ -680,18 +687,19 @@ async def test_automatic_crop_download_requires_current_album_validation(client,
         await session.commit()
 
     url = f"/api/v1/photos/{photo_id}"
-    variants = ("full_print", "image_only", "source_corrected_trimmed")
+    crop_variants = ("image_only",) if corner_mount else ("full_print", "image_only")
+    variants = (*crop_variants, "source_corrected_trimmed")
     result = await client.post(f"{url}/reprocess")
     assert result.status_code == 200, result.text
     payload = (await client.get(url)).json()
     crop_modes = payload["enhancement_applied"]["correction"]["crop_modes"]
-    for mode in ("full_print", "image_only"):
+    for mode in crop_variants:
         assert crop_modes[mode]["geometry_status"] == "ready"
         assert crop_modes[mode]["reason_codes"] == ["CROP_VALIDATION_UNAVAILABLE"]
-    assert all(payload["urls"][name] is None for name in variants)
+    assert all(payload["urls"][name] is None for name in ("full_print", "image_only", "source_corrected_trimmed"))
     assert (await client.get(payload["urls"]["source_corrected"])).status_code == 200
 
-    validation_path.write_text(json.dumps({
+    report = {
         "schema_version": CROP_VALIDATION_SCHEMA,
         "model_sha256": digest,
         "validation_profile": profile,
@@ -705,12 +713,43 @@ async def test_automatic_crop_download_requires_current_album_validation(client,
             "detection": True, "final_instance_segmentation": True,
             "rendered_crop_modes": {"full_print": True, "image_only": True},
         },
-    }), encoding="utf-8")
+    }
+    validation_path.write_text(json.dumps(report | {"schema_version": CROP_VALIDATION_SCHEMA - 1}), encoding="utf-8")
     result = await client.post(f"{url}/reprocess")
     assert result.status_code == 200, result.text
-    released = (await client.get(url)).json()["urls"]
+    stale = (await client.get(url)).json()["urls"]
+    assert all(stale[mode] is None for mode in crop_variants)
+
+    validation_path.write_text(json.dumps(report), encoding="utf-8")
+    result = await client.post(f"{url}/reprocess")
+    assert result.status_code == 200, result.text
+    payload = (await client.get(url)).json()
+    released = payload["urls"]
     for name in variants:
         assert (await client.get(released[name])).status_code == 200
+    album_photos = (await client.get(f"/api/v1/albums/{album_id}/photos")).json()
+    assert album_photos[0]["crop_download_urls"] == {mode: released[mode] for mode in ("full_print", "image_only")}
+
+    if corner_mount:
+        correction = payload["enhancement_applied"]["correction"]
+        assert correction["crop_modes"]["image_only"]["independent_of_full_print"] is True
+        assert payload["status"] == "review_needed"
+        assert released["full_print"] is None
+        assert (await client.get(f"{url}/image?variant=full_print")).status_code == 404
+        assert (await client.get(released["source_corrected_untrimmed"])).status_code == 200
+        approval = await client.post("/api/v1/review/events", json={
+            "task_type": "geometry", "task_id": str(photo_id), "answer": "correct", "idempotency_key": uuid4().hex,
+        })
+        assert approval.status_code == 409
+        crop = cv2.imdecode(np.frombuffer((await client.get(released["image_only"])).content, np.uint8), cv2.IMREAD_COLOR)
+        assert crop.shape[:2] == (bottom - top + 1, right - left + 1)
+        assert np.max(np.abs(crop[8:-8, 8:-8].astype(np.int16) - [50, 90, 150])) <= 5
+        async with get_session_factory()() as session:
+            assert (await perspective_correction_task_logic(session, photo_id, get_settings(), skip_if_exists=True))["idempotent_replay"]
+            Path(correction["trimmed_path"]).unlink()
+            repaired = await perspective_correction_task_logic(session, photo_id, get_settings(), skip_if_exists=True)
+            assert repaired["review_required"] and Path(repaired["trimmed_path"]).is_file()
+        released = (await client.get(url)).json()["urls"]
 
     monkeypatch.setenv("ENABLE_BORDER_TRIM", "true")
     get_settings.cache_clear()
@@ -718,9 +757,10 @@ async def test_automatic_crop_download_requires_current_album_validation(client,
     monkeypatch.setenv("ENABLE_BORDER_TRIM", "false")
     get_settings.cache_clear()
     model_path.write_bytes(b"another-checkpoint")
-    assert (await client.get(released["full_print"])).status_code == 404
+    checkpoint_variant = "image_only" if corner_mount else "full_print"
+    assert (await client.get(released[checkpoint_variant])).status_code == 404
     model_path.write_bytes(b"registered-checkpoint-for-api-test")
-    assert (await client.get(released["full_print"])).status_code == 200
+    assert (await client.get(released[checkpoint_variant])).status_code == 200
     registry_path.write_text("{}", encoding="utf-8")
     assert (await client.get(released["image_only"])).status_code == 404
     registry_path.write_text(json.dumps(registry), encoding="utf-8")

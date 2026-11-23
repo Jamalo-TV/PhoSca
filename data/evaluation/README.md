@@ -87,12 +87,18 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group.
+groups, with the 90% threshold applied to each group. Report schema 8 binds
+the per-mode eligibility checks to the source-stock occlusion check. A
+verified motif can qualify separately when its print corners require review.
+Detector calibration and the other release gates still apply.
 
 Validate the real reference files before running the detector on an independent
 split. `--check-references` checks hashes, geometry and review coverage without
 inference. With `--require-final-quality` it returns a nonzero exit code while
-the reference split is still incomplete.
+the reference split is still incomplete. The report lists dataset, page and
+mode issues, including missing measurements and unverified annotations.
+Instance indices start at zero and follow the page's YOLO labels. The report
+also names modes without recoverable verified examples in two source groups.
 
 ```powershell
 python scripts/evaluate_onnx_segmentation.py --dataset-manifest path/to/locked-album-manifest.json --check-references --require-final-quality
@@ -129,13 +135,17 @@ material beyond the image. Both reference boundaries still need verification.
 ## Precise crop validation
 
 The frozen end-to-end test passes the rendered pixel, corner and aspect
-gates for all eleven recoverable fixtures per mode. All six obstructed
-fixtures stay in review. The final visible segmentation matches all
-seventeen instances at IoU 0.85, with mean IoU 0.9950. The raw detector
+gates for all eleven recoverable full prints and all twelve recoverable
+motifs. All seven obstructed full prints and six obstructed motifs stay in
+review. The final visible segmentation matches all eighteen instances at
+IoU 0.85, with mean IoU 0.9953. The raw detector
 matches six instances at the same threshold. Both metrics are reported
 under `validation_gates` and in the raw and final instance metric sections
-of `runs/crop-quality/owned-sampling-locked.json`. On the tilted fixture the
+of `runs/crop-quality/observed-stock-locked.json`. On the tilted fixture the
 relative aspect error is below 0.3% for both modes without camera intrinsics.
+Across the 23 recoverable outputs, the largest corner error is 0.76 source
+pixels. The renderer samples no foreign source pixels and loses no content
+beyond the one-pixel boundary tolerance.
 Two additional single-axis checks measured 4.25% and 2.75% aspect error in the
 unmeasured previews. Both now require review. Supplying the measured print
 ratio brought all four mode outputs within 0.31%. See
@@ -153,10 +163,14 @@ are under `runs/crop-quality/owned-sampling-visuals/`.
 
 The stored raw proposal supports reproducible reprocessing. The final
 visible outline uses verified physical edges for complete prints and
-observed paper boundaries for appropriate review cases. Refined visibility
-does not make a curved or occluded print eligible for download. Pending the
-independent validation report, the API serves those crops for review and
-requires manual confirmation to expose the requested download variants.
+observed paper boundaries for appropriate review cases. A curved or
+occluded full print stays in review. A motif can be rendered separately
+when the corner holder crosses the print outline, its material is distinct
+from the adjoining backgrounds, and four supported motif edges enclose an
+uninterrupted paper rim. Evidence of a neighboring print causing the
+occlusion keeps the proposed crop in review. On the paper-corner fixture the
+motif has zero foreign samples and a largest corner error of 0.038 source
+pixels. Automatic downloads still require the independent validation report.
 A separate detected print fully inside another print's outline routes the
 enclosing crop to review. An explicit wrong-object review removes that
 detection from neighboring occlusion checks until its geometry is edited.
@@ -186,6 +200,32 @@ of 29 and generated eight false positives, so the candidate remains a training
 artifact. The training, visual comparisons and golden report are under
 `runs/crop-quality/training/edge-pairs-*`.
 
+A proposal-conditioned mask model was trained on labelled patches from the
+development dataset and tested with the registered detector's instances.
+The second run added seeds that follow only the pigmented part of a print.
+It reached 18 of 18 IoU matches on both synthetic splits. On the frozen
+white-motif fixture the mask IoU rose from 0.5579 to 0.9843. Replacing all
+masks lowered the golden mean IoU from 0.9786 to 0.9545 and left one serious
+white-on-white failure in the frozen split. Selecting replacements against
+the surrounding native paper edge reached 16 of 18 frozen matches and
+preserved all 29 golden masks. Both experimental paths miss release criteria.
+The training provenance, metrics and comparison image are under
+`runs/crop-quality/training/local-mask-v2-*`.
+
+A third run used separately generated pairs of pale album pages and prints
+with opposite contrast at the paper edge. On the frozen split the white-on-white
+mask improved from 0.8287 to 0.9877 IoU. The local masks matched all 18 prints,
+with boundary F-score 0.8264 and zero serious detector failures. Feeding the
+local masks directly into the renderer yielded 8 of 11 recoverable full prints
+and 8 of 12 recoverable motifs. Using the original geometry with the learned
+visibility restored the corner-holder motif but still failed cases with a
+neighboring print. The registered path passed all 11 and 12 rendered cases.
+In development, assigning overlapping pixels to the nearest original mask
+improved the IoU on touching and overlapping prints. The renderer still sent
+two otherwise recoverable prints to review.
+The offline training and per-page render evidence are under
+`runs/crop-quality/training/local-mask-v3-*`.
+
 A development-only inference sweep compared full-page scales, flips and a
 second pass on local proposal windows. Local views reached up to 9 of 17
 matches at IoU 0.85. The best fixed full-page view by match count reached
@@ -207,6 +247,14 @@ An alternating two-pass run on the same ten pages measured p95 at 2.49 s
 for precise crops and 2.66 s for the rollback path. Its paired samples are
 in `runs/crop-quality/paired-concavity-runtime.json`.
 
+With the experimental local mask and exclusive ownership between neighbors,
+the frozen synthetic comparison matches 18 of 18 visible instances at IoU
+0.85, with mean IoU 0.9725. With the registered geometry proposals, both
+rendered modes pass. The same-album golden comparison still favors the
+registered model, with mean IoU 0.9786 and boundary F-score 0.8926 compared
+with 0.9662 and 0.8402 for the experimental masks. The local mask remains
+experimental. The paired results are under `runs/crop-quality/training/`.
+
 The Smithsonian and Met album examples are diagnostic pilots with draft
 annotations. An independent release benchmark still needs verified outer and
 inner references from multiple physical albums and capture devices.
@@ -218,8 +266,11 @@ archive crops register to the photographed texture, and their frame bounds
 also include album stock or captions. `reserved-reference-drafts.json` has
 provisional annotations for six reserved pages, including two negatives and
 one obstructed print. The adjacent `reference-audit/` overlays compare both
-boundaries at native resolution. The reserved pages remain unused for model
-evaluation or tuning.
+boundaries at native resolution. `reserved-reference-drafts-pinned.json`
+also pins the six draft label files. The preflight report at
+`runs/crop-quality/reserved-reference-issues-pinned.json` lists 18 unverified
+crop-mode annotations for nine prints and nine missing independent aspect
+references. The reserved pages remain unused for model evaluation or tuning.
 
 `runs/crop-quality/independent-intake-stringer/` adds three native album pages
 from the State Library Victoria Stringer family collection. The intake has
@@ -234,3 +285,9 @@ second collection with complete paper edges for review. The references and
 physical aspect ratios still need independent verification. The library gives
 dimensions for the bound album and describes prints of various sizes. The
 JPEG density supplies no metric rectification for individual prints. [Library record](https://find.slv.vic.gov.au/primaws/rest/pub/sourceRecord?docId=alma9933203733607636&vid=61SLV_INST:SLV)
+
+The combined draft manifest at
+`runs/crop-quality/combined-archive-reference-drafts.json` brings together
+eight native pages with 19 prints. Its reference preflight confirms the file
+hashes and lists 38 unverified mode annotations and 13 missing independent
+aspect references. These drafts are reserved for reference review.

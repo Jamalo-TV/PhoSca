@@ -14,7 +14,7 @@ from app.pipeline.crop_sampling import OWNED_BILINEAR
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.model_registry import sha256
 
-CROP_VALIDATION_SCHEMA = 5
+CROP_VALIDATION_SCHEMA = 8
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
 
 
@@ -69,6 +69,18 @@ def automatic_crop_review_reasons(
     if orientation_reason:
         reasons.append(orientation_reason)
     return reasons
+
+
+def geometrically_ready_crop_modes(
+    modes: dict, *, image_only_present: bool, image_only_is_full_print: bool,
+) -> set[str]:
+    full_ready = (modes.get("full_print") or {}).get("status") == "ready"
+    ready = {"full_print"} if full_ready else set()
+    motif = modes.get("image_only") or {}
+    independent = motif.get("independent_of_full_print") is True and not image_only_is_full_print
+    if image_only_present and motif.get("status") == "ready" and (full_ready or independent):
+        ready.add("image_only")
+    return ready
 
 
 @lru_cache(maxsize=4)

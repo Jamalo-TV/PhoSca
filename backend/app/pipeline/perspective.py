@@ -16,7 +16,13 @@ from app.pipeline.geometry import (
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.orientation import correct_photo_orientation, rotate_image
-from app.pipeline.print_edges import continuous_motif_rim, covered_print_corner, missing_corner_material, refine_print_boundary
+from app.pipeline.print_edges import (
+    continuous_motif_rim,
+    missing_corner_material,
+    observed_rim_points,
+    print_corner_coverage,
+    refine_print_boundary,
+)
 from app.pipeline.protected_regions import detect_protected_regions, merge_protected_regions, validate_protected_regions
 from app.pipeline.segmentation_filter import refine_visible_paper_rim
 
@@ -558,8 +564,8 @@ def _clipped_visible_corner(quad: np.ndarray, visible: np.ndarray | None) -> boo
 
 
 def _neighbor_occlusion(
-    src_points: np.ndarray, own: np.ndarray | None, neighbors: list[np.ndarray],
-    *, inferred_sides: tuple[int, ...] = (), measured_sides: tuple[int, ...] = (),
+    page_image: np.ndarray, src_points: np.ndarray, own: np.ndarray | None, neighbors: list[np.ndarray],
+    *, inferred_sides: tuple[int, ...] = (), observed_sides: dict[int, tuple[np.ndarray, float]] | None = None,
 ) -> bool:
     if not neighbors:
         return False
@@ -577,21 +583,21 @@ def _neighbor_occlusion(
     minimum_overlap = max(6, round(footprint_area * 0.002))
     sides = np.roll(src_points, -1, axis=0) - src_points
     reach = float(np.clip(0.028 * np.min(np.linalg.norm(sides, axis=1)), 4, 24))
-    for index in measured_sides:
-        # Detector masks can spill a few pixels across an independently
-        # observed print rim. Keep any deeper intrusion as occlusion evidence.
-        start, end = src_points[index], src_points[(index + 1) % 4]
-        dx, dy = sides[index]
-        inset = 4 * np.array([-dy, dx]) / np.linalg.norm(sides[index])
-        exposed &= 1 - raster(np.array([start, end, end + inset, start + inset]))
     inferred_edge_samples = [
         src_points[index] + np.linspace(0.15, 0.85, 16)[:, None] * sides[index] for index in inferred_sides
     ]
     for polygon in neighbors:
         lower, upper = polygon.min(axis=0), polygon.max(axis=0)
         if np.all(upper > low) and np.all(lower < high):
-            if np.count_nonzero(raster(polygon) & exposed) >= minimum_overlap:
-                return True
+            overlap = raster(polygon) & exposed
+            if np.count_nonzero(overlap) >= minimum_overlap:
+                if own is None or not observed_sides:
+                    return True
+                rows, columns = np.nonzero(overlap)
+                claimed = np.column_stack((columns, rows)) / ratio + low
+                confirmed_stock = observed_rim_points(page_image, src_points, claimed, observed_sides)
+                if np.count_nonzero(~confirmed_stock) >= minimum_overlap:
+                    return True
             # A single exterior contour can cover an interior occluder hole.
             # A distinct, substantially smaller enclosed proposal is review evidence.
             if np.all(lower > low) and np.all(upper < high):
@@ -684,11 +690,7 @@ def _is_rectangular_in_measured_plane(quad: np.ndarray) -> bool:
     return max(float(opposite_error.max()), float(perpendicular_error.max())) <= 2.0
 
 
-def _independent_motif_visible(
-    page: np.ndarray, source: np.ndarray, visible: np.ndarray | None, neighbors: list[np.ndarray],
-) -> bool:
-    if visible is not None and any(cv2.pointPolygonTest(visible, tuple(point), True) < -0.75 for point in source):
-        return False
+def _independent_motif_visible(page: np.ndarray, source: np.ndarray, neighbors: list[np.ndarray]) -> bool:
     if any(cv2.intersectConvexConvex(source, cv2.convexHull(polygon))[0] > 1.0 for polygon in neighbors):
         return False
     return continuous_motif_rim(page, source)
@@ -698,7 +700,7 @@ def _dual_crop_result(
     page: np.ndarray, full_image: np.ndarray, source_quad: np.ndarray, matrix: np.ndarray, metadata: dict,
     inner: np.ndarray | None, full_reasons: list[str], *, trim_border: bool, auto_orient: bool,
     orientation_model_path: Path | None, page_regions: list[dict], protect_regions: bool, owned_sampling: bool,
-    visible: np.ndarray | None, neighbors: list[np.ndarray],
+    neighbors: list[np.ndarray], corner_mount_detected: bool,
 ) -> CropResult:
     page_height, page_width = page.shape[:2]
     height, width = full_image.shape[:2]
@@ -711,7 +713,7 @@ def _dual_crop_result(
     if owned_sampling:
         full_mode["sampling"] = OWNED_BILINEAR
 
-    independent = bool(full_reasons) and set(full_reasons) <= _LOCALIZED_OCCLUSION_REASONS
+    independent = corner_mount_detected and set(full_reasons) <= _LOCALIZED_OCCLUSION_REASONS
     if not full_reasons or independent:
         quad, diagnostics, image_reasons = _inner_crop_plan(
             full_image, matrix, inner, trim_border=trim_border, page_width=page_width, page_height=page_height,
@@ -748,7 +750,7 @@ def _dual_crop_result(
                         source, quad = refined, candidate
                 _validate_quad(source, page_width, page_height)
                 measured = metadata["aspect_ratio_estimation"]["method"] == "known_print_aspect"
-                if independent and not _independent_motif_visible(page, source, visible, neighbors):
+                if independent and not image_reasons and not _independent_motif_visible(page, source, neighbors):
                     image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
                 if (measured or independent) and not _is_rectangular_in_measured_plane(quad):
                     image_reasons.append("IMAGE_RECTANGLE_INCONSISTENT")
@@ -774,7 +776,7 @@ def _dual_crop_result(
                 image_reasons.append("IMAGE_QUAD_UNSTABLE")
         if image_reasons:
             diagnostics["applied"] = False
-            image_mode = {"status": "review_needed", "reason_codes": image_reasons}
+            image_mode = {"status": "review_needed", "reason_codes": list(dict.fromkeys(image_reasons))}
 
     metadata.update(
         crop_modes={"full_print": full_mode, "image_only": image_mode},
@@ -892,6 +894,7 @@ def correct_photo_crop(
     full_reasons: list[str] = []
     visible = None
     neighbor_polygons: list[np.ndarray] = []
+    corner_mount_detected = False
     manual = not allow_border_expansion or str(mask.get("source") or "").startswith("manual")
     regions = [] if not protect_regions else (
         protected_regions if protected_regions is not None else detect_protected_regions(page_image)
@@ -924,21 +927,26 @@ def correct_photo_crop(
         inferred_sides = tuple(
             index for index, evidence in enumerate(edge_evidence) if evidence.get("matched_print_rim")
         )
-        measured_sides = tuple(
-            index for index, evidence in enumerate(edge_evidence)
+        observed_sides = {
+            index: (np.array(evidence["observed_rim_lab"]), evidence["observed_rim_depth_px"])
+            for index, evidence in enumerate(edge_evidence)
             if not full_reasons and evidence.get("support", 0) >= 0.9
             and (evidence.get("corner_support") or 0) >= 0.8
-            and evidence.get("outward_search", {}).get("print_rim_supported")
+            and "observed_rim_lab" in evidence
             and index not in inferred_sides
+        }
+        neighbor_occlusion = _neighbor_occlusion(
+            page_image, src_points, visible, neighbor_polygons, inferred_sides=inferred_sides,
+            observed_sides=observed_sides,
         )
-        if _clipped_visible_corner(src_points, visible) or _neighbor_occlusion(
-            src_points, visible, neighbor_polygons, inferred_sides=inferred_sides, measured_sides=measured_sides,
-        ):
+        if _clipped_visible_corner(src_points, visible) or neighbor_occlusion:
             full_reasons.append("PRINT_POSSIBLY_OCCLUDED")
         if not full_reasons and missing_corner_material(page_image, src_points):
             full_reasons.append("PRINT_CORNERS_UNCERTAIN")
-        if not full_reasons and covered_print_corner(page_image, src_points):
-            full_reasons.append("PRINT_POSSIBLY_OCCLUDED")
+        if not neighbor_occlusion and set(full_reasons) <= _LOCALIZED_OCCLUSION_REASONS:
+            covered, corner_mount_detected = print_corner_coverage(page_image, src_points)
+            if covered and not full_reasons:
+                full_reasons.append("PRINT_POSSIBLY_OCCLUDED")
     protection = (
         validate_protected_regions(src_points, regions, width=width, height=height)
         if protect_regions
@@ -1056,7 +1064,7 @@ def correct_photo_crop(
             page_image, corrected, src_points, matrix, metadata, _explicit_quad(mask, "image_quad", width, height),
             full_reasons, trim_border=trim_border, auto_orient=auto_orient, orientation_model_path=orientation_model_path,
             page_regions=regions, protect_regions=protect_regions, owned_sampling=owned_sampling,
-            visible=visible, neighbors=neighbor_polygons,
+            neighbors=neighbor_polygons, corner_mount_detected=corner_mount_detected,
         )
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:

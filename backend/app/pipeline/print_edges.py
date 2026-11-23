@@ -117,15 +117,16 @@ def _side_line(
     return line / np.linalg.norm(line[:2]), evidence
 
 
-def _print_rim_color(
+def _observe_print_rim(
     image: np.ndarray, start: np.ndarray, end: np.ndarray, line: np.ndarray, *, minimum_transition: float,
-) -> np.ndarray | None:
+) -> tuple[np.ndarray, float] | None:
     """Require material between an expanded line and the original proposal."""
     tangent = end - start
     inward = np.array([-tangent[1], tangent[0]], np.float32) / np.linalg.norm(tangent)
     positions = start + np.linspace(0.16, 0.84, 64, dtype=np.float32)[:, None] * tangent
     projected = -(positions @ line[:2] + line[2]) / float(line[:2] @ inward)
-    if np.percentile(projected, 85) >= -4:
+    depth = float(np.percentile(-projected, 15))
+    if depth <= 4:
         return None
     offsets = np.column_stack((projected - 4, projected * 0.76, projected * 0.49, projected * 0.24))
     coordinates = positions[:, None, :] + offsets[:, :, None] * inward
@@ -140,7 +141,7 @@ def _print_rim_color(
         return None
     uniform = np.linalg.norm(inside - rim, axis=2) <= 13
     transition = np.linalg.norm(lab[:, 0] - inside[:, 0], axis=1)
-    return rim if np.mean(uniform) >= 0.78 and np.mean(transition > minimum_transition) >= 0.75 else None
+    return (rim, depth) if np.mean(uniform) >= 0.78 and np.mean(transition > minimum_transition) >= 0.75 else None
 
 
 def _line_endpoints(start: np.ndarray, end: np.ndarray, line: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -194,17 +195,59 @@ def missing_corner_material(image: np.ndarray, quad: np.ndarray) -> bool:
 
 
 def _sample_lab(image: np.ndarray, coordinates: np.ndarray) -> np.ndarray:
-    samples = cv2.remap(image, coordinates[:, 0:1].astype(np.float32),
-                        coordinates[:, 1:2].astype(np.float32), cv2.INTER_LINEAR)
+    coordinates = coordinates.astype(np.float32, copy=False)
+    # OpenCV remap limits the length of its destination axes.
+    samples = np.concatenate([
+        cv2.remap(image, points[:, 0:1], points[:, 1:2], cv2.INTER_LINEAR)
+        for points in np.array_split(coordinates, (len(coordinates) + 16_383) // 16_384)
+    ])
     return cv2.cvtColor(samples, cv2.COLOR_BGR2LAB)[:, 0].astype(np.float32)
+
+
+def observed_rim_points(
+    image: np.ndarray, quad: np.ndarray, points: np.ndarray, observed_sides: dict[int, tuple[np.ndarray, float]],
+) -> np.ndarray:
+    """Verify disputed mask pixels against the source stock of a fitted outer edge."""
+    sides = np.roll(quad, -1, axis=0) - quad
+    lengths = np.linalg.norm(sides, axis=1)
+    directions = sides / lengths[:, None]
+    inward = np.column_stack((-directions[:, 1], directions[:, 0]))
+    upper = np.array(image.shape[1::-1]) - 1
+    confirmed = np.zeros(len(points), dtype=bool)
+    for index, (stock, observed_depth) in observed_sides.items():
+        delta = points - quad[index]
+        depth, along = delta @ inward[index], delta @ directions[index]
+        reach = min(observed_depth, 0.075 * float(lengths.min()), 24.)
+        candidates = np.flatnonzero(
+            ~confirmed & (depth > 0) & (depth <= reach) & (along >= 0) & (along <= lengths[index])
+        )
+        if not len(candidates):
+            continue
+        edge = quad[index] + along[candidates, None] * directions[index]
+        end = depth[candidates, None]
+        start = np.minimum(.8, end * .25)
+        steps = max(4, int(np.ceil(reach / 1.5)) + 1)
+        depths = start + (end - start) * np.linspace(0., 1., steps)
+        offsets = np.column_stack((depths, np.broadcast_to([-2., -3.5], (len(candidates), 2))))
+        probes = edge[:, None, :] + offsets[:, :, None] * inward[index]
+        in_frame = ((probes >= 0) & (probes <= upper)).all(axis=(1, 2))
+        if not in_frame.any():
+            continue
+        distances = np.linalg.norm(
+            _sample_lab(image, probes[in_frame].reshape(-1, 2)).reshape(-1, steps + 2, 3) - stock, axis=2,
+        )
+        continuous_stock = (distances[:, :steps] <= 11).all(axis=1)
+        exterior_transition = (distances[:, steps:] >= 10).all(axis=1)
+        confirmed[candidates[in_frame]] = continuous_stock & exterior_transition
+    return confirmed
 
 
 def _is_pale_stock(color: np.ndarray) -> bool:
     return color[0] >= 185 and np.max(np.abs(color[1:] - 128)) <= 21
 
 
-def covered_print_corner(image: np.ndarray, quad: np.ndarray) -> bool:
-    """Flag coherent foreign corner material on otherwise consistent pale stock."""
+def print_corner_coverage(image: np.ndarray, quad: np.ndarray) -> tuple[bool, bool]:
+    """Return whether stock is missing at a corner and whether a holder is visible."""
     sides = np.roll(quad, -1, axis=0) - quad
     directions = sides / np.linalg.norm(sides, axis=1)[:, None]
     inward = np.column_stack((-directions[:, 1], directions[:, 0]))
@@ -214,7 +257,7 @@ def covered_print_corner(image: np.ndarray, quad: np.ndarray) -> bool:
     stock = np.median(edges, axis=(0, 1))
     support = (np.linalg.norm(edges - stock, axis=2) <= 13).mean(axis=1)
     if not _is_pale_stock(stock) or np.min(support) < .78:
-        return False
+        return False, False
     previous = -np.roll(directions, 1, axis=0)
     offsets = np.array([[2.5, 2.5], [5.0, 2.5], [2.5, 5.0]])
     tips = quad[:, None] + directions[:, None] * offsets[None, :, :1] + previous[:, None] * offsets[None, :, 1:]
@@ -222,7 +265,30 @@ def covered_print_corner(image: np.ndarray, quad: np.ndarray) -> bool:
     material = np.median(tips, axis=1)
     different = np.linalg.norm(material - stock, axis=1) >= 24
     coherent = np.max(np.linalg.norm(tips - material[:, None], axis=2), axis=1) <= 15
-    return bool(np.any(different & coherent))
+    candidates = different & coherent
+    if not candidates.any():
+        return False, False
+    # A corner holder crosses the outside of both adjoining edges. Print detail
+    # on the stock and the end of a neighboring seam do not establish a cover.
+    exterior = np.stack((quad + 4 * directions - 2 * inward,
+                         quad + 4 * previous - 2 * np.roll(inward, 1, axis=0)), axis=1)[candidates]
+    height, width = image.shape[:2]
+    in_frame = ((exterior >= 0) & (exterior <= [width - 1, height - 1])).all(axis=(1, 2))
+    colors = _sample_lab(image, exterior.reshape(-1, 2)).reshape(-1, 2, 3)
+    same_material = (np.linalg.norm(colors - material[candidates, None], axis=2) <= 18).all(axis=1)
+    covered = in_frame & same_material
+    if not covered.any():
+        return False, False
+
+    outside = edge_positions - 5.5 * inward[:, None, :]
+    outside_in_frame = ((outside >= 0) & (outside <= [width - 1, height - 1])).all(axis=(1, 2))
+    background = np.median(_sample_lab(image, outside.reshape(-1, 2)).reshape(4, 32, 3), axis=1)
+    adjoining = np.stack((background, np.roll(background, 1, axis=0)), axis=1)[candidates]
+    known_background = (outside_in_frame & np.roll(outside_in_frame, 1))[candidates]
+    # A shifted seam can expose the album page at a fitted corner. Only a
+    # separate material that differs from both adjoining backgrounds is a holder.
+    distinct_holder = (np.linalg.norm(adjoining - material[candidates, None], axis=2) >= 20).all(axis=1)
+    return True, bool(np.any(covered & known_background & distinct_holder))
 
 
 def continuous_motif_rim(image: np.ndarray, quad: np.ndarray) -> bool:
@@ -257,11 +323,13 @@ def refine_print_boundary(
             first, last = _line_endpoints(start, end, line) if line is not None else (start, end)
             if line is None or _pale_outside_strip(image, first, last):
                 alternate, retry = _side_line(image, first, last, wider, outward_only=True)
-                color = None if alternate is None else _print_rim_color(
+                observation = None if alternate is None else _observe_print_rim(
                     image, first, last, alternate, minimum_transition=8 if line is None else 5,
                 )
-                result["outward_search"] = {**retry, "print_rim_supported": color is not None}
-                if color is not None:
+                result["outward_search"] = {**retry, "print_rim_supported": observation is not None}
+                if observation is not None:
+                    color, depth = observation
+                    retry.update(observed_rim_lab=color.tolist(), observed_rim_depth_px=depth)
                     rings[index] = alternate, retry, color, line is not None
                     if line is None:
                         result.update(retry)

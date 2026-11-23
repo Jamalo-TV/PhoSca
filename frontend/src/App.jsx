@@ -430,18 +430,20 @@ function OrderedAnalyzer({ onAlbumReady, onOpenPhoto = () => {} }) {
                         {item.photos.map((photo, index) => {
                           const imageUrl = photo.image_url;
                           const cropModes = getCropModes(photo);
-                          const downloadUrl = !cropModes ? imageUrl : cropModes.full_print?.status === "ready"
-                            ? `/api/v1/photos/${photo.id}/image?variant=full_print` : null;
+                          const cropUrls = photo.crop_download_urls;
+                          const downloadUrl = cropModes ? cropUrls?.full_print || cropUrls?.image_only : imageUrl;
+                          const motifDownload = cropModes && !cropUrls?.full_print && !!cropUrls?.image_only;
                           return (
                             <div className="mini-photo-card" key={photo.id}>
                               <button type="button" className="variant-preview-button" onClick={() => onOpenPhoto(photo)}>
                                 <img src={imageUrl} alt={`Open extracted photo ${index + 1}`} />
                               </button>
                               {downloadUrl && (
-                                <a className="icon-button text-button" href={downloadUrl} download={`photo-${photo.id}.jpg`}
-                                  aria-label={`Download extracted photo ${index + 1}`}>
+                                <a className="icon-button text-button" href={downloadUrl}
+                                  download={`photo-${photo.id}${motifDownload ? "-image_only" : ""}.jpg`}
+                                  aria-label={motifDownload ? "Nur Bildmotiv herunterladen" : `Download extracted photo ${index + 1}`}>
                                   <Download size={14} />
-                                  Download
+                                  {motifDownload ? "Nur Bildmotiv" : "Download"}
                                 </a>
                               )}
                             </div>

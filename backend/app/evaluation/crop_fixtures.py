@@ -55,6 +55,7 @@ _CASES = {
     "clipped": "review",
     "curl": "review",
     "negative": "negative",
+    "paper_corner_mount": "hard",
 }
 
 
@@ -165,7 +166,7 @@ def _page(case: str, rng: np.random.Generator) -> PageFixture:
         elif case in {"cast_shadow", "glare"}:
             angles = (5.0, -10.0, -7.0)
         center = tuple(np.asarray(center) + rng.uniform(-.75, .75, 2))
-        margin = 0 if case == "borderless" else 12
+        margin = {"borderless": 0, "paper_corner_mount": 18}.get(case, 12)
         layers.append(_layer(case, rng, width=width_px, height=height_px, center=center, angles=angles, margin=margin))
         if case in {"touching", "touching_same_color", "overlap"}:
             separation = 268.0 if case == "overlap" else 332.0
@@ -188,11 +189,12 @@ def _page(case: str, rng: np.random.Generator) -> PageFixture:
         cv2.ellipse(reflection, (480, 187), (70, 21), -11, 0, 360, 1, -1)
         reflection = cv2.GaussianBlur(reflection, (39, 39), 10)
         page = np.rint(page * (1 - reflection[..., None]) + 253 * reflection[..., None]).astype(np.uint8)
-    if case == "photo_corners":
+    if case in {"photo_corners", "paper_corner_mount"}:
+        clip_length = 29 if case == "paper_corner_mount" else 38
         clips = np.zeros((height, width), dtype=np.uint8)
         for i, (x, y) in enumerate(layers[0][1]["full_print"].corners):
             sx, sy = (1 if i in {0, 3} else -1), (1 if i in {0, 1} else -1)
-            triangle = np.rint([[x - 3*sx, y - 3*sy], [x + 38*sx, y - 3*sy], [x - 3*sx, y + 38*sy]])
+            triangle = np.rint([[x - 3*sx, y - 3*sy], [x + clip_length*sx, y - 3*sy], [x - 3*sx, y + clip_length*sy]])
             cv2.fillConvexPoly(clips, triangle.astype(np.int32), 1)
         owner[clips != 0] = 0
         page[clips != 0] = (45, 53, 64)

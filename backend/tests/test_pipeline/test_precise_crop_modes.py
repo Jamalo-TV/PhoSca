@@ -269,6 +269,48 @@ def test_only_the_fully_visible_print_can_be_recovered_from_an_overlap() -> None
         assert np.max(np.linalg.norm(measured - fixture.prints[1].reference_modes[name].corners, axis=1)) < 1
 
 
+def test_neighbor_mask_spill_on_verified_stock_preserves_both_crop_modes() -> None:
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+
+    fixture = next(page for page in synthetic_crop_pages("development") if page.name == "touching")
+    page = fixture.image
+    mask = {
+        "source": "yolo_seg_mask",
+        "polygon": _vertices(_rect(96, 211, 403, 414), page),
+        "visible_polygon": _vertices(_rect(85, 200, 404, 425), page),
+    }
+    neighbor = {"polygon": _vertices(_rect(405, 250, 560, 424), page)}
+    baseline = _crop(page, {}, mask, dual_mode=True, camera_matrix=fixture.camera_matrix)
+    crop = _crop(page, {}, mask, dual_mode=True, camera_matrix=fixture.camera_matrix, neighbor_masks=[neighbor])
+
+    assert crop.metadata["boundary_refinement"]["right"]["observed_rim_depth_px"] > 10
+    assert {name: mode["status"] for name, mode in crop.metadata["crop_modes"].items()} == {
+        "full_print": "ready", "image_only": "ready",
+    }
+    assert np.array_equal(crop.image, baseline.image)
+    assert crop.image_only is not None and np.array_equal(crop.image_only, baseline.image_only)
+
+
+@pytest.mark.parametrize("cover", [None, "edge", "stock_break", "same_stock_outside"])
+def test_neighbor_claim_requires_continuous_source_stock_and_an_exterior_transition(cover) -> None:
+    from app.pipeline.perspective import _neighbor_occlusion
+
+    page = np.full((300, 420, 3), 65, dtype=np.uint8)
+    page[40:261, 45:376] = 235
+    if cover == "edge":
+        page[94:206, 372:382] = (130, 80, 165)
+    elif cover == "stock_break":
+        page[80:220, 371:373] = (130, 80, 165)
+    elif cover == "same_stock_outside":
+        page[75:225, 376:390] = 235
+
+    stock = cv2.cvtColor(page[48:49, 60:61], cv2.COLOR_BGR2LAB)[0, 0].astype(np.float32)
+    assert _neighbor_occlusion(
+        page, _rect(45, 40, 375, 260), _rect(45, 40, 363, 260), [_rect(364, 80, 400, 220)],
+        observed_sides={1: (stock, 12.)},
+    ) is (cover is not None)
+
+
 def test_enclosed_neighbor_keeps_outer_print_in_review_even_with_filled_model_mask() -> None:
     page = np.full((340, 490, 3), 75, np.uint8)
     page[40:301, 50:431] = (100, 140, 173)
@@ -306,6 +348,47 @@ def test_both_mode_transforms_include_the_same_applied_rotation(monkeypatch) -> 
         assert tuple(mode["shape"][key] for key in ("height", "width")) == image.shape[:2]
         mapped = cv2.perspectiveTransform(quad.reshape(1, 4, 2), np.array(mode["page_to_output"]))[0]
         assert np.allclose(mapped[0], [image.shape[1] - 1, 0], atol=1e-5)
+
+
+@pytest.mark.parametrize("case", ["paper_corner_mount", "photo_corners", "touching_same_color"])
+def test_independent_motif_crop_requires_an_unbroken_rim_and_no_neighbor_occlusion(case) -> None:
+    from app.evaluation.crop_fixtures import geometry_seed, synthetic_crop_pages
+    from app.evaluation.cropping import evaluate_rendered_crop
+
+    fixture = next(page for page in synthetic_crop_pages("development") if page.name == case)
+    proposals = [geometry_seed(item, fixture.image.shape) for item in fixture.prints]
+    for index, (box, mask) in enumerate(proposals):
+        neighbors = [other for other_index, (_, other) in enumerate(proposals) if other_index != index]
+        result = _crop(fixture.image, box, mask, dual_mode=True, enable_classical_retry=True, neighbor_masks=neighbors)
+        modes = result.metadata["crop_modes"]
+        assert modes["full_print"]["status"] == "review_needed"
+        if case != "paper_corner_mount":
+            assert modes["image_only"]["status"] == "review_needed"
+            assert result.image_only is None
+            continue
+
+        mode = modes["image_only"]
+        reference = fixture.prints[index].reference_modes["image_only"]
+        assert mode["status"] == "ready" and mode["independent_of_full_print"] is True
+        quad = [(point["x"], point["y"]) for point in mode["warp_quad"]]
+        metrics = evaluate_rendered_crop(reference.mask, quad, np.array(mode["page_to_output"]), result.image_only.shape[:2],
+                                         expected_corners=reference.corners, expected_shape=reference.shape,
+                                         sampling=mode["sampling"])
+        assert metrics["foreign_source_samples"] == metrics["cutoff_beyond_1px"] == 0
+        assert metrics["corner_error_max_px"] < 1
+
+
+def test_album_color_at_a_missing_corner_does_not_establish_a_holder() -> None:
+    from app.evaluation.crop_fixtures import geometry_seed, synthetic_crop_pages
+
+    fixture = next(page for page in synthetic_crop_pages("development") if page.name == "paper_corner_mount")
+    image = fixture.image.copy()
+    image[np.all(image == (45, 53, 64), axis=2)] = 146
+    box, mask = geometry_seed(fixture.prints[0], image.shape)
+    result = _crop(image, box, mask, dual_mode=True, enable_classical_retry=True)
+    assert result.metadata["crop_modes"]["full_print"]["status"] == "review_needed"
+    assert result.metadata["crop_modes"]["image_only"]["status"] == "review_needed"
+    assert result.image_only is None
 
 
 def test_camera_calibration_undoes_yaw_without_trusting_an_underconstrained_shape() -> None:

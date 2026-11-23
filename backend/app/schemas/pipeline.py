@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.models import OCRTextType, PageStatus, PhotoStatus
-from app.pipeline.variants import photo_image_url
+from app.pipeline.variants import photo_image_url, variant_path_from_photo
 from app.schemas.common import BoundingBox, NormalizedPoint, PrintSizeMM, SegmentationMask, StrictSchema
 
 
@@ -64,6 +64,14 @@ class PhotoRead(BaseModel):
     @property
     def image_url(self) -> str:
         return photo_image_url(self)
+
+    @computed_field
+    @property
+    def crop_download_urls(self) -> dict[str, str | None]:
+        return {
+            mode: photo_image_url(self, mode) if variant_path_from_photo(self, mode) else None
+            for mode in ("full_print", "image_only")
+        }
 
 
 class PhotoDetail(PhotoRead):

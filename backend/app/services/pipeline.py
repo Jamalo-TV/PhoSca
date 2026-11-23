@@ -39,6 +39,7 @@ from app.pipeline.crop_validation import (
     automatic_crop_review_reasons,
     crop_validation_evidence,
     crop_validation_profile,
+    geometrically_ready_crop_modes,
 )
 from app.pipeline.decisions import ReviewReason, component_review_reasons, confidence_components, is_reviewed_non_print
 from app.pipeline.dedup import compute_phash, hamming_distance
@@ -329,15 +330,21 @@ async def perspective_correction_task_logic(
         raise ValueError(f"Photo not found: {photo_id}")
     run = await get_or_create_run(session, photo.page, settings)
     if skip_if_exists and photo.original_storage_path and Path(photo.original_storage_path).exists():
-        full_mode = ((photo.enhancement_applied or {}).get("correction") or {}).get("crop_modes", {}).get("full_print")
-        return {
-            "photo_id": str(photo.id),
-            "storage_path": photo.original_storage_path,
-            "idempotent_replay": True,
-            "run_id": str(run.id),
-            "review_required": bool(full_mode and full_mode["status"] != "ready"),
-            "reason": next(iter(full_mode.get("reason_codes", [])), "CROP_GEOMETRY_UNCERTAIN") if full_mode else None,
-        }
+        previous = (photo.enhancement_applied or {}).get("correction") or {}
+        modes = previous.get("crop_modes") or {}
+        full_mode = modes.get("full_print") or {}
+        image_mode = modes.get("image_only") or {}
+        trimmed_path = previous.get("trimmed_path")
+        separate_motif = image_mode.get("status") == "ready" and (trimmed_path or image_mode.get("independent_of_full_print"))
+        if not separate_motif or (trimmed_path and Path(trimmed_path).is_file()):
+            return {
+                "photo_id": str(photo.id),
+                "storage_path": photo.original_storage_path,
+                "idempotent_replay": True,
+                "run_id": str(run.id),
+                "review_required": bool(full_mode and full_mode["status"] != "ready"),
+                "reason": next(iter(full_mode.get("reason_codes", [])), "CROP_GEOMETRY_UNCERTAIN") if full_mode else None,
+            }
     stage = await start_stage(session, run, "perspective_correction", input_path=Path(photo.page.storage_path))
 
     if page_image is None:
@@ -445,8 +452,12 @@ async def perspective_correction_task_logic(
             correction_metadata["crop_validation"] = evidence
     full_mode = crop_modes.get("full_print")
     image_mode = crop_modes.get("image_only") or {}
-    full_ready = bool(full_mode and full_mode["status"] == "ready")
-    image_ready = bool(full_ready and image_mode.get("status") == "ready" and crop_result.image_only is not None)
+    ready = geometrically_ready_crop_modes(
+        crop_modes, image_only_present=crop_result.image_only is not None,
+        image_only_is_full_print=crop_result.image_only is corrected,
+    )
+    full_ready = "full_print" in ready
+    image_ready = "image_only" in ready
     image_is_full = image_ready and crop_result.image_only is corrected
     trim_applied = bool(correction_metadata.get("border_trim", {}).get("applied"))
     trim_applied = (image_ready and not image_is_full) if crop_modes else trim_applied
