@@ -54,8 +54,8 @@ from app.pipeline.exif import write_caption_exif
 from app.pipeline.geometry import normalized_vertices_to_pixels
 from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, sha256_file
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
-from app.pipeline.page_plane import MeasuredPrintReference
-from app.pipeline.perspective import apply_refined_visibility, correct_photo_crop
+from app.pipeline.page_plane import CalibratedPagePlane, MeasuredPrintReference
+from app.pipeline.perspective import apply_refined_visibility, calibrated_plane_from_prints, correct_photo_crop
 from app.pipeline.presets import get_enhancement_config
 from app.pipeline.protected_regions import detect_protected_regions
 from app.pipeline.quality import segmentation_review_reasons
@@ -346,6 +346,7 @@ async def perspective_correction_task_logic(
     reject_invalid_edit: bool = False,
     page_image: np.ndarray | None = None,
     page_camera: CameraCalibration | None = None,
+    calibrated_page_plane: CalibratedPagePlane | None = None,
 ) -> dict:
     photo = await session.scalar(
         select(ExtractedPhoto)
@@ -374,6 +375,7 @@ async def perspective_correction_task_logic(
             }
     stage = await start_stage(session, run, "perspective_correction", input_path=Path(photo.page.storage_path))
 
+    loads_source = page_image is None
     if page_image is None:
         page_image, page_camera = await asyncio.to_thread(
             load_crop_source, Path(photo.page.storage_path), photo.page.file_hash_sha256,
@@ -412,6 +414,11 @@ async def perspective_correction_task_logic(
         manual_aspect = None
         if not automatic_detection and size is not None:
             manual_aspect = PrintSizeMM.model_validate(size).aspect_ratio
+        if loads_source and page_camera is not None and automatic_detection:
+            calibrated_page_plane = await asyncio.to_thread(
+                calibrated_plane_from_prints, page_image, page_camera.matrix,
+                [photo.segmentation_mask or {}, *neighbor_masks],
+            )
         crop_result = await asyncio.to_thread(
             correct_photo_crop,
             page_image,
@@ -429,6 +436,7 @@ async def perspective_correction_task_logic(
             enable_classical_retry=settings.enable_classical_segmentation_fallback,
             print_aspect_ratio=manual_aspect,
             camera_matrix=page_camera.matrix if page_camera is not None else None,
+            calibrated_page_plane=calibrated_page_plane,
             measured_page_references=measured_references,
             neighbor_masks=neighbor_masks,
         )
@@ -1101,14 +1109,26 @@ async def process_page_pipeline(page_id: UUID, settings: Settings | None = None)
         photo_ids = list(map(UUID, segmentation["photo_ids"]))
         photo_ids = [photo_id for photo_id in photo_ids if photo_id not in ready_photos]
         correction_source, page_camera = None, None
+        calibrated_page_plane = None
         if photo_ids:
             correction_source, page_camera = await asyncio.to_thread(
                 load_crop_source, Path(page.storage_path), page.file_hash_sha256,
                 settings.camera_calibration_path if settings.enable_precise_photo_crops else None,
             )
+            if page_camera is not None:
+                rows = await session.execute(select(
+                    ExtractedPhoto.segmentation_mask,
+                    ExtractedPhoto.bounding_box,
+                    ExtractedPhoto.enhancement_applied["review_rejected_detection"],
+                ).where(ExtractedPhoto.page_id == page.id))
+                masks = [mask for mask, box, rejection in rows if mask and not is_reviewed_non_print(rejection, box, mask)]
+                calibrated_page_plane = await asyncio.to_thread(
+                    calibrated_plane_from_prints, correction_source, page_camera.matrix, masks,
+                )
         corrections = [
             await perspective_correction_task_logic(
                 session, photo_id, settings, skip_if_exists=True, page_image=correction_source, page_camera=page_camera,
+                calibrated_page_plane=calibrated_page_plane,
             )
             for photo_id in photo_ids
         ]

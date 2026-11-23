@@ -90,6 +90,74 @@ def test_conflicting_measured_peers_prevent_aspect_transfer():
     assert {entry["photo_id"] for entry in estimates} == {"first", "conflict"}
 
 
+def test_calibrated_page_plane_abstains_on_mixed_planes():
+    from app.evaluation.crop_fixtures import _projected_corners, synthetic_crop_pages
+    from app.pipeline.page_plane import fit_calibrated_page_plane
+
+    page = next(page for page in synthetic_crop_pages("development") if page.name == "dense_gutters")
+    first = [_projected_corners(110, 90, (x, 113), (18, -12, -1)) for x in (90, 245, 420, 590)]
+    other = [_projected_corners(110, 90, (x, 490), (-34, 29, 2)) for x in (90, 245, 420, 590)]
+    assert fit_calibrated_page_plane(first + other, page.camera_matrix, page.image.shape) is None
+
+    flat = [item.reference_modes["full_print"].corners for item in page.prints]
+    plane = fit_calibrated_page_plane(flat, page.camera_matrix, page.image.shape)
+    assert plane is not None
+    assert plane.estimate_aspect(other[-1]) is None
+
+
+async def test_calibrated_plane_stabilizes_both_previews_without_automatic_release(client, tmp_path, monkeypatch):
+    import json
+
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.evaluation.crop_fixtures import geometry_seed, synthetic_crop_pages
+    from app.models import Album, ExtractedPhoto, Page
+    from app.pipeline.image_ops import sha256_file
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    fixture = next(page for page in synthetic_crop_pages("development") if page.name == "dense_gutters")
+    path = tmp_path / "calibrated-page.png"
+    assert cv2.imwrite(str(path), fixture.image)
+    capture_hash = sha256_file(path)
+    height, width = fixture.image.shape[:2]
+    calibration = tmp_path / "camera-calibration.json"
+    calibration.write_text(json.dumps({"schema_version": 1, "captures": {capture_hash: {
+        "width": width, "height": height, "camera_matrix": fixture.camera_matrix.tolist(), "calibration_id": "test",
+    }}}), encoding="utf-8")
+    monkeypatch.setenv("CAMERA_CALIBRATION_PATH", str(calibration))
+    get_settings.cache_clear()
+
+    async with get_session_factory()() as session:
+        album = Album(name="Calibrated album")
+        session.add(album)
+        await session.flush()
+        capture = Page(album_id=album.id, original_filename=path.name, storage_path=str(path), file_hash_sha256=capture_hash)
+        session.add(capture)
+        await session.flush()
+        photos = []
+        for item in fixture.prints:
+            box, mask = geometry_seed(item, fixture.image.shape)
+            photos.append(ExtractedPhoto(page_id=capture.id, album_id=album.id, storage_path=str(path),
+                                        bounding_box=box, segmentation_mask=mask, segmentation_confidence=.95))
+        session.add_all(photos)
+        await session.commit()
+        target_id = photos[4].id
+
+    response = await client.post(f"/api/v1/photos/{target_id}/reprocess")
+    assert response.status_code == 200, response.text
+    photo = response.json()
+    correction = photo["enhancement_applied"]["correction"]
+    assert correction["camera_calibration"]["capture_sha256"] == capture_hash
+    assert correction["aspect_ratio_estimation"]["page_plane"]["supporting_prints"] >= 20
+    assert correction["aspect_ratio_estimation"]["estimated_ratio"] == pytest.approx(123 / 83, rel=.01)
+    for name in ("full_print", "image_only"):
+        mode = correction["crop_modes"][name]
+        assert "CAMERA_ASPECT_REVIEW" in mode["reason_codes"]
+        assert photo["crop_download_urls"][name] is None
+
+
 async def test_reviewed_peer_changes_preview_but_cannot_release_either_crop(client, tmp_path, monkeypatch):
     from app.config import get_settings
     from app.database import get_session_factory

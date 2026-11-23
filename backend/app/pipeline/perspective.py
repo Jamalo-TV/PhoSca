@@ -17,7 +17,13 @@ from app.pipeline.geometry import (
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.orientation import correct_photo_orientation, rotate_image
-from app.pipeline.page_plane import PRINT_ASPECT_REFERENCE_REVIEW, MeasuredPrintReference, measured_page_aspect
+from app.pipeline.page_plane import (
+    PRINT_ASPECT_REFERENCE_REVIEW,
+    CalibratedPagePlane,
+    MeasuredPrintReference,
+    fit_calibrated_page_plane,
+    measured_page_aspect,
+)
 from app.pipeline.print_edges import (
     continuous_motif_rim,
     missing_corner_material,
@@ -398,15 +404,43 @@ def _estimated_aspect(points: np.ndarray, center: tuple[float, float], side: int
     return _orthogonal_aspect(homography, camera)
 
 
+def calibrated_plane_from_prints(
+    image: np.ndarray, camera: np.ndarray, masks: list[dict],
+) -> CalibratedPagePlane | None:
+    if len(masks) < 6:
+        return None
+    height, width = image.shape[:2]
+    quads = []
+    for mask in masks:
+        if mask.get("album_window_occluded") or mask.get("source") == ALBUM_WINDOW_SOURCE:
+            continue
+        try:
+            seed = _points_from_mask(mask, width, height)
+            if seed is None or _validate_quad(seed, width, height)["min_side"] < 60:
+                continue
+            quad, evidence, reasons = refine_print_boundary(image, seed)
+        except (ValueError, cv2.error):
+            continue
+        if (quad is None or reasons or np.any((quad < .5) | (quad > np.array([width, height]) - 1.5))
+                or any(side["support"] < .80 or (side["corner_support"] or 0) < .65 for side in evidence.values())):
+            continue
+        if any(cv2.intersectConvexConvex(quad, peer)[0] > 1 for peer in quads):
+            continue
+        quads.append(quad)
+    return fit_calibrated_page_plane(quads, camera, image.shape)
+
+
 def _crop_dimensions(
     points: np.ndarray, width: int, height: int, *, metric: bool,
     camera_matrix: np.ndarray | None, print_aspect_ratio: float | None,
+    calibrated_page_plane: CalibratedPagePlane | None = None,
 ) -> tuple[int, int, dict, list[str]]:
     top, right, bottom, left = np.linalg.norm(np.roll(points, -1, axis=0) - points, axis=1)
     target_width = round(float(max(top, bottom))) + 1
     target_height = round(float(max(left, right))) + 1
     aspect = None
     method = "projected_side_lengths"
+    plane_evidence = None
     reasons = []
     if print_aspect_ratio is not None:
         aspect = float(print_aspect_ratio)
@@ -417,8 +451,12 @@ def _crop_dimensions(
         camera = np.asarray(camera_matrix, dtype=float)
         if camera.shape != (3, 3) or not np.isfinite(camera).all() or abs(np.linalg.det(camera)) < 1e-7:
             raise ValueError("invalid_camera_matrix")
-        homography = cv2.getPerspectiveTransform(_UNIT_QUAD, points)
-        aspect = _orthogonal_aspect(homography, camera)
+        estimate = calibrated_page_plane.estimate_aspect(points) if calibrated_page_plane is not None else None
+        if estimate is not None:
+            aspect, plane_evidence = estimate
+        else:
+            homography = cv2.getPerspectiveTransform(_UNIT_QUAD, points)
+            aspect = _orthogonal_aspect(homography, camera)
         if aspect is None:
             reasons.append("PRINT_ASPECT_UNCERTAIN")
         else:
@@ -454,7 +492,10 @@ def _crop_dimensions(
         offset = 1 if method in {"known_print_aspect", "calibrated_camera"} else 0
         scale = max((target_width - offset) / aspect, target_height - offset)
         target_width, target_height = round(scale * aspect) + offset, round(scale) + offset
-    return target_width, target_height, {"method": method, "estimated_ratio": aspect}, reasons
+    details = {"method": method, "estimated_ratio": aspect}
+    if plane_evidence is not None:
+        details["page_plane"] = plane_evidence
+    return target_width, target_height, details, reasons
 
 
 def _geometry_for_mode(
@@ -902,6 +943,7 @@ def correct_photo_crop(
     dual_mode: bool = False,
     enable_classical_retry: bool = False,
     camera_matrix: np.ndarray | None = None,
+    calibrated_page_plane: CalibratedPagePlane | None = None,
     print_aspect_ratio: float | None = None,
     measured_page_references: list[MeasuredPrintReference] | None = None,
     neighbor_masks: list[dict] | None = None,
@@ -1002,6 +1044,7 @@ def correct_photo_crop(
     )
     target_width, target_height, aspect, aspect_reasons = _crop_dimensions(
         src_points, width, height, metric=dual_mode, camera_matrix=camera_matrix, print_aspect_ratio=print_aspect_ratio,
+        calibrated_page_plane=calibrated_page_plane if boundary_verified else None,
     )
     if (not full_reasons and aspect_reasons == ["PRINT_ASPECT_UNCERTAIN"] and camera_matrix is None
             and measured_page_references):

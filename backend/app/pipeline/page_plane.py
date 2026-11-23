@@ -1,4 +1,4 @@
-"""Estimate a print's aspect in the plane of a measured peer on the same page."""
+"""Estimate print aspect ratios from corroborated geometry on the same page."""
 
 from dataclasses import dataclass
 
@@ -9,6 +9,7 @@ from app.pipeline.print_edges import refine_print_boundary
 
 
 PRINT_ASPECT_REFERENCE_REVIEW = "PRINT_ASPECT_REFERENCE_REVIEW"
+_MAX_RECTANGLE_RESIDUAL_PX = .85
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,22 @@ class MeasuredPrintReference:
     photo_id: str
     quad: np.ndarray
     aspect: float
+
+
+@dataclass(frozen=True)
+class CalibratedPagePlane:
+    image_to_plane: np.ndarray
+    supporting_prints: int
+
+    def estimate_aspect(self, points: np.ndarray) -> tuple[float, dict] | None:
+        plane = _project(points, self.image_to_plane)
+        if plane is None:
+            return None
+        residual = _rectangle_residual(points, plane, self.image_to_plane)
+        aspect = _ratio(plane)
+        if not residual <= _MAX_RECTANGLE_RESIDUAL_PX or not .1 <= aspect <= 10:
+            return None
+        return aspect, {"supporting_prints": self.supporting_prints, "source_corner_residual_px": residual}
 
 
 def _project(points: np.ndarray, matrix: np.ndarray) -> np.ndarray | None:
@@ -55,6 +72,59 @@ def _rectangle_residual(points: np.ndarray, plane: np.ndarray, matrix: np.ndarra
         return float("inf")
     back = _project(rectangle, inverse)
     return float(np.linalg.norm(back - points, axis=1).max()) if back is not None else float("inf")
+
+
+def fit_calibrated_page_plane(
+    quads: list[np.ndarray], camera: np.ndarray, image_shape: tuple[int, ...],
+) -> CalibratedPagePlane | None:
+    """Pool normals from source-verified prints with the same camera intrinsics."""
+    minimum_prints = 6
+    if len(quads) < minimum_prints:
+        return None
+    inverse_camera = np.linalg.inv(camera)
+    unit_quad = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
+    normals = []
+    for quad in quads:
+        homography = cv2.getPerspectiveTransform(unit_quad, quad)
+        axes = inverse_camera @ homography[:, :2]
+        normal = np.cross(axes[:, 0], axes[:, 1])
+        normal /= np.linalg.norm(normal)
+        normals.append(-normal if normal[2] < 0 else normal)
+
+    def plane_map(normal: np.ndarray) -> np.ndarray | None:
+        norm = np.linalg.norm(normal)
+        if not norm > 1e-8:
+            return None
+        normal = normal / norm
+        axis = np.eye(3)[np.argmin(np.abs(normal))]
+        across = np.cross(axis, normal)
+        across /= np.linalg.norm(across)
+        down = np.cross(normal, across)
+        return np.array([across, down, normal]) @ inverse_camera
+
+    def supporting_quads(matrix: np.ndarray) -> np.ndarray:
+        return np.array([
+            (plane := _project(quad, matrix)) is not None
+            and _rectangle_residual(quad, plane, matrix) <= _MAX_RECTANGLE_RESIDUAL_PX
+            for quad in quads
+        ])
+
+    normals = np.asarray(normals)
+    initial = plane_map(np.median(normals, axis=0))
+    if initial is None:
+        return None
+    support = supporting_quads(initial)
+    required = max(minimum_prints, (2 * len(quads) + 2) // 3)
+    if support.sum() < required:
+        return None
+    matrix = plane_map(normals[support].mean(axis=0))
+    if matrix is None:
+        return None
+    support &= supporting_quads(matrix)
+    centers = np.asarray(quads)[support].mean(axis=1)
+    if len(centers) < required or np.any(np.ptp(centers, axis=0) < .25 * np.array(image_shape[1::-1])):
+        return None
+    return CalibratedPagePlane(matrix, len(centers))
 
 
 def _corner_uncertainty(points: np.ndarray, reference: MeasuredPrintReference, nominal: float) -> float:
@@ -106,7 +176,7 @@ def measured_page_aspect(
         plane = projected[4:]
         residual = _rectangle_residual(points, plane, matrix)
         ratio = _ratio(plane)
-        if not .1 <= ratio <= 10 or not residual <= .85:
+        if not .1 <= ratio <= 10 or not residual <= _MAX_RECTANGLE_RESIDUAL_PX:
             continue
         variation = _corner_uncertainty(points, reference, ratio)
         if not variation <= .02:

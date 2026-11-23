@@ -523,6 +523,22 @@ aspect unresolved. A wrongly measured aligned reference can still produce
 a plausible rectangle, so the correction records which measurement was used
 and keeps both downloads in review.
 
+A capture with registered camera intrinsics can also use a plane inferred
+from multiple distinct, source-verified print boundaries spread over the
+page. The fit checks the agreement between the source quads and the plane
+and then checks each target again. The correction uses the target's own
+corners. Automatic camera-based previews require review.
+[Metric rectification of planes](https://www.robots.ox.ac.uk/~vgg/publications/1998/Liebowitz98/)
+
+On the calibrated `dense_gutters` development capture, the registered
+detector and crop renderer confirmed enough source evidence for 28 of the
+30 prints. For those 28, the largest rendered aspect error fell from 4.27%
+to 0.81% for **Ganzer Abzug** and from 4.80% to 0.94% for **Nur Bildmotiv**.
+The full crop checks rose from 20 to 26 and from 21 to 27, respectively.
+Two further prints needed boundary review. See
+`gutter-split/calibrated-page-plane-comparison.json` and
+`gutter-split/calibrated-page-plane-visual.jpg` under `runs/crop-quality/`.
+
 On densely mounted pages with many small masks and detector warnings,
 PhoSca reuses the registered ONNX model on four overlapping
 windows. It excludes proposals that reach an artificial tile boundary and
