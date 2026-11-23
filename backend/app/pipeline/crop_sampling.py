@@ -130,3 +130,88 @@ def warp_owned_crop(image: np.ndarray, matrix: np.ndarray, size: tuple[int, int]
     inset[:, 2] -= np.abs(normals).sum(axis=1) * (1 + .5 / _PHASES)
     strips = _edge_strips(inset @ inverse, width, height)
     return output, _limit_edge_samples(image, output, inverse, lines, strips)
+
+
+def _outline_mask(outline: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+    """Rasterize ownership at source pixel centers, including the outline itself."""
+    height, width = shape
+    mask = np.zeros(shape, np.uint8)
+    start = outline
+    end = np.roll(outline, -1, axis=0)
+    slopes = end - start
+    lower = np.minimum(start[:, 1], end[:, 1])
+    upper = np.maximum(start[:, 1], end[:, 1])
+    for row in range(max(0, int(np.ceil(lower.min()))), min(height, int(np.floor(upper.max())) + 1)):
+        crossing = (row >= lower) & (row < upper)
+        x = np.sort(start[crossing, 0] + (row - start[crossing, 1]) * slopes[crossing, 0] / slopes[crossing, 1])
+        if len(x) % 2:
+            raise ValueError("invalid_motif_outline")
+        for left, right in x.reshape(-1, 2):
+            first = max(0, int(np.ceil(left - 1e-5)))
+            last = min(width, int(np.floor(right + 1e-5)) + 1)
+            mask[row, first:last] = 1
+    for a, b in zip(start, end, strict=True):
+        # Half-open scanlines avoid double-counting vertices. Add the omitted
+        # horizontal boundaries and any exactly aligned endpoint explicitly.
+        row = int(np.rint(a[1]))
+        if not 0 <= row < height or abs(a[1] - row) > 1e-5:
+            continue
+        if abs(b[1] - row) <= 1e-5:
+            first = max(0, int(np.ceil(min(a[0], b[0]) - 1e-5)))
+            last = min(width, int(np.floor(max(a[0], b[0]) + 1e-5)) + 1)
+            mask[row, first:last] = 1
+        else:
+            column = int(np.rint(a[0]))
+            if 0 <= column < width and abs(a[0] - column) <= 1e-5:
+                mask[row, column] = 1
+    return mask
+
+
+def warp_owned_outline(image: np.ndarray, outline: np.ndarray, matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Render a traced motif on a transparent canvas with the print's homography."""
+    if image.ndim != 3 or image.shape[2] != 3:
+        raise ValueError("invalid_motif_image")
+    if (outline.ndim != 2 or outline.shape[1] != 2 or len(outline) < 4 or not np.isfinite(outline).all()
+            or np.any(outline < 0) or np.any(outline > np.array(image.shape[1::-1]) - 1)):
+        raise ValueError("invalid_motif_outline")
+    matrix = np.asarray(matrix, np.float64)
+    if matrix.shape != (3, 3) or not np.isfinite(matrix).all() or np.linalg.matrix_rank(matrix) != 3:
+        raise ValueError("invalid_motif_projection")
+    projected = np.column_stack((outline, np.ones(len(outline)))) @ matrix.T
+    if not np.isfinite(projected).all() or not (np.all(projected[:, 2] > 1e-8) or np.all(projected[:, 2] < -1e-8)):
+        raise ValueError("invalid_motif_projection")
+    canvas = projected[:, :2] / projected[:, 2:3]
+    lower = np.floor(canvas.min(axis=0))
+    size = np.ceil(canvas.max(axis=0)) - lower + 1
+    if (min(size) < 2 or max(size) > 2 * max(image.shape[:2])
+            or size.prod() > 2 * image.shape[0] * image.shape[1]):
+        raise ValueError("invalid_motif_canvas")
+
+    origin = np.floor(outline.min(axis=0)).astype(int)
+    right, bottom = np.ceil(outline.max(axis=0)).astype(int) + 1
+    left, top = origin
+    roi = image[top:bottom, left:right]
+    ownership = _outline_mask(np.asarray(outline, np.float64) - origin, roi.shape[:2])
+    if not ownership.any():
+        raise ValueError("empty_motif_outline")
+    premultiplied = np.empty((*roi.shape[:2], 4), np.float32)
+    premultiplied[..., :3] = roi * ownership[..., None]
+    premultiplied[..., 3] = ownership
+    page_to_preview = matrix.copy()
+    page_to_preview[:2] -= lower[:, None] * matrix[2]
+    roi_to_preview = page_to_preview.copy()
+    roi_to_preview[:, 2] += page_to_preview[:, :2] @ origin
+    result = cv2.warpPerspective(premultiplied, roi_to_preview, tuple(size.astype(int)))
+    alpha = result[..., 3]
+    if not alpha.any():
+        raise ValueError("empty_motif_projection")
+    color = result[..., :3]
+    # Warp coverage and premultiplied colors together so unowned taps cannot
+    # introduce album paper, even at a partially transparent pixel.
+    np.divide(color, alpha[..., None], out=color, where=alpha[..., None] > 0)
+    alpha *= 255
+    np.clip(result, 0, 255, out=result)
+    np.rint(result, out=result)
+    output = result.astype(np.uint8)
+    output[output[..., 3] == 0, :3] = 0
+    return output, page_to_preview

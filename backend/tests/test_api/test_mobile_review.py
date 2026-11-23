@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import cv2
 import numpy as np
@@ -975,6 +975,69 @@ async def test_reprocessing_keeps_the_review_preview_for_an_automatic_face_hint(
     assert "POSSIBLE_CONTENT_CUTOFF" in full_mode["reason_codes"]
     assert payload["urls"]["full_print"] is None
     assert (await client.get(payload["urls"]["source_corrected_untrimmed"])).status_code == 200
+
+
+async def test_curved_motif_preview_is_an_inline_png_and_remains_a_review_asset(client, monkeypatch, curved_motif_page) -> None:
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import Asset, ExtractedPhoto, Page
+    from app.pipeline.image_ops import save_png, sha256_file
+    from app.services.pipeline import perspective_correction_task_logic
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    get_settings.cache_clear()
+    page_image, outer = curved_motif_page
+    album_id, page_id, photo_id = await _seed_review_data(page_image)
+    height, width = page_image.shape[:2]
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        photo = await session.get(ExtractedPhoto, photo_id)
+        source = Path(page.storage_path).with_suffix(".png")
+        save_png(source, page_image)
+        page.storage_path = str(source)
+        page.file_hash_sha256 = sha256_file(source)
+        photo.segmentation_confidence = None
+        photo.segmentation_mask = {"source": "manual_quad", "warp_quad": [
+            {"x": float(x) / (width - 1), "y": float(y) / (height - 1)} for x, y in outer
+        ]}
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    result = await client.post(f"{url}/reprocess")
+    assert result.status_code == 200, result.text
+    photo = (await client.get(url)).json()
+    correction = photo["enhancement_applied"]["correction"]
+    assert correction["crop_modes"]["image_only"]["status"] == "review_needed"
+    assert photo["urls"]["image_only"] is None
+    assert (await client.get(f"{url}/image?variant=image_only")).status_code == 404
+    assert (await client.get(photo["urls"]["full_print"])).headers["content-type"] == "image/jpeg"
+    preview_url = photo["urls"]["image_only_preview"]
+    preview = await client.get(preview_url)
+    assert preview.status_code == 200 and preview.headers["content-type"] == "image/png"
+    assert preview.headers["content-disposition"].startswith("inline")
+    decoded = cv2.imdecode(np.frombuffer(preview.content, np.uint8), cv2.IMREAD_UNCHANGED)
+    assert decoded.shape[2] == 4 and np.any(decoded[..., 3] == 0) and np.any(decoded[..., 3] == 255)
+    variants = (await client.get(f"{url}/variants")).json()
+    assert "image_only_preview" not in variants["variants"]
+    queue = (await client.get(f"/api/v1/review/queue?type=geometry&album_id={album_id}")).json()
+    assert queue[0]["payload"]["variant_urls"]["image_only_preview"] == preview_url
+
+    async with get_session_factory()() as session:
+        asset = await session.get(Asset, UUID(correction["image_only_preview_asset_id"]))
+        assert asset.role == "motif_review_preview" and asset.media_type == "image/png"
+        Path(asset.storage_path).unlink()
+        assert (await client.get(preview_url)).status_code == 404
+        repair = await perspective_correction_task_logic(session, photo_id, get_settings(), skip_if_exists=True)
+        assert not repair.get("idempotent_replay")
+    repaired = (await client.get(url)).json()["urls"]["image_only_preview"]
+    assert repaired != preview_url and (await client.get(repaired)).content == preview.content
+
+    monkeypatch.setenv("ENABLE_BORDER_TRIM", "false")
+    get_settings.cache_clear()
+    assert (await client.post(f"{url}/reprocess")).status_code == 200
+    assert (await client.get(repaired)).status_code == 404
 
 
 async def test_invalid_neighbor_mask_can_still_show_an_occlusion(client, monkeypatch) -> None:

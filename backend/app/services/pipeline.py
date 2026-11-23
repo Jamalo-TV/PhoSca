@@ -52,7 +52,7 @@ from app.pipeline.dl_enhancement import dl_enhance_photo
 from app.pipeline.enhancement import conservative_enhance_photo, prepare_for_cutout
 from app.pipeline.exif import write_caption_exif
 from app.pipeline.geometry import normalized_vertices_to_pixels
-from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, sha256_file
+from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, save_png, sha256_file
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
 from app.pipeline.page_plane import MeasuredPrintReference, PrintPagePlane
 from app.pipeline.perspective import apply_refined_visibility, correct_photo_crop, page_plane_from_prints
@@ -365,8 +365,11 @@ async def perspective_correction_task_logic(
         full_mode = modes.get("full_print") or {}
         image_mode = modes.get("image_only") or {}
         trimmed_path = previous.get("trimmed_path")
+        preview_path = previous.get("image_only_preview_path")
         separate_motif = image_mode.get("status") == "ready" and (trimmed_path or image_mode.get("independent_of_full_print"))
-        if not separate_motif or (trimmed_path and Path(trimmed_path).is_file()):
+        has_motif = not separate_motif or (trimmed_path and Path(trimmed_path).is_file())
+        has_preview = not image_mode.get("outline_preview") or (preview_path and Path(preview_path).is_file())
+        if has_motif and has_preview:
             return {
                 "photo_id": str(photo.id),
                 "storage_path": photo.original_storage_path,
@@ -528,6 +531,16 @@ async def perspective_correction_task_logic(
         if trimmed_path is not None:
             trimmed_path.unlink(missing_ok=True)
         raise
+    preview_path = None
+    if crop_result.image_only_preview is not None and image_mode.get("status") == "review_needed":
+        candidate_path = output_dir / f"{photo.id}_image_only_preview.png"
+        try:
+            await asyncio.to_thread(save_png, candidate_path, crop_result.image_only_preview)
+        except (OSError, ValueError, cv2.error) as exc:
+            candidate_path.unlink(missing_ok=True)
+            logger.warning("motif_preview_write_failed", photo_id=str(photo.id), error=str(exc))
+        else:
+            preview_path = candidate_path
     source_path = untrimmed_path if crop_modes else trimmed_path or untrimmed_path
     photo.original_storage_path = str(source_path)
     photo.storage_path = str(source_path)
@@ -558,6 +571,13 @@ async def perspective_correction_task_logic(
             parent_asset=parent_asset if crop_modes else untrimmed_asset,
             metadata=image_mode if crop_modes else correction_metadata.get("border_trim") or {},
         )
+    if preview_path is not None:
+        preview_asset = await record_asset(
+            session, run, path=preview_path, role="motif_review_preview", stage=stage,
+            parent_asset=parent_asset, metadata=image_mode,
+        )
+        correction_metadata["image_only_preview_path"] = str(preview_path)
+        correction_metadata["image_only_preview_asset_id"] = str(preview_asset.id)
     correction_metadata = correction_metadata | {
         "asset_id": str((untrimmed_asset if crop_modes else trimmed_asset or untrimmed_asset).id),
         "untrimmed_asset_id": str(untrimmed_asset.id),

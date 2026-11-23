@@ -1359,6 +1359,7 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
   const motifReview = (selected?.crop_modes || getCropModes(selected))?.image_only;
   const imageSuggestion = cyclicQuad(sanitizePolygon(motifReview?.suggested_warp_quad));
   const seamTraces = motifReview?.suggested_seam_traces;
+  const motifPreview = selected?.variant_urls?.image_only_preview || selected?.urls?.image_only_preview;
   const needsMotifSelection = editingImage && Boolean(imageSuggestion) && !selectedShape?.imageQuad;
   const measurement = selectedShape && parsePrintSize(selectedShape.printSizeFields);
   const sizeError = editingImage ? "" : measurement?.error;
@@ -1601,6 +1602,9 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
       </button>
       {currentSave?.error && <p role="alert">{currentSave.error}</p>}
       {currentSave?.url && <img className="review-crop-preview" src={currentSave.url} alt={cropModeLabels[editMode]} />}
+      {editingImage && motifPreview && !currentSave?.url && (
+        <img className="review-crop-preview" src={motifPreview} alt="Konturgetreue Motivvorschau zur Prüfung" />
+      )}
       {currentSave && !currentSave.saving && !currentSave.error && !currentSave.url && (
         <p role="status">Der gespeicherte Ausschnitt muss geprüft werden.</p>
       )}

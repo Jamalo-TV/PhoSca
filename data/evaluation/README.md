@@ -116,7 +116,7 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 26 binds
+groups, with the 90% threshold applied to each group. Report schema 27 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled and deskewed inference,
 the classical line-pair fallback, separated contrast recovery, empty drawn
@@ -870,6 +870,22 @@ captured print reaches 5.13 output pixels at p95. Both captures contain the
 bent edge. See `whiting-81-planar-alpha-vs-curved.json` in the same directory.
 For a genuinely uneven surface, interior evidence is needed to validate
 flattening. [Grid regularization study](https://openaccess.thecvf.com/content/CVPR2022/papers/Jiang_Revisiting_Document_Image_Dewarping_by_Grid_Regularization_CVPR_2022_paper.pdf)
+
+Version 28 renders a separate PNG for contour review when all four motif
+traces admit a simple closed outline and the original pixels confirm both
+arms of every extrapolated corner. The renderer translates the oriented
+print homography onto a canvas that encloses the contour. It interpolates
+premultiplied colors and ownership together, then stores straight colors
+with alpha. The preview asset appears under `image_only_preview` while the
+motif's download keeps its regular release requirements.
+
+In the 23-case synthetic contour comparison, 11 review previews render.
+All 11 have zero cut, foreign ownership and foreign interpolation samples
+beyond one source pixel, with a minimum outline IoU of 0.9971. Each of the
+three straight controls keeps its ordinary crop. The other nine cases lack
+a corroborated contour or print geometry. Whiting 81 still has a 166-pixel
+gap in the measured left edge. PhoSca retains its review traces as evidence.
+See `v28-production-outline-preview.json` in the contour report directory.
 
 The frozen seeded-geometry benchmark passes all 23 recoverable mode crops.
 The v21 and v22 Registered end-to-end runs match six of 18 raw instances

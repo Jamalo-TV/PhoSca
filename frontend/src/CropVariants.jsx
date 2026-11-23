@@ -38,7 +38,9 @@ export function CropVariants({ photo, hidden = false }) {
   const label = cropModeLabels[mode];
   const result = getCropModes(photo)?.[mode];
   const url = result?.status === "ready" ? photo.urls?.[mode] : null;
-  const preview = mode === "full_print" && (photo.urls?.source_corrected_untrimmed || photo.urls?.original);
+  const preview = mode === "image_only"
+    ? photo.urls?.image_only_preview
+    : photo.urls?.source_corrected_untrimmed || photo.urls?.original;
   const reviewMessage = result?.reason_codes?.map((code) => reviewMessages[code]).find(Boolean)
     || (result?.status === "ready" && !url && reviewMessages.CROP_VALIDATION_UNAVAILABLE)
     || (mode === "image_only" ? reviewMessages.IMAGE_BOUNDARY_UNCERTAIN : "Die Aussenkante des Abzugs muss geprüft werden.");
@@ -62,7 +64,8 @@ export function CropVariants({ photo, hidden = false }) {
       ) : (
         <>
           <p className="crop-mode-status" role="status">{reviewMessage}</p>
-          {preview && <img className="crop-variant-image" src={preview} alt="Vorschau zur Prüfung" />}
+          {preview && <img className="crop-variant-image" src={preview}
+            alt={mode === "image_only" ? "Konturgetreue Motivvorschau zur Prüfung" : "Vorschau zur Prüfung"} />}
         </>
       )}
     </section>

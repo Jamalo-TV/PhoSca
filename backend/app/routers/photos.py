@@ -17,6 +17,7 @@ from app.pipeline.image_ops import normalized_box_to_pixels
 from app.pipeline.perspective import validate_review_quads
 from app.pipeline.presets import available_presets
 from app.pipeline.variants import (
+    MOTIF_REVIEW_PREVIEW,
     released_variant_from_photo,
     variant_path_from_photo,
     variant_urls,
@@ -168,11 +169,13 @@ async def get_photo_image(
     selected_path = variant_path_from_photo(photo, selected_variant)
     if not selected_path or not Path(selected_path).exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
+    preview = selected_variant == MOTIF_REVIEW_PREVIEW
     return FileResponse(
         selected_path,
-        media_type="image/jpeg",
+        media_type="image/png" if preview else "image/jpeg",
         filename=Path(selected_path).name,
         content_disposition_type="inline",
+        headers={"Cache-Control": "private, no-store"} if preview else None,
     )
 
 

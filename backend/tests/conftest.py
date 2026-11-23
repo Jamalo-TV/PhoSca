@@ -2,6 +2,7 @@ import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
+import numpy as np
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -16,6 +17,18 @@ class FakeMagic:
         if content.startswith(b"\x89PNG\r\n\x1a\n"):
             return "image/png"
         return "application/octet-stream"
+
+
+@pytest.fixture
+def curved_motif_page():
+    page = np.full((345, 500, 3), (67, 78, 70), np.uint8)
+    page[35:306, 45:456] = 236
+    x = np.arange(65, 436)
+    y = np.arange(50, 288)
+    top = 56 + 3.5 * np.sin(2 * np.pi * (x - 65) / 370)
+    foreground = np.clip(y[:, None] - top + .5, 0, 1)[..., None]
+    page[50:288, 65:436] = np.rint(foreground * np.array([131, 108, 145]) + (1 - foreground) * 236)
+    return page, np.float32([[45, 35], [455, 35], [455, 305], [45, 305]])
 
 
 @pytest.fixture

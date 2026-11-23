@@ -297,26 +297,54 @@ def test_coherent_motif_bow_routes_only_image_mode_to_review(width, bow, needs_r
             assert metrics["cutoff_beyond_1px"] == metrics["foreign_beyond_1px"] == 0
 
 
-def test_native_motif_trace_follows_a_nonparabolic_boundary() -> None:
-    page = np.full((345, 500, 3), (67, 78, 70), np.uint8)
-    page[35:306, 45:456] = 236
-    x = np.arange(65, 436)
-    y = np.arange(50, 288)
-    top = 56 + 3.5 * np.sin(2 * np.pi * (x - 65) / 370)
-    foreground = np.clip(y[:, None] - top + .5, 0, 1)[..., None]
-    page[50:288, 65:436] = np.rint(foreground * np.array([131, 108, 145]) + (1 - foreground) * 236)
-    mask = {"source": "manual_quad", "warp_quad": _vertices(_rect(45, 35, 455, 305), page)}
+def test_native_motif_trace_follows_a_nonparabolic_boundary(curved_motif_page) -> None:
+    page, outer = curved_motif_page
+    mask = {"source": "manual_quad", "warp_quad": _vertices(outer, page)}
     crop = _crop(page, {}, mask, dual_mode=True)
     full, motif = (crop.metadata["crop_modes"][name] for name in ("full_print", "image_only"))
     assert full["status"] == "ready"
     assert motif["reason_codes"] == ["IMAGE_BOUNDARY_CURVED"]
     assert motif["status"] == "review_needed" and crop.image_only is None
+    assert crop.image_only_preview is not None
 
     traces = motif["suggested_seam_traces"]
     top_trace = min(traces, key=lambda trace: np.median([point["y"] for point in trace]))
     points = normalized_vertices_to_pixels([(point["x"], point["y"]) for point in top_trace], *page.shape[1::-1])
     true_top = 56 + 3.5 * np.sin(2 * np.pi * (points[:, 0] - 65) / 370)
     assert np.max(np.abs(points[:, 1] - (true_top + .5))) < 1
+
+
+def test_motif_preview_requires_source_evidence_at_an_inferred_corner(curved_motif_page) -> None:
+    page, outer = curved_motif_page
+    cv2.fillConvexPoly(page, np.int32([[64, 55], [75, 55], [64, 66]]), (236, 236, 236))
+    mask = {"source": "manual_quad", "warp_quad": _vertices(outer, page)}
+    crop = _crop(page, {}, mask, dual_mode=True)
+    motif = crop.metadata["crop_modes"]["image_only"]
+    assert motif["status"] == "review_needed" and motif["suggested_seam_traces"]
+    assert "outline_preview" not in motif
+    assert crop.image_only_preview is None
+
+
+def test_outline_preview_has_no_foreign_color_and_preserves_the_projective_map() -> None:
+    from app.pipeline.crop_sampling import warp_owned_outline
+
+    contour = np.float32([[4.2, 3.4], [17.8, 2.8], [20.1, 13.3], [15.2, 15.6], [5.6, 15.2], [7.1, 9.4]])
+    owned = np.array([[cv2.pointPolygonTest(contour, (x, y), False) >= 0 for x in range(25)] for y in range(21)])
+    page = np.full((21, 25, 3), 230, np.uint8)
+    page[owned] = (60, 109, 170)
+    matrix = np.float64([[1.35, .12, .3], [-.09, 1.55, .7], [.003, -.004, 1.]])
+    preview, projection = warp_owned_outline(page, contour, matrix)
+    poison = page.copy()
+    poison[~owned] = (11, 241, 7)
+    assert np.array_equal(preview, warp_owned_outline(poison, contour, matrix)[0])
+    alpha = preview[..., 3]
+    assert np.any(alpha == 0) and np.any((alpha > 0) & (alpha < 255)) and np.any(alpha == 255)
+    assert np.all(preview[alpha > 0, :3] == [60, 109, 170])
+    assert np.all(preview[alpha == 0, :3] == 0)
+    before = cv2.perspectiveTransform(contour[None], matrix)[0]
+    after = cv2.perspectiveTransform(contour[None], projection)[0]
+    assert np.allclose(before - after, np.floor(before.min(axis=0)), atol=1e-5)
+    assert np.all(after >= 0) and np.all(after <= np.array(preview.shape[1::-1]) - 1)
 
 
 @pytest.mark.parametrize("ranked_contours_available", [True, False])

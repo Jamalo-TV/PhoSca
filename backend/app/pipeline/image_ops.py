@@ -122,6 +122,14 @@ def save_jpeg(path: Path, image: np.ndarray, quality: int = 92) -> None:
         raise ValueError(f"Could not write image: {path}")
 
 
+def save_png(path: Path, image: np.ndarray) -> None:
+    ok, encoded = cv2.imencode(".png", image, [int(cv2.IMWRITE_PNG_COMPRESSION), 1])
+    if not ok:
+        raise ValueError(f"Could not write image: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(encoded.tobytes())
+
+
 def calculate_blur_score(image: np.ndarray) -> float:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return float(cv2.Laplacian(gray, cv2.CV_64F).var())

@@ -6,7 +6,7 @@ import numpy as np
 
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
-from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop
+from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
 from app.pipeline.geometry import (
     normalized_polygon_overlap,
     normalized_vertices_to_pixels,
@@ -16,7 +16,7 @@ from app.pipeline.geometry import (
     rectify_crop_quad,
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
-from app.pipeline.motif_boundary import trace_motif_boundary
+from app.pipeline.motif_boundary import close_motif_outline, motif_outline_corners_supported, trace_motif_boundary
 from app.pipeline.orientation import correct_photo_orientation, rotate_image
 from app.pipeline.page_plane import (
     PRINT_ASPECT_REFERENCE_REVIEW,
@@ -55,6 +55,7 @@ class CropResult:
     image: np.ndarray
     metadata: dict
     image_only: np.ndarray | None = None
+    image_only_preview: np.ndarray | None = None
 
 
 def _explicit_quad(
@@ -777,6 +778,7 @@ def _dual_crop_result(
     page_height, page_width = page.shape[:2]
     height, width = full_image.shape[:2]
     image_only = None
+    image_only_preview = None
     image_mode = {"status": "review_needed", "reason_codes": full_reasons.copy()}
     diagnostics = {"method": "deferred_until_print_boundary_is_verified", "applied": False}
     adjusted, orientation = _orient_crop(full_image, auto_orient, orientation_model_path)
@@ -795,6 +797,7 @@ def _dual_crop_result(
         wide_rim = diagnostics["method"] == "wide_paper_rim"
         suggested_quad = None
         seam_traces = []
+        outline = None
         all_edges = diagnostics.get("edges", {})
         four_rim_edges = len(all_edges) == 4 and all(edge.get("is_physical_border") for edge in all_edges.values())
         seam_seed = diagnostics.pop("curve_seed_quad", quad)
@@ -807,6 +810,8 @@ def _dual_crop_result(
                 image_reasons.append("IMAGE_BOUNDARY_UNCERTAIN")
             if curved or disagrees or CURVED_IMAGE_BOUNDARY in image_reasons:
                 seam_traces = [_vertices_on_page(trace, page_width, page_height) for trace in traces]
+                if len(traces) == 4 and CURVED_IMAGE_BOUNDARY in image_reasons:
+                    outline = close_motif_outline(native_seed, traces)
                 quad = None
         if independent and (quad is None or (inner is None and not four_rim_edges)):
             image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
@@ -886,6 +891,26 @@ def _dual_crop_result(
                 image_mode["suggested_warp_quad"] = suggested_quad
             if seam_traces:
                 image_mode["suggested_seam_traces"] = seam_traces
+            if outline is not None and all(cv2.pointPolygonTest(source_quad, tuple(point), True) >= -1e-4 for point in outline):
+                outline_hull = cv2.convexHull(outline)
+                overlaps = any(cv2.intersectConvexConvex(outline_hull, cv2.convexHull(neighbor))[0] > 1.0
+                               for neighbor in neighbors)
+                protects_content = not protect_regions or validate_protected_regions(
+                    outline, page_regions, width=page_width, height=page_height,
+                )["passed"]
+                if not overlaps and protects_content and motif_outline_corners_supported(page, outline, traces, all_edges):
+                    try:
+                        image_only_preview, preview_matrix = warp_owned_outline(
+                            page, outline, np.asarray(full_mode["page_to_output"]),
+                        )
+                    except (ValueError, cv2.error):
+                        pass  # Incomplete preview geometry leaves the measured lines available for review.
+                    else:
+                        image_mode["outline_preview"] = {
+                            "source_outline": _vertices_on_page(outline, page_width, page_height),
+                            "page_to_output": preview_matrix.tolist(),
+                            "shape": {"height": image_only_preview.shape[0], "width": image_only_preview.shape[1]},
+                        }
 
     metadata.update(
         crop_modes={"full_print": full_mode, "image_only": image_mode},
@@ -896,7 +921,8 @@ def _dual_crop_result(
         border_trim={**diagnostics, "applied": bool(diagnostics.get("applied") and image_only is not None)},
         border_trim_confidence=diagnostics.get("confidence") if diagnostics.get("applied") else None,
     )
-    return CropResult(rectified_untrimmed=adjusted, image=adjusted, metadata=metadata, image_only=image_only)
+    return CropResult(rectified_untrimmed=adjusted, image=adjusted, metadata=metadata,
+                      image_only=image_only, image_only_preview=image_only_preview)
 
 
 def crop_and_correct_photo(
