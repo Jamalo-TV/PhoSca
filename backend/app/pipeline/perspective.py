@@ -798,6 +798,7 @@ def _dual_crop_result(
         suggested_quad = None
         seam_traces = []
         outline = None
+        needs_native_line_support = False
         all_edges = diagnostics.get("edges", {})
         four_rim_edges = len(all_edges) == 4 and all(edge.get("is_physical_border") for edge in all_edges.values())
         seam_seed = diagnostics.pop("curve_seed_quad", quad)
@@ -808,8 +809,10 @@ def _dual_crop_result(
                 image_reasons.append(CURVED_IMAGE_BOUNDARY)
             elif disagrees and not image_reasons:
                 image_reasons.append("IMAGE_BOUNDARY_UNCERTAIN")
-            if curved or disagrees or CURVED_IMAGE_BOUNDARY in image_reasons:
+            needs_native_line_support = not continuously_observed
+            if curved or disagrees or needs_native_line_support or CURVED_IMAGE_BOUNDARY in image_reasons:
                 seam_traces = [_vertices_on_page(trace, page_width, page_height) for trace in traces]
+            if curved or disagrees or CURVED_IMAGE_BOUNDARY in image_reasons:
                 if continuously_observed and CURVED_IMAGE_BOUNDARY in image_reasons:
                     outline = close_motif_outline(native_seed, traces)
                 quad = None
@@ -830,7 +833,17 @@ def _dual_crop_result(
                     refined, native_evidence, native_reasons = refine_print_boundary(page, source, search_radius=radius)
                     diagnostics["native_boundary_refinement"] = native_evidence
                     native_verified = refined is not None and not native_reasons
-                    if (independent or wide_rim) and (
+                    # A straight fit can corroborate an incomplete trace, for
+                    # example under glare. It must observe all sampled support
+                    # before the motif is marked ready.
+                    line_supported = native_verified and (preview_only or (
+                        len(native_evidence) == 4 and all(
+                            edge["support"] == 1 and edge["corner_support"] == 1 for edge in native_evidence.values()
+                        )
+                    ))
+                    if needs_native_line_support and not line_supported:
+                        image_reasons.append("IMAGE_BOUNDARY_UNCERTAIN")
+                    elif (independent or wide_rim) and (
                         not native_verified or len(native_evidence) != 4
                         or any(edge["support"] < .85 or (edge["corner_support"] or 0) < .85
                                for edge in native_evidence.values())

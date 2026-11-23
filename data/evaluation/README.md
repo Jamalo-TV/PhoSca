@@ -887,6 +887,29 @@ a corroborated contour or print geometry. Whiting 81 still has a 166-pixel
 gap in the measured left edge. PhoSca retains its review traces as evidence.
 See `v28-production-outline-preview.json` in the contour report directory.
 
+Version 29 recovers tentative measurements between strong native motif
+samples. On the paired Whiting scans, the longest left trace interval for
+print 81 falls from 166.06 to 62.27 native pixels. Print 76 still has just
+two traced sides. Both motifs stay in review. The supplied weak-seam probes
+expect a closed outline in ten cases where the current continuity rules
+withhold it. See `runs/crop-quality/cloud-v29/`.
+
+Version 30 checks for a second, sustained color step alongside the selected
+motif transition. When an incomplete trace still suggests a straight crop,
+the native line fit must corroborate its sides and corners before the mode
+can be ready. In a nine-case production replay, seven ambiguous motifs stay
+in review without a derivative, both control derivatives still render, and
+all nine whole-print crops remain ready. The v29 replay exposed up to 356
+source pixels cut beyond the one-pixel band and 81 foreign output samples.
+
+Geometry-only, Registered and Local each keep 18/18 frozen detections and
+11 passing whole-print and 12 passing motif crops. The Registered and Local
+ready crops have at least 0.9905 footprint IoU, at most 0.755 native pixels
+of corner error, at most 0.283% aspect error and at most 0.646 output pixels
+of landmark p95 error. All have zero cutoff past one source pixel and zero
+foreign interpolation samples. Reports and overlays are under
+`runs/crop-quality/cloud-v30/`.
+
 The frozen seeded-geometry benchmark passes all 23 recoverable mode crops.
 The v21 and v22 Registered end-to-end runs match six of 18 raw instances
 at IoU 0.85. On the development white-margin and white-on-white pages the

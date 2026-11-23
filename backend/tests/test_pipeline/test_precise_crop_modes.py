@@ -371,6 +371,33 @@ def test_motif_preview_requires_source_evidence_at_an_inferred_corner(curved_mot
     assert crop.image_only_preview is None
 
 
+@pytest.mark.parametrize(("bow", "width", "offset", "shadow"), [
+    (0, 21, -4, 0), (0, 91, -4, 0),
+    (0, 29, -4, 22), (0, 29, 4, 22),
+    (3.5, 29, -4, 22), (3.5, 29, 4, 22),
+])
+def test_motif_crop_reviews_displaced_weak_boundaries(bow, width, offset, shadow) -> None:
+    page = np.full((345, 500, 3), (67, 78, 70), np.uint8)
+    page[35:306, 45:456] = 236
+    x = np.arange(65, 436)
+    y = np.arange(46, 288)[:, None]
+    chord = 56 + bow * np.sin(2 * np.pi * (x - 65) / 370)
+    affected = np.abs(x - 250) <= width // 2
+    boundary = chord + offset * affected
+    color = np.where(affected[:, None], 229, (131, 108, 145))
+    motif = np.clip(y - boundary + .5, 0, 1)[..., None]
+    shadow_opacity = (affected * np.clip(y - chord + .5, 0, 1))[..., None]
+    page[46:288, 65:436] = np.rint(motif * color + (1 - motif) * 236 - shadow * shadow_opacity)
+    mask = {"source": "manual_quad", "warp_quad": _vertices(_rect(45, 35, 455, 305), page)}
+
+    crop = _crop(page, {}, mask, dual_mode=True)
+    full, image_only = (crop.metadata["crop_modes"][name] for name in ("full_print", "image_only"))
+    assert full["status"] == "ready"
+    assert image_only["status"] == "review_needed"
+    assert image_only["reason_codes"] == ["IMAGE_BOUNDARY_CURVED" if bow else "IMAGE_BOUNDARY_UNCERTAIN"]
+    assert crop.image_only is None and crop.image_only_preview is None
+
+
 def test_outline_preview_has_no_foreign_color_and_preserves_the_projective_map() -> None:
     from app.pipeline.crop_sampling import warp_owned_outline
 

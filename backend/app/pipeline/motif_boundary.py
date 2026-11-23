@@ -56,9 +56,38 @@ def _add_bracketed_measurements(
         locations[added] = candidate[added]
 
 
+def _has_competing_step(samples: np.ndarray, offsets: np.ndarray, seam: np.ndarray, strong: np.ndarray) -> bool:
+    """Find a second, spatially coherent color transition next to the selected seam."""
+    # Compare flat collars on either side of each possible crossing.
+    # Keep raw colors so a nearly isoluminant step can also veto the crop.
+    windows = np.lib.stride_tricks.sliding_window_view(samples, 13, axis=1)
+    before, after = windows[..., :4], windows[..., -4:]
+    delta = np.mean(after, axis=-1) - np.mean(before, axis=-1)
+    change = np.max(np.abs(delta), axis=2)
+    collar_variation = np.maximum(np.ptp(before, axis=-1).max(axis=2), np.ptp(after, axis=-1).max(axis=2))
+    noise = np.median(np.max(np.abs(np.diff(samples[:, :7], axis=1)), axis=2), axis=1)
+    distance = offsets[6:-6] - seam[:, None]
+    localized = collar_variation <= np.maximum(1.25, .22 * change)
+    primary = np.max(np.where(np.abs(distance) <= .75, change, 0), axis=1)
+    minimum_strength = np.maximum(np.maximum(4.5, 4 * noise), .18 * primary)
+    rows = np.arange(len(seam))
+    for direction in (-1, 1):
+        separated = (direction * distance >= 2.5) & (direction * distance <= 6)
+        candidates = separated & localized
+        peaks = np.argmax(np.where(candidates, change, 0), axis=1)
+        supported = strong & candidates[rows, peaks] & (change[rows, peaks] >= minimum_strength)
+        positions, steps = distance[rows, peaks], delta[rows, peaks]
+        magnitude = np.linalg.norm(steps, axis=1)
+        same_color_change = np.sum(steps[1:] * steps[:-1], axis=1) >= .6 * magnitude[1:] * magnitude[:-1]
+        aligned = supported[:-1] & supported[1:] & (np.abs(np.diff(positions)) <= .65) & same_color_change
+        if np.any(aligned[:-2] & aligned[1:-1] & aligned[2:]):
+            return True
+    return False
+
+
 def _trace_side(
     image: np.ndarray, start: np.ndarray, end: np.ndarray, paper_color: list[float] | tuple[int, ...],
-) -> tuple[np.ndarray, float, float, bool] | None:
+) -> tuple[np.ndarray, float, float, bool, bool] | None:
     tangent = end - start
     length = np.linalg.norm(tangent)
     if length < 60:
@@ -95,7 +124,8 @@ def _trace_side(
         return None
     nearest = np.argmin(np.where(strong, np.abs(depth), np.inf), axis=1)
     # The line fits the first owned pixel center, half a pixel past the optical transition.
-    locations = depth[np.arange(len(span)), nearest] + .5
+    optical = depth[np.arange(len(span)), nearest]
+    locations = optical + .5
     groups = np.array_split(np.arange(len(span)), 12)
     observed = strong_rows.copy()
     _add_bracketed_measurements(
@@ -118,7 +148,8 @@ def _trace_side(
     # Weak transitions can locate a likely seam while tracking a shadow instead
     # of a material change. Derive footprint support from the strong rows alone.
     continuous = bool(np.max(np.diff(np.flatnonzero(np.r_[True, strong_rows, True]))) <= 3)
-    return np.float32(polyline), float(np.ptp(detrended) / 2), float(np.max(np.abs(depths))), continuous
+    competing = _has_competing_step(samples, offsets, optical, strong_rows)
+    return np.float32(polyline), float(np.ptp(detrended) / 2), float(np.max(np.abs(depths))), continuous, competing
 
 
 def trace_motif_boundary(image: np.ndarray, quad: np.ndarray, edges: dict) -> tuple[list[np.ndarray], bool, bool, bool]:
@@ -137,11 +168,11 @@ def trace_motif_boundary(image: np.ndarray, quad: np.ndarray, edges: dict) -> tu
         evidence = _trace_side(image, start, end, paper)
         if evidence is None:
             continue
-        polyline, deviation, distance, side_continuous = evidence
+        polyline, deviation, distance, side_continuous, competing = evidence
         traces.append(polyline)
         curved |= deviation > 1.05
-        disagrees |= distance > 1.30
-        continuous &= side_continuous
+        disagrees |= distance > 1.30 or competing
+        continuous &= side_continuous and not competing
     return traces, curved, disagrees, continuous and len(traces) == 4
 
 
