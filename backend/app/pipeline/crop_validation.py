@@ -16,7 +16,7 @@ from app.pipeline.decisions import ReviewReason
 from app.pipeline.model_registry import sha256
 from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
 
-CROP_VALIDATION_SCHEMA = 23
+CROP_VALIDATION_SCHEMA = 24
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
 
 
@@ -40,6 +40,7 @@ def crop_validation_profile(settings: Settings) -> dict:
         "precise_photo_crops": settings.enable_precise_photo_crops,
         "crop_sampling": OWNED_BILINEAR if settings.enable_precise_photo_crops else None,
         "page_plane_preview": 2 if settings.enable_precise_photo_crops else None,
+        "print_boundary": 2 if settings.enable_precise_photo_crops else None,
         "registered_model_required": settings.require_registered_models,
         "model_registry_sha256": _optional_hash(settings.model_manifest_path) if settings.require_registered_models else None,
         "source_contour_refinement": SOURCE_CONTOUR_REVISION if settings.enable_precise_photo_crops and visible_model is None else None,
@@ -125,6 +126,7 @@ def detector_calibration_profile(settings: Settings, *, segmentation: dict | Non
         return None
     return {"model_sha256": model, **{key: profile[key] for key in (
         "pipeline_version", "precise_photo_crops", "model_registry_sha256", "visible_mask_refinement", "source_contour_refinement",
+        "print_boundary",
         "classical_fallback", "classical_line_pairs", "separated_contrast_prints", "empty_drawn_frame_rejection",
         "album_window_detection", "dense_tile_inference",
         "deskew_inference", "proposal_threshold",

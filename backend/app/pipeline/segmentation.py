@@ -23,10 +23,14 @@ from app.pipeline.mounted_prints import mounted_print_evidence
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.print_edges import _is_pale_stock, refine_print_boundary
 from app.pipeline.quality import evaluate_segmentation_geometry
-from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION, paper_and_edge_rejection_reasons, paper_around_nested_print
+from app.pipeline.segmentation_filter import (
+    CONTRAST_COMPONENT_SOURCE,
+    SOURCE_CONTOUR_REVISION,
+    paper_and_edge_rejection_reasons,
+    paper_around_nested_print,
+)
 
 _CLASSICAL_MIN_AREA_RATIO = 0.02
-_CONTRAST_COMPONENT_SOURCE = "contrast_component"
 
 
 @dataclass(frozen=True)
@@ -966,7 +970,7 @@ def _find_separated_contrast_prints(image: np.ndarray, settings: Settings) -> li
         detection = _make_detection(
             box={}, points=quad, confidence=min(.98, min(side["support"] for side in sides.values())),
             image_width=width, image_height=height, settings=settings,
-            source="classical_border_quad", detector_source=_CONTRAST_COMPONENT_SOURCE,
+            source="classical_border_quad", detector_source=CONTRAST_COMPONENT_SOURCE,
         )
         if detection is not None and detection.geometry_valid:
             candidates.append(detection)
@@ -2336,7 +2340,7 @@ def _refine_source_contours(
     originals = [normalized_vertices_to_pixels(_detection_polygon(item), width, height) for item in result.detections]
     candidates = {}
     for index, (item, own) in enumerate(zip(result.detections, originals, strict=True)):
-        if item.mask.get("detector_source") == _CONTRAST_COMPONENT_SOURCE:
+        if item.mask.get("detector_source") == CONTRAST_COMPONENT_SOURCE:
             continue
         measured = measure_detected_visibility(
             image, item.mask, own, [other for i, other in enumerate(originals) if i != index], regions,
@@ -2392,7 +2396,7 @@ def segment_album_page(
 
     fixed_indices = {index for index, detection in enumerate(result.detections)
                      if detection.mask.get("source") == ALBUM_WINDOW_SOURCE
-                     or detection.mask.get("detector_source") == _CONTRAST_COMPONENT_SOURCE}
+                     or detection.mask.get("detector_source") == CONTRAST_COMPONENT_SOURCE}
     refinable = [index for index in range(len(result.detections)) if index not in fixed_indices]
     originals = [_detection_polygon(result.detections[index]) for index in refinable]
     fixed = [_detection_polygon(result.detections[index]) for index in sorted(fixed_indices)]

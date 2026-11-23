@@ -24,6 +24,44 @@ def _crop(image, box, mask=None, **kwargs):
     return correct_photo_crop(image, box, mask, auto_orient=False, protect_regions=False, **kwargs)
 
 
+def test_ambiguous_paper_rim_requires_clear_backing_beyond_the_edge() -> None:
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+    from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE
+
+    dense = next(page for page in synthetic_crop_pages("development") if page.name == "dense_gutters")
+    reference = dense.prints[9].reference_modes["full_print"]
+    seed = reference.corners + np.float32([[.31, .16], [-.07, -.07], [-.02, 0], [.06, -.10]])
+    mask = {"source": "classical_border_quad", "detector_source": CONTRAST_COMPONENT_SOURCE,
+            "polygon": _vertices(seed, dense.image)}
+    crop = _crop(dense.image, {}, mask, dual_mode=True, camera_matrix=dense.camera_matrix)
+    assert crop.metadata["boundary_refinement"]["bottom"]["matched_stock_ring"]
+    source = normalized_vertices_to_pixels([
+        (point["x"], point["y"]) for point in crop.metadata["source_quad"]
+    ], *dense.image.shape[1::-1])
+    assert np.max(np.linalg.norm(source - reference.corners, axis=1)) < 1
+    modes = crop.metadata["crop_modes"]
+    assert crop.image_only is not None
+    assert all(mode["status"] == "review_needed" and mode["reason_codes"] == ["PRINT_EDGE_CONFIRMATION_REQUIRED"]
+               for mode in modes.values())
+
+    approved = _crop(dense.image, {}, {"source": "manual_quad", "warp_quad": modes["full_print"]["warp_quad"],
+                                      "image_quad": modes["image_only"]["warp_quad"]},
+                     dual_mode=True, camera_matrix=dense.camera_matrix)
+    assert all(mode["status"] == "ready" for mode in approved.metadata["crop_modes"].values())
+
+    surround = np.zeros(dense.image.shape[:2], np.uint8)
+    extended = reference.corners.copy()
+    extended[2:, 1] += 5
+    cv2.fillConvexPoly(surround, np.rint(extended * 16).astype(np.int32), 1, shift=4)
+    pixels = (surround != 0) & (reference.mask == 0)
+    for contrast in (-4, 4):
+        altered = dense.image.copy()
+        altered[pixels] = np.uint8(np.clip(altered[pixels].astype(int) + contrast, 0, 255))
+        crop = _crop(altered, {}, mask, dual_mode=True, camera_matrix=dense.camera_matrix)
+        assert not crop.metadata["boundary_refinement"]["bottom"].get("matched_stock_ring")
+        assert all(mode["status"] == "review_needed" for mode in crop.metadata["crop_modes"].values())
+
+
 def test_half_open_box_and_explicit_outer_quad_have_exact_pixel_centers() -> None:
     page = np.random.default_rng(830).integers(0, 256, (100, 150, 3), dtype=np.uint8)
     box = _box(10, 11, 90, 76, page)

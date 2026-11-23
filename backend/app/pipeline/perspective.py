@@ -32,14 +32,17 @@ from app.pipeline.print_edges import (
     observed_rim_points,
     print_corner_coverage,
     refine_print_boundary,
+    retry_ambiguous_stock_edge,
 )
 from app.pipeline.protected_regions import detect_protected_regions, merge_protected_regions, validate_protected_regions
-from app.pipeline.segmentation_filter import refine_visible_paper_rim
+from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE, refine_visible_paper_rim
 
 _PRINT_BOUNDARY_SOURCE = "physical_print_boundary"
 _PAPER_RIM_SOURCE = "visible_paper_rim"
 _REFINED_VISIBILITY_SOURCES = {_PRINT_BOUNDARY_SOURCE, _PAPER_RIM_SOURCE}
 _LOCALIZED_OCCLUSION_REASONS = {"PRINT_CORNERS_UNCERTAIN", "PRINT_POSSIBLY_OCCLUDED"}
+_PRINT_EDGE_CONFIRMATION = "PRINT_EDGE_CONFIRMATION_REQUIRED"
+_CROP_PREVIEW_REASONS = {_PRINT_EDGE_CONFIRMATION, PRINT_ASPECT_REFERENCE_REVIEW}
 
 
 @dataclass(frozen=True)
@@ -778,8 +781,8 @@ def _dual_crop_result(
         full_mode["sampling"] = OWNED_BILINEAR
 
     independent = corner_mount_detected and set(full_reasons) <= _LOCALIZED_OCCLUSION_REASONS
-    reference_review = full_reasons == [PRINT_ASPECT_REFERENCE_REVIEW]
-    if not full_reasons or independent or reference_review:
+    preview_only = bool(full_reasons) and set(full_reasons) <= _CROP_PREVIEW_REASONS
+    if not full_reasons or independent or preview_only:
         quad, diagnostics, image_reasons = _inner_crop_plan(
             full_image, matrix, inner, trim_border=trim_border, page_width=page_width, page_height=page_height,
             page_regions=page_regions, protect_regions=protect_regions, allow_wide_search=not independent,
@@ -849,7 +852,7 @@ def _dual_crop_result(
                     if supported:
                         image_mode = _geometry_for_mode(
                             source, combined, pixels, page_width, page_height, rotation,
-                            full_reasons if reference_review else [],
+                            full_reasons if preview_only else [],
                         )
                         image_mode["sampling"] = OWNED_BILINEAR
                         if independent:
@@ -962,8 +965,16 @@ def _inspect_print(
     boundary: dict = {}
     reasons: list[str] = []
     corner_mount = False
+    edge_confirmation = False
     if dual_mode and not manual and mask.get("warp_quad") is None:
         refined, boundary, reasons = refine_print_boundary(page, quad)
+        if (refined is not None and reasons == ["PRINT_BOUNDARY_AMBIGUOUS"]
+                and mask.get("detector_source") == CONTRAST_COMPONENT_SOURCE):
+            recovered = retry_ambiguous_stock_edge(page, quad, refined, boundary)
+            if recovered is not None:
+                refined, boundary = recovered
+                reasons = []
+                edge_confirmation = True
         if enable_classical_retry and "PRINT_OUTER_RIM_UNCERTAIN" in reasons:
             hypothesis = _outer_contour_hypothesis(page, quad)
             if hypothesis is not None:
@@ -1012,6 +1023,8 @@ def _inspect_print(
             raise ValueError("protected_region_cut")
         protection["review_untrimmed"] = True
         reasons.append("POSSIBLE_CONTENT_CUTOFF")
+    if edge_confirmation and not reasons:
+        reasons.append(_PRINT_EDGE_CONFIRMATION)
     return _PrintInspection(quad, metrics, boundary, reasons, corner_mount, protection)
 
 
@@ -1121,12 +1134,12 @@ def correct_photo_crop(
     src_points, quad_metrics = inspection.quad, inspection.metrics
     boundary_refinement, full_reasons = inspection.boundary, inspection.reasons.copy()
     protection, corner_mount_detected = inspection.protection, inspection.corner_mount
-    boundary_verified = bool(boundary_refinement and not full_reasons and visible is not None)
+    boundary_supports_preview = bool(boundary_refinement and set(full_reasons) <= _CROP_PREVIEW_REASONS and visible is not None)
     target_width, target_height, aspect, aspect_reasons = _crop_dimensions(
         src_points, width, height, metric=dual_mode, camera_matrix=camera_matrix, print_aspect_ratio=print_aspect_ratio,
-        page_plane=page_plane if boundary_verified else None,
+        page_plane=page_plane if boundary_supports_preview else None,
     )
-    if (not full_reasons and aspect_reasons == ["PRINT_ASPECT_UNCERTAIN"] and camera_matrix is None
+    if (set(full_reasons) <= _CROP_PREVIEW_REASONS and aspect_reasons == ["PRINT_ASPECT_UNCERTAIN"] and camera_matrix is None
             and measured_page_references):
         inferred, estimates = measured_page_aspect(page_image, src_points, measured_page_references)
         if inferred is None:
@@ -1137,7 +1150,7 @@ def correct_photo_crop(
             )
             aspect.update(method="measured_page_reference", page_reference_estimates=estimates)
             aspect_reasons = [PRINT_ASPECT_REFERENCE_REVIEW]
-    if (boundary_verified and camera_matrix is None and print_aspect_ratio is None
+    if (boundary_supports_preview and camera_matrix is None and print_aspect_ratio is None
             and page_plane is not None and page_plane.independent_fits
             and (not aspect_reasons or aspect_reasons == ["PRINT_ASPECT_UNCERTAIN"])):
         estimate = page_plane.estimate_aspect(src_points)
@@ -1183,7 +1196,7 @@ def correct_photo_crop(
         left, top, right, bottom = _analysis_padding(destination, rectified_to_page, width, height)
     page_to_analysis = matrix.copy()
     page_to_analysis[:2] += np.array([[left], [top]]) * matrix[2]
-    owned_sampling = dual_mode and (not full_reasons or full_reasons == [PRINT_ASPECT_REFERENCE_REVIEW])
+    owned_sampling = dual_mode and set(full_reasons) <= _CROP_PREVIEW_REASONS
     if owned_sampling:
         analysis, supported = warp_owned_crop(page_image, matrix, (target_width, target_height))
         if not supported:

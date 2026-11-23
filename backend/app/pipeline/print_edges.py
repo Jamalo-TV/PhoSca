@@ -337,6 +337,82 @@ def continuous_motif_rim(image: np.ndarray, quad: np.ndarray) -> bool:
     return _is_pale_stock(stock) and bool(np.all(np.linalg.norm(colors - stock, axis=1) <= 16))
 
 
+def _edge_band(image: np.ndarray, start: np.ndarray, end: np.ndarray, offsets: list[float]) -> np.ndarray | None:
+    edge = end - start
+    inward = np.array([-edge[1], edge[0]], np.float32) / np.linalg.norm(edge)
+    middle = start + np.linspace(.10, .90, 64, dtype=np.float32)[:, None] * edge
+    points = middle[:, None] + np.float32(offsets)[None, :, None] * inward
+    if np.any((points < 0) | (points > np.array(image.shape[1::-1]) - 1)):
+        return None
+    return _sample_lab(image, points.reshape(-1, 2)).reshape(*points.shape[:-1], 3)
+
+
+def _backing_color(image: np.ndarray) -> np.ndarray:
+    height, width = image.shape[:2]
+    inset = min(width, height) // 48
+    xs = np.linspace(inset, width - 1 - inset, 64, dtype=np.float32)
+    ys = np.linspace(inset, height - 1 - inset, 64, dtype=np.float32)
+    samples = np.concatenate([
+        np.column_stack([xs, np.full_like(xs, y)]) for y in (inset, height - 1 - inset)
+    ] + [np.column_stack([np.full_like(ys, x), ys]) for x in (inset, width - 1 - inset)])
+    return np.median(_sample_lab(image, samples), axis=0)
+
+
+def _stock_ring(image: np.ndarray, quad: np.ndarray, backing: np.ndarray) -> bool:
+    bands = [_edge_band(image, start, end, [-2, 2]) for start, end in zip(quad, np.roll(quad, -1, axis=0), strict=True)]
+    if any(band is None for band in bands):
+        return False
+    outside, inside = np.moveaxis(np.asarray(bands), 2, 0)
+    stock = np.median(inside, axis=(0, 1))
+    return bool(
+        _is_pale_stock(stock) and np.linalg.norm(stock - backing) > 16
+        and (np.mean(np.linalg.norm(inside - stock, axis=2) <= 10, axis=1) >= .75).all()
+        and (np.mean(np.linalg.norm(outside - backing, axis=2) <= 16, axis=1) >= .75).all()
+    )
+
+
+def retry_ambiguous_stock_edge(
+    image: np.ndarray, proposal: np.ndarray, quad: np.ndarray, evidence: dict,
+) -> tuple[np.ndarray, dict] | None:
+    """Resolve one ambiguous edge of a contrast component with a continuous paper rim."""
+    sides = ("top", "right", "bottom", "left")
+    missing = [i for i, side in enumerate(sides) if evidence[side]["corner_support"] is None]
+    if len(missing) != 1 or any(
+        side["support"] < .85 or side["corner_support"] < .60 for side in evidence.values()
+        if side["corner_support"] is not None
+    ):
+        return None
+    index = missing[0]
+    next_index = (index + 1) % 4
+    start, end = proposal[[index, next_index]]
+    backing = _backing_color(image)
+    if not _stock_ring(image, proposal, backing):
+        return None
+
+    radius = 3
+    line, observed = _side_line(image, start, end, radius)
+    if line is None or observed["support"] < .83 or observed["corner_support"] < .55:
+        return None
+    homogeneous = np.column_stack((quad, np.ones(4)))
+    lines = np.cross(homogeneous, np.roll(homogeneous, -1, axis=0))
+    lines[index] = line
+    crossings = np.cross(np.roll(lines, 1, axis=0), lines)
+    if np.any(np.abs(crossings[:, 2]) < 1e-6):
+        return None
+    candidate = np.float32(crossings[:, :2] / crossings[:, 2:3])
+    if (np.max(np.linalg.norm(candidate - quad, axis=1)) > 1.8 * radius
+            or not cv2.isContourConvex(candidate) or cv2.contourArea(candidate, oriented=True) <= 0
+            or np.any((candidate < 0) | (candidate > np.array(image.shape[1::-1]) - 1))):
+        return None
+    exterior = _edge_band(image, candidate[index], candidate[next_index], [-2, -3, -4, -5, -6, -7, -8])
+    # A near-background surround can still belong to the same print.
+    if (exterior is None or (np.linalg.norm(exterior - backing, axis=2) >= 2).mean(axis=0).max() >= .50
+            or not _stock_ring(image, candidate, backing)):
+        return None
+    observed["matched_stock_ring"] = True
+    return candidate, {**evidence, sides[index]: observed}
+
+
 def refine_print_boundary(
     image: np.ndarray, proposal: np.ndarray, *, search_radius: int | None = None,
 ) -> tuple[np.ndarray | None, dict, list[str]]:

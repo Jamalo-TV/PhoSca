@@ -116,12 +116,13 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 23 binds
+groups, with the 90% threshold applied to each group. Report schema 24 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled and deskewed inference,
 the classical line-pair fallback, separated contrast recovery, empty drawn
-frame rejection, page-plane estimation, curved motif checks, the configured
-source or learned mask refiner and detector-bound confidence calibration.
+frame rejection, print edge recovery, page-plane estimation, curved motif
+checks, the configured source or learned mask refiner and detector-bound
+confidence calibration.
 A verified motif can qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
 
@@ -863,6 +864,24 @@ also passes the frozen split, with 45 of 53 matches on the same Met drafts.
 In four alternating measurements per Met page, the source contour check
 adds 108 ms on the sparse scan and 274 ms on the dense scan to median
 segmentation time. See `v23-source-contour-timing.json` in the contour reports.
+
+When a contrast component has three strongly supported sides and one
+ambiguous side, v25 retries that side with a three-pixel search radius. A pale
+paper rim must surround both quads, and the exterior strip at the refitted
+edge must agree with the album backing. The neighboring-photo, corner and
+content guards still apply. A band with nearly the same color as the album
+can be part of the print. Both modes carry `PRINT_EDGE_CONFIRMATION_REQUIRED`
+when the retry supplies their geometry. Confirm the corners in the editor.
+
+On the default `dense_gutters` fixture, with the synthetic camera intrinsics
+available to the renderer, two additional previews per mode pass the pixel
+and aspect checks. Their largest source corner error is 0.285 px. With
+intrinsics withheld, one additional preview per mode passes. These results
+leave the ready counts unchanged. In a separate near-background surround
+stress test with fresh contrast proposals, all 47 affected retries require
+review. See `dense-v25-production.json` and
+`edge-retry-production-regenerated.json` under
+`runs/crop-quality/curved-geometry-probe/`.
 
 `nmah-gardner-paired-crops-draft.json` pins two independent Smithsonian scans
 of the same Marshall House accession. The fitted aspect ratios differ by
