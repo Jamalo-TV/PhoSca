@@ -16,7 +16,7 @@ from app.pipeline.decisions import ReviewReason
 from app.pipeline.model_registry import sha256
 from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
 
-CROP_VALIDATION_SCHEMA = 28
+CROP_VALIDATION_SCHEMA = 29
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
 
 
@@ -190,10 +190,9 @@ def crop_validation_evidence(settings: Settings, model_sha256: str | None) -> di
         ):
             return None
         current = crop_validation_profile(settings)
-        if report.get("validation_profile") != current:
+        if report.get("validation_profile") != current or not current["require_confidence_calibration"]:
             return None
-        if current["require_confidence_calibration"] or current["calibration_sha256"] is not None:
-            load_confidence_calibration(settings.segmentation_calibration_path, detector_calibration_profile(settings))
+        load_confidence_calibration(settings.segmentation_calibration_path, detector_calibration_profile(settings))
         refiner = current["visible_mask_refinement"]
         if refiner is not None and not (refiner["model_sha256"] and refiner["manifest_sha256"]):
             return None
@@ -208,6 +207,7 @@ def crop_validation_evidence(settings: Settings, model_sha256: str | None) -> di
             or gates.get("locked_real_album_manifest") is not True
             or gates.get("locked_reference_artifacts") is not True
             or gates.get("calibration_holdout_disjoint") is not True
+            or gates.get("shared_recoverable_album_groups") is not True
             or gates.get("standard_detection_thresholds") is not True
             or gates.get("detection") is not True or gates.get("final_instance_segmentation") is not True
             or modes.get("full_print") is not True or modes.get("image_only") is not True

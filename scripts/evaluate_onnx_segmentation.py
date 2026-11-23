@@ -142,8 +142,8 @@ def _has_disjoint_calibration_holdout(settings, records, detector_profile) -> bo
     from app.pipeline.confidence import load_confidence_calibration
 
     path = settings.segmentation_calibration_path
-    if not path.is_file():
-        return not settings.require_confidence_calibration
+    if not settings.require_confidence_calibration or not path.is_file():
+        return False
     try:
         artifact = load_confidence_calibration(path, detector_profile)
         reference_groups = {str(record.get("source_group") or "").strip().casefold() for record in records}
@@ -410,6 +410,9 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file,
     if len(groups) < 2:
         dataset_issues.append("FEWER_THAN_TWO_SOURCE_GROUPS")
     insufficient_groups = [name for name in MODES if len(positives[name]) < 2]
+    shared_groups = positives["full_print"] & positives["image_only"]
+    if len(shared_groups) < 2:
+        dataset_issues.append("FEWER_THAN_TWO_GROUPS_WITH_BOTH_MODES")
     report = {
         "reference_check_only": True,
         "dataset_manifest_sha256": args.dataset_manifest_sha256,
@@ -417,8 +420,9 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file,
         "expected_photos": expected_photos,
         "reference_files_pinned": files_pinned,
         "locked_album_provenance": locked,
-        "ready_for_locked_evaluation": locked and files_pinned and all(
-            totals[name]["verified"] == expected_photos and len(positives[name]) >= 2 for name in MODES
+        "shared_verified_recoverable_groups": sorted(shared_groups),
+        "ready_for_locked_evaluation": locked and files_pinned and len(shared_groups) >= 2 and all(
+            totals[name]["verified"] == expected_photos for name in MODES
         ),
         "reference_issues": {
             "dataset": dataset_issues, "pages": page_issues, "modes": mode_issues,
@@ -1070,9 +1074,12 @@ def main() -> None:
         not args.synthetic and reference_files_locked and calibration_holdout_disjoint
         and split.get("role") != "calibration" and is_locked_album_manifest(records, split)
     )
+    shared_groups = quality["full_print"]["real_by_group"].keys() & quality["image_only"]["real_by_group"].keys()
+    shared_recoverable_album_groups = None if args.synthetic else len(shared_groups) >= 2
     rendered_gates = {
         name: _rendered_mode_passes(
-            mode, synthetic=bool(args.synthetic), real_manifest_locked=real_manifest_locked,
+            mode, synthetic=bool(args.synthetic),
+            real_manifest_locked=real_manifest_locked and len(shared_groups) >= 2,
             expected_photos=aggregate.expected_photos,
         )
         for name, mode in quality.items()
@@ -1084,6 +1091,7 @@ def main() -> None:
         "locked_real_album_manifest": None if args.synthetic else real_manifest_locked,
         "locked_reference_artifacts": None if args.synthetic else reference_files_locked,
         "calibration_holdout_disjoint": calibration_holdout_disjoint,
+        "shared_recoverable_album_groups": shared_recoverable_album_groups,
         "standard_detection_thresholds": (
             args.iou_threshold >= 0.85 and args.min_mean_iou >= 0.85
             and args.min_precision >= 0.90 and args.min_recall >= 0.90

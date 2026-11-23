@@ -550,6 +550,9 @@ def test_real_release_requires_disjoint_calibration_album_groups(tmp_path) -> No
     records = [{"source_group": "Album-A"}, {"source_group": "Album-B"}]
     detector = {"model_sha256": "a" * 64}
     assert not _has_disjoint_calibration_holdout(settings, records, detector)
+    settings.require_confidence_calibration = False
+    assert not _has_disjoint_calibration_holdout(settings, records, detector)
+    settings.require_confidence_calibration = True
     artifact = {
         "schema_version": CALIBRATION_SCHEMA, "independent_holdout_id": "calibration-only", "sample_count": 20,
         "source_groups": [" album-b "], "input_sha256": "a" * 64, "dataset_manifest_sha256": "b" * 64,
@@ -562,6 +565,9 @@ def test_real_release_requires_disjoint_calibration_album_groups(tmp_path) -> No
         "source_groups": ["album-calibration"], "source_images": {"c" * 64: "album-calibration"},
     }), encoding="utf-8")
     assert _has_disjoint_calibration_holdout(settings, records, detector)
+    settings.require_confidence_calibration = False
+    assert not _has_disjoint_calibration_holdout(settings, records, detector)
+    settings.require_confidence_calibration = True
     duplicate_page = {"source_group": "album-with-a-different-id", "image_sha256": "c" * 64}
     assert not _has_disjoint_calibration_holdout(settings, [*records, duplicate_page], detector)
     assert not _has_disjoint_calibration_holdout(settings, records, {"model_sha256": "e" * 64})
@@ -768,6 +774,7 @@ def test_reference_check_requires_verified_positive_modes_from_both_albums(tmp_p
 
     complete = check()
     assert complete["ready_for_locked_evaluation"] is True
+    assert complete["shared_verified_recoverable_groups"] == ["album-a", "album-b"]
     assert complete["modes"]["full_print"]["physical_dimensions"] == 2
     assert not any(complete["reference_issues"].values())
     draft = pages[1]["expected_final_crops"][0]["image_only"]
@@ -809,3 +816,18 @@ def test_reference_check_requires_verified_positive_modes_from_both_albums(tmp_p
     assert unpinned["reference_issues"]["pages"][0]["issues"] == ["PAGE_IMAGE_HASH_MISSING"]
     assert unpinned["modes"]["full_print"]["present"] == 1
     assert {entry["mode"] for entry in unpinned["reference_issues"]["modes"]} == {"full_print", "image_only"}
+
+    pages[1].update(image_sha256=checksum(tmp_path / "album-b.png"), expected_final_crops=[{
+        "full_print": reference, "image_only": dict(reference, recoverable=False),
+    }])
+    third_image = tmp_path / "album-c.png"
+    assert cv2.imwrite(str(third_image), np.full((42, 62, 3), 130, dtype=np.uint8))
+    pages.append(dict(pages[1], id="album-c", source_group="album-c", image=third_image.name,
+                      image_sha256=checksum(third_image), expected_final_crops=[{
+                          "full_print": dict(reference, recoverable=False), "image_only": reference,
+                      }]))
+    separate_groups = check()
+    assert separate_groups["shared_verified_recoverable_groups"] == ["album-a"]
+    assert separate_groups["reference_issues"]["modes_with_fewer_than_two_verified_recoverable_groups"] == []
+    assert separate_groups["reference_issues"]["dataset"] == ["FEWER_THAN_TWO_GROUPS_WITH_BOTH_MODES"]
+    assert not separate_groups["ready_for_locked_evaluation"]

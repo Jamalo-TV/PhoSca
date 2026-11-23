@@ -752,7 +752,9 @@ async def test_automatic_crop_download_requires_current_album_validation(
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, Page
     from app.pipeline.confidence import CALIBRATION_SCHEMA, calibrate_confidence
-    from app.pipeline.crop_validation import CROP_VALIDATION_SCHEMA, crop_validation_profile, detector_calibration_profile
+    from app.pipeline.crop_validation import (
+        CROP_VALIDATION_SCHEMA, crop_validation_evidence, crop_validation_profile, detector_calibration_profile,
+    )
     from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
     from app.services.pipeline import perspective_correction_task_logic
 
@@ -845,6 +847,7 @@ async def test_automatic_crop_download_requires_current_album_validation(
         "dataset_manifest_sha256": "d" * 64,
         "validation_gates": {
             "locked_real_album_manifest": True, "locked_reference_artifacts": True, "calibration_holdout_disjoint": True,
+            "shared_recoverable_album_groups": True,
             "standard_detection_thresholds": True,
             "detection": True, "final_instance_segmentation": True,
             "rendered_crop_modes": {"full_print": True, "image_only": True},
@@ -855,6 +858,21 @@ async def test_automatic_crop_download_requires_current_album_validation(
     assert result.status_code == 200, result.text
     stale = (await client.get(url)).json()["urls"]
     assert all(stale[mode] is None for mode in crop_variants)
+
+    missing_shared_groups = report["validation_gates"] | {"shared_recoverable_album_groups": False}
+    validation_path.write_text(json.dumps(report | {"validation_gates": missing_shared_groups}), encoding="utf-8")
+    result = await client.post(f"{url}/reprocess")
+    assert result.status_code == 200, result.text
+    unavailable = (await client.get(url)).json()["urls"]
+    assert all(unavailable[mode] is None for mode in crop_variants)
+
+    monkeypatch.setenv("REQUIRE_CONFIDENCE_CALIBRATION", "false")
+    get_settings.cache_clear()
+    uncalibrated_profile = crop_validation_profile(get_settings())
+    validation_path.write_text(json.dumps(report | {"validation_profile": uncalibrated_profile}), encoding="utf-8")
+    assert crop_validation_evidence(get_settings(), digest) is None
+    monkeypatch.setenv("REQUIRE_CONFIDENCE_CALIBRATION", "true")
+    get_settings.cache_clear()
 
     validation_path.write_text(json.dumps(report), encoding="utf-8")
     async with get_session_factory()() as session:

@@ -114,9 +114,10 @@ their aspect ratios must agree within the 1% benchmark tolerance. Optional
 rectified pixel coordinates. Set `annotation_provenance` to
 `manually_verified` on a mode after verifying its reference. The release gate
 requires references for both modes on every print and at least 90% passing,
-automatically eligible results per mode among recoverable prints. Each mode
-needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 27 binds
+automatically eligible results per mode among recoverable prints. At least two
+of the same physical album groups must have recoverable references in both
+modes. The 90% threshold also applies to each group with recoverable examples
+in the mode being scored. Report schema 29 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled and deskewed inference,
 the classical line-pair fallback, separated contrast recovery, empty drawn
@@ -132,7 +133,7 @@ inference. With `--require-final-quality` it returns a nonzero exit code while
 the reference split is still incomplete. The report lists dataset, page and
 mode issues, including missing measurements and unverified annotations.
 Instance indices start at zero and follow the page's YOLO labels. The report
-also names modes without recoverable verified examples in two source groups.
+also lists the groups with verified recoverable examples in both modes.
 
 ```powershell
 python scripts/evaluate_onnx_segmentation.py --dataset-manifest path/to/locked-album-manifest.json --check-references --require-final-quality
@@ -178,7 +179,8 @@ python scripts/evaluate_onnx_segmentation.py --dataset-manifest path/to/calibrat
 python scripts/fit_confidence_calibration.py runs/crop-quality/calibration-scores.json --holdout-id calibration-albums-v1 --output models/segmentation-calibration.json
 ```
 
-Use the deployed detector, registry, optional refiner, OpenCV version and
+Keep `REQUIRE_CONFIDENCE_CALIBRATION` enabled for automatic release. Use the
+deployed detector, registry, optional refiner, OpenCV version and
 detector settings for the fit and the release report. Calibration schema 2
 binds the fit to that configuration. The release evaluator checks both album
 identifiers and page hashes for overlap with the calibration sources.
