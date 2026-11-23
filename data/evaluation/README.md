@@ -116,10 +116,11 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 18 binds
+groups, with the 90% threshold applied to each group. Report schema 19 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled and deskewed inference,
-the classical line-pair fallback, page-plane estimation, the configured visible mask refiner and
+the classical line-pair fallback, separated contrast recovery, page-plane
+estimation, the configured visible mask refiner and
 detector-bound confidence calibration. A verified motif can
 qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
@@ -550,9 +551,9 @@ The `rotated_prints` development fixture places 12 bordered prints on one
 plane tilted by 31°. With approximate seeded masks, whole-print previews
 within 1% aspect error rose from two to 12, and motif previews from one to
 12. The 24 candidate previews have zero foreign source samples and zero
-cutoff beyond one pixel. The registered detector matches only one of the
-12 instances at mask IoU 0.85, so the normal inference run still requires
-better detection on this fixture. The paired geometry and inference reports
+cutoff beyond one pixel. Before separated contrast recovery, the registered
+detector and fallback matched one of the 12 instances at mask IoU 0.85.
+The paired geometry and inference reports
 are `gutter-split/uncalibrated-page-{control,candidate,registered}.json` under
 `runs/crop-quality/`.
 
@@ -606,6 +607,22 @@ corners, the two seed quads reach 0.996 IoU and at most 1 px corner error.
 The locked synthetic and same-album Golden metrics match the previous run.
 See `classical-line-{locked,golden}.json` and
 `classical-fallback-v17/fallback-verification.jpg` under `runs/crop-quality/`.
+
+On risky pages, separated contrast recovery examines components before
+closing can bridge the narrow album paper between them. It verifies the
+individual stock strip, the surrounding album material and the four source
+edges. It retains an enclosing print with an observable exterior outline.
+Hollow illustrations and plain labels fail the interior checks.
+[OpenCV morphological operations](https://docs.opencv.org/4.x/d9/d61/tutorial_py_morphological_ops.html)
+
+The full pipeline now matches all 12 prints on `rotated_prints` with mean
+mask IoU 0.994 and zero false positives. All 24 previews have aspect error
+under 1%, no foreign source samples and no cutoff beyond one source pixel.
+They remain review previews because their aspect is inferred from the page.
+On `dense_gutters`, matches at IoU 0.85 rise from 15 to 21 of 30. The native
+Met development page remains at 44 of 48. The paired end-to-end reports are
+`gutter-split/uncalibrated-page-registered.json` and
+`gutter-split/separated-contrast-development.json` under `runs/crop-quality/`.
 
 The Emily Howland intake pairs the album page with a separate front scan
 of the same Harriet Tubman carte-de-visite. The window covers about 35% of

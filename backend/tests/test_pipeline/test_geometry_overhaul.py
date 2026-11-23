@@ -164,6 +164,72 @@ def test_classical_line_pairs_reject_rectangle_interiors_of_crossing_texture() -
     assert _find_line_pair_candidates(page, .02) == []
 
 
+def test_separate_contrast_prints_replace_weak_container_and_inner_motif(monkeypatch) -> None:
+    from app.config import Settings
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+    from app.evaluation.cropping import evaluate_page_crops
+    from app.pipeline import segmentation
+
+    page = next(page for page in synthetic_crop_pages("development") if page.name == "rotated_prints")
+    height, width = page.image.shape[:2]
+    container = _detection({"x1": .02, "y1": .07, "x2": .97, "y2": .89}, .73, family="model")
+    container.mask["boundary_evidence"] = {"score": .27}
+    motif = page.prints[0].reference_modes["image_only"].corners / [width - 1, height - 1]
+    low, high = motif.min(axis=0), motif.max(axis=0)
+    inner = _detection({"x1": low[0], "y1": low[1], "x2": high[0], "y2": high[1]}, .9,
+                       family="model", polygon=motif.tolist())
+    baseline = segmentation.SegmentationResult([container, inner], {"fallback_used": True})
+    monkeypatch.setattr(segmentation, "_segment_album_page", lambda *_: baseline)
+    settings = Settings(DATABASE_URL="sqlite+aiosqlite://", REDIS_URL="redis://localhost:6379/0",
+                        ENABLE_CLASSICAL_SEGMENTATION_FALLBACK=True, ENABLE_PRECISE_PHOTO_CROPS=True)
+
+    result = segmentation.segment_album_page(page.image, settings, source_image=page.image)
+    masks = [segmentation._detection_polygon(detection) for detection in result.detections]
+    score = evaluate_page_crops([item.visible_polygon for item in page.prints], masks, width=width, height=height)
+
+    assert score.true_positive == 12 and score.false_positive == 0
+    assert min(row["mask_iou"] for row in score.matches) >= .97
+    assert result.metadata["contrast_components"]["containers_removed"] == 1
+    assert result.metadata["contrast_components"]["replaced"] == 1
+
+
+def test_separate_contrast_pass_preserves_an_observed_collage_outline() -> None:
+    from app.config import Settings
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+    from app.pipeline import segmentation
+
+    fixture = next(page for page in synthetic_crop_pages("development") if page.name == "rotated_prints")
+    margin = 45
+    page = cv2.copyMakeBorder(fixture.image, margin, margin, margin, margin, cv2.BORDER_CONSTANT, value=(139, 139, 139))
+    height, width = page.shape[:2]
+    parent = _detection({"x1": margin / (width - 1), "y1": margin / (height - 1),
+                         "x2": (width - margin - 1) / (width - 1), "y2": (height - margin - 1) / (height - 1)},
+                        .76, family="model")
+    parent.mask["boundary_evidence"] = {"score": .48}
+    baseline = segmentation.SegmentationResult([parent], {})
+    settings = Settings(DATABASE_URL="sqlite+aiosqlite://", REDIS_URL="redis://localhost:6379/0")
+    assert len(segmentation._find_separated_contrast_prints(page, settings)) >= 2
+
+    assert segmentation._recover_separated_contrast_prints(page, baseline, settings) is baseline
+
+
+def test_separate_contrast_pass_filters_hollow_frames_and_plain_labels() -> None:
+    from app.config import Settings
+    from app.pipeline.segmentation import _find_separated_contrast_prints
+
+    page = np.full((640, 840, 3), 146, dtype=np.uint8)
+    for row, top in enumerate((75, 285, 460)):
+        for left in (85, 337, 588):
+            if row == 1:
+                cv2.rectangle(page, (left, top), (left + 147, top + 84), (231, 231, 231), 5)
+            else:
+                cv2.rectangle(page, (left, top), (left + 147, top + 84), (231, 231, 231), -1)
+                cv2.putText(page, "Photo", (left + 22, top + 52), cv2.FONT_HERSHEY_SIMPLEX, .95, (52, 51, 47), 2)
+    settings = Settings(DATABASE_URL="sqlite+aiosqlite://", REDIS_URL="redis://localhost:6379/0")
+
+    assert _find_separated_contrast_prints(page, settings) == []
+
+
 def test_quad_ordering_keeps_all_vertices_for_exact_diamond() -> None:
     from app.pipeline.geometry import order_quad_cyclic
 

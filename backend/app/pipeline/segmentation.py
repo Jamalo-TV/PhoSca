@@ -10,6 +10,7 @@ import numpy as np
 from app.config import Settings
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves
 from app.pipeline.geometry import (
+    PolygonOverlap,
     normalized_polygon_overlap,
     normalized_vertices_to_pixels,
     order_quad_cyclic,
@@ -19,10 +20,12 @@ from app.pipeline.geometry import (
 from app.pipeline.image_ops import normalized_box_to_pixels, pixel_box_to_normalized
 from app.pipeline.mounted_prints import mounted_print_evidence
 from app.pipeline.page_deskew import album_rotation, deskewed_view
+from app.pipeline.print_edges import _is_pale_stock, refine_print_boundary
 from app.pipeline.quality import evaluate_segmentation_geometry
 from app.pipeline.segmentation_filter import paper_and_edge_rejection_reasons, paper_around_nested_print
 
 _CLASSICAL_MIN_AREA_RATIO = 0.02
+_CONTRAST_COMPONENT_SOURCE = "contrast_component"
 
 
 @dataclass(frozen=True)
@@ -901,6 +904,71 @@ def _find_contrast_candidates(image: np.ndarray, min_area_ratio: float) -> list[
         )
         if candidate is not None:
             candidates.append(candidate)
+    return candidates
+
+
+def _component_has_print_stock(lab: np.ndarray, quad: np.ndarray, background: np.ndarray, threshold: float) -> bool:
+    edges = np.roll(quad, -1, axis=0) - quad
+    inward = np.column_stack((-edges[:, 1], edges[:, 0]))
+    inward /= np.linalg.norm(inward, axis=1, keepdims=True)
+    points = quad[:, None] + np.linspace(.12, .88, 30, dtype=np.float32)[None, :, None] * edges[:, None]
+    offsets = points[:, None] + np.float32([2, -2])[None, :, None, None] * inward[:, None, None]
+    coords = offsets.reshape(8, -1, 2)
+    if np.any((coords < 0) | (coords > np.array(lab.shape[1::-1]) - 1)):
+        return False
+    colors = cv2.remap(lab, coords[:, :, 0].copy(), coords[:, :, 1].copy(), cv2.INTER_LINEAR).reshape(4, 2, -1, 3)
+    inside, outside = colors[:, 0], colors[:, 1]
+    stock = np.median(inside, axis=(0, 1))
+    if (not _is_pale_stock(stock) or np.linalg.norm(stock - background) <= threshold
+            or np.any(np.mean(np.linalg.norm(inside - stock, axis=2) <= 10, axis=1) < .75)
+            or np.any(np.mean(np.linalg.norm(outside - background, axis=2) <= threshold, axis=1) < .58)):
+        return False
+
+    target = np.float32([[0, 0], [63, 0], [63, 63], [0, 63]])
+    interior = cv2.warpPerspective(lab, cv2.getPerspectiveTransform(quad, target), (64, 64))[6:-6, 6:-6]
+    if np.mean(np.linalg.norm(interior - background, axis=2) > threshold) < .55:
+        return False
+    # Pictures and plain labels can both have a bright rectangular border.
+    bins = (interior // 4).astype(np.int32).reshape(-1, 3) @ [4096, 64, 1]
+    return bool(np.unique(bins, return_counts=True)[1].max() < .65 * len(bins))
+
+
+def _find_separated_contrast_prints(image: np.ndarray, settings: Settings) -> list[SegmentationDetection]:
+    height, width = image.shape[:2]
+    area = width * height
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    background, _ = _frame_background_lab_model(lab)
+    squared_distance = np.zeros((height, width), np.float32)
+    for index, tone in enumerate(background):
+        difference = lab[:, :, index].astype(np.float32) - tone
+        np.square(difference, out=difference)
+        squared_distance += difference
+    threshold = max(12., np.sqrt(np.quantile(squared_distance, .25)) + 9.)
+    foreground = np.uint8(squared_distance > threshold**2)
+    # Closing these components can bridge the visible album paper between prints.
+    contours, _ = cv2.findContours(foreground, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    candidates = []
+    for contour in contours:
+        if not .008 * area <= cv2.contourArea(contour) <= .10 * area:
+            continue
+        seed = cv2.approxPolyDP(contour, .024 * cv2.arcLength(contour, True), True).reshape(-1, 2)
+        if len(seed) != 4 or not cv2.isContourConvex(seed):
+            continue
+        seed = order_quad_cyclic(seed)
+        if not _component_has_print_stock(lab, seed, background, threshold):
+            continue
+        quad, sides, reasons = refine_print_boundary(image, seed)
+        if quad is None or reasons or any(
+            side["support"] < .80 or (side["corner_support"] or 0) < .60 for side in sides.values()
+        ) or not _component_has_print_stock(lab, quad, background, threshold):
+            continue
+        detection = _make_detection(
+            box={}, points=quad, confidence=min(.98, min(side["support"] for side in sides.values())),
+            image_width=width, image_height=height, settings=settings,
+            source="classical_border_quad", detector_source=_CONTRAST_COMPONENT_SOURCE,
+        )
+        if detection is not None and detection.geometry_valid:
+            candidates.append(detection)
     return candidates
 
 
@@ -2163,12 +2231,85 @@ def _refine_album_windows(image: np.ndarray, result: SegmentationResult) -> Segm
     })
 
 
+def _recover_separated_contrast_prints(
+    image: np.ndarray, result: SegmentationResult, settings: Settings,
+) -> SegmentationResult:
+    candidates = _find_separated_contrast_prints(image, settings)
+    if len(candidates) < 2:
+        return result
+    originals = result.detections
+    original_polygons = [_detection_polygon(item) for item in originals]
+    verified_polygons = [_detection_polygon(item) for item in candidates]
+    no_overlap = PolygonOverlap(0., 0., 0.)
+    comparisons = [
+        [normalized_polygon_overlap(original, verified)
+         if _normalized_box_overlap(item.bounding_box, candidate.bounding_box)[0] > 0 else no_overlap
+         for candidate, verified in zip(candidates, verified_polygons, strict=True)]
+        for item, original in zip(originals, original_polygons, strict=True)
+    ]
+    matches = [{index for index, overlap in enumerate(row)
+                if overlap.first_containment >= .94 and overlap.second_containment >= .70}
+               for row in comparisons]
+    containers = {}
+    height, width = image.shape[:2]
+    for index, (item, row) in enumerate(zip(originals, comparisons, strict=True)):
+        score = (item.mask.get("boundary_evidence") or {}).get("score", 1.)
+        children = {child for child, overlap in enumerate(row) if overlap.second_containment >= .28}
+        if matches[index] or score >= .55 or len(children) < 2 or sum(row[j].first_containment for j in children) < .24:
+            continue
+        try:
+            seed, _ = quad_from_polygon(normalized_vertices_to_pixels(original_polygons[index], width, height))
+            outline, _, reasons = refine_print_boundary(image, seed)
+        except (ValueError, cv2.error):
+            outline, reasons = None, []
+        if outline is None or reasons:
+            containers[index] = children
+
+    adopted = {}
+    replaced = set()
+    for index, candidate in enumerate(candidates):
+        duplicates = {old for old, group in enumerate(matches) if index in group}
+        if any(comparisons[old][index].second_containment >= .94 for old in duplicates):
+            continue
+        if any(row[index].second_containment > .20 for old, row in enumerate(comparisons)
+               if old not in duplicates and old not in containers):
+            continue
+        adopted[index] = candidate
+        replaced.update(duplicates)
+    if not adopted:
+        return result
+
+    # Keep a weak enclosing proposal if the separate prints do not survive the overlap checks.
+    for old, children in containers.items():
+        represented = [child for child in children if child in adopted
+                       or any(child in group and other not in replaced for other, group in enumerate(matches))]
+        if len(represented) < 2 or sum(comparisons[old][child].first_containment for child in represented) < .24:
+            return result
+    kept = [item for i, item in enumerate(originals) if i not in replaced and i not in containers]
+    inputs = _boundary_inputs(image)
+    for candidate in adopted.values():
+        kept.append(replace(candidate, mask={**candidate.mask,
+            "evidence_schema": "segmentation_detection_evidence_v1",
+            "boundary_evidence": _detection_boundary_evidence(candidate, *inputs),
+            "geometry_evidence": _detection_geometry_evidence(candidate),
+        }))
+    kept.sort(key=lambda item: (item.bounding_box["y1"], item.bounding_box["x1"]))
+    return SegmentationResult(kept, {**result.metadata, "contrast_components": {
+        "verified": len(candidates), "selected": len(adopted),
+        "replaced": len(replaced), "containers_removed": len(containers),
+    }})
+
+
 def segment_album_page(
     image: np.ndarray, settings: Settings, *, source_image: np.ndarray | None = None,
 ) -> SegmentationResult:
     source = source_image if source_image is not None and source_image.shape == image.shape else None
     result = _segment_album_page(image, settings, source)
     if settings.enable_classical_segmentation_fallback:
+        if settings.enable_precise_photo_crops and (
+            result.metadata.get("fallback_used") or (result.metadata.get("model_set_risk") or {}).get("risky")
+        ):
+            result = _recover_separated_contrast_prints(source if source is not None else image, result, settings)
         result = refine_album_page_result(image, result)
         if settings.enable_precise_photo_crops:
             result = _refine_album_windows(source if source is not None else image, result)
@@ -2178,9 +2319,12 @@ def segment_album_page(
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
 
-    refinable = [index for index, detection in enumerate(result.detections) if detection.mask.get("source") != ALBUM_WINDOW_SOURCE]
+    fixed_indices = {index for index, detection in enumerate(result.detections)
+                     if detection.mask.get("source") == ALBUM_WINDOW_SOURCE
+                     or detection.mask.get("detector_source") == _CONTRAST_COMPONENT_SOURCE}
+    refinable = [index for index in range(len(result.detections)) if index not in fixed_indices]
     originals = [_detection_polygon(result.detections[index]) for index in refinable]
-    fixed = [_detection_polygon(detection) for detection in result.detections if detection.mask.get("source") == ALBUM_WINDOW_SOURCE]
+    fixed = [_detection_polygon(result.detections[index]) for index in sorted(fixed_indices)]
     try:
         source = source_image if source_image is not None else image
         if source.shape != image.shape:
