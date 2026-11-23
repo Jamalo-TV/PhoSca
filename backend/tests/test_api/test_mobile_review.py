@@ -430,6 +430,41 @@ async def test_precise_crop_variants_follow_explicit_corners_and_preserve_last_g
     assert persisted["urls"]["image_only"] == payload["urls"]["image_only"]
 
 
+async def test_saving_coordinates_cannot_release_a_photo_hidden_by_an_album_window(client, monkeypatch) -> None:
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    image = np.full((120, 160, 3), 215, np.uint8)
+    image[20:100, 30:125] = (75, 100, 145)
+    _, _, photo_id = await _seed_review_data(image)
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {**photo.segmentation_mask, "album_window_occluded": True}
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    saved = await client.patch(f"{url}/bounding-box", json={
+        "bounding_box": {"x1": 30 / 160, "y1": 20 / 120, "x2": 125 / 160, "y2": 100 / 120},
+    })
+    reapplied = await client.post(f"{url}/reprocess")
+
+    for response in (saved, reapplied):
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["segmentation_mask"]["album_window_occluded"] is True
+        modes = payload["enhancement_applied"]["correction"]["crop_modes"]
+        for name in ("full_print", "image_only"):
+            assert modes[name]["status"] == "review_needed" and ALBUM_WINDOW_OCCLUDED in modes[name]["reason_codes"]
+            assert payload["crop_download_urls"][name] is None
+    for name in ("full_print", "image_only"):
+        assert (await client.get(f"{url}/image?variant={name}")).status_code == 404
+
+
 async def test_measured_print_size_recovers_both_oblique_crops_and_survives_reprocessing(client, monkeypatch) -> None:
     from app.config import get_settings
 

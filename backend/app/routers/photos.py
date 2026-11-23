@@ -246,6 +246,8 @@ async def update_photo_bounding_box(
         segmentation_mask = (
             payload.segmentation_mask.as_dict() if payload.segmentation_mask else _rect_mask_from_box(box, width, height)
         )
+        if (photo.segmentation_mask or {}).get("album_window_occluded") is True:
+            segmentation_mask["album_window_occluded"] = True
         if "visible_polygon" not in segmentation_mask:
             segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask.get("polygon"))
         if "warp_quad" not in segmentation_mask and len(segmentation_mask.get("polygon") or []) == 4:

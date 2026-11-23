@@ -15,7 +15,7 @@ from app.pipeline.confidence import is_sha256, load_confidence_calibration
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.model_registry import sha256
 
-CROP_VALIDATION_SCHEMA = 12
+CROP_VALIDATION_SCHEMA = 13
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
 
 
@@ -47,6 +47,9 @@ def crop_validation_profile(settings: Settings) -> dict:
             "ownership_polygon_check": 1,
         },
         "classical_fallback": settings.enable_classical_segmentation_fallback,
+        "album_window_detection": (
+            1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+        ),
         "border_analysis": settings.enable_border_trim,
         "protected_region_guard": settings.enable_protected_region_guard,
         "orientation_enabled": settings.enable_photo_orientation_correction,
@@ -95,7 +98,7 @@ def detector_calibration_profile(settings: Settings, *, segmentation: dict | Non
         return None
     return {"model_sha256": model, **{key: profile[key] for key in (
         "pipeline_version", "precise_photo_crops", "model_registry_sha256", "visible_mask_refinement",
-        "classical_fallback", "proposal_threshold", "acceptance_threshold", "min_detection_aspect_ratio",
+        "classical_fallback", "album_window_detection", "proposal_threshold", "acceptance_threshold", "min_detection_aspect_ratio",
         "max_detection_aspect_ratio", "opencv_version",
     )}}
 

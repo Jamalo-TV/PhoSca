@@ -4,6 +4,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN
 from app.pipeline.border_removal import find_physical_border
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop
 from app.pipeline.geometry import (
@@ -916,6 +917,10 @@ def correct_photo_crop(
                 src_points = refined
                 quad_metrics = _validate_quad(src_points, width, height)
     if dual_mode:
+        if mask.get("album_window_occluded") is True:
+            full_reasons.append(ALBUM_WINDOW_OCCLUDED)
+        elif mask.get("source") == ALBUM_WINDOW_SOURCE:
+            full_reasons.append(ALBUM_WINDOW_STOCK_UNCERTAIN)
         if not manual and np.any((src_points < 0.5) | (src_points > np.array([width, height]) - 1.5)):
             full_reasons.append("PRINT_AT_CAPTURE_EDGE")
         visible = _proposal_polygon(mask, width, height)

@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 
 from app.config import Settings
+from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves
 from app.pipeline.geometry import (
     normalized_polygon_overlap,
     normalized_vertices_to_pixels,
@@ -1924,30 +1925,101 @@ def _page_containers(detections: list[SegmentationDetection], image: np.ndarray)
     return rejected
 
 
+def _refine_album_windows(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    leaves = album_window_leaves(image)
+    if not leaves:
+        return result
+
+    rejected = {}
+    for index, detection in enumerate(result.detections):
+        polygon = _detection_polygon(detection)
+        extents = [normalized_polygon_overlap(polygon, leaf.outline) for leaf in leaves]
+        if min(extent.second_containment for extent in extents) >= .68 and sum(
+            extent.first_containment for extent in extents
+        ) >= .85:
+            rejected[index] = "album_spread"
+            continue
+        for leaf, extent in zip(leaves, extents, strict=True):
+            if extent.first_containment < .85:
+                continue
+            if extent.second_containment >= .70:
+                rejected[index] = "empty_album_leaf" if leaf.print_outline is None else "album_leaf"
+            elif leaf.print_outline is not None:
+                overlap = normalized_polygon_overlap(polygon, leaf.print_outline)
+                if max(overlap.first_containment, overlap.second_containment) >= .80:
+                    rejected[index] = "replaced_by_visible_album_window"
+            elif leaf.decoration is not None:
+                overlap = normalized_polygon_overlap(polygon, leaf.decoration)
+                if overlap.first_containment >= .70 and overlap.second_containment >= .60:
+                    rejected[index] = "empty_album_decoration"
+    detections = [detection for index, detection in enumerate(result.detections) if index not in rejected]
+    height, width = image.shape[:2]
+    for leaf in leaves:
+        if leaf.print_outline is None:
+            continue
+        lower, upper = leaf.print_outline.min(axis=0), leaf.print_outline.max(axis=0)
+        extent = (upper - lower) * [width - 1, height - 1]
+        quality = evaluate_segmentation_geometry(*extent)
+        mask = {
+            "polygon": _normalized_polygon(leaf.print_outline, 1, 1),
+            "source": ALBUM_WINDOW_SOURCE,
+            "detector_source": ALBUM_WINDOW_SOURCE,
+        }
+        reasons = list(quality.review_reasons)
+        if leaf.aperture_quad is not None:
+            mask["warp_quad"] = _normalized_polygon(leaf.aperture_quad, 1, 1)
+            mask["album_window_occluded"] = True
+            reasons.append(ALBUM_WINDOW_OCCLUDED)
+        else:
+            reasons.append(ALBUM_WINDOW_STOCK_UNCERTAIN)
+        detections.append(SegmentationDetection(
+            bounding_box={"x1": float(lower[0]), "y1": float(lower[1]), "x2": float(upper[0]), "y2": float(upper[1])},
+            mask=mask, confidence=.70, aspect_ratio=quality.aspect_ratio,
+            geometry_valid=quality.geometry_valid, review_reasons=reasons,
+        ))
+    detections.sort(key=lambda detection: (detection.bounding_box["y1"], detection.bounding_box["x1"]))
+    return SegmentationResult(detections, {
+        **result.metadata, "album_window_rejections": rejected,
+        "album_window_detections": sum(leaf.print_outline is not None for leaf in leaves),
+    })
+
+
 def segment_album_page(
     image: np.ndarray, settings: Settings, *, source_image: np.ndarray | None = None,
 ) -> SegmentationResult:
     result = _segment_album_page(image, settings)
     if settings.enable_classical_segmentation_fallback:
         result = refine_album_page_result(image, result)
+        if settings.enable_precise_photo_crops:
+            source = source_image if source_image is not None and source_image.shape == image.shape else image
+            result = _refine_album_windows(source, result)
     model_path = settings.visible_mask_model_path
     if model_path is None or not settings.enable_precise_photo_crops:
         return result
 
-    from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks
+    from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
 
-    originals = [_detection_polygon(detection) for detection in result.detections]
+    refinable = [index for index, detection in enumerate(result.detections) if detection.mask.get("source") != ALBUM_WINDOW_SOURCE]
+    originals = [_detection_polygon(result.detections[index]) for index in refinable]
+    fixed = [_detection_polygon(detection) for detection in result.detections if detection.mask.get("source") == ALBUM_WINDOW_SOURCE]
     try:
         source = source_image if source_image is not None else image
         if source.shape != image.shape:
             raise ValueError("source and detection images have different shapes")
         outlines, digest = refine_visible_masks(source, originals, model_path, settings.model_manifest_path)
-        updated = [
-            detection if np.array_equal(outline, original) else replace(detection, mask={
-                **detection.mask, "visible_polygon": [{"x": float(x), "y": float(y)} for x, y in outline],
-            })
-            for detection, original, outline in zip(result.detections, originals, outlines, strict=True)
-        ]
+        if fixed and outlines:
+            resolved = resolve_mask_ownership(source.shape, originals + fixed, outlines + fixed)
+            if any(not np.array_equal(protected, outline)
+                   for protected, outline in zip(fixed, resolved[len(originals):], strict=True)):
+                raise UnresolvedMaskOwnership
+            outlines = resolved[:len(originals)]
+        updated = result.detections.copy()
+        for index, original, outline in zip(refinable, originals, outlines, strict=True):
+            if not np.array_equal(outline, original):
+                detection = updated[index]
+                updated[index] = replace(detection, mask={
+                    **detection.mask, "visible_polygon": [{"x": float(x), "y": float(y)} for x, y in outline],
+                })
         details = {"model_sha256": digest, "refined_detections": sum(
             original is not refined for original, refined in zip(result.detections, updated, strict=True)
         )}

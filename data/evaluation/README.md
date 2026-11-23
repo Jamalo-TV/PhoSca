@@ -90,9 +90,9 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 12 binds
+groups, with the 90% threshold applied to each group. Report schema 13 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
-occlusion check, the configured visible mask refiner and detector-bound
+occlusion check, album-window detection, the configured visible mask refiner and detector-bound
 confidence calibration. A verified motif can
 qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
@@ -430,3 +430,20 @@ native PNG sidecars. The draft YOLO label marks its largest visible
 component, which covers 49.84% of the visible print area. The evaluator
 reads all three from the PNG. All new mode annotations remain unverified.
 The source and separate exposures can be compared in the preflight sheet.
+
+The album-window regression uses pale leaves with a common dark gutter in
+front-facing and perspective captures. It distinguishes thin decorations,
+rectangular and arched apertures, and prints with their own broad paper rims.
+The trace follows visible material. An aperture retains its curved outline
+and both crop modes go to review with `ALBUM_WINDOW_OCCLUDED`, including
+after manual coordinate edits. A separate pale border remains visible in the
+proposal and goes to review with `ALBUM_WINDOW_STOCK_UNCERTAIN` because
+an insert can present the same outline. Suppression of spurious plate and
+spread hypotheses preserves small independent photo detections.
+
+The integrated comparison with the registered detector and optional refiner
+moves from 4 to 12 of 12 instance matches and from 16 to zero false positives
+across eight synthetic scenes. The report and overlay are
+`runs/crop-quality/album-window-integrated.json` and
+`runs/crop-quality/album-window-integrated.jpg`. The unchanged locked
+synthetic and same-album Golden splits are checked separately.
