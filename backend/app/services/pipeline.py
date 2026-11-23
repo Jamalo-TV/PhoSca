@@ -50,8 +50,10 @@ from app.pipeline.degradation import analyze_degradation
 from app.pipeline.dl_enhancement import dl_enhance_photo
 from app.pipeline.enhancement import conservative_enhance_photo, prepare_for_cutout
 from app.pipeline.exif import write_caption_exif
+from app.pipeline.geometry import normalized_vertices_to_pixels
 from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, sha256_file
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
+from app.pipeline.page_plane import MeasuredPrintReference
 from app.pipeline.perspective import apply_refined_visibility, correct_photo_crop
 from app.pipeline.presets import get_enhancement_config
 from app.pipeline.protected_regions import detect_protected_regions
@@ -316,6 +318,24 @@ async def segmentation_task_logic(
     return {"page_id": str(page.id), "photo_ids": created_photo_ids, "metadata": result.metadata}
 
 
+def _measured_print_reference(photo_id, mask, confidence, correction, width, height) -> MeasuredPrintReference | None:
+    if confidence is not None or not isinstance(correction, dict) or not mask.get("print_size_mm"):
+        return None
+    try:
+        aspect = correction["aspect_ratio_estimation"]
+        if aspect["method"] != "known_print_aspect" or correction["crop_modes"]["full_print"]["status"] != "ready":
+            return None
+        size = PrintSizeMM.model_validate(mask["print_size_mm"])
+        source = [(point["x"], point["y"]) for point in correction["source_quad"]]
+        current = [(point["x"], point["y"]) for point in mask["warp_quad"]]
+        if (len(source) != 4 or len(current) != 4 or not np.allclose(source, current, rtol=0, atol=1e-6)
+                or not np.isclose(aspect["estimated_ratio"], size.aspect_ratio, atol=1e-8, rtol=0)):
+            return None
+        return MeasuredPrintReference(str(photo_id), normalized_vertices_to_pixels(source, width, height), size.aspect_ratio)
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
 async def perspective_correction_task_logic(
     session: AsyncSession,
     photo_id: UUID,
@@ -359,19 +379,29 @@ async def perspective_correction_task_logic(
     protection_evidence = page_steps.get("protected_regions") or {}
     protected_regions = protection_evidence.get("regions") if protection_evidence.get("enabled", True) else None
     neighbor_masks = []
+    measured_references = []
     if settings.enable_precise_photo_crops:
         rows = await session.execute(
             select(
+                ExtractedPhoto.id,
                 ExtractedPhoto.segmentation_mask,
                 ExtractedPhoto.bounding_box,
                 ExtractedPhoto.enhancement_applied["review_rejected_detection"],
+                ExtractedPhoto.segmentation_confidence,
+                ExtractedPhoto.enhancement_applied["correction"],
             ).where(
                 ExtractedPhoto.page_id == photo.page_id,
                 ExtractedPhoto.id != photo.id,
                 ExtractedPhoto.segmentation_mask.is_not(None),
             )
         )
-        neighbor_masks = [mask for mask, box, rejection in rows if mask and not is_reviewed_non_print(rejection, box, mask)]
+        for other_id, mask, box, rejection, confidence, correction in rows:
+            if not mask or is_reviewed_non_print(rejection, box, mask):
+                continue
+            neighbor_masks.append(mask)
+            reference = _measured_print_reference(other_id, mask, confidence, correction, *page_image.shape[1::-1])
+            if reference is not None:
+                measured_references.append(reference)
     try:
         size = (photo.segmentation_mask or {}).get("print_size_mm")
         manual_aspect = None
@@ -393,7 +423,8 @@ async def perspective_correction_task_logic(
             dual_mode=settings.enable_precise_photo_crops,
             enable_classical_retry=settings.enable_classical_segmentation_fallback,
             print_aspect_ratio=manual_aspect,
-            neighbor_masks=[mask for mask in neighbor_masks if mask],
+            measured_page_references=measured_references,
+            neighbor_masks=neighbor_masks,
         )
         corrected = crop_result.image
         correction_metadata = crop_result.metadata

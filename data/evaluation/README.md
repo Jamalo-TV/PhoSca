@@ -463,3 +463,19 @@ confirmation. On the four recoverable examples the maximum confirmed
 corner error is 0.231 px with zero foreign source samples and zero cutoff
 beyond one source pixel. Double frames, engravings, open sky and a
 beveled insert produce no suggestion in the eight corresponding controls.
+
+When the camera geometry alone leaves the aspect uncertain, the correction
+can map a nearby print into the measured plane of a reviewed print on the
+same capture. It verifies the reference edges at source resolution, checks
+the target rectangle by reprojection, and checks sensitivity to half-pixel
+corner changes. Conflicting applicable measurements keep the original
+uncertain aspect. The workflow keeps the rectified full preview and the
+applicable geometry of both modes in review until the target is measured.
+
+The independent test in `runs/crop-quality/plane-reference-agent/` covers
+2200 px and 4400 px views with one-axis tilt. A 0.45 px perturbation of one
+reference corner changes the estimated target aspect by 0.044%. A hinged
+plane, small reference and contradictory measured dimensions all leave the
+aspect unresolved. A wrongly measured aligned reference can still produce
+a plausible rectangle, so the correction records which measurement was used
+and keeps both downloads in review.

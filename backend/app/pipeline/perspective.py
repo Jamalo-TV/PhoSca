@@ -17,6 +17,7 @@ from app.pipeline.geometry import (
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.orientation import correct_photo_orientation, rotate_image
+from app.pipeline.page_plane import PRINT_ASPECT_REFERENCE_REVIEW, MeasuredPrintReference, measured_page_aspect
 from app.pipeline.print_edges import (
     continuous_motif_rim,
     missing_corner_material,
@@ -723,7 +724,8 @@ def _dual_crop_result(
         full_mode["sampling"] = OWNED_BILINEAR
 
     independent = corner_mount_detected and set(full_reasons) <= _LOCALIZED_OCCLUSION_REASONS
-    if not full_reasons or independent:
+    reference_review = full_reasons == [PRINT_ASPECT_REFERENCE_REVIEW]
+    if not full_reasons or independent or reference_review:
         quad, diagnostics, image_reasons = _inner_crop_plan(
             full_image, matrix, inner, trim_border=trim_border, page_width=page_width, page_height=page_height,
             page_regions=page_regions, protect_regions=protect_regions, allow_wide_search=not independent,
@@ -761,7 +763,7 @@ def _dual_crop_result(
                         _validate_quad(candidate, width, height)
                         source, quad = refined, candidate
                 _validate_quad(source, page_width, page_height)
-                measured = metadata["aspect_ratio_estimation"]["method"] == "known_print_aspect"
+                measured = metadata["aspect_ratio_estimation"]["method"] in {"known_print_aspect", "measured_page_reference"}
                 if (independent or wide_rim) and not image_reasons and not _independent_motif_visible(page, source, neighbors):
                     image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
                 if (measured or independent or wide_rim) and not _is_rectangular_in_measured_plane(quad):
@@ -788,7 +790,10 @@ def _dual_crop_result(
                     _assess_homography(source, destination, combined)
                     pixels, supported = warp_owned_crop(page, combined, (inner_width, inner_height))
                     if supported:
-                        image_mode = _geometry_for_mode(source, combined, pixels, page_width, page_height, rotation, [])
+                        image_mode = _geometry_for_mode(
+                            source, combined, pixels, page_width, page_height, rotation,
+                            full_reasons if reference_review else [],
+                        )
                         image_mode["sampling"] = OWNED_BILINEAR
                         if independent:
                             image_mode["independent_of_full_print"] = True
@@ -896,6 +901,7 @@ def correct_photo_crop(
     enable_classical_retry: bool = False,
     camera_matrix: np.ndarray | None = None,
     print_aspect_ratio: float | None = None,
+    measured_page_references: list[MeasuredPrintReference] | None = None,
     neighbor_masks: list[dict] | None = None,
 ) -> CropResult:
     height, width = page_image.shape[:2]
@@ -995,6 +1001,17 @@ def correct_photo_crop(
     target_width, target_height, aspect, aspect_reasons = _crop_dimensions(
         src_points, width, height, metric=dual_mode, camera_matrix=camera_matrix, print_aspect_ratio=print_aspect_ratio,
     )
+    if (not full_reasons and aspect_reasons == ["PRINT_ASPECT_UNCERTAIN"] and camera_matrix is None
+            and measured_page_references):
+        inferred, estimates = measured_page_aspect(page_image, src_points, measured_page_references)
+        if inferred is None:
+            aspect["page_reference_estimates"] = estimates
+        else:
+            target_width, target_height, aspect, _ = _crop_dimensions(
+                src_points, width, height, metric=dual_mode, camera_matrix=None, print_aspect_ratio=inferred,
+            )
+            aspect.update(method="measured_page_reference", page_reference_estimates=estimates)
+            aspect_reasons = [PRINT_ASPECT_REFERENCE_REVIEW]
     full_reasons.extend(aspect_reasons)
     if target_width * target_height > 2 * width * height:
         raise ValueError("excessive_perspective_output_area")
@@ -1029,7 +1046,7 @@ def correct_photo_crop(
         left, top, right, bottom = _analysis_padding(destination, rectified_to_page, width, height)
     page_to_analysis = matrix.copy()
     page_to_analysis[:2] += np.array([[left], [top]]) * matrix[2]
-    owned_sampling = dual_mode and not full_reasons
+    owned_sampling = dual_mode and (not full_reasons or full_reasons == [PRINT_ASPECT_REFERENCE_REVIEW])
     if owned_sampling:
         analysis, supported = warp_owned_crop(page_image, matrix, (target_width, target_height))
         if not supported:
