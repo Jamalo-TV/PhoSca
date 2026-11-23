@@ -8,6 +8,7 @@ from hashlib import sha256
 from html import escape
 from io import BytesIO
 import json
+import os
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -430,6 +431,34 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file,
     return report
 
 
+def _write_reviewed_reference_manifest(source: Path, receipt_path: Path, output: Path, preflight: dict) -> None:
+    from app.evaluation.reference_review import apply_reference_review
+
+    manifest = json.loads(_reference_bytes(source, preflight["dataset_manifest_sha256"]))
+    receipt = receipt_path.read_bytes()
+    reviewed = apply_reference_review(manifest, json.loads(receipt), preflight, receipt_sha256=sha256(receipt).hexdigest())
+    pages = reviewed if isinstance(reviewed, list) else reviewed["pages"]
+
+    def rebase(record, keys):
+        for key in keys:
+            if record.get(key):
+                absolute = _record_path(record[key], source).resolve()
+                try:
+                    record[key] = Path(os.path.relpath(absolute, output.parent.resolve())).as_posix()
+                except ValueError:  # Windows paths on different volumes.
+                    record[key] = str(absolute)
+
+    for page in pages:
+        rebase(page, ("image", "annotations"))
+        for modes in page.get("expected_final_crops") or []:
+            for mode in modes.values():
+                rebase(mode, ("mask", "reference_image"))
+    contents = json.dumps(reviewed, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("x", encoding="utf-8", newline="\n") as file:
+        file.write(contents)
+
+
 def _legacy_mode(vertices, image, source_shape, rotation):
     height, width = image.shape[:2]
     source = np.asarray(_points(vertices), dtype=np.float32) * np.float32(
@@ -682,6 +711,8 @@ def main() -> None:
     parser.add_argument("--dataset-manifest", type=Path)
     parser.add_argument("--calibration-output", type=Path, help="Export labelled detector scores from a verified calibration split.")
     parser.add_argument("--check-references", action="store_true", help="Validate real reference files and report readiness without running inference.")
+    parser.add_argument("--apply-reference-review", type=Path, help="Import a receipt exported by a source-only review sheet.")
+    parser.add_argument("--reviewed-manifest", type=Path, help="Write reviewed annotations to a new manifest.")
     parser.add_argument("--synthetic", choices=("development", "locked"))
     parser.add_argument("--geometry-only", action="store_true", help="Seed approximate proposals on synthetic pages.")
     parser.add_argument("--legacy-crop", action="store_true", help="Measure the rollback detector and crop path.")
@@ -716,6 +747,12 @@ def main() -> None:
         parser.error("--synthetic and --dataset-manifest are separate inputs")
     if args.check_references and not args.dataset_manifest:
         parser.error("--check-references requires --dataset-manifest")
+    if args.apply_reference_review or args.reviewed_manifest:
+        if not (args.check_references and args.apply_reference_review and args.reviewed_manifest):
+            parser.error("--apply-reference-review requires --check-references and --reviewed-manifest")
+        paths = (args.dataset_manifest, args.apply_reference_review, args.reviewed_manifest, args.output)
+        if len({path.resolve() for path in paths}) != len(paths):
+            parser.error("Review input manifest, receipt, reviewed manifest and report need separate paths")
     if not args.check_references and not args.geometry_only and not args.model.is_file():
         raise SystemExit(f"ONNX model missing: {args.model}")
     settings = _runtime_settings(args)
@@ -752,11 +789,23 @@ def main() -> None:
         if expected_calibration_detector is None:
             raise SystemExit("Calibration export requires the registered detector configuration.")
     if args.check_references:
+        if args.apply_reference_review:
+            preflight = _check_references(args, records, split, parse_yolo_segmentation, load_image, sha256_file)
+            try:
+                _write_reviewed_reference_manifest(
+                    args.dataset_manifest, args.apply_reference_review, args.reviewed_manifest, preflight,
+                )
+            except (OSError, ValueError) as error:
+                parser.error(str(error))
+            args.dataset_manifest = args.reviewed_manifest
+            records, split = _load_cases(args)
         review_directory = args.output.parent / f"{args.output.stem}-visuals" if args.visuals else None
         checked = _check_references(
             args, records, split, parse_yolo_segmentation, load_image, sha256_file,
             review_directory=review_directory,
         )
+        if args.reviewed_manifest:
+            checked["reviewed_manifest"] = str(args.reviewed_manifest)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         contents = json.dumps(checked, indent=2)
         args.output.write_text(contents, encoding="utf-8")

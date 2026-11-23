@@ -122,6 +122,22 @@ Open `index.html` in the report's sibling `-visuals` directory. The SHA-256
 at the top identifies the exact manifest under review. These visuals use
 the annotations and source files only and leave the release checks unchanged.
 
+An independent reviewer can confirm the page's photo count and instance
+assignments, then assess **Ganzer Abzug** and **Nur Bildmotiv** separately.
+Choose **Korrektur nötig** for a reference that needs changes. A mode with
+missing measurements, corners or pinned files cannot be confirmed. Enter
+the reviewer identifier and save the decisions as JSON. Partial reviews
+can be applied to a new manifest and reviewed further in a fresh sheet.
+
+```powershell
+python scripts/evaluate_onnx_segmentation.py --dataset-manifest draft.json --check-references --apply-reference-review phosca-referenzpruefung.json --reviewed-manifest reviewed.json --visuals --output runs/crop-quality/reviewed-reference-check.json
+```
+
+The import checks the draft's SHA-256, reruns the source checks, and records
+the reviewer, timestamp and receipt hash with each decision in the new
+manifest. Album independence and real release quality still require their
+existing evidence.
+
 Export calibration scores from a separate manifest with `split_policy.role`
 set to `calibration` and `split_policy.album_independent` set to `true`.
 Use verified page annotations, page and label SHA-256 hashes and physical
@@ -531,6 +547,16 @@ python scripts/evaluate_onnx_segmentation.py --dataset-manifest data/evaluation/
 The source-only intake at `runs/crop-quality/archive-reference-review-plus-native-whiting.json`
 still needs independent review. It has 13 missing metric references, down
 from 17 before adding the Whiting pairs.
+
+`whiting-more-native-crops-draft.json` adds five further whole-print
+references from separately digitized TIFF masters. The maximum disagreement
+between independent corner fits was 0.73 native album pixels, with up to
+0.26% aspect-ratio disagreement. A sixth paired print retains an unresolved
+top edge. The combined preflight at
+`runs/crop-quality/archive-reference-review-plus-five-whiting-native.json`
+checks all pinned files and leaves eight missing metric references and 61
+mode annotations awaiting independent review. [Whiting album catalog](https://www.loc.gov/item/2007675298/)
+and [American Colony album catalog](https://www.loc.gov/pictures/item/2007675258/).
 
 A development experiment zoomed into the bounded gap on the
 [sparsely mounted Met page](https://www.metmuseum.org/art/collection/search/289066).

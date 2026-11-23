@@ -1,7 +1,9 @@
-"""Render the independent inputs used by the crop reference preflight."""
+"""Review the independent inputs used by the crop reference preflight."""
 
 from __future__ import annotations
 
+from copy import deepcopy
+from datetime import datetime
 from html import escape
 from pathlib import Path
 import os
@@ -14,6 +16,67 @@ import numpy as np
 _MODES = (("full_print", "Ganzer Abzug"), ("image_only", "Nur Bildmotiv"))
 _INK = (63, 83, 255)
 _MASK = (50, 213, 223)
+_UNVERIFIED = {"PAGE_ANNOTATION_UNVERIFIED", "MODE_ANNOTATION_UNVERIFIED"}
+_OUTCOMES = {"verified": "manually_verified", "needs_revision": "reference_review_needs_revision"}
+
+
+def apply_reference_review(manifest: dict | list, receipt: dict, preflight: dict, *, receipt_sha256: str) -> dict | list:
+    """Apply explicit review decisions to a copy of the exact manifest that was checked."""
+    digest = preflight["dataset_manifest_sha256"]
+    if (not isinstance(receipt, dict) or type(receipt.get("schema_version")) is not int
+            or receipt["schema_version"] != 1 or receipt.get("manifest_sha256") != digest):
+        raise ValueError("Review receipt does not match this reference manifest")
+    reviewer, reviewed_at = receipt.get("reviewer"), receipt.get("reviewed_at")
+    if not isinstance(reviewer, str) or not 1 <= len(reviewer.strip()) <= 120:
+        raise ValueError("Review receipt needs a reviewer")
+    if not isinstance(reviewed_at, str) or not reviewed_at.endswith("Z"):
+        raise ValueError("Review receipt needs a UTC timestamp")
+    datetime.fromisoformat(reviewed_at[:-1] + "+00:00")
+    decisions = receipt.get("decisions")
+    if not isinstance(decisions, list) or not decisions:
+        raise ValueError("Review receipt has no decisions")
+
+    reviewed = deepcopy(manifest)
+    pages = reviewed if isinstance(reviewed, list) else reviewed["pages"]
+    by_id = {str(page["id"]): page for page in pages}
+    page_issues = {str(row["page_id"]): set(row["issues"]) for row in preflight["reference_issues"]["pages"]}
+    mode_issues = {
+        (str(row["page_id"]), row["instance_index"], row["mode"]): set(row["issues"])
+        for row in preflight["reference_issues"]["modes"]
+    }
+    seen = set()
+    for decision in decisions:
+        if not isinstance(decision, dict):
+            raise ValueError("Invalid reference review decision")
+        page_id, instance = decision.get("page_id"), decision.get("instance_index")
+        mode, outcome = decision.get("mode"), decision.get("outcome")
+        if (not isinstance(page_id, str) or page_id not in by_id or not isinstance(mode, str)
+                or not isinstance(outcome, str) or outcome not in _OUTCOMES):
+            raise ValueError("Unknown page, crop mode or outcome in reference review")
+        page = by_id[page_id]
+        issues = page_issues.get(page_id, set())
+        if mode == "page" and instance is None:
+            target = page
+        else:
+            crops = page.get("expected_final_crops") or []
+            if (mode not in dict(_MODES) or type(instance) is not int or not 0 <= instance < len(crops)
+                    or mode not in crops[instance]):
+                raise ValueError("Review decision must address an existing crop reference")
+            target = crops[instance][mode]
+            issues = issues | mode_issues.get((page_id, instance, mode), set())
+        identity = (page_id, instance, mode)
+        if identity in seen:
+            raise ValueError("Duplicate reference review decision")
+        seen.add(identity)
+        blockers = issues - _UNVERIFIED
+        if outcome == "verified" and blockers:
+            raise ValueError(f"Cannot confirm {page_id}/{instance}/{mode}: {', '.join(sorted(blockers))}")
+        target["annotation_provenance"] = _OUTCOMES[outcome]
+        target["reference_review"] = {
+            "reviewer": reviewer.strip(), "reviewed_at": reviewed_at, "manifest_sha256": digest,
+            "receipt_sha256": receipt_sha256, "outcome": outcome,
+        }
+    return reviewed
 
 
 def _image_file(directory: Path, name: str, image: np.ndarray) -> None:
@@ -40,6 +103,17 @@ def _figure(directory: Path, name: str, image: np.ndarray, caption: str, max_wid
 
 def _issues(codes: list[str]) -> str:
     return "".join(f"<li><code>{escape(code)}</code></li>" for code in codes)
+
+
+def _review_choice(page_id: str, mode: str, label: str, issues: list[str], instance: int | None = None) -> str:
+    instance_attr = "" if instance is None else f' data-instance="{instance}"'
+    verified = ('<option value="verified">Bestätigt</option>' if not (set(issues) - _UNVERIFIED) else "")
+    return (
+        f'<label class="review-choice">{escape(label)} '
+        f'<select data-page-id="{escape(page_id, quote=True)}" data-mode="{mode}"{instance_attr}>'
+        '<option value="">Keine Änderung</option>' + verified
+        + '<option value="needs_revision">Korrektur nötig</option></select></label>'
+    )
 
 
 def _source_path(directory: Path, path: Path) -> str:
@@ -120,6 +194,7 @@ def render_reference_page(
         cv2.putText(overlay, str(instance), origin, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), 6, cv2.LINE_AA)
         cv2.putText(overlay, str(instance), origin, cv2.FONT_HERSHEY_SIMPLEX, font_scale, _MASK, 2, cv2.LINE_AA)
     slug = f"page-{index:03d}"
+    page_id = str(record["id"])
     source = escape(_source_path(directory, record["image"]), quote=True)
     figures = _figure(directory, f"{slug}-overview.jpg", overlay, "Sichtbare Instanzen laut Referenzlabels", 1120)
     blocks = []
@@ -127,7 +202,8 @@ def render_reference_page(
         cards = []
         for key, label in _MODES:
             mode = modes.get(key) or {}
-            issue_list = _issues(issues_by_mode.get((instance, key), []))
+            codes = issues_by_mode.get((instance, key), [])
+            issue_list = _issues(codes)
             if not mode.get("present", True) or not mode:
                 cards.append(f"<article><h4>{label}</h4><p>Referenz fehlt.</p><ul>{issue_list}</ul></article>")
                 continue
@@ -161,17 +237,60 @@ def render_reference_page(
             recoverability = "wiederherstellbar" if mode["recoverable"] else "verdeckt oder unvollständig"
             cards.append(
                 f"<article><h4>{label}</h4><p>{status} · {recoverability}{measurement}</p>"
-                f'<ul>{issue_list}</ul><div class="evidence">{evidence}</div></article>'
+                f'<ul>{issue_list}</ul><div class="evidence">{evidence}</div>'
+                + _review_choice(page_id, key, f"{label} prüfen", [*page_issues, *codes], instance)
+                + "</article>"
             )
         blocks.append(f'<section><h3>Instanz {instance}</h3><div class="modes">{"".join(cards)}</div></section>')
-    identity = escape(str(record["id"]))
+    identity = escape(page_id)
     group = escape(str(record.get("source_group") or "Unbekannte Albumgruppe"))
     return (
         f'<section id="{slug}" class="page"><h2>{identity}</h2><p>{group} · {width} × {height} px · '
         f'<a href="{source}">Original öffnen</a></p><ul>{_issues(page_issues)}</ul>{figures}'
+        + _review_choice(page_id, "page", "Fotoanzahl und Zuordnung prüfen", page_issues)
         + ("".join(blocks) if blocks else "<p>Die Referenzlabels enthalten keine Fotos.</p>")
         + "</section>"
     )
+
+
+_EXPORT_REVIEW = """<script>
+const form = document.getElementById('reference-review');
+const controls = Array.from(form.querySelectorAll('select[data-page-id]'));
+const exportButton = document.getElementById('export-decisions');
+const count = document.getElementById('decision-count');
+function updateCount() {
+    const selected = controls.filter(control => control.value).length;
+    exportButton.disabled = selected === 0;
+    count.textContent = `${selected} Entscheidungen`;
+}
+form.addEventListener('change', updateCount);
+form.addEventListener('submit', event => {
+    event.preventDefault();
+    const reviewer = form.elements.reviewer.value.trim();
+    if (!reviewer) {
+        form.elements.reviewer.focus();
+        return;
+    }
+    const decisions = controls.filter(control => control.value).map(control => ({
+        page_id: control.dataset.pageId,
+        mode: control.dataset.mode,
+        instance_index: control.dataset.instance === undefined ? null : Number(control.dataset.instance),
+        outcome: control.value,
+    }));
+    if (!decisions.length) return;
+    const receipt = {
+        schema_version: 1, manifest_sha256: form.dataset.manifestSha256,
+        reviewer, reviewed_at: new Date().toISOString(), decisions,
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(receipt, null, 2) + '\\n'], {type: 'application/json'}));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'phosca-referenzpruefung.json';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+updateCount();
+</script>"""
 
 
 def write_reference_review(directory: Path, summary: dict, pages: list[tuple[str, str]]) -> Path:
@@ -193,15 +312,22 @@ def write_reference_review(directory: Path, summary: dict, pages: list[tuple[str
         "article{background:#20242a;padding:14px}article h4{margin:0;font-size:1.05rem}"
         "nav ul{columns:3 280px}nav li{padding:2px 0}"
         ".evidence{display:grid;gap:12px}ul:empty{display:none}h3{margin-top:24px}"
+        ".review-actions{position:sticky;top:0;z-index:1;background:#20242a;padding:12px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}"
+        ".page,article{scroll-margin-top:80px}.review-choice{display:block;margin:10px 0}"
+        "input,select,button{font:inherit;padding:.25em .4em;max-width:100%}"
         "</style><main><h1>Albumreferenzen</h1>"
         f'<p>{ready} · {summary["pages"]} Seiten · {summary["expected_photos"]} Abzüge</p>'
         f"<p>Manifest SHA-256 <code>{digest}</code></p><ul>{dataset_issues}</ul>"
         "<p>Vergleiche die Quellpixel mit den markierten Grenzen und der separaten Aufnahme. "
         "Die Eckbilder zeigen links die Quelle und rechts die Markierung bei dreifacher Vergrößerung. "
         "Die Instanznummern beginnen bei 0 und folgen den YOLO-Labels.</p>"
+        f'<form id="reference-review" data-manifest-sha256="{digest}">'
+        '<div class="review-actions"><label>Geprüft von <input name="reviewer" maxlength="120" required></label>'
+        '<output id="decision-count" aria-live="polite"></output>'
+        '<button id="export-decisions" type="submit" disabled>Prüfentscheidungen speichern</button></div>'
         f'<nav aria-label="Albumseiten"><ul>{contents}</ul></nav>'
         + "".join(section for _, section in pages)
-        + "</main></html>",
+        + "</form></main>" + _EXPORT_REVIEW + "</html>",
         encoding="utf-8",
     )
     return path

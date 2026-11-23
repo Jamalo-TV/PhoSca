@@ -1,2 +1,4 @@
 # The evaluation manifest pins the exact label bytes.
 data/evaluation/whiting-17161-00006.txt text eol=lf
+data/evaluation/whiting-13708-00015.txt text eol=lf
+data/evaluation/whiting-15831-00019.txt text eol=lf

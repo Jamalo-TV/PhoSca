@@ -590,6 +590,71 @@ def test_real_mode_coverage_counts_only_eligible_passing_crops() -> None:
     assert _rendered_mode_passes(mode, synthetic=False, real_manifest_locked=True, expected_photos=11)
 
 
+def test_review_receipt_is_bound_to_manifest_and_cannot_confirm_missing_evidence(tmp_path) -> None:
+    import json
+    from argparse import Namespace
+    from hashlib import sha256
+
+    import cv2
+    import numpy as np
+    from app.pipeline.image_ops import load_image, sha256_file
+    from scripts.evaluate_onnx_segmentation import _check_references, _load_cases, _write_reviewed_reference_manifest
+    from scripts.validate_segmentation import parse_yolo_segmentation
+
+    folder = tmp_path / "draft"
+    folder.mkdir()
+    image, labels = folder / "page.png", folder / "labels.txt"
+    assert cv2.imwrite(str(image), np.full((42, 62, 3), 100, dtype=np.uint8))
+    polygon = rectangle(.1, .1, .8, .8)
+    labels.write_text("0 " + " ".join(str(value) for point in polygon for value in point), encoding="utf-8")
+    mode = {"polygon": polygon, "warp_quad": polygon, "recoverable": True}
+    source = folder / "manifest.json"
+    source.write_text(json.dumps({"split_policy": {"album_independent": False}, "pages": [{
+        "id": "page-a", "source_group": "album-a", "expected_count": 1,
+        "image": image.name, "image_sha256": sha256_file(image),
+        "annotations": labels.name, "annotations_sha256": sha256_file(labels),
+        "expected_final_crops": [{"full_print": mode | {"physical_size_mm": {"width": 150, "height": 100}},
+                                  "image_only": mode}],
+    }]}), encoding="utf-8")
+    args = Namespace(dataset_manifest=source)
+    records, split = _load_cases(args)
+    preflight = _check_references(args, records, split, parse_yolo_segmentation, load_image, sha256_file)
+    page_choice = {"page_id": "page-a", "mode": "page", "instance_index": None, "outcome": "verified"}
+    crop_choice = {"page_id": "page-a", "mode": "full_print", "instance_index": 0, "outcome": "verified"}
+    receipt = {"schema_version": 1, "manifest_sha256": "0" * 64, "reviewer": "Fixture reviewer",
+               "reviewed_at": "2026-11-23T12:00:00Z", "decisions": [page_choice, crop_choice]}
+    receipt_path, reviewed = tmp_path / "receipt.json", tmp_path / "result" / "reviewed.json"
+
+    def apply():
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        _write_reviewed_reference_manifest(source, receipt_path, reviewed, preflight)
+
+    with pytest.raises(ValueError, match="does not match"):
+        apply()
+    receipt["manifest_sha256"] = sha256_file(source)
+    receipt["decisions"].append(crop_choice | {"mode": "image_only"})
+    with pytest.raises(ValueError, match="INDEPENDENT_ASPECT_MISSING"):
+        apply()
+    assert not reviewed.exists()
+    receipt["decisions"][-1]["outcome"] = "needs_revision"
+    apply()
+
+    assert sha256_file(source) == receipt["manifest_sha256"]
+    args.dataset_manifest = reviewed
+    records, split = _load_cases(args)
+    assert records[0]["image"].resolve() == image.resolve()
+    modes = records[0]["expected_final_crops"][0]
+    assert records[0]["annotation_provenance"] == "manually_verified"
+    assert modes["full_print"]["reference_review"]["receipt_sha256"] == sha256(receipt_path.read_bytes()).hexdigest()
+    assert modes["image_only"]["annotation_provenance"] == "reference_review_needs_revision"
+    result = _check_references(args, records, split, parse_yolo_segmentation, load_image, sha256_file)
+    assert result["modes"]["full_print"]["verified"] == 1
+    assert result["modes"]["image_only"]["verified"] == 0
+    assert result["ready_for_locked_evaluation"] is False
+    with pytest.raises(FileExistsError):
+        apply()
+
+
 def test_reference_check_requires_verified_positive_modes_from_both_albums(tmp_path) -> None:
     import json
     from argparse import Namespace
