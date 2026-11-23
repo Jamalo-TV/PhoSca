@@ -290,8 +290,9 @@ def _reference_masks(record, expected, image_shape, manifest, *, include_referen
     return references
 
 
-def _check_references(args, records, split, parse_labels, load_image, hash_file):
+def _check_references(args, records, split, parse_labels, load_image, hash_file, *, review_directory: Path | None = None):
     from app.evaluation.cropping import is_locked_album_manifest
+    from app.evaluation.reference_review import render_reference_page, write_reference_review
 
     totals = {
         name: Counter(present=0, verified=0, verified_recoverable=0, physical_dimensions=0) for name in MODES
@@ -303,7 +304,10 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file)
     mode_issues = []
     groups = set()
     hashes = set()
-    for record in records:
+    sections = []
+    if review_directory is not None:
+        review_directory.mkdir(parents=True, exist_ok=True)
+    for index, record in enumerate(records):
         expected, pinned = _read_page_truth(record, parse_labels, hash_file)
         expected_photos += len(expected)
         digest = record.get("image_sha256")
@@ -327,7 +331,11 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file)
             issues.append("PAGE_ANNOTATION_UNVERIFIED")
         if issues:
             page_issues.append({"page_id": record["id"], "source_group": group or None, "issues": issues})
-        references = _reference_masks(record, expected, page.shape, args.dataset_manifest)
+        mode_issue_start = len(mode_issues)
+        references = _reference_masks(
+            record, expected, page.shape, args.dataset_manifest,
+            include_reference_images=review_directory is not None,
+        )
         for instance_index, modes in enumerate(references):
             for name in MODES:
                 reference = modes.get(name)
@@ -337,11 +345,11 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file)
                     continue
                 sidecar_pinned = reference.get("sidecar_pinned", True)
                 files_pinned &= sidecar_pinned
-                issues = reference["reference_issues"]
+                reference_issues = reference["reference_issues"]
                 if not sidecar_pinned:
-                    issues = [*issues, "MODE_SIDECAR_UNPINNED"]
-                if issues:
-                    mode_issues.append(identity | {"issues": issues})
+                    reference_issues = [*reference_issues, "MODE_SIDECAR_UNPINNED"]
+                if reference_issues:
+                    mode_issues.append(identity | {"issues": reference_issues})
                 totals[name]["present"] += 1
                 totals[name]["verified"] += int(reference["verified"])
                 if reference["verified"] and reference.get("recoverable") is True:
@@ -350,6 +358,15 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file)
                         positives[name].add(group)
                 if reference.get("aspect_reference") == "physical_size_mm":
                     totals[name]["physical_dimensions"] += 1
+        if review_directory is not None:
+            issues_by_mode = {
+                (item["instance_index"], item["mode"]): item["issues"]
+                for item in mode_issues[mode_issue_start:]
+            }
+            section = render_reference_page(
+                review_directory, index, record, page, expected, references, issues, issues_by_mode,
+            )
+            sections.append((str(record["id"]), section))
     locked = is_locked_album_manifest(records, split)
     dataset_issues = []
     if split.get("album_independent") is not True:
@@ -357,7 +374,7 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file)
     if len(groups) < 2:
         dataset_issues.append("FEWER_THAN_TWO_SOURCE_GROUPS")
     insufficient_groups = [name for name in MODES if len(positives[name]) < 2]
-    return {
+    report = {
         "reference_check_only": True,
         "dataset_manifest_sha256": args.dataset_manifest_sha256,
         "pages": len(records),
@@ -373,6 +390,9 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file)
         },
         "modes": {name: dict(totals[name]) | {"verified_recoverable_groups": sorted(positives[name])} for name in MODES},
     }
+    if review_directory is not None:
+        report["reference_review_sheet"] = str(write_reference_review(review_directory, report, sections))
+    return report
 
 
 def _legacy_mode(vertices, image, source_shape, rotation):
@@ -674,7 +694,11 @@ def main() -> None:
     if not records:
         raise SystemExit("No evaluation pages")
     if args.check_references:
-        checked = _check_references(args, records, split, parse_yolo_segmentation, load_image, sha256_file)
+        review_directory = args.output.parent / f"{args.output.stem}-visuals" if args.visuals else None
+        checked = _check_references(
+            args, records, split, parse_yolo_segmentation, load_image, sha256_file,
+            review_directory=review_directory,
+        )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         contents = json.dumps(checked, indent=2)
         args.output.write_text(contents, encoding="utf-8")

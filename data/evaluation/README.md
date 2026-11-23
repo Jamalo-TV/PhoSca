@@ -105,6 +105,15 @@ also names modes without recoverable verified examples in two source groups.
 python scripts/evaluate_onnx_segmentation.py --dataset-manifest path/to/locked-album-manifest.json --check-references --require-final-quality
 ```
 
+Add `--visuals` to reference preflight for a source-only review sheet. It
+links to each original page and shows the indexed instance labels, the draft
+mask and warp quad for each mode, native corner tiles and any independent
+reference image. When the reference image and quad are present, the sheet
+also shows how the draft quad rectifies the page image for direct comparison.
+Open `index.html` in the report's sibling `-visuals` directory. The SHA-256
+at the top identifies the exact manifest under review. These visuals use
+the annotations and source files only and leave the release checks unchanged.
+
 Generate the report using the deployed model, calibration, OpenCV version and
 crop settings. Supply the calibration fitter with an album-level `source_group`
 for each labelled prediction. The release evaluator checks the fitted group's

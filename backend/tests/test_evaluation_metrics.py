@@ -393,11 +393,11 @@ def test_reference_check_requires_verified_positive_modes_from_both_albums(tmp_p
     source = tmp_path / "albums.json"
     args = Namespace(dataset_manifest=source)
 
-    def check():
+    def check(review_directory=None):
         source.write_text(json.dumps({"split_policy": {"album_independent": True}, "pages": pages}), encoding="utf-8")
         records, split = _load_cases(args)
         return _check_references(args, records, split, parse_yolo_segmentation,
-                                 lambda path: cv2.imread(str(path)), checksum)
+                                 lambda path: cv2.imread(str(path)), checksum, review_directory=review_directory)
 
     complete = check()
     assert complete["ready_for_locked_evaluation"] is True
@@ -414,6 +414,27 @@ def test_reference_check_requires_verified_positive_modes_from_both_albums(tmp_p
         "page_id": "album-b", "instance_index": 0, "mode": "image_only",
         "issues": ["MODE_ANNOTATION_UNVERIFIED", "INDEPENDENT_ASPECT_MISSING"],
     }]
+    detail = tmp_path / "independent-detail.png"
+    reference_pixels = np.full((61, 91, 3), 91, dtype=np.uint8)
+    assert cv2.imwrite(str(detail), reference_pixels)
+    reference.update(reference_image=detail.name, reference_image_sha256=checksum(detail))
+    review_directory = tmp_path / "review"
+    review = check(review_directory)
+    assert review["reference_issues"] == partial["reference_issues"]
+    assert review["ready_for_locked_evaluation"] is False
+    sheet = (review_directory / "index.html").read_text(encoding="utf-8")
+    assert review["reference_review_sheet"] == str(review_directory / "index.html")
+    assert "Ganzer Abzug" in sheet and "Nur Bildmotiv" in sheet and "INDEPENDENT_ASPECT_MISSING" in sheet
+    assert 'href="../album-b.png"' in sheet
+    assert 'href="#page-001"' in sheet and 'id="page-001"' in sheet
+    assert np.array_equal(
+        cv2.imread(str(review_directory / "page-000-0-full_print-independent.png")), reference_pixels,
+    )
+    assert (review_directory / "page-000-0-full_print-draft.jpg").is_file()
+    corner = cv2.imread(str(review_directory / "page-001-0-image_only-corner-0.png"))
+    left, right = np.hsplit(corner, 2)
+    assert np.all(left == 120)
+    assert np.any(right != left)
     pages[1].pop("image_sha256")
     pages[1].pop("expected_final_crops")
     unpinned = check()
