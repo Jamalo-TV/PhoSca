@@ -1565,7 +1565,7 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
       {editingImage && selected && (
         <p className="crop-editor-hint">
           {seamTraces?.length
-            ? "Gestrichelt sind die gemessenen Abschnitte der Motivkante. Die vier blauen Punkte definieren einen geraden Zuschnitt."
+            ? "Die gestrichelten Linien zeigen den geschätzten Verlauf der Motivkante. Die vier blauen Punkte definieren den geraden Zuschnitt."
             : "Setze die vier blauen Eckpunkte an die Grenze des Bildmotivs."}
         </p>
       )}

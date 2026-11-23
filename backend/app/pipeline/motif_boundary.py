@@ -4,9 +4,61 @@ import cv2
 import numpy as np
 
 
+def _add_bracketed_measurements(
+    levels: np.ndarray, progress: np.ndarray, crossings: np.ndarray, depth: np.ndarray,
+    paper: np.ndarray, contrast: np.ndarray, matches_paper: np.ndarray,
+    observed: np.ndarray, locations: np.ndarray, groups: list[np.ndarray],
+) -> None:
+    # Strong measurements set the search corridor. Weak measurements still
+    # need a unique optical crossing and flat collars on both sides of it.
+    strong = [group[observed[group]] for group in groups]
+    supported_groups = [i for i, (group, hits) in enumerate(zip(groups, strong, strict=True))
+                        if len(hits) >= .60 * len(group)]
+    gaps = [(strong[left][-5:], strong[right][:5])
+            for left, right in zip(supported_groups, supported_groups[1:]) if right - left > 1]
+    if not gaps:
+        return
+    # Prefer the true ends of a long raw gap when a group boundary splits
+    # the sustained strong measurements that lead into it.
+    hits = np.flatnonzero(observed)
+    raw_gaps = np.flatnonzero(np.diff(hits) >= 7)
+    narrow = [(hits[i - 4:i + 1], hits[i + 1:i + 6]) for i in raw_gaps if 4 <= i < len(hits) - 5]
+    gaps = narrow + gaps
+    collar_noise = np.maximum(
+        np.mean(np.abs(levels[:, :7] - paper[:, None]), axis=1),
+        np.mean(np.abs(levels[:, -7:] - (paper + contrast)[:, None]), axis=1),
+    )
+    cells = np.arange(crossings.shape[1])
+    outside, inside = progress[:, np.maximum(cells - 10, 0)], progress[:, np.minimum(cells + 11, len(cells))]
+    weak = crossings & (outside <= .25) & (outside >= -.25) & (inside >= .75) & (inside <= 1.25)
+    weak &= (matches_paper & (np.abs(contrast) >= np.maximum(5, 4 * collar_noise)))[:, None]
+    unique = weak.sum(axis=1) == 1
+    candidate = depth[np.arange(len(depth)), weak.argmax(axis=1)] + .5
+
+    for before, after in gaps:
+        left, right = before[-1], after[0]
+        # The span includes the sampled ends of the neighboring strong groups.
+        if right - left > .38 * len(observed) or left - before[0] > 8 or after[-1] - right > 8:
+            continue
+        rows = np.arange(left + 1, right)
+        bounds = (np.median(before), np.median(after))
+        guide = np.interp(rows, bounds, [np.median(locations[before]), np.median(locations[after])])
+        paper_guide = np.interp(rows, bounds, [np.median(paper[before]), np.median(paper[after])])
+        supported = rows[unique[rows] & (np.abs(candidate[rows] - guide) <= 1.5)
+                         & (np.abs(paper[rows] - paper_guide) <= 6)]
+        if len(supported) < .75 * len(rows) or np.max(np.diff(np.r_[left, supported, right])) > 6:
+            continue
+        bright = np.mean(contrast[supported] > 0)
+        if .10 < bright < .90:
+            continue
+        added = supported[~observed[supported]]
+        observed[added] = True
+        locations[added] = candidate[added]
+
+
 def _trace_side(
     image: np.ndarray, start: np.ndarray, end: np.ndarray, paper_color: list[float] | tuple[int, ...],
-) -> tuple[np.ndarray, float, float] | None:
+) -> tuple[np.ndarray, float, float, bool] | None:
     tangent = end - start
     length = np.linalg.norm(tangent)
     if length < 60:
@@ -37,15 +89,20 @@ def _trace_side(
     before = progress[:, np.maximum(cells - 3, 0)]
     after = progress[:, np.minimum(cells + 5, len(offsets) - 1)]
     crossings &= (before <= .38) & (after >= .60)
-    crossings &= ((np.abs(contrast) >= 10) & matches_paper)[:, None]
-    observed = crossings.any(axis=1)
-    if observed.mean() < .65:
+    strong = crossings & ((np.abs(contrast) >= 10) & matches_paper)[:, None]
+    strong_rows = strong.any(axis=1)
+    if strong_rows.mean() < .65:
         return None
-    nearest = np.argmin(np.where(crossings, np.abs(depth), np.inf), axis=1)
+    nearest = np.argmin(np.where(strong, np.abs(depth), np.inf), axis=1)
     # The line fits the first owned pixel center, half a pixel past the optical transition.
     locations = depth[np.arange(len(span)), nearest] + .5
+    groups = np.array_split(np.arange(len(span)), 12)
+    observed = strong_rows.copy()
+    _add_bracketed_measurements(
+        levels, progress, crossings, depth, paper, contrast, matches_paper, observed, locations, groups,
+    )
     knots = []
-    for group in np.array_split(np.arange(len(span)), 12):
+    for group in groups:
         visible = group[observed[group]]
         if len(visible) >= .60 * len(group):
             knots.append((np.median(span[visible]), np.median(locations[visible])))
@@ -58,16 +115,20 @@ def _trace_side(
         return None
     detrended = depths - np.polyval(np.polyfit(positions, depths, 1), positions)
     polyline = start + positions[:, None] * tangent + depths[:, None] * inward
-    return np.float32(polyline), float(np.ptp(detrended) / 2), float(np.max(np.abs(depths)))
+    # Weak transitions can locate a likely seam while tracking a shadow instead
+    # of a material change. Derive footprint support from the strong rows alone.
+    continuous = bool(np.max(np.diff(np.flatnonzero(np.r_[True, strong_rows, True]))) <= 3)
+    return np.float32(polyline), float(np.ptp(detrended) / 2), float(np.max(np.abs(depths))), continuous
 
 
-def trace_motif_boundary(image: np.ndarray, quad: np.ndarray, edges: dict) -> tuple[list[np.ndarray], bool, bool]:
-    """Return supported native sides, curvature evidence and disagreement with the chord."""
+def trace_motif_boundary(image: np.ndarray, quad: np.ndarray, edges: dict) -> tuple[list[np.ndarray], bool, bool, bool]:
+    """Return native traces, curvature, chord disagreement and four-side continuity."""
     if quad.shape != (4, 2) or not np.isfinite(quad).all():
-        return [], False, False
+        return [], False, False, False
     traces = []
     curved = False
     disagrees = False
+    continuous = True
     for side, start, end in zip(("top", "right", "bottom", "left"), quad, np.roll(quad, -1, axis=0), strict=True):
         edge = edges.get(side) or {}
         paper = edge.get("rim_bgr")
@@ -76,11 +137,12 @@ def trace_motif_boundary(image: np.ndarray, quad: np.ndarray, edges: dict) -> tu
         evidence = _trace_side(image, start, end, paper)
         if evidence is None:
             continue
-        polyline, deviation, distance = evidence
+        polyline, deviation, distance, side_continuous = evidence
         traces.append(polyline)
         curved |= deviation > 1.05
         disagrees |= distance > 1.30
-    return traces, curved, disagrees
+        continuous &= side_continuous
+    return traces, curved, disagrees, continuous and len(traces) == 4
 
 
 def _cross(first: np.ndarray, second: np.ndarray) -> np.ndarray:

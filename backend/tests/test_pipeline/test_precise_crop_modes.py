@@ -314,6 +314,52 @@ def test_native_motif_trace_follows_a_nonparabolic_boundary(curved_motif_page) -
     assert np.max(np.abs(points[:, 1] - (true_top + .5))) < 1
 
 
+@pytest.mark.parametrize("weak_feature", ["dark_edge", "bright_edge", "no_edge", "ruling", "gradient", "offset_step",
+                                         "coherent_shadow", "short_hidden_curve"])
+def test_native_motif_trace_recovers_only_supported_faint_edges(weak_feature) -> None:
+    from app.pipeline.motif_boundary import close_motif_outline, motif_outline_corners_supported, trace_motif_boundary
+
+    y, x = np.mgrid[:280, :590].astype(np.float32)
+    along = (x - 40) / 500
+    top = 44 + 3.3 * np.sin(np.pi * along) ** 2
+    distance = np.minimum.reduce((x - 40, 540 - x, y - top, 239 - y))
+    owned = np.clip(distance + .5, 0, 1)
+    span = (.42, .48) if weak_feature == "short_hidden_curve" else (.38, .65)
+    weak = (span[0] < along) & (along < span[1]) & (y < top + 24)
+    tone = 232 - 62 * owned
+    soft_step = owned * (-7 if weak_feature == "dark_edge" else 8)
+    if weak_feature in {"dark_edge", "bright_edge"}:
+        tone = np.where(weak, 232 + soft_step, tone)
+    else:
+        nuisance = {
+            "no_edge": np.zeros_like(tone),
+            "ruling": -13 * np.exp(-.5 * ((y - top + 2) / .6) ** 2),
+            "gradient": (y - top) * .85,
+            "offset_step": -7 * np.clip(y - top + 3.5, 0, 1),
+            "coherent_shadow": -7 * np.clip(y - 46.8, 0, 1),
+            "short_hidden_curve": np.zeros_like(tone),
+        }[weak_feature]
+        tone = np.where(weak, 232 + nuisance, tone)
+    rng = np.random.default_rng(86)
+    page = np.repeat(np.uint8(np.rint(tone + rng.normal(0, .28, tone.shape)))[..., None], 3, axis=2)
+    seed = _rect(40, 44, 540, 239)
+    edges = {side: {"rim_bgr": [232, 232, 232], "is_physical_border": True}
+             for side in ("top", "right", "bottom", "left")}
+    traces, curved, _, continuous = trace_motif_boundary(page, seed, edges)
+    assert not continuous
+    if weak_feature in {"dark_edge", "bright_edge"}:
+        outline = close_motif_outline(seed, traces)
+        assert outline is not None and motif_outline_corners_supported(page, outline, traces, edges)
+        top_trace = traces[0]
+        assert np.max(np.diff(top_trace[:, 0])) < 55
+        xs = np.arange(231, 365)
+        assert np.max(np.abs(np.interp(xs, *top_trace.T) - (top[0, xs] + .5))) < .35
+    elif weak_feature in {"coherent_shadow", "short_hidden_curve"}:
+        assert curved and close_motif_outline(seed, traces) is not None
+    else:
+        assert close_motif_outline(seed, traces) is None
+
+
 def test_motif_preview_requires_source_evidence_at_an_inferred_corner(curved_motif_page) -> None:
     page, outer = curved_motif_page
     cv2.fillConvexPoly(page, np.int32([[64, 55], [75, 55], [64, 66]]), (236, 236, 236))

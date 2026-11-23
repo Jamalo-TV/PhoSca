@@ -16,7 +16,7 @@ from app.pipeline.decisions import ReviewReason
 from app.pipeline.model_registry import sha256
 from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
 
-CROP_VALIDATION_SCHEMA = 27
+CROP_VALIDATION_SCHEMA = 28
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
 
 
@@ -66,7 +66,7 @@ def crop_validation_profile(settings: Settings) -> dict:
         ),
         "deskew_inference": 1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None,
         "border_analysis": settings.enable_border_trim,
-        "curved_motif_check": 3 if settings.enable_precise_photo_crops and settings.enable_border_trim else None,
+        "curved_motif_check": 4 if settings.enable_precise_photo_crops and settings.enable_border_trim else None,
         "protected_region_guard": settings.enable_protected_region_guard,
         "orientation_enabled": settings.enable_photo_orientation_correction,
         "orientation_model_sha256": (
