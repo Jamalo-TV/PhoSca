@@ -938,6 +938,132 @@ def _outer_contour_hypothesis(page: np.ndarray, seed: np.ndarray) -> np.ndarray 
     return supported[0] if len(supported) == 1 else None
 
 
+@dataclass(frozen=True)
+class _PrintInspection:
+    quad: np.ndarray
+    metrics: dict
+    boundary: dict
+    reasons: list[str]
+    corner_mount: bool
+    protection: dict
+
+
+def _inspect_print(
+    page: np.ndarray, quad: np.ndarray, mask: dict, visible: np.ndarray | None,
+    neighbors: list[np.ndarray], regions: list[dict], *, dual_mode: bool, manual: bool,
+    allow_page_face_overlap: bool, protect_regions: bool, enable_classical_retry: bool,
+) -> _PrintInspection:
+    height, width = page.shape[:2]
+    metrics = _validate_quad(quad, width, height)
+    boundary: dict = {}
+    reasons: list[str] = []
+    corner_mount = False
+    if dual_mode and not manual and mask.get("warp_quad") is None:
+        refined, boundary, reasons = refine_print_boundary(page, quad)
+        if enable_classical_retry and "PRINT_OUTER_RIM_UNCERTAIN" in reasons:
+            hypothesis = _outer_contour_hypothesis(page, quad)
+            if hypothesis is not None:
+                recovered, evidence, remaining = refine_print_boundary(page, hypothesis)
+                if recovered is not None and not remaining:
+                    refined, reasons = recovered, []
+                    boundary = {**evidence, "seed": "local_outer_contour"}
+        if refined is not None and "PRINT_OUTER_RIM_UNCERTAIN" not in reasons:
+            refined_protection = validate_protected_regions(refined, regions, width=width, height=height)
+            if not refined_protection["passed"] and not _advisory_face_overlap(refined_protection, allow_page_face_overlap):
+                reasons.append("PRINT_BOUNDARY_PROTECTED_CONTENT_VETO")
+            else:
+                quad = refined
+                metrics = _validate_quad(quad, width, height)
+    if dual_mode:
+        if mask.get("album_window_occluded") is True:
+            reasons.append(ALBUM_WINDOW_OCCLUDED)
+        elif mask.get("source") == ALBUM_WINDOW_SOURCE:
+            reasons.append(ALBUM_WINDOW_STOCK_UNCERTAIN)
+        if not manual and np.any((quad < 0.5) | (quad > np.array([width, height]) - 1.5)):
+            reasons.append("PRINT_AT_CAPTURE_EDGE")
+        sides = [boundary.get(side, {}) for side in ("top", "right", "bottom", "left")]
+        inferred = tuple(index for index, evidence in enumerate(sides) if evidence.get("matched_print_rim"))
+        observed = {
+            index: (np.array(evidence["observed_rim_lab"]), evidence["observed_rim_depth_px"])
+            for index, evidence in enumerate(sides)
+            if not reasons and evidence.get("support", 0) >= 0.9
+            and (evidence.get("corner_support") or 0) >= 0.8
+            and "observed_rim_lab" in evidence and index not in inferred
+        }
+        occluded = _neighbor_occlusion(page, quad, visible, neighbors, inferred_sides=inferred, observed_sides=observed)
+        if _clipped_visible_corner(quad, visible) or occluded:
+            reasons.append("PRINT_POSSIBLY_OCCLUDED")
+        if not reasons and missing_corner_material(page, quad):
+            reasons.append("PRINT_CORNERS_UNCERTAIN")
+        if not occluded and set(reasons) <= _LOCALIZED_OCCLUSION_REASONS:
+            covered, corner_mount = print_corner_coverage(page, quad)
+            if covered and not reasons:
+                reasons.append("PRINT_POSSIBLY_OCCLUDED")
+    protection = (
+        validate_protected_regions(quad, regions, width=width, height=height)
+        if protect_regions else {"passed": True, "regions_checked": 0, "violations": []}
+    )
+    if not protection["passed"]:
+        if not _advisory_face_overlap(protection, allow_page_face_overlap):
+            raise ValueError("protected_region_cut")
+        protection["review_untrimmed"] = True
+        reasons.append("POSSIBLE_CONTENT_CUTOFF")
+    return _PrintInspection(quad, metrics, boundary, reasons, corner_mount, protection)
+
+
+def _source_visible_outline(
+    page: np.ndarray, mask: dict, inspection: _PrintInspection, visible: np.ndarray | None,
+    neighbors: list[np.ndarray], neighbor_masks: list[dict],
+) -> tuple[np.ndarray, str] | None:
+    if not inspection.boundary or visible is None:
+        return None
+    height, width = page.shape[:2]
+    if not inspection.reasons:
+        overlap = normalized_polygon_overlap(
+            pixel_vertices_to_normalized(visible, width, height),
+            pixel_vertices_to_normalized(inspection.quad, width, height),
+        )
+        return (inspection.quad, _PRINT_BOUNDARY_SOURCE) if overlap.first_containment >= 0.95 else None
+    if not inspection.protection["passed"] or "PRINT_BOUNDARY_PROTECTED_CONTENT_VETO" in inspection.reasons:
+        return None
+    primary = _proposal_polygon({"polygon": mask.get("polygon")}, width, height)
+    if primary is not None and not np.array_equal(primary, visible):
+        primary_neighbors = [
+            points for neighbor in neighbor_masks
+            if (points := _proposal_polygon({"polygon": neighbor.get("polygon")}, width, height)) is not None
+        ]
+        observed = refine_visible_paper_rim(page, primary, primary_neighbors)
+        if observed is not None:
+            agreement = normalized_polygon_overlap(
+                pixel_vertices_to_normalized(visible, width, height),
+                pixel_vertices_to_normalized(observed, width, height),
+            )
+            if agreement.first_containment >= .90 and agreement.second_containment >= .90:
+                return observed, _PAPER_RIM_SOURCE
+    rim = refine_visible_paper_rim(page, visible, neighbors)
+    return (rim, _PAPER_RIM_SOURCE) if rim is not None else None
+
+
+def measure_detected_visibility(
+    page: np.ndarray, mask: dict, visible: np.ndarray | None, neighbors: list[np.ndarray],
+    regions: list[dict], *, geometry_valid: bool, protect_regions: bool, enable_classical_retry: bool,
+) -> tuple[np.ndarray, str] | None:
+    if visible is None or not geometry_valid or mask.get("warp_quad") or mask.get("source") == ALBUM_WINDOW_SOURCE:
+        return None
+    try:
+        seed = _points_from_mask(mask, *page.shape[1::-1])
+        if seed is None:
+            return None
+        inspection = _inspect_print(
+            page, _order_points(seed), mask, visible, neighbors, regions,
+            dual_mode=True, manual=False, allow_page_face_overlap=True, protect_regions=protect_regions,
+            enable_classical_retry=enable_classical_retry,
+        )
+        return _source_visible_outline(page, mask, inspection, visible, neighbors, [])
+    except (ValueError, cv2.error):
+        return None
+
+
 def correct_photo_crop(
     page_image: np.ndarray,
     bounding_box: dict,
@@ -974,84 +1100,24 @@ def correct_photo_crop(
         src_points = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=np.float32)
     if not measured_edge:
         src_points = _order_points(src_points)
-    quad_metrics = _validate_quad(src_points, width, height)
-    boundary_refinement: dict = {}
-    full_reasons: list[str] = []
-    visible = None
-    neighbor_polygons: list[np.ndarray] = []
-    corner_mount_detected = False
     manual = not allow_border_expansion or str(mask.get("source") or "").startswith("manual")
     regions = [] if not protect_regions else (
         protected_regions if protected_regions is not None else detect_protected_regions(page_image)
     )
-    if dual_mode and not manual and mask.get("warp_quad") is None:
-        refined, boundary_refinement, full_reasons = refine_print_boundary(page_image, src_points)
-        if enable_classical_retry and "PRINT_OUTER_RIM_UNCERTAIN" in full_reasons:
-            hypothesis = _outer_contour_hypothesis(page_image, src_points)
-            if hypothesis is not None:
-                recovered, evidence, remaining = refine_print_boundary(page_image, hypothesis)
-                if recovered is not None and not remaining:
-                    refined, full_reasons = recovered, []
-                    boundary_refinement = {**evidence, "seed": "local_outer_contour"}
-        if refined is not None and "PRINT_OUTER_RIM_UNCERTAIN" not in full_reasons:
-            refined_protection = validate_protected_regions(refined, regions, width=width, height=height)
-            if not refined_protection["passed"] and not _advisory_face_overlap(refined_protection, allow_page_face_overlap):
-                full_reasons.append("PRINT_BOUNDARY_PROTECTED_CONTENT_VETO")
-            else:
-                src_points = refined
-                quad_metrics = _validate_quad(src_points, width, height)
-    if dual_mode:
-        if mask.get("album_window_occluded") is True:
-            full_reasons.append(ALBUM_WINDOW_OCCLUDED)
-        elif mask.get("source") == ALBUM_WINDOW_SOURCE:
-            full_reasons.append(ALBUM_WINDOW_STOCK_UNCERTAIN)
-        if not manual and np.any((src_points < 0.5) | (src_points > np.array([width, height]) - 1.5)):
-            full_reasons.append("PRINT_AT_CAPTURE_EDGE")
-        visible = _proposal_polygon(mask, width, height)
-        neighbor_polygons = [
-            points for neighbor in neighbor_masks or []
-            if (points := _proposal_polygon(neighbor, width, height)) is not None
-        ]
-        edge_evidence = [boundary_refinement.get(side, {}) for side in ("top", "right", "bottom", "left")]
-        inferred_sides = tuple(
-            index for index, evidence in enumerate(edge_evidence) if evidence.get("matched_print_rim")
-        )
-        observed_sides = {
-            index: (np.array(evidence["observed_rim_lab"]), evidence["observed_rim_depth_px"])
-            for index, evidence in enumerate(edge_evidence)
-            if not full_reasons and evidence.get("support", 0) >= 0.9
-            and (evidence.get("corner_support") or 0) >= 0.8
-            and "observed_rim_lab" in evidence
-            and index not in inferred_sides
-        }
-        neighbor_occlusion = _neighbor_occlusion(
-            page_image, src_points, visible, neighbor_polygons, inferred_sides=inferred_sides,
-            observed_sides=observed_sides,
-        )
-        if _clipped_visible_corner(src_points, visible) or neighbor_occlusion:
-            full_reasons.append("PRINT_POSSIBLY_OCCLUDED")
-        if not full_reasons and missing_corner_material(page_image, src_points):
-            full_reasons.append("PRINT_CORNERS_UNCERTAIN")
-        if not neighbor_occlusion and set(full_reasons) <= _LOCALIZED_OCCLUSION_REASONS:
-            covered, corner_mount_detected = print_corner_coverage(page_image, src_points)
-            if covered and not full_reasons:
-                full_reasons.append("PRINT_POSSIBLY_OCCLUDED")
-    protection = (
-        validate_protected_regions(src_points, regions, width=width, height=height)
-        if protect_regions
-        else {"passed": True, "regions_checked": 0, "violations": []}
+    visible = _proposal_polygon(mask, width, height) if dual_mode else None
+    neighbor_polygons = [
+        points for neighbor in neighbor_masks or []
+        if (points := _proposal_polygon(neighbor, width, height)) is not None
+    ] if dual_mode else []
+    inspection = _inspect_print(
+        page_image, src_points, mask, visible, neighbor_polygons, regions,
+        dual_mode=dual_mode, manual=manual, allow_page_face_overlap=allow_page_face_overlap,
+        protect_regions=protect_regions, enable_classical_retry=enable_classical_retry,
     )
-    if not protection["passed"]:
-        # A page-level face box can extend beyond the physical edge of a print.
-        if not _advisory_face_overlap(protection, allow_page_face_overlap):
-            raise ValueError("protected_region_cut")
-        protection["review_untrimmed"] = True
-        full_reasons.append("POSSIBLE_CONTENT_CUTOFF")
+    src_points, quad_metrics = inspection.quad, inspection.metrics
+    boundary_refinement, full_reasons = inspection.boundary, inspection.reasons.copy()
+    protection, corner_mount_detected = inspection.protection, inspection.corner_mount
     boundary_verified = bool(boundary_refinement and not full_reasons and visible is not None)
-    review_visible_rim = bool(
-        protection["passed"] and boundary_refinement and visible is not None and full_reasons
-        and "PRINT_BOUNDARY_PROTECTED_CONTENT_VETO" not in full_reasons
-    )
     target_width, target_height, aspect, aspect_reasons = _crop_dimensions(
         src_points, width, height, metric=dual_mode, camera_matrix=camera_matrix, print_aspect_ratio=print_aspect_ratio,
         page_plane=page_plane if boundary_verified else None,
@@ -1160,34 +1226,13 @@ def correct_photo_crop(
     }
     if dual_mode:
         metadata.update(boundary_refinement=boundary_refinement, aspect_ratio_estimation=aspect)
-        if boundary_verified:
-            raw_vertices = pixel_vertices_to_normalized(visible, width, height)
-            measured_vertices = pixel_vertices_to_normalized(src_points, width, height)
-            overlap = normalized_polygon_overlap(raw_vertices, measured_vertices)
-            if overlap.first_containment >= 0.95:
-                metadata["refined_visible_polygon"] = normalized_quad
-                metadata["refined_visibility_source"] = _PRINT_BOUNDARY_SOURCE
-        elif review_visible_rim:
-            rim = None
-            primary = _proposal_polygon({"polygon": mask.get("polygon")}, width, height)
-            if primary is not None and not np.array_equal(primary, visible):
-                primary_neighbors = [
-                    points for neighbor in neighbor_masks or []
-                    if (points := _proposal_polygon({"polygon": neighbor.get("polygon")}, width, height)) is not None
-                ]
-                observed = refine_visible_paper_rim(page_image, primary, primary_neighbors)
-                if observed is not None:
-                    agreement = normalized_polygon_overlap(
-                        pixel_vertices_to_normalized(visible, width, height),
-                        pixel_vertices_to_normalized(observed, width, height),
-                    )
-                    if agreement.first_containment >= .90 and agreement.second_containment >= .90:
-                        rim = observed
-            if rim is None:
-                rim = refine_visible_paper_rim(page_image, visible, neighbor_polygons)
-            if rim is not None:
-                metadata["refined_visible_polygon"] = _vertices_on_page(rim, width, height)
-                metadata["refined_visibility_source"] = _PAPER_RIM_SOURCE
+        observed = _source_visible_outline(
+            page_image, mask, inspection, visible, neighbor_polygons, neighbor_masks or [],
+        )
+        if observed is not None:
+            outline, source = observed
+            metadata["refined_visible_polygon"] = _vertices_on_page(outline, width, height)
+            metadata["refined_visibility_source"] = source
         return _dual_crop_result(
             page_image, corrected, src_points, matrix, metadata, _explicit_quad(mask, "image_quad", width, height),
             full_reasons, trim_border=trim_border, auto_orient=auto_orient, orientation_model_path=orientation_model_path,

@@ -470,12 +470,13 @@ def _legacy_mode(vertices, image, source_shape, rotation):
             "page_to_output": cv2.getPerspectiveTransform(source, destination).tolist()}
 
 
-def _render_crops(image, proposals, settings, temporary):
+def _render_crops(image, proposals, settings, temporary, *, protected=None):
     from app.pipeline.image_ops import save_jpeg
     from app.pipeline.perspective import correct_photo_crop, page_plane_from_prints
     from app.pipeline.protected_regions import detect_protected_regions
 
-    protected = detect_protected_regions(image) if settings.enable_protected_region_guard else []
+    if protected is None:
+        protected = detect_protected_regions(image) if settings.enable_protected_region_guard else []
     page_plane = None
     if settings.enable_precise_photo_crops:
         page_plane = page_plane_from_prints(image, None, [mask for _, mask, _ in proposals if mask])
@@ -769,6 +770,7 @@ def main() -> None:
     from app.pipeline.decisions import component_review_reasons, confidence_components
     from app.pipeline.enhancement import prepare_for_cutout
     from app.pipeline.image_ops import load_image, sha256_file
+    from app.pipeline.protected_regions import detect_protected_regions
     from app.pipeline.quality import segmentation_review_reasons
     from app.pipeline.segmentation import segment_album_page
 
@@ -851,6 +853,7 @@ def main() -> None:
                 reference_files_locked &= pinned
             pipeline_started = perf_counter()
             image = synthetic.image if synthetic else load_image(record["image"])
+            protected = detect_protected_regions(image) if settings.enable_protected_region_guard else []
             detection_metadata = {}
             ownership_unresolved = False
             calibration_detector = None
@@ -862,7 +865,7 @@ def main() -> None:
             else:
                 prepared, _ = prepare_for_cutout(image)
                 segmentation_started = perf_counter()
-                result = segment_album_page(prepared, settings, source_image=image)
+                result = segment_album_page(prepared, settings, source_image=image, protected_regions=protected)
                 detection_metadata = result.metadata
                 page_runtime = _page_runtime(detection_metadata, (perf_counter() - segmentation_started) * 1000.0)
                 page_runtimes.append(page_runtime)
@@ -878,7 +881,7 @@ def main() -> None:
                 proposals = [(item.bounding_box, item.mask, item.geometry_valid) for item in result.detections]
                 detected = [_detected_polygon(item) for item in result.detections]
 
-            rendered = _render_crops(image, proposals, settings, Path(temporary))
+            rendered = _render_crops(image, proposals, settings, Path(temporary), protected=protected)
             if ownership_unresolved:
                 for item in rendered:
                     route_ready_crop_modes_to_review(item["modes"], [CROP_VALIDATION_UNAVAILABLE])
@@ -988,7 +991,7 @@ def main() -> None:
                         "score": item.confidence, "correct": index in correct,
                     } for index, item in enumerate(result.detections))
             primary_metrics = None
-            if args.visible_mask_model:
+            if not args.geometry_only:
                 primary = [_points(item.mask.get("polygon") or []) for item in result.detections]
                 primary_metrics = metrics if primary == detected else evaluate_page_crops(
                     expected, primary, width=image.shape[1], height=image.shape[0],

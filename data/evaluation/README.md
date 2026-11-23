@@ -116,13 +116,13 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 21 binds
+groups, with the 90% threshold applied to each group. Report schema 22 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled and deskewed inference,
 the classical line-pair fallback, separated contrast recovery, empty drawn
 frame rejection, page-plane estimation, curved motif checks, the configured
-visible mask refiner and detector-bound confidence calibration. A verified motif can
-qualify separately when its print corners require review.
+source or learned mask refiner and detector-bound confidence calibration.
+A verified motif can qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
 
 Validate the real reference files before running the detector on an independent
@@ -254,9 +254,22 @@ of the source outlines and counts.
 | `contrast_region` | 0 | 1 |
 
 The 33 edge-contour predictions span five albums. All 24 tiled YOLO
-predictions come from the same dense page. The only contrast prediction
+predictions in that census come from the same dense page. The only contrast prediction
 does not support a fit. The draft digest, profiles, and per-album counts
 are in `runs/crop-quality/calibration-intake-expansion/registered-expansion-source-census.json`.
+
+`ibcc-denton-calibration-draft.json` adds a second physical album for tiled
+YOLO calibration. The spread shows 16 separately mounted prints. The fixed
+v22 Registered diagnostic returned 20 base proposals with a median area of
+1.47% of the page. Tiling contributed 13 of the final 16 proposals in both
+the v22 and v23 censuses. The verified hashes pin the scan and draft outlines
+for independent review.
+The archive provides the source under CC BY-NC 4.0. The scan stays local.
+[Denton archive item](https://ibccdigitalarchive.lincoln.ac.uk/collections/document/26027)
+
+```powershell
+python scripts/evaluate_onnx_segmentation.py --dataset-manifest data/evaluation/ibcc-denton-calibration-draft.json --check-references --visuals --output runs/crop-quality/dense-real-source-intake/ibcc-denton-tracked-preflight.json
+```
 
 ```powershell
 python scripts/evaluate_onnx_segmentation.py --dataset-manifest path/to/locked-album-manifest.json --include-classical-fallback --require-final-quality --visuals --output runs/crop-quality/real-release.json
@@ -812,8 +825,29 @@ checks. The traces and visual comparison are under
 `runs/crop-quality/curved-geometry-probe/`.
 
 The frozen seeded-geometry benchmark passes all 23 recoverable mode crops.
-The Registered end-to-end run matches six of 18 initial instances at IoU
-0.85 in both v21 and v22. That run still fails the initial detection gate.
+The v21 and v22 Registered end-to-end runs match six of 18 raw instances
+at IoU 0.85. On the development white-margin and white-on-white pages the
+raw masks recovered only 3.58% and 1.97% of the physical rim.
+
+Default precise segmentation in v23 measures original-page contours before
+crop rendering. Fully supported stock supplies a quad. Obstructed or curved
+stock can contribute an observed visible rim. The renderer uses the raw
+polygon for its geometry seed. Two candidates that try to add the same interior pixels
+outside both seeds keep their original masks and request review. The report
+records the raw proposal scores and the evaluated source masks. Calibration
+binds to the source contour revision.
+
+On the synthetic development pages this raises mask matches at IoU 0.85
+from 40 to 60 of 60 and lowers serious segmentation failures from 27 to zero.
+The frozen run matches 18 of 18 and passes 11 whole-print and 12 motif crops.
+The same-album Golden check keeps 29 matches. The two Met development drafts
+still give 48 of 53 matches and two false positives. See the `v23-source-contours-*`
+reports under `runs/crop-quality/curved-geometry-probe/` and
+`runs/crop-quality/met-pilot/`. The optional registered local-mask artifact
+also passes the frozen split, with 45 of 53 matches on the same Met drafts.
+In four alternating measurements per Met page, the source contour check
+adds 108 ms on the sparse scan and 274 ms on the dense scan to median
+segmentation time. See `v23-source-contour-timing.json` in the contour reports.
 
 `nmah-gardner-paired-crops-draft.json` pins two independent Smithsonian scans
 of the same Marshall House accession. The fitted aspect ratios differ by

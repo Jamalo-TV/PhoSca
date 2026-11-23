@@ -14,8 +14,9 @@ from app.pipeline.crop_sampling import OWNED_BILINEAR
 from app.pipeline.confidence import is_sha256, load_confidence_calibration
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.model_registry import sha256
+from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
 
-CROP_VALIDATION_SCHEMA = 21
+CROP_VALIDATION_SCHEMA = 22
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
 
 
@@ -41,6 +42,7 @@ def crop_validation_profile(settings: Settings) -> dict:
         "page_plane_preview": 1 if settings.enable_precise_photo_crops else None,
         "registered_model_required": settings.require_registered_models,
         "model_registry_sha256": _optional_hash(settings.model_manifest_path) if settings.require_registered_models else None,
+        "source_contour_refinement": SOURCE_CONTOUR_REVISION if settings.enable_precise_photo_crops and visible_model is None else None,
         "visible_mask_refinement": None if visible_model is None else {
             "model_sha256": _optional_hash(visible_model),
             "manifest_sha256": _optional_hash(settings.model_manifest_path),
@@ -83,7 +85,7 @@ def segmentation_matches_crop_profile(settings: Settings, segmentation: dict) ->
     expected = crop_validation_profile(settings)
     if _inference_failed(segmentation) or segmentation.get("validation_profile") != expected:
         return False
-    return _matches_refiner(expected["visible_mask_refinement"], segmentation)
+    return _matches_refinement(expected, segmentation)
 
 
 def _inference_failed(segmentation: dict) -> bool:
@@ -92,7 +94,12 @@ def _inference_failed(segmentation: dict) -> bool:
     ))
 
 
-def _matches_refiner(refiner: dict | None, segmentation: dict) -> bool:
+def _matches_refinement(profile: dict, segmentation: dict) -> bool:
+    revision = profile["source_contour_refinement"]
+    if revision is not None:
+        used = segmentation.get("source_contour_refinement")
+        return isinstance(used, dict) and used.get("revision") == revision and not used.get("error")
+    refiner = profile["visible_mask_refinement"]
     if refiner is None:
         return True
     used = segmentation.get("visible_mask_refinement") or {}
@@ -113,11 +120,11 @@ def detector_calibration_profile(settings: Settings, *, segmentation: dict | Non
     if segmentation is not None and (
         _inference_failed(segmentation)
         or (segmentation.get("model_artifact") or {}).get("sha256") != model
-        or not _matches_refiner(refiner, segmentation)
+        or not _matches_refinement(profile, segmentation)
     ):
         return None
     return {"model_sha256": model, **{key: profile[key] for key in (
-        "pipeline_version", "precise_photo_crops", "model_registry_sha256", "visible_mask_refinement",
+        "pipeline_version", "precise_photo_crops", "model_registry_sha256", "visible_mask_refinement", "source_contour_refinement",
         "classical_fallback", "classical_line_pairs", "separated_contrast_prints", "empty_drawn_frame_rejection",
         "album_window_detection", "dense_tile_inference",
         "deskew_inference", "proposal_threshold",

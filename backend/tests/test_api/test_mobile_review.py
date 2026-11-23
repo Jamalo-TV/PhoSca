@@ -753,6 +753,7 @@ async def test_automatic_crop_download_requires_current_album_validation(
     from app.models import ExtractedPhoto, Page
     from app.pipeline.confidence import CALIBRATION_SCHEMA, calibrate_confidence
     from app.pipeline.crop_validation import CROP_VALIDATION_SCHEMA, crop_validation_profile, detector_calibration_profile
+    from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
     from app.services.pipeline import perspective_correction_task_logic
 
     model_path = tmp_path / "registered.onnx"
@@ -760,7 +761,8 @@ async def test_automatic_crop_download_requires_current_album_validation(
     digest = hashlib.sha256(model_path.read_bytes()).hexdigest()
     registry_path = tmp_path / "manifest.json"
     registry = {"models": {model_path.name: {"sha256": digest, "license": "test", "input": {"width": 640}}}}
-    refiner_metadata = {}
+    refinement_key = "source_contour_refinement"
+    refiner_metadata = {refinement_key: {"revision": SOURCE_CONTOUR_REVISION}}
     refiner = tmp_path / "visible-mask.onnx"
     refiner_bytes = b"registered-visible-mask-for-api-test"
     if with_refiner:
@@ -768,7 +770,8 @@ async def test_automatic_crop_download_requires_current_album_validation(
         refiner_digest = hashlib.sha256(refiner_bytes).hexdigest()
         registry["models"][refiner.name] = {"sha256": refiner_digest, "license": "test"}
         monkeypatch.setenv("VISIBLE_MASK_MODEL_PATH", str(refiner))
-        refiner_metadata = {"visible_mask_refinement": {"model_sha256": refiner_digest, "refined_detections": 1}}
+        refinement_key = "visible_mask_refinement"
+        refiner_metadata = {refinement_key: {"model_sha256": refiner_digest, "refined_detections": 1}}
     registry_path.write_text(json.dumps(registry), encoding="utf-8")
     calibration_path = tmp_path / "calibration.json"
     validation_path = tmp_path / "crop-validation.json"
@@ -854,25 +857,24 @@ async def test_automatic_crop_download_requires_current_album_validation(
     assert all(stale[mode] is None for mode in crop_variants)
 
     validation_path.write_text(json.dumps(report), encoding="utf-8")
-    if with_refiner:
-        async with get_session_factory()() as session:
-            page = await session.get(Page, page_id)
-            steps = page.processing_metadata["steps"]
-            page.processing_metadata = {"steps": {**steps, "segmentation": {
-                **steps["segmentation"], "visible_mask_refinement": {"error": "failed to load"},
-            }}}
-            await session.commit()
-        result = await client.post(f"{url}/reprocess")
-        assert result.status_code == 200, result.text
-        unavailable = (await client.get(url)).json()["urls"]
-        assert all(unavailable[mode] is None for mode in crop_variants)
-        async with get_session_factory()() as session:
-            page = await session.get(Page, page_id)
-            steps = page.processing_metadata["steps"]
-            page.processing_metadata = {"steps": {
-                **steps, "segmentation": {**steps["segmentation"], **refiner_metadata},
-            }}
-            await session.commit()
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        steps = page.processing_metadata["steps"]
+        page.processing_metadata = {"steps": {**steps, "segmentation": {
+            **steps["segmentation"], refinement_key: {"error": "missing evaluated refinement"},
+        }}}
+        await session.commit()
+    result = await client.post(f"{url}/reprocess")
+    assert result.status_code == 200, result.text
+    unavailable = (await client.get(url)).json()["urls"]
+    assert all(unavailable[mode] is None for mode in crop_variants)
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        steps = page.processing_metadata["steps"]
+        page.processing_metadata = {"steps": {
+            **steps, "segmentation": {**steps["segmentation"], **refiner_metadata},
+        }}
+        await session.commit()
     result = await client.post(f"{url}/reprocess")
     assert result.status_code == 200, result.text
     payload = (await client.get(url)).json()

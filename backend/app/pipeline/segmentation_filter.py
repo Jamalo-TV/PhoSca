@@ -6,6 +6,9 @@ import numpy as np
 from app.pipeline.geometry import normalized_vertices_to_pixels, quad_from_polygon
 
 
+SOURCE_CONTOUR_REVISION = 1
+
+
 _FRAME_SIZE = 96
 _FRAME_QUAD = np.float32([[15, 15], [80, 15], [80, 80], [15, 80]])
 _FRAME_CORNERS = np.float32([[0, 0], [95, 0], [95, 95], [0, 95]])

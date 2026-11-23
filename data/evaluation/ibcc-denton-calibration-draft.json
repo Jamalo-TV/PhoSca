@@ -1,0 +1,69 @@
+{
+  "schema_version": 2,
+  "name": "IBCC Denton small-print calibration reserve",
+  "status": "source_only_review_draft",
+  "split_policy": {
+    "role": "calibration",
+    "album_independent": false,
+    "reserved_for": "crop_detector_calibration_only",
+    "reason": "Repository provenance and duplicate screen complete. Independent human review of source polygons remains pending."
+  },
+  "count_policy": "Count distinct visible mounted physical prints. Sixteen individually mounted paper photos are visually confirmed. The translucent sheet, page writing, mounts and album stock are background.",
+  "pages": [
+    {
+      "id": "ibcc-denton-26027",
+      "source_group": "IBCC:collection-2045:Denton DH album",
+      "physical_album": "IBCC:2045:Denton DH album",
+      "image": "../../runs/crop-quality/dense-real-source-intake/ibcc-denton-26027-0.jpg",
+      "image_sha256": "03bbaa45b9af18682ccfc34751e60a55eb315923fdaf40b4675847abea001b57",
+      "source_resolution": [
+        1600,
+        1043
+      ],
+      "annotations": "ibcc-denton-26027-draft-labels.txt",
+      "annotations_sha256": "5ba1a8610f0b83096a1b8190c2fd4cbe6f5ff67d6753341da6bea737467592b4",
+      "expected_count": 16,
+      "annotation_provenance": "source_only_manual_approximate_unverified",
+      "source_url": "https://ibccdigitalarchive.lincoln.ac.uk/collections/document/26027",
+      "image_url": "https://ibccdigitalarchive.lincoln.ac.uk/files/original/2045/26027/PDentonDH200010003.jpg",
+      "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+      "credit": "IBCC Digital Archive / University of Lincoln, Denton DH album, PDentonDH200010002 and PDentonDH200010003",
+      "review_status": "independent_reference_review_pending",
+      "page_category": "dense_small_mounted_prints",
+      "difficulty_tags": [
+        "sixteen_small_prints",
+        "two_album_leaves",
+        "tissue_reflections",
+        "photocorners",
+        "low_contrast",
+        "near_straight_source"
+      ],
+      "rough_median_source_quad_area_fraction": 0.015154569254448302,
+      "source_disjointness_screen": {
+        "number_of_existing_images": 1018,
+        "min_63bit_dct_hamming": 18,
+        "closest_repo_path": "runs/crop-quality/independent-intake-howland-pair/page-51.jpg",
+        "byte_identical_files": [],
+        "comparison_scope": [
+          "data/segmentation_training/images",
+          "data/yolo_dataset/images",
+          "data/raw_album_pages",
+          "data/golden_fixtures",
+          "PHOTOALBUM",
+          "runs/crop-quality/independent-intake",
+          "runs/crop-quality/independent-intake-gardner-source",
+          "runs/crop-quality/independent-intake-howland-pair",
+          "runs/crop-quality/independent-intake-ibcc",
+          "runs/crop-quality/independent-intake-nelson",
+          "runs/crop-quality/independent-intake-prokudin",
+          "runs/crop-quality/independent-intake-stringer",
+          "runs/crop-quality/calibration-intake-sources",
+          "runs/crop-quality/calibration-intake-expansion",
+          "runs/crop-quality/orientation-archival-holdout/archive"
+        ],
+        "provenance": "Denton series identifier and physical collection absent from prior training/calibration/reserved source manifests. Hash screening is supplemental."
+      }
+    }
+  ],
+  "source_intake_manifest_sha256": "e74866e711622861339fe1584e727ccdd46bd3062991239f1e60626650cb650a"
+}

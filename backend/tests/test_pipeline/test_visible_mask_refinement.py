@@ -14,6 +14,62 @@ def _rect(left, top, right, bottom, scale):
     return np.float32([[left, top], [right, top], [right, bottom], [left, bottom]]) / scale
 
 
+def _proposal(left, top, right, bottom, scale):
+    box = dict(zip(("x1", "y1", "x2", "y2"), np.float32([left, top, right, bottom]) / np.tile(scale, 2), strict=True))
+    mask = {"source": "yolo_seg_mask", "polygon": [{"x": float(x), "y": float(y)} for x, y in _rect(left, top, right, bottom, scale)]}
+    return segmentation.SegmentationDetection(box, mask, .9, 1.4, True, [])
+
+
+def test_source_contour_measures_paper_before_cropping_and_preserves_the_seed(monkeypatch):
+    from app.evaluation.cropping import evaluate_page_crops
+    from app.pipeline.perspective import _proposal_polygon
+
+    settings = Settings(
+        DATABASE_URL="sqlite+aiosqlite://", REDIS_URL="redis://localhost:6379/0",
+        ENABLE_CLASSICAL_SEGMENTATION_FALLBACK=False, ENABLE_PROTECTED_REGION_GUARD=False,
+    )
+    image = np.full((230, 340, 3), 149, np.uint8)
+    image[40:192, 45:285] = 235
+    image[52:180, 57:273] = (103, 125, 163)
+    scale = np.float32([339, 229])
+    raw = _proposal(57, 52, 272, 179, scale)
+    monkeypatch.setattr(segmentation, "_segment_album_page", lambda *_: segmentation.SegmentationResult([raw], {}))
+
+    result = segmentation.segment_album_page(np.zeros_like(image), settings, source_image=image)
+    measured, = result.detections
+    assert measured.confidence == raw.confidence and measured.bounding_box == raw.bounding_box
+    assert measured.mask["polygon"] == raw.mask["polygon"]
+    assert np.array_equal(_proposal_polygon(measured.mask, 340, 230), _proposal_polygon(raw.mask, 340, 230))
+    assert measured.mask["visible_polygon_source"] == "physical_print_boundary"
+    truth = [_rect(45, 40, 284, 191, scale).tolist()]
+    outline = [[(point["x"], point["y"]) for point in measured.mask["visible_polygon"]]]
+    assert evaluate_page_crops(truth, outline, width=340, height=230).mask_iou >= .99
+    profile = crop_validation_profile(settings)
+    assert not segmentation_matches_crop_profile(settings, {"validation_profile": profile})
+    assert segmentation_matches_crop_profile(settings, {"validation_profile": profile, **result.metadata})
+
+
+def test_simultaneous_source_growth_is_kept_unassigned(monkeypatch):
+    from app.pipeline import perspective
+
+    settings = Settings(
+        DATABASE_URL="sqlite+aiosqlite://", REDIS_URL="redis://localhost:6379/0",
+        ENABLE_CLASSICAL_SEGMENTATION_FALLBACK=False, ENABLE_PROTECTED_REGION_GUARD=False,
+    )
+    scale = np.float32([200, 100])
+    detections = [_proposal(20, 20, 60, 80, scale), _proposal(100, 20, 140, 80, scale)]
+    monkeypatch.setattr(segmentation, "_segment_album_page", lambda *_: segmentation.SegmentationResult(detections, {}))
+    outlines = iter([_rect(20, 20, 85, 80, 1), _rect(75, 20, 140, 80, 1)])
+    monkeypatch.setattr(perspective, "measure_detected_visibility", lambda *_, **__: (next(outlines), "physical_print_boundary"))
+
+    result = segmentation.segment_album_page(np.zeros((101, 201, 3), np.uint8), settings)
+
+    assert result.metadata["source_contour_refinement"]["ownership_conflicts"] == 2
+    for detection, original in zip(result.detections, detections, strict=True):
+        assert detection.review_reasons == ["IMAGE_VISIBILITY_UNCERTAIN"]
+        assert detection.mask == original.mask
+
+
 def test_visible_mask_resolution_leaves_the_tie_between_neighboring_prints_unowned():
     shape = (100, 151, 3)
     scale = np.float32([150, 99])

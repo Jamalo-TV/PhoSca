@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import lru_cache
+from itertools import combinations
 from pathlib import Path
 from time import perf_counter
 
@@ -22,7 +23,7 @@ from app.pipeline.mounted_prints import mounted_print_evidence
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.print_edges import _is_pale_stock, refine_print_boundary
 from app.pipeline.quality import evaluate_segmentation_geometry
-from app.pipeline.segmentation_filter import paper_and_edge_rejection_reasons, paper_around_nested_print
+from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION, paper_and_edge_rejection_reasons, paper_around_nested_print
 
 _CLASSICAL_MIN_AREA_RATIO = 0.02
 _CONTRAST_COMPONENT_SOURCE = "contrast_component"
@@ -2302,8 +2303,73 @@ def _recover_separated_contrast_prints(
     }})
 
 
+def _shared_source_growth(
+    first_raw: np.ndarray, first_measured: np.ndarray, second_raw: np.ndarray, second_measured: np.ndarray,
+) -> bool:
+    lower = np.maximum(first_measured.min(axis=0), second_measured.min(axis=0))
+    upper = np.minimum(first_measured.max(axis=0), second_measured.max(axis=0))
+    if np.any(upper - lower < 2):
+        return False
+    origin = np.floor(lower).astype(int)
+    extent = np.ceil(upper).astype(int) - origin + 1
+
+    def raster(points: np.ndarray) -> np.ndarray:
+        vertices = np.rint(points - origin).astype(np.int32)
+        return cv2.fillPoly(np.zeros(tuple(extent[::-1]), np.uint8), [vertices], 1)
+
+    shared = raster(first_measured) & raster(second_measured) & (1 - (raster(first_raw) | raster(second_raw)))
+    # A shared rasterized edge can be one pixel wide. Competing interior
+    # extensions need review before assigning the same stock to two prints.
+    return bool(cv2.erode(shared, np.ones((3, 3), np.uint8), borderType=cv2.BORDER_CONSTANT, borderValue=0).any())
+
+
+def _refine_source_contours(
+    image: np.ndarray, result: SegmentationResult, settings: Settings, protected_regions: list[dict] | None,
+) -> SegmentationResult:
+    from app.pipeline.perspective import apply_refined_visibility, measure_detected_visibility
+    from app.pipeline.protected_regions import detect_protected_regions
+
+    height, width = image.shape[:2]
+    regions = [] if not settings.enable_protected_region_guard else protected_regions
+    if regions is None:
+        regions = detect_protected_regions(image) if result.detections else []
+    originals = [normalized_vertices_to_pixels(_detection_polygon(item), width, height) for item in result.detections]
+    candidates = {}
+    for index, (item, own) in enumerate(zip(result.detections, originals, strict=True)):
+        if item.mask.get("detector_source") == _CONTRAST_COMPONENT_SOURCE:
+            continue
+        measured = measure_detected_visibility(
+            image, item.mask, own, [other for i, other in enumerate(originals) if i != index], regions,
+            geometry_valid=item.geometry_valid, protect_regions=settings.enable_protected_region_guard,
+            enable_classical_retry=settings.enable_classical_segmentation_fallback,
+        )
+        if measured is not None:
+            candidates[index] = measured
+    conflicts = set()
+    for (i, (first, _)), (j, (second, _)) in combinations(candidates.items(), 2):
+        if _shared_source_growth(originals[i], first, originals[j], second):
+            conflicts.update((i, j))
+    updated = result.detections.copy()
+    for index, (outline, source) in candidates.items():
+        item = updated[index]
+        if index in conflicts:
+            updated[index] = replace(item, review_reasons=[*item.review_reasons, "IMAGE_VISIBILITY_UNCERTAIN"])
+        else:
+            mask = apply_refined_visibility(item.mask, {
+                "refined_visible_polygon": _normalized_polygon(outline, width, height),
+                "refined_visibility_source": source,
+            })
+            updated[index] = replace(item, mask=mask)
+    return SegmentationResult(updated, {**result.metadata, "source_contour_refinement": {
+        "revision": SOURCE_CONTOUR_REVISION,
+        "refined_detections": len(candidates) - len(conflicts),
+        "ownership_conflicts": len(conflicts),
+    }})
+
+
 def segment_album_page(
     image: np.ndarray, settings: Settings, *, source_image: np.ndarray | None = None,
+    protected_regions: list[dict] | None = None,
 ) -> SegmentationResult:
     source = source_image if source_image is not None and source_image.shape == image.shape else None
     result = _segment_album_page(image, settings, source)
@@ -2317,8 +2383,10 @@ def segment_album_page(
         if settings.enable_precise_photo_crops:
             result = _refine_album_windows(evidence_source, result)
     model_path = settings.visible_mask_model_path
-    if model_path is None or not settings.enable_precise_photo_crops:
+    if not settings.enable_precise_photo_crops:
         return result
+    if model_path is None:
+        return _refine_source_contours(source if source is not None else image, result, settings, protected_regions)
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
 

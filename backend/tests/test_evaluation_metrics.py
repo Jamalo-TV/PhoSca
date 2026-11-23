@@ -298,7 +298,7 @@ def test_benchmark_uses_native_instance_mask_for_detection_and_refined_scores(mo
     polygon = [{"x": float(x), "y": float(y)} for x, y in upper]
     item = segmentation.SegmentationDetection({}, {"polygon": polygon}, .95, 1.2, True, [])
     monkeypatch.setattr(segmentation, "segment_album_page", lambda *_, **__: segmentation.SegmentationResult([item], {}))
-    monkeypatch.setattr(evaluator, "_render_crops", lambda *_: [{
+    monkeypatch.setattr(evaluator, "_render_crops", lambda *_, **__: [{
         "images": {}, "modes": {}, "metadata": {"refined_visible_polygon": polygon},
     }])
     monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
@@ -606,10 +606,13 @@ def test_calibration_export_and_fit_use_reviewed_album_predictions(monkeypatch, 
             points = truth if index == 0 else rectangle(.6, .65, .95, .96)
             mask = {"polygon": [{"x": x, "y": y} for x, y in points], "detector_source": "yolo_onnx"}
             detections.append(segmentation.SegmentationDetection({}, mask, .95 if index == 0 else .3, 1.2, True, []))
-        return segmentation.SegmentationResult(detections, {"model_artifact": {"sha256": model_digest}})
+        return segmentation.SegmentationResult(detections, {
+            "model_artifact": {"sha256": model_digest},
+            "source_contour_refinement": {"revision": segmentation.SOURCE_CONTOUR_REVISION},
+        })
 
     monkeypatch.setattr(segmentation, "segment_album_page", detect)
-    monkeypatch.setattr(evaluator, "_render_crops", lambda _, proposals, *__: [
+    monkeypatch.setattr(evaluator, "_render_crops", lambda _, proposals, *__, **___: [
         {"images": {}, "modes": {}, "metadata": {}} for _ in proposals
     ])
     monkeypatch.syspath_prepend(str(Path("scripts").resolve()))

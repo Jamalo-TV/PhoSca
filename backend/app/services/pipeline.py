@@ -209,8 +209,13 @@ async def segmentation_task_logic(
     image = await asyncio.to_thread(load_image, Path(page.storage_path))
     cutout_ready_image, cutout_prep_metadata = await asyncio.to_thread(prepare_for_cutout, image)
     _append_metadata(page, "pre_cutout_enhancement", cutout_prep_metadata)
+    protected_regions = (
+        await asyncio.to_thread(detect_protected_regions, image) if settings.enable_protected_region_guard else []
+    )
     segmentation_started = perf_counter()
-    result = await asyncio.to_thread(segment_album_page, cutout_ready_image, settings, source_image=image)
+    result = await asyncio.to_thread(
+        segment_album_page, cutout_ready_image, settings, source_image=image, protected_regions=protected_regions,
+    )
     SEGMENTATION_SECONDS.labels(model=str(result.metadata.get("model", "unknown"))).observe(
         perf_counter() - segmentation_started
     )
@@ -218,9 +223,6 @@ async def segmentation_task_logic(
         SEGMENTATION_CONFIDENCE.labels(source=str((detection.mask or {}).get("detector_source", "unknown"))).observe(
             detection.confidence
         )
-    protected_regions = (
-        await asyncio.to_thread(detect_protected_regions, image) if settings.enable_protected_region_guard else []
-    )
     PROTECTED_REGIONS.observe(len(protected_regions))
     _append_metadata(page, "protected_regions", {
         "regions": protected_regions, "count": len(protected_regions),
