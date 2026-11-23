@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
@@ -1091,16 +1092,12 @@ def _detection_geometry_evidence(detection: SegmentationDetection) -> dict:
 
 
 def _model_set_risk_reasons(
-    image: np.ndarray,
     detections: list[SegmentationDetection],
     settings: Settings,
-) -> tuple[list[str], dict[int, dict[str, float]]]:
+    evidence: dict[int, dict[str, float]],
+) -> list[str]:
     if not detections:
-        return ["MODEL_SET_EMPTY"], {}
-    inputs = _boundary_inputs(image)
-    evidence = {
-        index: _detection_boundary_evidence(detection, *inputs) for index, detection in enumerate(detections)
-    }
+        return ["MODEL_SET_EMPTY"]
     reasons: list[str] = []
     for index, detection in enumerate(detections):
         source = str((detection.mask or {}).get("source", ""))
@@ -1115,7 +1112,7 @@ def _model_set_risk_reasons(
             reasons.append(f"MODEL_CONFIDENCE_MARGIN_LOW:{index}")
         if evidence[index]["score"] < 0.42:
             reasons.append(f"MODEL_BOUNDARY_EVIDENCE_WEAK:{index}")
-    return list(dict.fromkeys(reasons)), evidence
+    return list(dict.fromkeys(reasons))
 
 
 def _cross_source_same_instance(
@@ -1823,6 +1820,109 @@ def _parse_simple_box_outputs(
     return _nms_detections(detections)
 
 
+def _tile_detections_on_page(
+    detections: list[SegmentationDetection], bounds: tuple[int, int, int, int],
+    width: int, height: int,
+) -> list[SegmentationDetection]:
+    left, top, right, bottom = bounds
+    scale = np.array([right - left - 1, bottom - top - 1])
+    page_scale = np.array([width - 1, height - 1])
+    clearance = max(3, round(.015 * min(width, height)))
+    mapped = []
+    for detection in detections:
+        if detection.mask.get("source") != "yolo_seg_mask" or detection.confidence < .60 or not detection.geometry_valid:
+            continue
+        points = _detection_polygon(detection) * scale
+        lower, upper = points.min(axis=0), points.max(axis=0)
+        if ((left > 0 and lower[0] < clearance) or (top > 0 and lower[1] < clearance)
+                or (right < width and scale[0] - upper[0] < clearance)
+                or (bottom < height and scale[1] - upper[1] < clearance)):
+            continue
+        page_points = points + [left, top]
+        polygon = _normalized_polygon(page_points, width, height)
+        low, high = page_points.min(axis=0) / page_scale, page_points.max(axis=0) / page_scale
+        box = {"x1": float(low[0]), "y1": float(low[1]), "x2": float(high[0]), "y2": float(high[1])}
+        scores = (detection.mask.get("scores") or {}) | {
+            "area_ratio": cv2.contourArea(page_points.astype(np.float32)) / (width * height),
+        }
+        mapped.append(replace(detection, bounding_box=box, mask=detection.mask | {
+            "polygon": polygon, "scores": scores, "detector_source": "yolo_onnx_tiled",
+        }))
+    return mapped
+
+
+def _fuse_dense_views(
+    views: list[list[SegmentationDetection]], evidence: list[list[dict[str, float]]],
+) -> list[tuple[SegmentationDetection, dict[str, float]]]:
+    detections = [detection for view in views for detection in view]
+    polygons = [_detection_polygon(detection) for detection in detections]
+    boundaries = [item for view in evidence for item in view]
+    view_ids = [index for index, view in enumerate(views) for _ in view]
+
+    @lru_cache(maxsize=16_384)
+    def comparison(first: int, second: int) -> tuple[float, bool]:
+        box_iou, containment, *_ = _normalized_box_overlap(detections[first].bounding_box, detections[second].bounding_box)
+        if box_iou < .35 and containment < .774:
+            return box_iou, False
+        overlap = normalized_polygon_overlap(polygons[first], polygons[second])
+        return box_iou, overlap.iou >= .50 or max(overlap.first_containment, overlap.second_containment) >= .86
+
+    agreements = [{view} for view in view_ids]
+    for first, first_view in enumerate(view_ids):
+        for second in range(first + 1, len(detections)):
+            second_view = view_ids[second]
+            if first_view == second_view:
+                continue
+            box_iou, same = comparison(first, second)
+            if same and box_iou >= .60:
+                agreements[first].add(second_view)
+                agreements[second].add(first_view)
+    ranking = sorted(range(len(detections)), key=lambda index: (
+        .8 * detections[index].confidence + .2 * boundaries[index]["score"] + .07 * min(3, len(agreements[index]) - 1)
+    ), reverse=True)
+
+    def duplicate(first: int, second: int) -> bool:
+        box_iou, same = comparison(min(first, second), max(first, second))
+        # Two views that each resolve both overlapping prints support keeping both.
+        separate = box_iou < .60 and len(agreements[first] & agreements[second]) >= 2
+        return same and not separate
+
+    selected = []
+    for index in ranking:
+        if any(duplicate(index, kept) for kept in selected):
+            continue
+        selected.append(index)
+    return [(detections[index], boundaries[index]) for index in selected]
+
+
+def _recover_dense_prints(
+    image: np.ndarray, detections: list[SegmentationDetection], model_evidence: dict[int, dict[str, float]],
+    infer: Callable[[np.ndarray], list[SegmentationDetection]],
+    inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
+) -> tuple[list[SegmentationDetection], dict[int, dict[str, float]], dict]:
+    height, width = image.shape[:2]
+    tile_width, tile_height = round(.70 * width), round(.70 * height)
+    views = [detections]
+    for top in (0, height - tile_height):
+        for left in (0, width - tile_width):
+            right, bottom = left + tile_width, top + tile_height
+            views.append(_tile_detections_on_page(
+                infer(image[top:bottom, left:right]), (left, top, right, bottom), width, height,
+            ))
+    tile_proposals = sum(len(view) for view in views[1:])
+    if tile_proposals < len(detections):
+        return detections, model_evidence, {"tiles": 4, "proposals": tile_proposals, "selected": 0}
+    evidence = [[model_evidence[index] for index in range(len(detections))]] + [
+        [_detection_boundary_evidence(detection, *inputs) for detection in view] for view in views[1:]
+    ]
+    winners = _fuse_dense_views(views, evidence)
+    selected = [item for item, _ in winners]
+    selected_evidence = {index: evidence for index, (_, evidence) in enumerate(winners)}
+    return selected, selected_evidence, {"tiles": 4, "proposals": tile_proposals, "selected": sum(
+        item.mask.get("detector_source") == "yolo_onnx_tiled" for item in selected
+    )}
+
+
 def refine_album_page_result(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
     polygons = [detection.mask.get("polygon", []) for detection in result.detections]
     mount_rejections, quads = mounted_print_evidence(image, polygons)
@@ -2065,17 +2165,18 @@ def _segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationRe
             target_width = int(
                 input_shape[3] if isinstance(input_shape[3], int) else registered_input.get("width", 640)
             )
-            letterboxed, transform = _letterbox_image(image, target_width, target_height)
-            tensor = letterboxed[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
-            outputs = session.run(None, {input_meta.name: tensor[np.newaxis, ...]})
-            detections = _parse_simple_box_outputs(
-                outputs,
-                image.shape[1],
-                image.shape[0],
-                settings,
-                input_width=target_width,
-                input_height=target_height,
-            )
+
+            def infer(frame: np.ndarray):
+                letterboxed, transform = _letterbox_image(frame, target_width, target_height)
+                tensor = letterboxed[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
+                outputs = session.run(None, {input_meta.name: tensor[np.newaxis, ...]})
+                detections = _parse_simple_box_outputs(
+                    outputs, frame.shape[1], frame.shape[0], settings,
+                    input_width=target_width, input_height=target_height,
+                )
+                return detections, transform, outputs
+
+            detections, transform, outputs = infer(image)
             model_time_ms = round((perf_counter() - started) * 1000, 2)
             cache_info = _cached_onnx_session.cache_info()
             metadata.update(
@@ -2098,7 +2199,11 @@ def _segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationRe
                 }
             )
             if detections:
-                risk_reasons, model_evidence = _model_set_risk_reasons(image, detections, settings)
+                inputs = _boundary_inputs(image)
+                model_evidence = {
+                    index: _detection_boundary_evidence(detection, *inputs) for index, detection in enumerate(detections)
+                }
+                risk_reasons = _model_set_risk_reasons(detections, settings, model_evidence)
                 metadata["model_set_risk"] = {
                     "risky": bool(risk_reasons),
                     "reasons": risk_reasons,
@@ -2116,6 +2221,20 @@ def _segment_album_page(image: np.ndarray, settings: Settings) -> SegmentationRe
                 )
                 if settings.enable_classical_segmentation_fallback and risk_reasons and dense_small_prints:
                     metadata["classical_evidence_skipped"] = "dense_small_prints_confidence_only"
+                    tile_started = perf_counter()
+                    try:
+                        recovered, recovered_evidence, tile_metadata = _recover_dense_prints(
+                            image, detections, model_evidence, lambda frame: infer(frame)[0], inputs,
+                        )
+                    except Exception as exc:  # Preserve full-page proposals if a tile cannot be processed.
+                        tile_metadata = {"error": str(exc)}
+                    else:
+                        if tile_metadata["selected"]:
+                            detections, model_evidence = recovered, recovered_evidence
+                    metadata["dense_tile_inference"] = tile_metadata | {
+                        "runtime_ms": round((perf_counter() - tile_started) * 1000, 2),
+                    }
+                del inputs
                 if settings.enable_classical_segmentation_fallback and risk_reasons and not dense_small_prints:
                     fallback = detect_photos_classical(image, max_line_refinement_pixels=line_budget)
                     merged, fusion = fuse_candidate_evidence(

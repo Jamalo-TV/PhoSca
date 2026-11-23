@@ -90,10 +90,10 @@ rectified pixel coordinates. Set `annotation_provenance` to
 requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. Each mode
 needs recoverable references and passing coverage in at least two album
-groups, with the 90% threshold applied to each group. Report schema 13 binds
+groups, with the 90% threshold applied to each group. Report schema 14 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
-occlusion check, album-window detection, the configured visible mask refiner and detector-bound
-confidence calibration. A verified motif can
+occlusion check, album-window detection, dense-page tiled inference, the
+configured visible mask refiner and detector-bound confidence calibration. A verified motif can
 qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
 
@@ -479,3 +479,30 @@ plane, small reference and contradictory measured dimensions all leave the
 aspect unresolved. A wrongly measured aligned reference can still produce
 a plausible rectangle, so the correction records which measurement was used
 and keeps both downloads in review.
+
+On densely mounted pages with many small masks and borderline detector
+confidence, PhoSca reuses the registered ONNX model on four overlapping
+windows. It excludes proposals that reach an artificial tile boundary and
+compares masks back in source coordinates. Agreement across views helps
+resolve competing proposals, while separately observed overlapping prints
+can both remain. Tile detections have their own source in confidence
+calibration. The approach draws on [Slicing Aided Hyper Inference](https://arxiv.org/abs/2202.06934).
+
+On the development scan of the [Met Album Page of Portraits](https://www.metmuseum.org/art/collection/search/281929),
+matches at mask IoU 0.85 rose from 35 to 44 of 48, false positives fell from
+14 to 2 and mean matched mask IoU rose from 0.787 to 0.921. The second,
+sparsely mounted Met pilot still matches four of five with the registered
+detector. The locked synthetic regression passes 18 detections and all 23
+recoverable crops. The same-album Golden regression matches all 29 prints.
+The reports are `met-pilot/dense-final-registered.json`, `dense-tiles-locked.json`
+and `dense-tiles-golden.json` under `runs/crop-quality/`.
+
+The Emily Howland intake pairs the album page with a separate front scan
+of the same Harriet Tubman carte-de-visite. The window covers about 35% of
+the complete card and 24% of the printed image. The p95 registration error
+on 486 held-out feature pairs is 1.41 px in the album scan. The draft
+treats both modes as unrecoverable from the album view. The combined preflight
+at `runs/crop-quality/archive-reference-review-plus-howland.json` covers 12
+pages and 31 photos and verifies all file hashes. The annotations are still
+pending independent review. [Smithsonian dimensions](https://nmaahc.si.edu/object/nmaahc_2017.30.47)
+and [Library of Congress album and print record](https://www.loc.gov/pictures/item/2018645050/).

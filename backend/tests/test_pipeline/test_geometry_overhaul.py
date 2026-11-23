@@ -37,6 +37,35 @@ def _detection(
     )
 
 
+def test_dense_tile_mapping_preserves_capture_edges_and_rejects_internal_edges() -> None:
+    from app.pipeline.segmentation import _tile_detections_on_page
+
+    full_edge = _detection({"x1": .2, "y1": .2, "x2": 1., "y2": 1.}, .9, family="model")
+    cut_by_tile = _detection({"x1": 0., "y1": .15, "x2": .3, "y2": .4}, .91, family="model")
+    mapped, = _tile_detections_on_page([full_edge, cut_by_tile], (31, 37, 101, 121), 101, 121)
+
+    assert mapped.mask["detector_source"] == "yolo_onnx_tiled"
+    assert mapped.bounding_box == pytest.approx({"x1": (31 + .2 * 69) / 100, "y1": (37 + .2 * 83) / 120,
+                                                  "x2": 1., "y2": 1.})
+    assert mapped.mask["polygon"][2] == {"x": 1., "y": 1.}
+
+
+def test_dense_view_fusion_retains_separately_observed_overlaps() -> None:
+    from app.pipeline.segmentation import _fuse_dense_views
+
+    def box(left, right, confidence):
+        return _detection({"x1": left, "y1": .10, "x2": right, "y2": .30}, confidence, family="model")
+
+    first, second = box(.10, .30, .95), box(.16, .36, .92)
+    clipped = box(.11, .25, .64)
+    other = box(.60, .80, .85)
+    views = [[first, second, clipped], [box(.10, .301, .89), box(.16, .359, .84), other]]
+    evidence = [[{"score": .8} for _ in view] for view in views]
+
+    winners = [item for item, _ in _fuse_dense_views(views, evidence)]
+    assert winners == [first, second, other]
+
+
 def test_quad_ordering_keeps_all_vertices_for_exact_diamond() -> None:
     from app.pipeline.geometry import order_quad_cyclic
 
