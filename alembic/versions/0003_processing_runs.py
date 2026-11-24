@@ -21,15 +21,12 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     run_status = sa.Enum("pending", "running", "review_needed", "completed", "failed", name="run_status")
     stage_status = sa.Enum("pending", "running", "review_needed", "completed", "failed", name="stage_run_status")
-    bind = op.get_bind()
-    if bind.dialect.name == "postgresql":
-        run_status.create(bind, checkfirst=True)
-        stage_status.create(bind, checkfirst=True)
+    uuid_type = sa.CHAR(36).with_variant(postgresql.UUID(as_uuid=True), "postgresql")
     json_type = sa.JSON().with_variant(postgresql.JSONB, "postgresql")
     op.create_table(
         "processing_runs",
-        sa.Column("id", sa.CHAR(length=36), primary_key=True, nullable=False),
-        sa.Column("page_id", sa.CHAR(length=36), sa.ForeignKey("pages.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("id", uuid_type, primary_key=True, nullable=False),
+        sa.Column("page_id", uuid_type, sa.ForeignKey("pages.id", ondelete="CASCADE"), nullable=False),
         sa.Column("input_sha256", sa.String(length=64), nullable=False),
         sa.Column("pipeline_version", sa.String(length=120), nullable=False),
         sa.Column("config_fingerprint", sa.String(length=64), nullable=False),
@@ -42,8 +39,8 @@ def upgrade() -> None:
     op.create_index("ix_processing_runs_page_id_status", "processing_runs", ["page_id", "status"])
     op.create_table(
         "stage_runs",
-        sa.Column("id", sa.CHAR(length=36), primary_key=True, nullable=False),
-        sa.Column("processing_run_id", sa.CHAR(length=36), sa.ForeignKey("processing_runs.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("id", uuid_type, primary_key=True, nullable=False),
+        sa.Column("processing_run_id", uuid_type, sa.ForeignKey("processing_runs.id", ondelete="CASCADE"), nullable=False),
         sa.Column("stage", sa.String(length=80), nullable=False),
         sa.Column("attempt", sa.Integer(), nullable=False, server_default="1"),
         sa.Column("status", stage_status, nullable=False, server_default="pending"),

@@ -19,13 +19,14 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    uuid_type = sa.CHAR(36).with_variant(postgresql.UUID(as_uuid=True), "postgresql")
     json_type = sa.JSON().with_variant(postgresql.JSONB, "postgresql")
     op.create_table(
         "assets",
-        sa.Column("id", sa.CHAR(length=36), primary_key=True, nullable=False),
-        sa.Column("processing_run_id", sa.CHAR(length=36), sa.ForeignKey("processing_runs.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("stage_run_id", sa.CHAR(length=36), sa.ForeignKey("stage_runs.id", ondelete="SET NULL")),
-        sa.Column("parent_asset_id", sa.CHAR(length=36), sa.ForeignKey("assets.id", ondelete="SET NULL")),
+        sa.Column("id", uuid_type, primary_key=True, nullable=False),
+        sa.Column("processing_run_id", uuid_type, sa.ForeignKey("processing_runs.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("stage_run_id", uuid_type, sa.ForeignKey("stage_runs.id", ondelete="SET NULL")),
+        sa.Column("parent_asset_id", uuid_type, sa.ForeignKey("assets.id", ondelete="SET NULL")),
         sa.Column("role", sa.String(length=80), nullable=False),
         sa.Column("storage_path", sa.String(length=1024), nullable=False),
         sa.Column("content_sha256", sa.String(length=64), nullable=False),
