@@ -1,5 +1,17 @@
 # Operations
 
+## Container builds
+
+On CPU-only hosts, build the backend and workers with the PyTorch CPU wheels.
+
+```bash
+docker compose build --build-arg TORCH_WHEEL_INDEX=https://download.pytorch.org/whl/cpu
+```
+
+For direct Docker builds behind a registry proxy, pass the trusted CA bundle
+with `--secret id=registry_ca,src=/path/to/ca-bundle.pem`. BuildKit mounts it
+during dependency installation.
+
 ## Backup
 
 Run `scripts/backup.sh` from the backend or a maintenance container with `pg_dump`, `rsync`, and `gpg` available.
@@ -92,7 +104,7 @@ Für produktive Deployments muss `AUTH_REQUIRED=true` gesetzt sein. Anschliessen
 werden tenantgebundene Schlüssel erst nach `alembic upgrade head` erzeugt:
 
 ```text
-python scripts/create_api_key.py --tenant <tenant-name> --label <operator> --role admin
+docker compose exec backend python -m scripts.create_api_key --tenant <tenant-name> --label <operator> --role admin
 ```
 
 Das Kommando zeigt das Geheimnis nur einmal. Clients senden es als
