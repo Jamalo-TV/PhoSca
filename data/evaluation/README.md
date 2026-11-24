@@ -1098,12 +1098,21 @@ validated detection path while this case remains unresolved.
 
 The shared-stock check measures the perimeter on the original page when
 the proposals include an enclosing print and at least two adjacent motifs.
-A break in the stock rim preserves separate proposals. A supported common
-rim and separator yield one print with a review hint in both crop modes.
-The current check requires an enclosing proposal and visible pale stock.
+For a pair without an enclosing proposal, it can also recover a candidate
+from connected pale stock around the gap. Candidate discovery uses a bounded
+image region. The perimeter and the separator are verified on the source
+pixels. A break or step in the rim, a faint or slanted join, or overlap with
+a third print preserves the original proposals. Pages with more than twelve
+plausible pairs keep their proposals at this stage. Every recovered print
+requires review in both crop modes.
+
 `backend/tests/test_pipeline/test_multipanel_prints.py` covers rotated
 pages, narrow gutters, a separate neighboring print, cross-detector fusion,
-and the upload, review and export flow.
+and the upload, review and export flow with and without an enclosing
+proposal. A separate replay on the ten Golden originals, with native,
+resized and JPEG75 views and exact or inset inputs, found no false merges
+in 198 separate-print pair checks. The Golden pages come from one album
+and provide separate-print controls.
 
 Rerunning the frozen seeded geometry gives 11 passing full prints and 12
 passing motifs. The model-free fallback before and after the change matches

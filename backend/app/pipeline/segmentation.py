@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import lru_cache
-from itertools import combinations
+from itertools import combinations, islice
 from pathlib import Path
 from time import perf_counter
 
@@ -20,7 +20,9 @@ from app.pipeline.geometry import (
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, pixel_box_to_normalized
 from app.pipeline.mounted_prints import mounted_print_evidence
-from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVIEW, shared_stock_outline
+from app.pipeline.multipanel_prints import (
+    MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE, recover_shared_stock_outline, shared_stock_outline,
+)
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.print_edges import _is_pale_stock, refine_print_boundary
 from app.pipeline.quality import evaluate_segmentation_geometry
@@ -32,6 +34,7 @@ from app.pipeline.segmentation_filter import (
 )
 
 _CLASSICAL_MIN_AREA_RATIO = 0.02
+_MULTIPANEL_PAIR_LIMIT = 12
 
 
 @dataclass(frozen=True)
@@ -1429,6 +1432,76 @@ def _group_multipanel_prints(
     return [grouped.get(index, item) for index, item in enumerate(detections) if index not in removed], len(removed)
 
 
+def _adjacent_panel_boxes(first: dict[str, float], second: dict[str, float]) -> bool:
+    for axis, across in (("x", "y"), ("y", "x")):
+        shared = min(first[f"{across}2"], second[f"{across}2"]) - max(first[f"{across}1"], second[f"{across}1"])
+        shorter = min(first[f"{across}2"] - first[f"{across}1"], second[f"{across}2"] - second[f"{across}1"])
+        extent = max(first[f"{axis}2"], second[f"{axis}2"]) - min(first[f"{axis}1"], second[f"{axis}1"])
+        gap = max(first[f"{axis}1"], second[f"{axis}1"]) - min(first[f"{axis}2"], second[f"{axis}2"])
+        if shorter > 0 and shared >= .45 * shorter and -.40 * extent <= gap <= .22 * extent:
+            return True
+    return False
+
+
+def _recover_multipanel_prints(
+    image: np.ndarray, result: SegmentationResult, settings: Settings,
+) -> SegmentationResult:
+    detections = result.detections
+    eligible = [i for i, item in enumerate(detections)
+                if item.geometry_valid and MULTIPANEL_PRINT_REVIEW not in item.review_reasons
+                and item.mask.get("detector_source") not in {"chromatic_mount", ALBUM_WINDOW_SOURCE, CONTRAST_COMPONENT_SOURCE}]
+    possible_pairs = (
+        (first, second) for first, second in combinations(eligible, 2)
+        if _adjacent_panel_boxes(detections[first].bounding_box, detections[second].bounding_box)
+    )
+    pairs = list(islice(possible_pairs, _MULTIPANEL_PAIR_LIMIT + 1))
+    if not pairs or len(pairs) > _MULTIPANEL_PAIR_LIMIT:
+        # An untested pair could compete for ownership. Keep the original proposals.
+        return result
+    height, width = image.shape[:2]
+    polygons = [_detection_polygon(item) for item in detections]
+    native = [normalized_vertices_to_pixels(polygon, width, height) for polygon in polygons]
+    recovered = []
+    for first, second in pairs:
+        try:
+            quad = recover_shared_stock_outline(image, [native[first], native[second]])
+        except (cv2.error, ValueError):
+            continue
+        if quad is None:
+            continue
+        area = cv2.contourArea(quad)
+        if not .025 * width * height <= area <= .75 * width * height:
+            continue
+        item = _make_detection(
+            box={}, points=quad, confidence=min(detections[first].confidence, detections[second].confidence),
+            image_width=width, image_height=height, settings=settings,
+            source=RECOVERED_STOCK_SOURCE, detector_source=RECOVERED_STOCK_SOURCE,
+        )
+        if item is None or not item.geometry_valid:
+            continue
+        outline = _detection_polygon(item)
+        if any(
+            _normalized_box_overlap(item.bounding_box, other.bounding_box)[0] > 0
+            and normalized_polygon_overlap(outline, polygons[index]).second_containment > .03
+            for index, other in enumerate(detections) if index not in (first, second)
+        ):
+            continue
+        recovered.append((first, second, replace(item, review_reasons=[MULTIPANEL_PRINT_REVIEW])))
+    if not recovered:
+        return result
+    used = {index for first, second, _ in recovered for index in (first, second)}
+    if len(used) != 2 * len(recovered) or any(
+        _normalized_box_overlap(first.bounding_box, second.bounding_box)[0] > 0
+        and normalized_polygon_overlap(_detection_polygon(first), _detection_polygon(second)).iou > .01
+        for (_, _, first), (_, _, second) in combinations(recovered, 2)
+    ):
+        return result
+    updated = [item for index, item in enumerate(detections) if index not in used]
+    updated.extend(item for _, _, item in recovered)
+    updated.sort(key=lambda item: (item.bounding_box["y1"], item.bounding_box["x1"]))
+    return SegmentationResult(updated, {**result.metadata, "multipanel_outlines_recovered": len(recovered)})
+
+
 def _filter_nested_classical_detections(
     detections: list[SegmentationDetection],
 ) -> tuple[list[SegmentationDetection], dict[str, int]]:
@@ -2401,7 +2474,7 @@ def _refine_source_contours(
     originals = [normalized_vertices_to_pixels(_detection_polygon(item), width, height) for item in result.detections]
     candidates = {}
     for index, (item, own) in enumerate(zip(result.detections, originals, strict=True)):
-        if item.mask.get("detector_source") == CONTRAST_COMPONENT_SOURCE:
+        if item.mask.get("detector_source") in {CONTRAST_COMPONENT_SOURCE, RECOVERED_STOCK_SOURCE}:
             continue
         measured = measure_detected_visibility(
             image, item.mask, own, [other for i, other in enumerate(originals) if i != index], regions,
@@ -2447,6 +2520,7 @@ def segment_album_page(
         result = refine_album_page_result(image, result, source_image=evidence_source if settings.enable_precise_photo_crops else None)
         if settings.enable_precise_photo_crops:
             result = _refine_album_windows(evidence_source, result)
+            result = _recover_multipanel_prints(evidence_source, result, settings)
     model_path = settings.visible_mask_model_path
     if not settings.enable_precise_photo_crops:
         return result

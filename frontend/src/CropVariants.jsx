@@ -31,7 +31,7 @@ export function CropOrientationField({ value, onChange, disabled }) {
 const reviewMessages = {
   ORIENTATION_UNCERTAIN: "Prüfe die Ausrichtung und speichere die passende Drehung im Zuschnitt-Editor.",
   SEGMENTATION_CONFIDENCE_UNCALIBRATED: "Prüfe und speichere die Abzugsecken, um den Download freizugeben.",
-  MULTIPANEL_PRINT_REVIEW: "Hier könnten mehrere Bilder auf einem Abzug liegen. Prüfe die gemeinsame Papierkante am Original und achte darauf, dass der Motivzuschnitt alle Bilder enthält.",
+  MULTIPANEL_PRINT_REVIEW: "Prüfe die gemeinsame Papierkante am Original. Auf einem Abzug muss der Motivzuschnitt alle Bilder enthalten. Bei zwei getrennten Abzügen korrigierst du die Ecken und ergänzt den zweiten Abzug im Editor.",
   CROP_VALIDATION_UNAVAILABLE: "Prüfe und speichere den Zuschnitt, um den Download freizugeben.",
   CAMERA_ASPECT_REVIEW: "Die Vorschau nutzt die Kamerakalibrierung. Prüfe und bestätige die Fotoecken.",
   PRINT_AT_CAPTURE_EDGE: "Der Abzug reicht bis an den Aufnahmerand. Prüfe, ob er vollständig zu sehen ist.",
