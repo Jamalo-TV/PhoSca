@@ -1212,9 +1212,36 @@ python scripts/evaluate_onnx_segmentation.py --classical-only --dataset-manifest
 ```
 
 At IoU 0.85 the fallback matches all four separate prints with zero false
-or merged proposals and 0.960 mean mask IoU. The instance masks omit
-about 3.7% of the draft source footprint on average. The bottom-left
-proposal omits about 7.8%, with one corner 36 native pixels from the
-draft. Independent boundary fits can jump to the next print across the
-pale gutter. The page's ownership guard limits the final preview in these
-cases. Both crop modes stay in review.
+or merged proposals. Before this change the mean mask IoU was 0.960.
+The bottom-left proposal omitted 7.8% of the draft source footprint, with
+one corner 36 native pixels from the draft. An independent native-pixel
+fit, anchored to the visible transitions, found 17–19 px of pale backing
+between the lower prints. The source JPEG leaves a possible one-pixel
+paper rim unresolved.
+
+The new review fit uses the observed opposite side to seed a search for
+one missing side. The final line must have a native material transition
+with pale backing outside, and both adjacent paper edges must terminate
+at its corners. The fit checks for crossing covers and for visible content
+in any removed strip. A competing outline or ownership claim leaves the
+original geometry in review.
+
+Mean mask IoU on the pinned scan is 0.985. The bottom-left and bottom-right
+full-print preview losses against the drafts fell from 6.4% and 4.5% to
+1.8% and 1.9%. The two corrected previews have zero measured foreign
+interpolation mass against those drafts. All four retain review status in
+both modes. The normal upload replay confirmed the new previews and
+withheld both downloads. The largest corner discrepancy for the two
+corrected previews was 2.65 native pixels. Independent motif dimensions
+remain unverified.
+
+The lower-left side was recovered in all four quarter turns, JPEG75, and
+a one-pixel blur probe. The blur also split the original upper-left
+proposal in the baseline and candidate runs. Separate tests preserve the
+original geometry for detectable pale covers, continuing pale paper,
+small dark detail outside the proposed edge, and a conflicting neighbor.
+Edges with virtually identical backing and paper remain ambiguous. Forty
+warmed measurements of the recovery on this 600 × 851 scan gave 26 ms
+median and 28 ms p95 per considered print. The model-free Golden and
+frozen synthetic measures are unchanged. Seeded geometry still passes
+all 23 recoverable crops.

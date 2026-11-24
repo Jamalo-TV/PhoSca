@@ -38,6 +38,7 @@ from app.pipeline.print_edges import (
     refine_print_boundary,
     retry_ambiguous_stock_edge,
     suggest_ambiguous_stock_edge,
+    suggest_missing_pale_backing_edge,
 )
 from app.pipeline.print_stock import find_outer_stock_candidate
 from app.pipeline.protected_regions import detect_protected_regions, merge_protected_regions, validate_protected_regions
@@ -49,6 +50,10 @@ _REFINED_VISIBILITY_SOURCES = {_PRINT_BOUNDARY_SOURCE, _PAPER_RIM_SOURCE}
 _LOCALIZED_OCCLUSION_REASONS = {"PRINT_CORNERS_UNCERTAIN", "PRINT_POSSIBLY_OCCLUDED"}
 _PRINT_EDGE_CONFIRMATION = "PRINT_EDGE_CONFIRMATION_REQUIRED"
 _CROP_PREVIEW_REASONS = {_PRINT_EDGE_CONFIRMATION, PRINT_ASPECT_REFERENCE_REVIEW}
+
+
+def _pale_backing_review_fit(boundary: dict) -> bool:
+    return any(isinstance(side, dict) and side.get("review_pale_backing_fit") for side in boundary.values())
 
 
 @dataclass(frozen=True)
@@ -1087,6 +1092,13 @@ def _inspect_print(
             suggestion = suggest_ambiguous_stock_edge(page, quad, refined, boundary, neighbors)
             if suggestion is not None:
                 refined = suggestion[0]
+        if (enable_classical_retry and refined is not None and "PRINT_BOUNDARY_UNSUPPORTED" in reasons
+                and set(reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN"}):
+            pale_backing = suggest_missing_pale_backing_edge(page, refined, boundary, neighbors)
+            if pale_backing is not None:
+                refined, boundary = pale_backing
+                reasons = []
+                edge_confirmation = True
         if refined is not None and "PRINT_OUTER_RIM_UNCERTAIN" not in reasons:
             refined_protection = validate_protected_regions(refined, regions, width=width, height=height)
             if not refined_protection["passed"] and not _advisory_face_overlap(refined_protection, allow_page_face_overlap):
@@ -1158,7 +1170,9 @@ def _source_visible_outline(
     if not inspection.boundary or visible is None:
         return None
     height, width = page.shape[:2]
-    if not inspection.reasons:
+    if not inspection.reasons or (
+        inspection.reasons == [_PRINT_EDGE_CONFIRMATION] and _pale_backing_review_fit(inspection.boundary)
+    ):
         overlap = normalized_polygon_overlap(
             pixel_vertices_to_normalized(visible, width, height),
             pixel_vertices_to_normalized(inspection.quad, width, height),
@@ -1326,7 +1340,9 @@ def correct_photo_crop(
         left, top, right, bottom = _analysis_padding(destination, rectified_to_page, width, height)
     page_to_analysis = matrix.copy()
     page_to_analysis[:2] += np.array([[left], [top]]) * matrix[2]
-    stock_suggestion = any(isinstance(side, dict) and side.get("review_stock_fit") for side in boundary_refinement.values())
+    stock_suggestion = _pale_backing_review_fit(boundary_refinement) or any(
+        isinstance(side, dict) and side.get("review_stock_fit") for side in boundary_refinement.values()
+    )
     owned_sampling = dual_mode and (
         set(full_reasons) <= _CROP_PREVIEW_REASONS
         or mask.get("capture_edge_clipped") is True

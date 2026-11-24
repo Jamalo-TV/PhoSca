@@ -529,6 +529,128 @@ def suggest_ambiguous_stock_edge(
     return candidate, {**evidence, names[index]: {**evidence[names[index]], "review_stock_fit": observed}}
 
 
+def _pale_backing_transition(band: np.ndarray, backing: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    distance = np.linalg.norm(band - backing, axis=2)
+    outside_distance = distance[:, :3]
+    exterior = (np.median(outside_distance, axis=1) <= 14) & (outside_distance.max(axis=1) <= 18)
+    inside_distance = np.median(distance[:, 3:], axis=1)
+    interior = (inside_distance >= 12) & (inside_distance - np.median(outside_distance, axis=1) >= 5)
+    return exterior & interior, (distance <= 14).all(axis=1)
+
+
+def _pale_backing_at_corners(image: np.ndarray, candidate: np.ndarray, index: int, backing: np.ndarray) -> bool:
+    for flank, ends_at_corner in (((index - 1) % 4, True), ((index + 1) % 4, False)):
+        start, end = candidate[flank], candidate[(flank + 1) % 4]
+        distances = np.float32([-10, -7, -4, -2, 4, 7, 10, 14, 18, 22])
+        fractions = distances / np.linalg.norm(end - start)
+        band = _edge_band(image, start, end, [-7, -5, -3, 2, 4, 6],
+                          fractions=1 - fractions if ends_at_corner else fractions)
+        if band is None:
+            return False
+        material, bare = _pale_backing_transition(band, backing)
+        # Along each adjacent edge, the print must start at this corner.
+        # An internal ink line leaves photographic material past the corner.
+        before_corner = band[:4, 3:].mean(axis=1) - band[:4, :3].mean(axis=1)
+        continued_flank = np.linalg.norm(np.median(before_corner, axis=0)) > 3
+        if (continued_flank or np.count_nonzero(bare[:4]) < 3
+                or np.count_nonzero(material[4:]) < 5 or not material[4:6].any()):
+            return False
+    start, end = candidate[index], candidate[(index + 1) % 4]
+    span = np.linalg.norm(end - start)
+    extension = np.float32([3, 5, 8, 12, 16, 20]) / span
+    continued = _edge_band(image, start, end, [-5, -3, 3, 5], fractions=np.r_[-extension, 1 + extension])
+    if continued is None:
+        return False
+    changes = continued[:, 2:].mean(axis=1) - continued[:, :2].mean(axis=1)
+    arms = changes.reshape(2, -1, 3)
+    # A cover crossing the print can terminate the two flanks of the
+    # visible region, but its own edge continues past both print corners.
+    directions = np.median(arms, axis=1)
+    magnitude = np.linalg.norm(directions, axis=1)
+    projection = np.sum(arms * directions[:, None], axis=2) / np.maximum(magnitude[:, None], 1)
+    strong = np.mean(projection > 3, axis=1)
+    aligned = directions[0] @ directions[1] > .8 * np.prod(magnitude)
+    return not (bool(np.any(strong >= .83)) or bool(np.all(strong >= .60) and aligned))
+
+
+def _only_pale_backing_removed(
+    image: np.ndarray, original: np.ndarray, candidate: np.ndarray, index: int, backing: np.ndarray,
+) -> bool:
+    start, end = candidate[index], candidate[(index + 1) % 4]
+    tangent = end - start
+    length = np.linalg.norm(tangent)
+    inward = np.float32([-tangent[1], tangent[0]]) / length
+    original_side = original[(index + 1) % 4] - original[index]
+    normal = np.float32([-original_side[1], original_side[0]]) / np.linalg.norm(original_side)
+    if normal @ inward < .95:
+        return False
+    stations = int(np.clip(np.ceil(length) + 1, 96, 2048))
+    centers = start + np.linspace(.025, .975, stations, dtype=np.float32)[:, None] * tangent
+    removed = (centers - original[index]) @ normal / (normal @ inward)
+    depth = float(removed.max())
+    if depth < 3:
+        return True
+    offsets = np.arange(3, depth + 1, dtype=np.float32)
+    points = centers[:, None] - offsets[:, None] * inward
+    in_strip = (offsets <= removed[:, None]) & ((points >= 0) & (points <= np.array(image.shape[1::-1]) - 1)).all(axis=2)
+    if not in_strip.any():
+        return True
+    distance = np.linalg.norm(_sample_lab(image, points[in_strip]) - backing, axis=1)
+    return bool(distance.max() <= 20 and np.mean(distance <= 14) >= .98)
+
+
+def suggest_missing_pale_backing_edge(
+    image: np.ndarray, quad: np.ndarray, evidence: dict, neighbors: list[np.ndarray],
+) -> tuple[np.ndarray, dict] | None:
+    """Measure one missing side for a review preview when adjacent prints have a pale gutter."""
+    names = ("top", "right", "bottom", "left")
+    missing = [index for index, name in enumerate(names) if evidence[name]["corner_support"] is None]
+    if not neighbors or len(missing) != 1 or any(evidence[name]["ambiguous"] for name in names):
+        return None
+    index = missing[0]
+    opposite = (index + 2) % 4
+    previous, following = (index - 1) % 4, (index + 1) % 4
+    if (evidence[names[opposite]]["support"] < .90 or evidence[names[opposite]]["corner_support"] < .65
+            or evidence[names[previous]]["start_support"] < .65 or evidence[names[following]]["end_support"] < .65):
+        return None
+    backing = _backing_color(image)
+    if not _is_pale_stock(backing):
+        return None
+    sides = np.roll(quad, -1, axis=0) - quad
+    shortest = float(np.linalg.norm(sides, axis=1).min())
+    axis = -sides[opposite] / np.linalg.norm(sides[opposite])
+    normal = np.float32([-axis[1], axis[0]])
+    offset = sides[index] @ normal
+    if not max(6., .025 * shortest) <= abs(offset) <= .22 * shortest:
+        return None
+    radius = int(np.clip(round(.038 * shortest), 5, 18))
+    start, end = quad[index], quad[following]
+    hulls = [cv2.convexHull(neighbor) for neighbor in neighbors]
+    alternatives = []
+    for anchor in (0., .25, .5, .75, 1.):
+        line, observed = _side_line(image, start + anchor * offset * normal, end - (1 - anchor) * offset * normal, radius)
+        if line is None or observed["support"] < .90 or observed["corner_support"] < .75:
+            continue
+        candidate = _replace_quad_side(quad, index, line, max(radius, abs(offset)), image.shape)
+        if (candidate is None or any(cv2.intersectConvexConvex(candidate, hull)[0] > 1. for hull in hulls)
+                or not _pale_backing_at_corners(image, candidate, index, backing)):
+            continue
+        band = _edge_band(image, candidate[index], candidate[following], [-8, -5, -3, 3, 5, 8])
+        if band is None:
+            continue
+        transitions, _ = _pale_backing_transition(band, backing)
+        support = float(np.mean(transitions))
+        if support >= .83 and _only_pale_backing_removed(image, quad, candidate, index, backing):
+            alternatives.append((candidate, observed, support))
+    if not alternatives:
+        return None
+    candidate, observed, support = max(alternatives, key=lambda entry: (entry[2], entry[1]["support"]))
+    if any(np.max(np.linalg.norm(candidate - other, axis=1)) > 2. for other, _, _ in alternatives):
+        return None
+    side = {**observed, "review_pale_backing_fit": {"native_transition_support": round(support, 4)}}
+    return candidate, {**evidence, names[index]: side}
+
+
 def refine_print_boundary(
     image: np.ndarray, proposal: np.ndarray, *, search_radius: int | None = None,
     rim_color: np.ndarray | None = None,

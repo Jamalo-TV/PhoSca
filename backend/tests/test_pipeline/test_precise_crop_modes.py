@@ -126,6 +126,68 @@ def test_faint_outer_edge_extends_review_preview_unless_a_neighbor_claims_the_ba
     assert all(mode["status"] == "review_needed" for mode in unresolved.metadata["crop_modes"].values())
 
 
+def _pale_gutter_page(case):
+    backing = (230, 233, 237)
+    page = np.full((590, 670, 3), backing, np.uint8)
+    outer = _rect(95, 196, 393, 517)
+    motif = _rect(110, 211, 378, 502)
+    neighbor = _rect(67, 65, 415, 174)
+    if case == "tilted":
+        outer[1, 1] += 15
+    if case == "narrow_gutter":
+        neighbor[2:, 1] += 18
+    cv2.fillConvexPoly(page, neighbor.astype(np.int32), (38, 57, 73))
+    fill = (190, 204, 219) if case == "pale_paper_rim" else (110, 143, 160)
+    cv2.fillConvexPoly(page, outer.astype(np.int32), fill)
+    cv2.fillConvexPoly(page, motif.astype(np.int32), (70, 112, 147))
+    cv2.ellipse(page, (226, 332), (94, 78), 0, 0, 360, (45, 120, 189), -1)
+    cv2.circle(page, (143, 476), 27, (187, 80, 130), -1)
+    seed = outer.copy()
+    seed[1, 1] += 38
+    if case == "pale_cover":
+        page[187:220, 38:450] = (225, 228, 232)
+        seed[:2, 1] += 25
+    if case == "pale_rim":
+        page[196:221, 95:394] = (225, 228, 232)
+        seed[:2, 1] += 25
+    if case == "small_mark":
+        page[196:220, 95:394] = backing
+        page[201:203, 108:117] = (76, 65, 53)
+        seed[:2, 1] = [192, 236]
+    if case == "neighbor_claim":
+        neighbor[2:, 1] += 33
+    mask = {"source": "classical_border_quad", "polygon": _vertices(seed, page)}
+    return page, outer, motif, mask, [{"polygon": _vertices(neighbor, page)}]
+
+
+@pytest.mark.parametrize("case", ["colored_rim", "pale_paper_rim"])
+def test_missing_side_recovers_visible_paper_before_a_stronger_neighbor(case):
+    page, outer, motif, mask, neighbors = _pale_gutter_page(case)
+    crop = _crop(page, {}, mask, dual_mode=True, enable_classical_retry=True, print_aspect_ratio=298 / 321,
+                 neighbor_masks=neighbors)
+
+    assert crop.metadata["boundary_refinement"]["top"]["review_pale_backing_fit"]["native_transition_support"] >= .90
+    full, image = (crop.metadata["crop_modes"][mode] for mode in ("full_print", "image_only"))
+    assert full["status"] == image["status"] == "review_needed"
+    assert full["reason_codes"] == image["reason_codes"] == ["PRINT_EDGE_CONFIRMATION_REQUIRED"]
+    assert full["sampling"] == OWNED_BILINEAR
+    assert crop.image_only is not None
+    for mode, expected in ((full, outer), (image, motif)):
+        points = [(point["x"], point["y"]) for point in mode["warp_quad"]]
+        measured = normalized_vertices_to_pixels(points, *page.shape[1::-1])
+        np.testing.assert_allclose(measured, expected, atol=.4)
+
+
+@pytest.mark.parametrize("case", ["pale_cover", "pale_rim", "small_mark", "neighbor_claim", "narrow_gutter", "tilted"])
+def test_missing_pale_side_does_not_follow_an_unconfirmed_boundary(case):
+    page, _, _, mask, neighbors = _pale_gutter_page(case)
+    crop = _crop(page, {}, mask, dual_mode=True, enable_classical_retry=True, print_aspect_ratio=298 / 321,
+                 neighbor_masks=neighbors)
+
+    assert not any("review_pale_backing_fit" in side for side in crop.metadata["boundary_refinement"].values())
+    assert all(mode["status"] == "review_needed" for mode in crop.metadata["crop_modes"].values())
+
+
 def test_half_open_box_and_explicit_outer_quad_have_exact_pixel_centers() -> None:
     page = np.random.default_rng(830).integers(0, 256, (100, 150, 3), dtype=np.uint8)
     box = _box(10, 11, 90, 76, page)

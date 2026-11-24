@@ -69,10 +69,12 @@ export function CropVariants({ photo, hidden = false }) {
   const clippedOverlapUncertain = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
   const captureEdgeClipped = photo.segmentation_mask?.capture_edge_clipped === true;
+  const pendingPaperEdge = getCropModes(photo)?.full_print?.reason_codes?.includes("PRINT_EDGE_CONFIRMATION_REQUIRED");
   const fullPreview = photo.urls?.source_corrected_untrimmed || photo.urls?.original;
   const motifPreview = photo.urls?.image_only_preview;
   const preview = mode === "image_only"
-    ? motifPreview || ((possibleMultipanel || scannerBackingUncertain || clippedOverlapUncertain || captureEdgeClipped) && fullPreview)
+    ? motifPreview || ((possibleMultipanel || scannerBackingUncertain || clippedOverlapUncertain
+        || captureEdgeClipped || pendingPaperEdge) && fullPreview)
     : fullPreview;
   const reviewMessage = (captureEdgeClipped
     && "Der vorgeschlagene Abzug reicht bis an den Aufnahmerand. Lade für den Zuschnitt eine Aufnahme hoch, die ihn ganz zeigt.")
