@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from base64 import b64encode
 from copy import deepcopy
 from datetime import datetime
 from html import escape
@@ -79,12 +80,20 @@ def apply_reference_review(manifest: dict | list, receipt: dict, preflight: dict
     return reviewed
 
 
-def _image_file(directory: Path, name: str, image: np.ndarray) -> None:
-    suffix = Path(name).suffix
+def _encode_image(suffix: str, image: np.ndarray) -> bytes:
     ok, encoded = cv2.imencode(suffix, image)
     if not ok:
-        raise OSError(f"Could not encode review image: {name}")
-    (directory / name).write_bytes(encoded.tobytes())
+        raise OSError(f"Could not encode review image as {suffix}")
+    return encoded.tobytes()
+
+
+def _image_file(directory: Path, name: str, image: np.ndarray) -> None:
+    (directory / name).write_bytes(_encode_image(Path(name).suffix, image))
+
+
+def _embedded_image(mime: str, pixels: bytes, label: str) -> str:
+    encoded = b64encode(pixels).decode("ascii")
+    return f'<img loading="lazy" src="data:{mime};base64,{encoded}" alt="{escape(label, quote=True)}">'
 
 
 def _figure(directory: Path, name: str, image: np.ndarray, caption: str, max_width: int = 560) -> str:
@@ -180,7 +189,7 @@ def _reference_pair(
 
 def render_reference_page(
     directory: Path, index: int, record: dict, image: np.ndarray, expected: list, references: list[dict],
-    page_issues: list[str], issues_by_mode: dict[tuple[int, str], list[str]],
+    page_issues: list[str], issues_by_mode: dict[tuple[int, str], list[str]], *, calibration: bool = False,
 ) -> str:
     height, width = image.shape[:2]
     scale = np.array([width - 1, height - 1])
@@ -195,6 +204,24 @@ def render_reference_page(
         cv2.putText(overlay, str(instance), origin, cv2.FONT_HERSHEY_SIMPLEX, font_scale, _MASK, 2, cv2.LINE_AA)
     slug = f"page-{index:03d}"
     page_id = str(record["id"])
+    identity = escape(page_id)
+    group = escape(str(record.get("source_group") or "Unbekannte Albumgruppe"))
+    heading = f'<section id="{slug}" class="page"><h2>{identity}</h2><p>{group} · {width} × {height} px'
+    if calibration:
+        path = record["image"]
+        if path.suffix.lower() in {".jpg", ".jpeg", ".png"}:
+            mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
+            original = _embedded_image(mime, path.read_bytes(), "Original in voller Auflösung")
+        else:
+            original = _embedded_image("image/png", _encode_image(".png", image), "Quellbild in voller Auflösung")
+        outlines = _embedded_image("image/jpeg", _encode_image(".jpg", overlay), "Quellbild mit markierten Umrissen")
+        return (
+            f"{heading} · {len(expected)} markierte Abzüge</p><ul>{_issues(page_issues)}</ul>"
+            + _review_choice(page_id, "page", "Fotoanzahl, Zuordnung und Umrisse prüfen", page_issues)
+            + f'<figure>{outlines}<figcaption>Markierte Umrisse</figcaption></figure>'
+            + '<details><summary>Original in voller Auflösung öffnen</summary>'
+            + f'<div class="native-image">{original}</div></details></section>'
+        )
     source = escape(_source_path(directory, record["image"]), quote=True)
     figures = _figure(directory, f"{slug}-overview.jpg", overlay, "Sichtbare Instanzen laut Referenzlabels", 1120)
     blocks = []
@@ -242,10 +269,8 @@ def render_reference_page(
                 + "</article>"
             )
         blocks.append(f'<section><h3>Instanz {instance}</h3><div class="modes">{"".join(cards)}</div></section>')
-    identity = escape(page_id)
-    group = escape(str(record.get("source_group") or "Unbekannte Albumgruppe"))
     return (
-        f'<section id="{slug}" class="page"><h2>{identity}</h2><p>{group} · {width} × {height} px · '
+        f"{heading} · "
         f'<a href="{source}">Original öffnen</a></p><ul>{_issues(page_issues)}</ul>{figures}'
         + _review_choice(page_id, "page", "Fotoanzahl und Zuordnung prüfen", page_issues)
         + ("".join(blocks) if blocks else "<p>Die Referenzlabels enthalten keine Fotos.</p>")
@@ -258,10 +283,12 @@ const form = document.getElementById('reference-review');
 const controls = Array.from(form.querySelectorAll('select[data-page-id]'));
 const exportButton = document.getElementById('export-decisions');
 const count = document.getElementById('decision-count');
+const receiptText = document.getElementById('receipt-text');
+receiptText.addEventListener('focus', () => receiptText.select());
 function updateCount() {
     const selected = controls.filter(control => control.value).length;
     exportButton.disabled = selected === 0;
-    count.textContent = `${selected} Entscheidungen`;
+    count.textContent = `${selected} von ${controls.length} Entscheidungen`;
 }
 form.addEventListener('change', updateCount);
 form.addEventListener('submit', event => {
@@ -282,10 +309,12 @@ form.addEventListener('submit', event => {
         schema_version: 1, manifest_sha256: form.dataset.manifestSha256,
         reviewer, reviewed_at: new Date().toISOString(), decisions,
     };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(receipt, null, 2) + '\\n'], {type: 'application/json'}));
+    receiptText.value = JSON.stringify(receipt, null, 2) + '\\n';
+    document.getElementById('receipt-copy').hidden = false;
+    const url = URL.createObjectURL(new Blob([receiptText.value], {type: 'application/json'}));
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'phosca-referenzpruefung.json';
+    link.download = form.dataset.receiptFilename;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
@@ -293,7 +322,9 @@ updateCount();
 </script>"""
 
 
-def write_reference_review(directory: Path, summary: dict, pages: list[tuple[str, str]]) -> Path:
+def write_reference_review(
+    directory: Path, summary: dict, pages: list[tuple[str, str]], *, calibration: bool = False,
+) -> Path:
     path = directory / "index.html"
     ready = "Referenzprüfung vollständig" if summary["ready_for_locked_evaluation"] else "Referenzprüfung offen"
     digest = escape(str(summary["dataset_manifest_sha256"]))
@@ -301,9 +332,27 @@ def write_reference_review(directory: Path, summary: dict, pages: list[tuple[str
     contents = "".join(
         f'<li><a href="#page-{index:03d}">{escape(name)}</a></li>' for index, (name, _) in enumerate(pages)
     )
+    if calibration:
+        title = "Kalibrierung · Seitenprüfung"
+        filename = "phosca-kalibrierungspruefung.json"
+        instructions = (
+            "<p>Prüfe auf jeder Seite Anzahl, Zuordnung und sichtbare Umrisse der Abzüge. "
+            "Wähle bei unklaren Rändern <strong>Korrektur nötig</strong>. "
+            "Trage deinen Namen ein und speichere nach der letzten Entscheidung den JSON-Beleg.</p>"
+        )
+        status = f'<p>{summary["pages"]} Ansichten · {summary["expected_photos"]} markierte Abzüge</p>'
+    else:
+        title = "Albumreferenzen"
+        filename = "phosca-referenzpruefung.json"
+        instructions = (
+            "<p>Vergleiche die Quellpixel mit den markierten Grenzen und der separaten Aufnahme. "
+            "Die Eckbilder zeigen links die Quelle und rechts die Markierung bei dreifacher Vergrößerung. "
+            "Die Instanznummern beginnen bei 0 und folgen den YOLO-Labels.</p>"
+        )
+        status = f'<p>{ready} · {summary["pages"]} Seiten · {summary["expected_photos"]} Abzüge</p><ul>{dataset_issues}</ul>'
     path.write_text(
         '<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
-        '<title>PhoSca Albumreferenzen</title><style>'
+        f'<title>PhoSca {title}</title><style>'
         "body{margin:24px;background:#14171b;color:#eef1f5;font:16px system-ui}"
         "main{max-width:1600px;margin:auto}.page{border-top:1px solid #434a54;margin:24px 0;padding-top:12px}"
         "a{color:#a8dcff}code{color:#f2d898;overflow-wrap:anywhere}figure{margin:0}"
@@ -315,16 +364,16 @@ def write_reference_review(directory: Path, summary: dict, pages: list[tuple[str
         ".review-actions{position:sticky;top:0;z-index:1;background:#20242a;padding:12px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}"
         ".page,article{scroll-margin-top:80px}.review-choice{display:block;margin:10px 0}"
         "input,select,button{font:inherit;padding:.25em .4em;max-width:100%}"
-        "</style><main><h1>Albumreferenzen</h1>"
-        f'<p>{ready} · {summary["pages"]} Seiten · {summary["expected_photos"]} Abzüge</p>'
-        f"<p>Manifest SHA-256 <code>{digest}</code></p><ul>{dataset_issues}</ul>"
-        "<p>Vergleiche die Quellpixel mit den markierten Grenzen und der separaten Aufnahme. "
-        "Die Eckbilder zeigen links die Quelle und rechts die Markierung bei dreifacher Vergrößerung. "
-        "Die Instanznummern beginnen bei 0 und folgen den YOLO-Labels.</p>"
-        f'<form id="reference-review" data-manifest-sha256="{digest}">'
+        ".native-image{overflow:auto;max-height:80vh}.native-image img{display:block;max-width:none}"
+        "#receipt-text{display:block;width:min(100%,50rem);height:10em}"
+        f"</style><main><h1>{title}</h1>{status}"
+        f"<p>Manifest SHA-256 <code>{digest}</code></p>{instructions}"
+        f'<form id="reference-review" data-manifest-sha256="{digest}" data-receipt-filename="{filename}">'
         '<div class="review-actions"><label>Geprüft von <input name="reviewer" maxlength="120" required></label>'
         '<output id="decision-count" aria-live="polite"></output>'
         '<button id="export-decisions" type="submit" disabled>Prüfentscheidungen speichern</button></div>'
+        '<div id="receipt-copy" hidden><label>Falls der Download ausbleibt, kopiere den JSON-Beleg aus diesem Feld.'
+        '<textarea id="receipt-text" readonly></textarea></label></div>'
         f'<nav aria-label="Albumseiten"><ul>{contents}</ul></nav>'
         + "".join(section for _, section in pages)
         + "</form></main>" + _EXPORT_REVIEW + "</html>",

@@ -779,8 +779,9 @@ def test_reference_check_requires_verified_positive_modes_from_both_albums(tmp_p
     source = tmp_path / "albums.json"
     args = Namespace(dataset_manifest=source)
 
-    def check(review_directory=None):
-        source.write_text(json.dumps({"split_policy": {"album_independent": True}, "pages": pages}), encoding="utf-8")
+    def check(review_directory=None, *, role="locked"):
+        split = {"album_independent": True, "role": role}
+        source.write_text(json.dumps({"split_policy": split, "pages": pages}), encoding="utf-8")
         records, split = _load_cases(args)
         return _check_references(args, records, split, parse_yolo_segmentation,
                                  lambda path: cv2.imread(str(path)), checksum, review_directory=review_directory)
@@ -822,6 +823,19 @@ def test_reference_check_requires_verified_positive_modes_from_both_albums(tmp_p
     left, right = np.hsplit(corner, 2)
     assert np.all(left == 120)
     assert np.any(right != left)
+    calibration_directory = tmp_path / "calibration-review"
+    calibration = check(calibration_directory, role="calibration")
+    calibration_path = calibration_directory / "index.html"
+    assert calibration["reference_review_sheet"] == str(calibration_path)
+    sheet = calibration_path.read_text(encoding="utf-8")
+    assert calibration["ready_for_locked_evaluation"] is False
+    assert "CALIBRATION_SPLIT_RESERVED" in calibration["reference_issues"]["dataset"]
+    assert sheet.count('data-mode="page"') == 2
+    assert sheet.count('src="data:image/png;base64,') == 2
+    assert sheet.count('src="data:image/jpeg;base64,') == 2
+    assert "Ganzer Abzug" not in sheet and "Nur Bildmotiv" not in sheet
+    assert "phosca-kalibrierungspruefung.json" in sheet
+    assert list(calibration_path.parent.iterdir()) == [calibration_path]
     pages[1].pop("image_sha256")
     pages[1].pop("expected_final_crops")
     unpinned = check()

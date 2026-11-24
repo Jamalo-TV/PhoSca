@@ -343,6 +343,7 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file,
     groups = set()
     hashes = set()
     sections = []
+    calibration = split.get("role") == "calibration"
     if review_directory is not None:
         review_directory.mkdir(parents=True, exist_ok=True)
     for index, record in enumerate(records):
@@ -372,7 +373,7 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file,
         mode_issue_start = len(mode_issues)
         references = _reference_masks(
             record, expected, page.shape, args.dataset_manifest,
-            include_reference_images=review_directory is not None,
+            include_reference_images=review_directory is not None and not calibration,
         )
         for instance_index, modes in enumerate(references):
             for name in MODES:
@@ -403,11 +404,12 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file,
             }
             section = render_reference_page(
                 review_directory, index, record, page, expected, references, issues, issues_by_mode,
+                calibration=calibration,
             )
             sections.append((str(record["id"]), section))
-    locked = split.get("role") != "calibration" and is_locked_album_manifest(records, split)
+    locked = not calibration and is_locked_album_manifest(records, split)
     dataset_issues = []
-    if split.get("role") == "calibration":
+    if calibration:
         dataset_issues.append("CALIBRATION_SPLIT_RESERVED")
     if split.get("album_independent") is not True:
         dataset_issues.append("ALBUM_INDEPENDENCE_UNCONFIRMED")
@@ -435,7 +437,9 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file,
         "modes": {name: dict(totals[name]) | {"verified_recoverable_groups": sorted(positives[name])} for name in MODES},
     }
     if review_directory is not None:
-        report["reference_review_sheet"] = str(write_reference_review(review_directory, report, sections))
+        report["reference_review_sheet"] = str(
+            write_reference_review(review_directory, report, sections, calibration=calibration)
+        )
     return report
 
 
