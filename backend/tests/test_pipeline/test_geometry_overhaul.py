@@ -408,8 +408,10 @@ def test_weak_container_requires_plain_paper_outside_a_well_bounded_print() -> N
     image = np.full((180, 240, 3), 213, dtype=np.uint8)
     image[32:92, 60:156] = 60
 
+    assert _page_containers([page, photo], image) == {0}
     assert _page_containers([page, photo, other], image) == {0}
     image[10:65, 20:58] = 55
+    assert _page_containers([page, photo], image) == set()
     assert _page_containers([page, photo, other], image) == set()
 
 

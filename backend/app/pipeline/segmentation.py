@@ -2123,7 +2123,7 @@ def refine_album_page_result(
 
 
 def _page_containers(detections: list[SegmentationDetection], image: np.ndarray) -> set[int]:
-    if len(detections) < 3:
+    if len(detections) < 2:
         return set()
     polygons = [_detection_polygon(detection) for detection in detections]
     areas = [float(cv2.contourArea(polygon)) for polygon in polygons]
