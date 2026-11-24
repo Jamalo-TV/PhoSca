@@ -640,6 +640,37 @@ def test_both_mode_transforms_include_the_same_applied_rotation(monkeypatch) -> 
         assert np.allclose(mapped[0], [image.shape[1] - 1, 0], atol=1e-5)
 
 
+@pytest.mark.parametrize("degrees", [0, 90, 180, 270])
+def test_selected_orientation_rotates_both_mode_pixels_and_transforms(degrees, monkeypatch) -> None:
+    from app.pipeline import perspective
+
+    def unexpected_inference(*args, **kwargs):
+        pytest.fail("A reviewer-selected rotation must bypass orientation inference")
+
+    monkeypatch.setattr(perspective, "correct_photo_orientation", unexpected_inference)
+    page = np.random.default_rng(830).integers(0, 256, (120, 180, 3), dtype=np.uint8)
+    outer, inner = _rect(10, 11, 149, 109), _rect(23, 21, 134, 97)
+    result = correct_photo_crop(page, {}, {
+        "warp_quad": _vertices(outer, page), "image_quad": _vertices(inner, page),
+        "source": "manual_quad", "orientation_degrees": degrees,
+    }, protect_regions=False, dual_mode=True)
+    assert result.metadata["orientation"]["decision"] == "reviewer_selected"
+    assert result.metadata["orientation"]["rotation_degrees"] == degrees
+    for name, output, quad, expected in (
+        ("full_print", result.image, outer, page[11:110, 10:150]),
+        ("image_only", result.image_only, inner, page[21:98, 23:135]),
+    ):
+        assert np.array_equal(output, np.rot90(expected, k=-(degrees // 90)))
+        assert output is not None
+        height, width = output.shape[:2]
+        mode = result.metadata["crop_modes"][name]
+        assert mode["shape"] == {"width": width, "height": height}
+        assert mode["status"] == "ready"
+        corners = _rect(0, 0, width - 1, height - 1)
+        mapped = cv2.perspectiveTransform(quad.reshape(1, 4, 2), np.asarray(mode["page_to_output"]))[0]
+        np.testing.assert_allclose(mapped, np.roll(corners, -(degrees // 90), axis=0), atol=1e-5)
+
+
 @pytest.mark.parametrize("case", ["paper_corner_mount", "photo_corners", "touching_same_color"])
 def test_independent_motif_crop_requires_an_unbroken_rim_and_no_neighbor_occlusion(case) -> None:
     from app.evaluation.crop_fixtures import geometry_seed, synthetic_crop_pages

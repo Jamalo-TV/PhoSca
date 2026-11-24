@@ -1,7 +1,7 @@
 import { Camera, Check, ChevronLeft, CircleHelp, CloudOff, Images, ListChecks, RefreshCw, Save, Upload, WandSparkles, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createAlbum, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
-import { CropVariants, getCropModes } from "./CropVariants.jsx";
+import { CropOrientationField, CropVariants, getCropModes } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
 
@@ -100,16 +100,26 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   const detections = sourceBox ? [{ bounding_box: sourceBox, photo_id: item.payload?.photo_id }] : (item.payload?.detections || []);
   const visiblePolygon = sanitizeReviewPolygon(item.payload?.visible_polygon || item.payload?.polygon);
   const storedMeasurement = item.payload?.print_size_mm ?? item.payload?.segmentation_mask?.print_size_mm;
-  const measuredQuad = storedMeasurement && sanitizeReviewPolygon(item.payload?.segmentation_mask?.warp_quad || item.payload?.warp_quad);
-  const initialOuter = () => isValidQuad(measuredQuad) ? measuredQuad : initialQuad(item.payload?.warp_quad, visiblePolygon, sourceBox);
+  const storedOrientation = item.payload?.segmentation_mask?.orientation_degrees ?? null;
+  const savedQuad = sanitizeReviewPolygon(item.payload?.segmentation_mask?.warp_quad);
+  const measuredQuad = storedMeasurement && (savedQuad || sanitizeReviewPolygon(item.payload?.warp_quad));
+  const initialOuter = () => isValidQuad(measuredQuad) ? measuredQuad : initialQuad(
+    item.payload?.confidence === null && savedQuad ? savedQuad : item.payload?.warp_quad,
+    visiblePolygon,
+    sourceBox,
+  );
   const [quad, setQuad] = useState(initialOuter); const [saving, setSaving] = useState(false);
   const [measurementFields, setMeasurementFields] = useState(() => printSizeInputs(storedMeasurement));
+  const [orientation, setOrientation] = useState(storedOrientation);
+  const [savedOrientation, setSavedOrientation] = useState(storedOrientation);
   const [savedCropUrl, setSavedCropUrl] = useState(""); const [saveError, setSaveError] = useState("");
   const [magnifierEnabled, setMagnifierEnabled] = useState(true);
   const [magnifier, setMagnifier] = useState({ visible: false, x: 0, y: 0 });
   useEffect(() => {
     setQuad(initialOuter());
     setMeasurementFields(printSizeInputs(storedMeasurement));
+    setOrientation(storedOrientation);
+    setSavedOrientation(storedOrientation);
     setSavedCropUrl("");
     setSaveError("");
   }, [item.id]);
@@ -134,13 +144,17 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   async function save() {
     if (!validQuad || sizeError) return; setSaving(true); setSaveError("");
     try {
-      await patchBoundingBox(item.payload.photo_id, box, {
+      const saved = await patchBoundingBox(item.payload.photo_id, box, {
         polygon: quad,
         visible_polygon: visiblePolygon || quad,
         warp_quad: quad,
         print_size_mm: size,
+        ...(orientation !== savedOrientation ? { orientation_degrees: orientation } : {}),
         source: "manual_mobile_quad",
       });
+      const savedDegrees = saved.segmentation_mask?.orientation_degrees ?? null;
+      setOrientation(savedDegrees);
+      setSavedOrientation(savedDegrees);
       const nextUrl=`/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`;
       setSavedCropUrl(nextUrl); await onSaved?.({ bounding_box: box, polygon: quad });
     } catch (error) { setSaveError(error.message || "Ausschnitt konnte nicht gespeichert werden."); }
@@ -165,11 +179,17 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
         disabled={saving}
         error={sizeError}
       />
+      <CropOrientationField value={orientation} disabled={saving} onChange={(value) => {
+        setOrientation(value);
+        setSavedCropUrl("");
+        setSaveError("");
+      }} />
       <button className="save-crop" onClick={save} disabled={saving || !validQuad || Boolean(sizeError)}>
         <Save size={18}/>{saving ? "Richtet das Bild …" : "Viereck speichern & geraderichten"}
       </button>
       {saveError && <p className="crop-save-error">{saveError}</p>}
-      {quad && <LiveCropPreview src={item.preview_url} quad={quad} savedCropUrl={savedCropUrl} measuredAspect={size ? size.width / size.height : null} />}
+      {quad && <LiveCropPreview src={item.preview_url} quad={quad} savedCropUrl={savedCropUrl}
+        measuredAspect={size ? size.width / size.height : null} orientation={orientation} />}
     </>}
   </>;
 }
@@ -242,11 +262,22 @@ function drawMappedTriangle(context, image, source, destination) {
   context.setTransform(a,b,c,d,e,f); context.drawImage(image,0,0); context.restore();
 }
 
-function drawQuadPreview(canvas, image, quad, measuredAspect) {
+function drawQuadPreview(canvas, image, quad, measuredAspect, orientation) {
   const [first, second, third] = quad;
   const clockwise = (second.x - first.x) * (third.y - first.y) - (second.y - first.y) * (third.x - first.x) > 0;
   const ordered = clockwise ? quad : [quad[1], quad[0], quad[3], quad[2]];
-  const source = ordered.map((point) => ({ x: point.x * image.naturalWidth, y: point.y * image.naturalHeight }));
+  const source = ordered.map(({ x, y }) => ({
+    x: Math.fround(Math.fround(x) * (image.naturalWidth - 1)),
+    y: Math.fround(Math.fround(y) * (image.naturalHeight - 1)),
+  }));
+  if (measuredAspect == null) {
+    // Use the export's source-pixel corner order. Measured prints retain their width edge.
+    const sum = ({ x, y }) => Math.fround(x + y);
+    const minimum = Math.min(...source.map(sum));
+    const [firstPixel] = source.filter((point) => sum(point) - minimum <= 0.0001)
+      .sort((a, b) => a.y - b.y || a.x - b.x);
+    source.push(...source.splice(0, source.indexOf(firstPixel)));
+  }
   const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
   const rawWidth=Math.max(distance(source[0],source[1]),distance(source[3],source[2]),1);
   const rawHeight=Math.max(distance(source[0],source[3]),distance(source[1],source[2]),1);
@@ -254,14 +285,19 @@ function drawQuadPreview(canvas, image, quad, measuredAspect) {
   const width = Math.min(widthLimit, Math.max(240, Math.round(rawWidth)));
   const aspect = measuredAspect || rawWidth / rawHeight;
   const height = Math.max(1, Math.round(width / aspect));
-  canvas.width=width; canvas.height=height;
-  const destination=[{x:0,y:0},{x:width,y:0},{x:width,y:height},{x:0,y:height}];
-  const context=canvas.getContext("2d",{alpha:false}); context.fillStyle="#071b18"; context.fillRect(0,0,width,height);
+  const steps = (orientation ?? 0) / 90;
+  canvas.width = steps % 2 ? height : width;
+  canvas.height = steps % 2 ? width : height;
+  const corners = [{ x: 0, y: 0 }, { x: canvas.width, y: 0 },
+    { x: canvas.width, y: canvas.height }, { x: 0, y: canvas.height }];
+  const destination = corners.map((_, index) => corners[(index + steps) % 4]);
+  const context=canvas.getContext("2d",{alpha:false}); context.fillStyle="#071b18";
+  context.fillRect(0, 0, canvas.width, canvas.height);
   drawMappedTriangle(context,image,[source[0],source[1],source[2]],[destination[0],destination[1],destination[2]]);
   drawMappedTriangle(context,image,[source[0],source[2],source[3]],[destination[0],destination[2],destination[3]]);
 }
 
-function LiveCropPreview({ src, quad, savedCropUrl, measuredAspect }) {
+function LiveCropPreview({ src, quad, savedCropUrl, measuredAspect, orientation }) {
   const canvasRef = useRef(null); const [image,setImage]=useState(null);
   useEffect(() => {
     let cancelled = false; const nextImage = new Image();
@@ -269,8 +305,10 @@ function LiveCropPreview({ src, quad, savedCropUrl, measuredAspect }) {
     nextImage.src=src; return () => { cancelled=true; };
   }, [src]);
   useEffect(() => {
-    if (image && canvasRef.current && isValidQuad(quad)) drawQuadPreview(canvasRef.current, image, quad, measuredAspect);
-  }, [image, quad, measuredAspect, savedCropUrl]);
+    if (image && canvasRef.current && isValidQuad(quad)) {
+      drawQuadPreview(canvasRef.current, image, quad, measuredAspect, orientation);
+    }
+  }, [image, quad, measuredAspect, orientation, savedCropUrl]);
   return <section className={`live-crop-preview ${savedCropUrl ? "rectified" : ""}`}><header><ZoomIn size={17}/><div><strong>{savedCropUrl ? "Gerichteter Ausschnitt" : "Live-Ausschnitt"}</strong><span>{savedCropUrl ? "Perspektive wurde aus den vier Ecken korrigiert" : "Vorschau folgt allen vier Ecken live"}</span></div></header>{savedCropUrl ? <img src={savedCropUrl} alt="Perspektivisch gerichteter Ausschnitt"/> : <canvas ref={canvasRef}/>}</section>;
 }
 

@@ -43,7 +43,7 @@ import {
 } from "./api.js";
 import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
-import { CropVariants, cropModeLabels, getCropModes } from "./CropVariants.jsx";
+import { CropOrientationField, CropVariants, cropModeLabels, getCropModes } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
 const tabs = [
@@ -736,7 +736,8 @@ function draftShapeFromPhoto(photo) {
   const cropModes = photo.crop_modes || getCropModes(photo);
   const printSize = photo.segmentation_mask?.print_size_mm ?? photo.print_size_mm;
   const measuredQuad = printSize && sanitizePolygon(photo.segmentation_mask?.warp_quad);
-  const serverQuad = sanitizePolygon(photo.warp_quad)
+  const manualQuad = photo.segmentation_confidence === null && sanitizePolygon(photo.segmentation_mask?.warp_quad);
+  const serverQuad = manualQuad || sanitizePolygon(photo.warp_quad)
     || sanitizePolygon(cropModes?.full_print?.warp_quad)
     || sanitizePolygon(photo.correction?.warp_quad)
     || sanitizePolygon(photo.enhancement_applied?.correction?.warp_quad)
@@ -746,8 +747,8 @@ function draftShapeFromPhoto(photo) {
     || (visiblePolygon.length === 4 ? cyclicQuad(visiblePolygon) : minimumAreaQuad(visiblePolygon))
     || boxToPolygon(photo.bounding_box)
   );
-  const imageQuad = cyclicQuad(sanitizePolygon(photo.image_quad)
-    || sanitizePolygon(photo.segmentation_mask?.image_quad)
+  const imageQuad = cyclicQuad(sanitizePolygon(photo.segmentation_mask?.image_quad)
+    || sanitizePolygon(photo.image_quad)
     || sanitizePolygon(cropModes?.image_only?.warp_quad));
   return {
     visiblePolygon,
@@ -756,6 +757,7 @@ function draftShapeFromPhoto(photo) {
     visibleFollowsWarp: !photo.visible_polygon && !photo.segmentation_mask?.visible_polygon && visiblePolygon.length === 4,
     boundingBox: boundingBoxFromPolygon(warpQuad),
     printSizeFields: printSizeInputs(printSize),
+    orientationDegrees: photo.segmentation_mask?.orientation_degrees ?? null,
   };
 }
 
@@ -1535,6 +1537,9 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
     const mask = editingImage
       ? maskFromShape(saved, selectedShape.imageQuad || insetQuad(saved.warpQuad))
       : maskFromShape(selectedShape);
+    if (selectedShape.orientationDegrees !== saved.orientationDegrees) {
+      mask.orientation_degrees = selectedShape.orientationDegrees;
+    }
     if (!editingImage) mask.print_size_mm = measurement.size;
     else {
       const savedMeasurement = selected.segmentation_mask?.print_size_mm ?? selected.print_size_mm;
@@ -1596,9 +1601,15 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
           error={sizeError}
         />
       )}
+      {selectedShape && (
+        <CropOrientationField value={selectedShape.orientationDegrees} disabled={saveState?.saving} onChange={(value) => {
+          setDraftShapes((current) => ({ ...current, [selected.id]: { ...selectedShape, orientationDegrees: value } }));
+          setSaveState(null);
+        }} />
+      )}
       <button className="primary-button compact" type="button" disabled={!selected || saveState?.saving || Boolean(sizeError) || needsMotifSelection} onClick={saveSelected}>
         <Save size={16} />
-        {currentSave?.saving ? "Ausschnitt wird berechnet …" : "Ecken speichern"}
+        {currentSave?.saving ? "Ausschnitt wird berechnet …" : "Zuschnitt speichern"}
       </button>
       {currentSave?.error && <p role="alert">{currentSave.error}</p>}
       {currentSave?.url && <img className="review-crop-preview" src={currentSave.url} alt={cropModeLabels[editMode]} />}

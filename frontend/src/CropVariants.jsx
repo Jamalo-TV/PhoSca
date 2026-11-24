@@ -10,7 +10,26 @@ export function getCropModes(photo) {
   return photo?.enhancement_applied?.correction?.crop_modes || null;
 }
 
+export function CropOrientationField({ value, onChange, disabled }) {
+  return (
+    <label className="crop-orientation-field">
+      <span>Ausrichtung ab Albumseite</span>
+      <select value={value ?? ""} disabled={disabled} onChange={(event) => {
+        const selected = event.target.value;
+        onChange(selected === "" ? null : Number(selected));
+      }}>
+        <option value="">Automatisch</option>
+        <option value={0}>0° · beibehalten</option>
+        <option value={90}>90° · nach rechts</option>
+        <option value={180}>180°</option>
+        <option value={270}>90° · nach links</option>
+      </select>
+    </label>
+  );
+}
+
 const reviewMessages = {
+  ORIENTATION_UNCERTAIN: "Prüfe die Ausrichtung und speichere die passende Drehung im Zuschnitt-Editor.",
   SEGMENTATION_CONFIDENCE_UNCALIBRATED: "Prüfe und speichere die Abzugsecken, um den Download freizugeben.",
   CROP_VALIDATION_UNAVAILABLE: "Prüfe und speichere den Zuschnitt, um den Download freizugeben.",
   CAMERA_ASPECT_REVIEW: "Die Vorschau nutzt die Kamerakalibrierung. Prüfe und bestätige die Fotoecken.",
@@ -46,6 +65,7 @@ export function CropVariants({ photo, hidden = false }) {
   const reviewMessage = result?.reason_codes?.map((code) => reviewMessages[code]).find(Boolean)
     || (result?.status === "ready" && !url && reviewMessages.CROP_VALIDATION_UNAVAILABLE)
     || (mode === "image_only" ? reviewMessages.IMAGE_BOUNDARY_UNCERTAIN : "Die Aussenkante des Abzugs muss geprüft werden.");
+  const orientationNeedsReview = photo.enhancement_applied?.correction?.orientation?.reason_code === "ORIENTATION_UNCERTAIN";
 
   return (
     <section className="crop-variants" aria-label="Fotoausschnitt" hidden={hidden}>
@@ -58,6 +78,7 @@ export function CropVariants({ photo, hidden = false }) {
       </div>
       {url ? (
         <>
+          {orientationNeedsReview && <p className="crop-mode-status" role="status">{reviewMessages.ORIENTATION_UNCERTAIN}</p>}
           <img key={url} className="crop-variant-image" src={url} alt={label} />
           <a className="crop-download" href={url} download={`photo-${photo.id}-${mode}.jpg`}>
             <Download size={16} /> {label} herunterladen

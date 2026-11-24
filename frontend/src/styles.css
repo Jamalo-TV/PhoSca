@@ -662,6 +662,21 @@ select {
   font-size: 0.875rem;
 }
 
+.crop-orientation-field {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  color: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.crop-orientation-field select {
+  width: 100%;
+  max-width: 20rem;
+  min-height: 44px;
+}
+
 .print-size-fields {
   min-width: 0;
   margin: 12px 0;

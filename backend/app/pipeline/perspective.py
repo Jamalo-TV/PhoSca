@@ -675,7 +675,15 @@ def _neighbor_occlusion(
     return False
 
 
-def _orient_crop(image: np.ndarray, enabled: bool, model_path: Path | None) -> tuple[np.ndarray, dict]:
+def _orient_crop(
+    image: np.ndarray, enabled: bool, model_path: Path | None, *, manual_rotation: int | None,
+) -> tuple[np.ndarray, dict]:
+    if manual_rotation is not None:
+        if type(manual_rotation) is not int or manual_rotation not in (0, 90, 180, 270):
+            raise ValueError("invalid_orientation_degrees")
+        return rotate_image(image, manual_rotation), {
+            "rotation_degrees": manual_rotation, "method": "manual", "decision": "reviewer_selected",
+        }
     if enabled:
         return correct_photo_orientation(image, model_path=model_path)
     return image, {"rotation_degrees": 0, "method": "disabled", "decision": "preserve"}
@@ -773,7 +781,8 @@ def _independent_motif_visible(page: np.ndarray, source: np.ndarray, neighbors: 
 def _dual_crop_result(
     page: np.ndarray, full_image: np.ndarray, source_quad: np.ndarray, matrix: np.ndarray, metadata: dict,
     inner: np.ndarray | None, full_reasons: list[str], *, trim_border: bool, auto_orient: bool,
-    orientation_model_path: Path | None, page_regions: list[dict], protect_regions: bool, owned_sampling: bool,
+    orientation_model_path: Path | None, manual_rotation: int | None, page_regions: list[dict],
+    protect_regions: bool, owned_sampling: bool,
     neighbors: list[np.ndarray], corner_mount_detected: bool,
 ) -> CropResult:
     page_height, page_width = page.shape[:2]
@@ -782,7 +791,9 @@ def _dual_crop_result(
     image_only_preview = None
     image_mode = {"status": "review_needed", "reason_codes": full_reasons.copy()}
     diagnostics = {"method": "deferred_until_print_boundary_is_verified", "applied": False}
-    adjusted, orientation = _orient_crop(full_image, auto_orient, orientation_model_path)
+    adjusted, orientation = _orient_crop(
+        full_image, auto_orient, orientation_model_path, manual_rotation=manual_rotation,
+    )
     rotation = int(orientation.get("rotation_degrees") or 0) % 360
     full_mode = _geometry_for_mode(source_quad, matrix, full_image, page_width, page_height, rotation, full_reasons)
     if owned_sampling:
@@ -1195,6 +1206,7 @@ def correct_photo_crop(
     if not measured_edge:
         src_points = _order_points(src_points)
     manual = not allow_border_expansion or str(mask.get("source") or "").startswith("manual")
+    manual_rotation = mask.get("orientation_degrees") if manual else None
     regions = [] if not protect_regions else (
         protected_regions if protected_regions is not None else detect_protected_regions(page_image)
     )
@@ -1314,7 +1326,7 @@ def correct_photo_crop(
         "target_height": target_height,
         "source_pixels_per_output_pixel": round(source_pixels_per_output_pixel, 4),
         "trim_border": trim_border,
-        "auto_orient": auto_orient,
+        "auto_orient": auto_orient and manual_rotation is None,
         "evidence_schema": "segmentation_detection_evidence_v1",
         "boundary_evidence": boundary_evidence,
         "geometry_evidence": geometry_evidence,
@@ -1342,7 +1354,8 @@ def correct_photo_crop(
         return _dual_crop_result(
             page_image, corrected, src_points, matrix, metadata, _explicit_quad(mask, "image_quad", width, height),
             full_reasons, trim_border=trim_border, auto_orient=auto_orient, orientation_model_path=orientation_model_path,
-            page_regions=regions, protect_regions=protect_regions, owned_sampling=owned_sampling,
+            manual_rotation=manual_rotation, page_regions=regions, protect_regions=protect_regions,
+            owned_sampling=owned_sampling,
             neighbors=neighbor_polygons, corner_mount_detected=corner_mount_detected,
         )
     rectified_untrimmed = corrected.copy()
@@ -1405,19 +1418,12 @@ def correct_photo_crop(
             ],
         }
         metadata["border_trim_confidence"] = None
-    if auto_orient:
-        corrected, orientation_metadata = correct_photo_orientation(
-            corrected,
-            model_path=orientation_model_path,
-        )
-        metadata["orientation"] = orientation_metadata
-        rotation = int(orientation_metadata.get("rotation_degrees") or 0)
-        if rotation:
-            rectified_untrimmed = rotate_image(rectified_untrimmed, rotation)
-        metadata["orientation_confidence"] = orientation_metadata.get("confidence")
-    else:
-        metadata["orientation"] = {"rotation_degrees": 0, "method": "disabled", "decision": "preserve"}
-        metadata["orientation_confidence"] = None
+    corrected, orientation = _orient_crop(
+        corrected, auto_orient, orientation_model_path, manual_rotation=manual_rotation,
+    )
+    rectified_untrimmed = rotate_image(rectified_untrimmed, int(orientation.get("rotation_degrees") or 0))
+    metadata["orientation"] = orientation
+    metadata["orientation_confidence"] = orientation.get("confidence")
     metadata["untrimmed_shape"] = {
         "height": int(rectified_untrimmed.shape[0]),
         "width": int(rectified_untrimmed.shape[1]),

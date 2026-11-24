@@ -591,6 +591,8 @@ async def perspective_correction_task_logic(
     prior_metadata = dict(photo.enhancement_applied or {})
     prior_modes = (prior_metadata.get("correction") or {}).get("crop_modes") or {}
     prior_reasons = set((prior_modes.get("full_print") or {}).get("reason_codes") or [])
+    if ReviewReason.ORIENTATION_UNCERTAIN.value in (prior_metadata.get("review_reasons") or []):
+        prior_reasons.add(ReviewReason.ORIENTATION_UNCERTAIN.value)
     if prior_reasons:
         prior_metadata["review_reasons"] = [
             reason for reason in (prior_metadata.get("review_reasons") or []) if reason not in prior_reasons

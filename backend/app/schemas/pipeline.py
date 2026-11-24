@@ -92,12 +92,13 @@ class AlbumStats(BaseModel):
 
 
 class ReviewSegmentationMask(SegmentationMask):
-    """Visible boundary, optional rectification corners and measured print size."""
+    """Reviewer geometry and an optional clockwise turn after rectification."""
 
     visible_polygon: list[NormalizedPoint] | None = Field(default=None, min_length=4)
     warp_quad: list[NormalizedPoint] | None = Field(default=None, min_length=4, max_length=4)
     image_quad: list[NormalizedPoint] | None = Field(default=None, min_length=4, max_length=4)
     print_size_mm: PrintSizeMM | None = None
+    orientation_degrees: int | None = Field(default=None, ge=0, le=270, multiple_of=90)
 
 
 class BoundingBoxUpdate(StrictSchema):

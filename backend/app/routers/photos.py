@@ -261,6 +261,8 @@ async def update_photo_bounding_box(
         size = payload.segmentation_mask.print_size_mm if payload.segmentation_mask else None
         edited_fields = payload.segmentation_mask.model_fields_set if payload.segmentation_mask else set()
         previous_mask = (photo.segmentation_mask or {}) if photo.segmentation_confidence is None else {}
+        if "orientation_degrees" not in edited_fields and previous_mask.get("orientation_degrees") is not None:
+            segmentation_mask["orientation_degrees"] = previous_mask["orientation_degrees"]
         previous_quad = previous_mask.get("warp_quad") or []
         updated_quad = segmentation_mask.get("warp_quad") or []
         if "print_size_mm" not in edited_fields and previous_mask.get("print_size_mm") is not None:

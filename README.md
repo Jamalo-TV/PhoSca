@@ -72,6 +72,9 @@ For a strongly oblique photo of a flat print, measure the print and enter the
 width and height in millimetres in the corner editor. Use numbered edges 1–2
 for width and 2–3 for height. PhoSca uses those measurements for perspective
 correction in both crop modes and retains them for subsequent processing.
+In the crop editor, choose **Ausrichtung ab Albumseite** to keep the source
+orientation or rotate the rectified photo in 90° steps. The selection applies
+to both crop modes and is retained when the photo is reprocessed.
 
 `ENABLE_BORDER_TRIM=false` disables automatic inner-edge detection. Reviewers
 can still provide inner corners. `ENABLE_PRECISE_PHOTO_CROPS=false` switches

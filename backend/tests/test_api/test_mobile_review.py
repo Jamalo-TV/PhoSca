@@ -430,6 +430,71 @@ async def test_precise_crop_variants_follow_explicit_corners_and_preserve_last_g
     assert persisted["urls"]["image_only"] == payload["urls"]["image_only"]
 
 
+async def test_saved_crop_orientation_survives_geometry_edits_and_reprocess(client, monkeypatch) -> None:
+    from app.config import get_settings
+    from app.pipeline import perspective
+
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "true")
+    get_settings.cache_clear()
+    monkeypatch.setattr(perspective, "correct_photo_orientation", lambda image, **_: (
+        cv2.rotate(image, cv2.ROTATE_180), {"rotation_degrees": 180, "method": "test_model"},
+    ))
+    page = np.full((120, 160, 3), 30, dtype=np.uint8)
+    page[12:108, 15:145] = 240
+    page[20:101, 23:138] = (50, 90, 150)
+    page[26:47, 29:53] = (180, 90, 40)
+    _, _, photo_id = await _seed_review_data(page)
+    url = f"/api/v1/photos/{photo_id}"
+    outer = [{"x": x / 159, "y": y / 119} for x, y in [(15, 12), (144, 12), (144, 107), (15, 107)]]
+    inner = [{"x": x / 159, "y": y / 119} for x, y in [(23, 20), (137, 20), (137, 100), (23, 100)]]
+    box = {"x1": 15 / 160, "y1": 12 / 120, "x2": 145 / 160, "y2": 108 / 120}
+    mask = {"polygon": outer, "warp_quad": outer, "image_quad": inner, "source": "manual_quad"}
+
+    async def save(**fields):
+        return await client.patch(f"{url}/bounding-box", json={
+            "bounding_box": box, "segmentation_mask": {**mask, **fields},
+        })
+
+    rotated = await save(orientation_degrees=90)
+    geometry_edit = await save(source="manual_mobile_quad")
+    reprocessed = await client.post(f"{url}/reprocess")
+    for response in (rotated, geometry_edit, reprocessed):
+        assert response.status_code == 200, response.text
+        photo = response.json()
+        assert photo["segmentation_mask"]["orientation_degrees"] == 90
+        metadata = photo["enhancement_applied"]["correction"]
+        assert metadata["orientation"]["method"] == "manual"
+        assert metadata["orientation"]["rotation_degrees"] == 90
+
+    for mode, size in (("full_print", (130, 96)), ("image_only", (115, 81))):
+        artifact = await client.get(reprocessed.json()["crop_download_urls"][mode])
+        assert artifact.status_code == 200
+        crop = cv2.imdecode(np.frombuffer(artifact.content, np.uint8), cv2.IMREAD_COLOR)
+        assert crop.shape[:2] == size
+        np.testing.assert_allclose(crop[17, -17], (180, 90, 40), atol=8)
+
+    for invalid in (45, True, "90", -90, 360):
+        assert (await save(orientation_degrees=invalid)).status_code == 422
+    preserved = await save(orientation_degrees=0)
+    assert preserved.status_code == 200, preserved.text
+    assert preserved.json()["enhancement_applied"]["correction"]["orientation"]["rotation_degrees"] == 0
+
+    automatic = await save(orientation_degrees=None)
+    assert automatic.status_code == 200, automatic.text
+    assert "orientation_degrees" not in automatic.json()["segmentation_mask"]
+    assert automatic.json()["enhancement_applied"]["correction"]["orientation"]["rotation_degrees"] == 180
+
+    monkeypatch.setattr(perspective, "correct_photo_orientation", lambda image, **_: (
+        image, {"rotation_degrees": 0, "reason_code": "ORIENTATION_UNCERTAIN"},
+    ))
+    uncertain = await client.post(f"{url}/reprocess")
+    assert uncertain.status_code == 200, uncertain.text
+    assert "ORIENTATION_UNCERTAIN" in uncertain.json()["enhancement_applied"]["review_reasons"]
+    confirmed = await save(orientation_degrees=270)
+    assert confirmed.status_code == 200, confirmed.text
+    assert "ORIENTATION_UNCERTAIN" not in confirmed.json()["enhancement_applied"]["review_reasons"]
+
+
 async def test_saving_coordinates_cannot_release_a_photo_hidden_by_an_album_window(client, monkeypatch) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
