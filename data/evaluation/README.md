@@ -52,6 +52,13 @@ The `runtime.image_to_jpeg` duration includes decode, preparation, detection,
 protected regions, crop rendering and JPEG writes. It excludes metric
 computation, database access, OCR and later enhancement.
 
+The per-page `instance_diagnostics` lists missed prints, weak masks,
+combined prints, distinct fragments of one print, duplicates and unexplained
+proposals. These are overlap-based leads for source review. They leave
+one-to-one precision and recall unchanged. For each mode, the report counts
+measured geometry failures after a valid detection and records passing
+geometry withheld for review.
+
 The seeded synthetic split isolates boundary fitting behind deliberately
 imperfect proposals. Run without `--geometry-only` to measure detection as
 well. Use `development` during tuning and `locked` when comparing frozen
@@ -141,6 +148,8 @@ the reference split is still incomplete. The report lists dataset, page and
 mode issues, including missing measurements and unverified annotations.
 Instance indices start at zero and follow the page's YOLO labels. The report
 also lists the groups with verified recoverable examples in both modes.
+Missing source files are listed at their expected paths. Pages and modes
+with the required files remain available in the review sheet.
 
 ```powershell
 python scripts/evaluate_onnx_segmentation.py --dataset-manifest path/to/locked-album-manifest.json --check-references --require-final-quality
@@ -1084,3 +1093,39 @@ all 13 resized, recompressed or geometrically transformed positives in the
 robustness check. The diagnostic reports are in
 `runs/crop-quality/dense-tiles-probe/gap-negatives-v2/`. The runtime keeps the
 validated detection path while this case remains unresolved.
+
+## Multipanel development and reproducibility
+
+The shared-stock check measures the perimeter on the original page when
+the proposals include an enclosing print and at least two adjacent motifs.
+A break in the stock rim preserves separate proposals. A supported common
+rim and separator yield one print with a review hint in both crop modes.
+The current check requires an enclosing proposal and visible pale stock.
+`backend/tests/test_pipeline/test_multipanel_prints.py` covers rotated
+pages, narrow gutters, a separate neighboring print, cross-detector fusion,
+and the upload, review and export flow.
+
+Rerunning the frozen seeded geometry gives 11 passing full prints and 12
+passing motifs. The model-free fallback before and after the change matches
+12 of 29 on the same-album pages with 16 false proposals, and 13 of 18
+on the frozen synthetic pages with six false proposals. These fallback
+runs have no registered detector digest.
+
+The model registry pins the expected ONNX binary with SHA-256
+`4d8235880ea1868a0ce6c77fd313522ae979329eed1441385cb2c256e2cf960f`.
+The source split lists the legacy train, validation and Golden filenames,
+and the training summary gives aggregate counts for the additional drafts.
+Those records leave the additional per-image hashes, archive IDs and
+assignments unresolved. The Cloud runs, imported receipts and ONNX binary
+are needed to replay the reported nine-view comparison. Restore the
+exact artifacts or document the provenance of a replacement detector and
+reserve independently sourced albums for its final evaluation.
+
+As an additional development probe, NerdScan's original upload has
+SHA-256 `6e9b834cea27386399d8beb58bb242098ee02ffadf0f6d866f2387cde733e92f`.
+At 2179 × 3000 pixels the fallback found one of three visible print
+footprints at IoU 0.85. Two proposed masks cut away 35% and 45% of the
+respective visible prints, and a fourth proposal covered scanner backing.
+Both modes remained in review for all four proposals. The photos continue
+past the capture edge, and the photo rights and physical album ID remain
+unconfirmed. [Pinned development source](https://github.com/klimentij/NerdScan/blob/0cb6cc25e14a023e2c55daf4698cd1c4be59ab99/input/1979/2025-04-29-0022.jpg)

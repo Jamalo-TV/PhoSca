@@ -35,6 +35,7 @@ class PageCroppingMetrics:
     automatic_acceptances: int
     review_count: int
     matches: tuple[dict, ...]
+    instance_diagnostics: dict | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -135,6 +136,72 @@ def _bounds_intersect(first, second) -> bool:
     left, top, right, bottom = first
     x1, y1, x2, y2 = second
     return left <= x2 and x1 <= right and top <= y2 and y1 <= bottom
+
+
+def _fragment_coverage(truth, bounds, truth_mask, predictions, indices, width, height):
+    """Count coverage by distinct pieces so repeated copies cannot look like a split."""
+    left, top, right, bottom = bounds
+    shape = (bottom - top + 1, right - left + 1)
+    scale = np.float32([max(width - 1, 1), max(height - 1, 1)])
+    origin = np.int32([left, top])
+
+    def raster(polygon):
+        points = np.rint(_safe_polygon(polygon) * scale).astype(np.int32) - origin
+        return cv2.fillPoly(np.zeros(shape, np.uint8), [points], 1)
+
+    owned = raster(truth) if truth_mask is None else truth_mask[top:bottom + 1, left:right + 1]
+    total = np.count_nonzero(owned)
+    covered = np.zeros_like(owned)
+    selected = []
+    for index in indices:
+        gained = raster(predictions[index]) & owned & (1 - covered)
+        if np.count_nonzero(gained) >= .08 * total:
+            covered |= gained
+            selected.append(index)
+    return selected, np.count_nonzero(covered) / total
+
+
+def _instance_diagnostics(truth, predictions, native, truth_bounds, overlaps, matches,
+                          valid_predictions, duplicates, width, height):
+    false_proposals = set(range(len(predictions))) - valid_predictions - duplicates
+    combined = []
+    for index in sorted(false_proposals):
+        members = [i for i, row in enumerate(overlaps) if row[index][2] <= .30 and row[index][3] >= .15]
+        if len(members) >= 2:
+            combined.append({"prediction_index": index, "truth_indices": members})
+    combined_predictions = {item["prediction_index"] for item in combined}
+    combined_truth = {index for item in combined for index in item["truth_indices"]}
+    split = []
+    for index, row in enumerate(overlaps):
+        fragments = [i for i in false_proposals - combined_predictions
+                     if .15 <= row[i][2] <= .90 and row[i][3] <= .20]
+        if len(fragments) < 2:
+            continue
+        fragments.sort(key=lambda i: (row[i][2], i))
+        distinct, coverage = _fragment_coverage(truth[index], truth_bounds[index], native[index],
+                                                predictions, fragments, width, height)
+        if len(distinct) >= 2 and coverage >= .55:
+            split.append({"truth_index": index, "prediction_indices": distinct, "coverage": coverage})
+    split_predictions = {index for item in split for index in item["prediction_indices"]}
+    split_truth = {item["truth_index"] for item in split}
+    weak_masks = [
+        {key: match[key] for key in ("truth_index", "prediction_index", "mask_iou")}
+        for match in matches
+        if not match["valid_detection"] and match["mask_iou"] >= .20
+        and match["truth_index"] not in split_truth | combined_truth
+        and match["prediction_index"] not in split_predictions | combined_predictions | duplicates
+    ]
+    accounted_truth = split_truth | combined_truth | {m["truth_index"] for m in weak_masks}
+    accounted_truth.update(match["truth_index"] for match in matches if match["valid_detection"])
+    accounted_predictions = split_predictions | combined_predictions | {m["prediction_index"] for m in weak_masks}
+    return {
+        "split_prints": split,
+        "combined_prints": combined,
+        "weak_masks": weak_masks,
+        "missing_print_indices": sorted(set(range(len(truth))) - accounted_truth),
+        "extra_proposal_indices": sorted(false_proposals - accounted_predictions),
+        "duplicate_indices": sorted(duplicates),
+    }
 
 
 def _boundary_f_score(
@@ -387,6 +454,7 @@ def evaluate_page_crops(
     iou_threshold: float = 0.85,
     accepted: Sequence[bool] | None = None,
     truth_masks: Sequence[np.ndarray | None] | None = None,
+    diagnose_instances: bool = False,
 ) -> PageCroppingMetrics:
     """Match each instance once, using its native truth mask when provided."""
     size = max(len(truth), len(predictions))
@@ -457,7 +525,7 @@ def evaluate_page_crops(
     true_positive = len(valid_truth)
     false_negative = len(truth) - true_positive
     false_positive = len(predictions) - true_positive
-    duplicates = len(eligible_predictions - valid_predictions)
+    duplicates = eligible_predictions - valid_predictions
     # A poor assigned pair is one physical failure, not simultaneously a
     # missing truth, a false positive, and a semantic crop failure.
     unmatched_serious = (len(truth) - len(match_records)) + len(set(range(len(predictions))) - assigned_predictions)
@@ -474,7 +542,7 @@ def evaluate_page_crops(
         true_positive=true_positive,
         false_positive=false_positive,
         false_negative=false_negative,
-        duplicates=duplicates,
+        duplicates=len(duplicates),
         polygon_iou=mean("polygon_iou"),
         mask_iou=mean("mask_iou"),
         boundary_f_score=mean("boundary_f_score"),
@@ -485,6 +553,9 @@ def evaluate_page_crops(
         automatic_acceptances=sum(bool(value) for value in accepted),
         review_count=len(predictions) - sum(bool(value) for value in accepted),
         matches=tuple(match_records),
+        instance_diagnostics=_instance_diagnostics(
+            truth, predictions, native, truth_bounds, overlaps, match_records, valid_predictions, duplicates, width, height,
+        ) if diagnose_instances else None,
     )
 
 

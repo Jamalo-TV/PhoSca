@@ -101,6 +101,37 @@ def test_crop_metrics_do_not_reuse_one_merged_detection_for_two_photos() -> None
     assert page.serious_failures >= 1
 
 
+def test_instance_diagnostics_distinguish_splits_bad_masks_and_misses() -> None:
+    from app.evaluation.cropping import evaluate_page_crops
+
+    truth = [
+        rectangle(.05, .10, .35, .30),
+        rectangle(.45, .10, .60, .30),
+        rectangle(.69, .10, .84, .30),
+        rectangle(.45, .40, .75, .60),
+        rectangle(.45, .70, .75, .90),
+    ]
+    fragment = rectangle(.05, .10, .18, .30)
+    predictions = [
+        fragment, fragment, rectangle(.21, .10, .35, .30),
+        rectangle(.45, .10, .84, .30),
+        rectangle(.45, .40, .66, .60),
+        rectangle(.05, .70, .10, .90),
+    ]
+
+    result = evaluate_page_crops(truth, predictions, width=700, height=500, diagnose_instances=True)
+    diagnostics = result.instance_diagnostics
+
+    split, = diagnostics["split_prints"]
+    assert split["truth_index"] == 0 and set(split["prediction_indices"]) == {0, 2}
+    assert split["coverage"] > .85
+    assert diagnostics["combined_prints"] == [{"prediction_index": 3, "truth_indices": [1, 2]}]
+    assert [(item["truth_index"], item["prediction_index"]) for item in diagnostics["weak_masks"]] == [(3, 4)]
+    assert diagnostics["missing_print_indices"] == [4]
+    assert diagnostics["extra_proposal_indices"] == [1, 5]
+    assert result.true_positive == 0 and result.false_negative == 5 and result.false_positive == 6
+
+
 def test_matching_maximizes_threshold_qualified_pairs(monkeypatch) -> None:
     from app.evaluation import cropping
 
@@ -858,3 +889,19 @@ def test_reference_check_requires_verified_positive_modes_from_both_albums(tmp_p
     assert separate_groups["reference_issues"]["modes_with_fewer_than_two_verified_recoverable_groups"] == []
     assert separate_groups["reference_issues"]["dataset"] == ["FEWER_THAN_TWO_GROUPS_WITH_BOTH_MODES"]
     assert not separate_groups["ready_for_locked_evaluation"]
+
+    (tmp_path / "album-b.png").unlink()
+    detail.unlink()
+    blocked_directory = tmp_path / "missing-artifacts"
+    blocked = check(blocked_directory)
+    assert blocked["expected_photos"] == 3
+    assert not blocked["ready_for_locked_evaluation"]
+    missing_page, = blocked["reference_issues"]["pages"]
+    assert missing_page["page_id"] == "album-b"
+    assert missing_page["issues"] == ["PAGE_IMAGE_FILE_MISSING"]
+    assert missing_page["missing_artifacts"][0]["path"] == str(tmp_path / "album-b.png")
+    assert {row["page_id"] for row in blocked["reference_issues"]["modes"]} == {"album-a", "album-c"}
+    assert all("MODE_REFERENCE_SCAN_MISSING" in row["issues"] for row in blocked["reference_issues"]["modes"])
+    sheet = (blocked_directory / "index.html").read_text(encoding="utf-8")
+    assert 'href="#page-002"' in sheet and 'id="page-002"' in sheet
+    assert "Für die Prüfung fehlen Dateien." in sheet

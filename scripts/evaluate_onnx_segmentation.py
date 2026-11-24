@@ -128,7 +128,7 @@ def _points(values) -> list[tuple[float, float]]:
 def _record_path(value: str, manifest: Path) -> Path:
     path = Path(value)
     relative = manifest.parent / path
-    return relative if relative.is_file() else path
+    return path if not relative.is_file() and path.is_file() else relative
 
 
 def _reference_bytes(path: Path, pinned_hash: str | None) -> bytes:
@@ -178,7 +178,7 @@ def _load_cases(args) -> tuple[list[dict], dict]:
     ], {}
 
 
-def _read_page_truth(record, parse_labels, hash_file):
+def _read_page_labels(record, parse_labels):
     label_path = record["annotations"]
     label_hash = record.get("annotations_sha256")
     if label_path and label_path.is_file():
@@ -190,6 +190,11 @@ def _read_page_truth(record, parse_labels, hash_file):
     count = record.get("expected_count")
     if (count is not None and len(expected) != count) or (not expected and count != 0):
         raise ValueError(f"Missing or inconsistent label file: {label_path or record['id']}")
+    return expected, pinned
+
+
+def _read_page_truth(record, parse_labels, hash_file):
+    expected, pinned = _read_page_labels(record, parse_labels)
     if record.get("image_sha256") and hash_file(record["image"]) != record["image_sha256"]:
         raise ValueError(f"Evaluation image hash mismatch: {record['id']}")
     return expected, pinned
@@ -220,7 +225,9 @@ def _reference_scan_crop(payload, quad, shape, *, render):
     return None
 
 
-def _reference_masks(record, expected, image_shape, manifest, *, include_reference_images=False):
+def _reference_masks(
+    record, expected, image_shape, manifest, *, include_reference_images=False, report_missing_sidecars=False,
+):
     from app.evaluation.cropping import _mask
     from app.pipeline.crop_sampling import _outline_mask
     from app.schemas.common import PrintSizeMM
@@ -241,9 +248,15 @@ def _reference_masks(record, expected, image_shape, manifest, *, include_referen
             if name not in MODES:
                 raise ValueError(f"Unknown reference mode: {name}")
             sidecar_pinned = True
+            issues = []
             if annotation.get("mask"):
                 mask_path = _record_path(annotation["mask"], manifest)
                 mask_hash = annotation.get("mask_sha256")
+                if report_missing_sidecars and not mask_path.is_file():
+                    modes[name] = {
+                        "present": False, "sidecar_pinned": False, "reference_issues": ["MODE_MASK_FILE_MISSING"],
+                    }
+                    continue
                 payload = _reference_bytes(mask_path, mask_hash)
                 reference_mask = cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), cv2.IMREAD_GRAYSCALE) if payload else None
                 sidecar_pinned = mask_hash is not None
@@ -265,8 +278,11 @@ def _reference_masks(record, expected, image_shape, manifest, *, include_referen
             reference_quad = annotation.get("reference_image_quad")
             if reference_quad is not None and (shape is None or not annotation.get("reference_image")):
                 raise ValueError(f"{record['id']}: {name} reference scan corners need a scan and rectified dimensions")
-            if annotation.get("reference_image"):
-                reference_path = _record_path(annotation["reference_image"], manifest)
+            reference_path = _record_path(annotation["reference_image"], manifest) if annotation.get("reference_image") else None
+            if reference_path is not None and report_missing_sidecars and not reference_path.is_file():
+                sidecar_pinned = False
+                issues.append("MODE_REFERENCE_SCAN_MISSING")
+            elif reference_path is not None:
                 reference_hash = annotation.get("reference_image_sha256")
                 payload = _reference_bytes(reference_path, reference_hash)
                 sidecar_pinned &= reference_hash is not None
@@ -302,7 +318,6 @@ def _reference_masks(record, expected, image_shape, manifest, *, include_referen
                 corners is not None and corners.shape == (4, 2) and np.isfinite(corners).all()
                 and np.all((corners >= 0) & (corners <= 1)) and cv2.isContourConvex(corners)
             )
-            issues = []
             if annotation.get("annotation_provenance") != "manually_verified":
                 issues.append("MODE_ANNOTATION_UNVERIFIED")
             if recoverable and not valid_corners:
@@ -347,11 +362,7 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file,
     if review_directory is not None:
         review_directory.mkdir(parents=True, exist_ok=True)
     for index, record in enumerate(records):
-        expected, pinned = _read_page_truth(record, parse_labels, hash_file)
-        expected_photos += len(expected)
         digest = record.get("image_sha256")
-        files_pinned &= pinned and bool(digest)
-        page = load_image(record["image"])
         group = str(record.get("source_group") or "").strip().casefold()
         issues = []
         if group:
@@ -364,28 +375,61 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file,
             issues.append("DUPLICATE_PAGE_IMAGE")
         else:
             hashes.add(digest)
-        if not pinned:
-            issues.append("LABEL_FILE_MISSING_OR_UNPINNED")
         if record.get("annotation_provenance") != "manually_verified":
             issues.append("PAGE_ANNOTATION_UNVERIFIED")
+        image_missing = not record["image"].is_file()
+        label_path = record["annotations"]
+        labels_missing = not label_path.is_file() if label_path is not None else record.get("expected_count") != 0
+        if image_missing or labels_missing:
+            missing = []
+            if image_missing:
+                issues.append("PAGE_IMAGE_FILE_MISSING")
+                missing.append({"kind": "image", "path": str(record["image"].resolve()),
+                                "url": record.get("image_url")})
+            if labels_missing:
+                issues.append("LABEL_FILE_MISSING_OR_UNPINNED")
+                missing.append({"kind": "annotations", "path": str(label_path.resolve()) if label_path else None})
+                expected_photos += record.get("expected_count") or 0
+            else:
+                expected, _ = _read_page_labels(record, parse_labels)
+                expected_photos += len(expected)
+            files_pinned = False
+            page_issues.append({"page_id": record["id"], "source_group": group or None,
+                                "issues": issues, "missing_artifacts": missing})
+            if review_directory is not None:
+                name = str(record["id"])
+                files = "".join(f'<li><code>{escape(item["path"] or item["kind"])}</code></li>' for item in missing)
+                sections.append((name, f'<section id="page-{index:03d}" class="page"><h2>{escape(name)}</h2>'
+                                       f'<p>Für die Prüfung fehlen Dateien.</p><ul>{files}</ul></section>'))
+            continue
+        expected, pinned = _read_page_truth(record, parse_labels, hash_file)
+        expected_photos += len(expected)
+        files_pinned &= pinned and bool(digest)
+        page = load_image(record["image"])
+        if not pinned:
+            issues.append("LABEL_FILE_MISSING_OR_UNPINNED")
         if issues:
             page_issues.append({"page_id": record["id"], "source_group": group or None, "issues": issues})
         mode_issue_start = len(mode_issues)
         references = _reference_masks(
             record, expected, page.shape, args.dataset_manifest,
             include_reference_images=review_directory is not None and not calibration,
+            report_missing_sidecars=True,
         )
         for instance_index, modes in enumerate(references):
             for name in MODES:
                 reference = modes.get(name)
                 identity = {"page_id": record["id"], "instance_index": instance_index, "mode": name}
                 if not reference or not reference.get("present", True):
-                    mode_issues.append(identity | {"issues": ["MODE_ANNOTATION_MISSING"]})
+                    files_pinned &= not reference or reference.get("sidecar_pinned", True)
+                    mode_issues.append(identity | {"issues": (reference or {}).get(
+                        "reference_issues", ["MODE_ANNOTATION_MISSING"],
+                    )})
                     continue
                 sidecar_pinned = reference.get("sidecar_pinned", True)
                 files_pinned &= sidecar_pinned
                 reference_issues = reference["reference_issues"]
-                if not sidecar_pinned:
+                if not sidecar_pinned and "MODE_REFERENCE_SCAN_MISSING" not in reference_issues:
                     reference_issues = [*reference_issues, "MODE_SIDECAR_UNPINNED"]
                 if reference_issues:
                     mode_issues.append(identity | {"issues": reference_issues})
@@ -567,8 +611,8 @@ def _rendered_quality(references, matches, rendered, difficulty, eligible_modes)
                     expected_landmarks=reference.get("landmarks"),
                     sampling=evidence.get("sampling"),
                 ))
-            row["passes"] = bool(
-                row["recoverable"] is not False and row["matched_instance"] and state == "ready" and "footprint_iou" in row
+            row["geometry_passes"] = bool(
+                row["recoverable"] is not False and row["matched_instance"] and "footprint_iou" in row
                 and row["cutoff_beyond_1px"] == row["foreign_beyond_1px"] == row["outside_source_samples"] == 0
                 and row["sampling_shortfall_px"] <= 1
                 and row["warp_metadata_error_max_px"] <= 1
@@ -578,6 +622,7 @@ def _rendered_quality(references, matches, rendered, difficulty, eligible_modes)
                     row.get("orientation_matches_reference") is True and row.get("corner_error_max_px", np.inf) <= 2
                 ))
             )
+            row["passes"] = row["geometry_passes"] and state == "ready"
             row["automatic_release_passes"] = bool(row["passes"] and name in eligible_modes[match["prediction_index"]])
             rows.append(row)
     return rows
@@ -599,6 +644,13 @@ def _quality_summary(rows):
             ),
             "ready": sum(row["status"] == "ready" for row in mode_rows),
             "passing_recoverable": sum(row["passes"] for row in recoverable),
+            "passing_geometry_in_review": sum(
+                row.get("geometry_passes") is True and row["status"] == "review_needed" for row in recoverable
+            ),
+            "geometry_failures_after_valid_detection": sum(
+                row.get("valid_detection") is True and "footprint_iou" in row and not row["geometry_passes"]
+                for row in recoverable
+            ),
         }
         real_by_group = {}
         for row in recoverable:
@@ -987,7 +1039,7 @@ def main() -> None:
             metrics = evaluate_page_crops(
                 expected, detected, width=image.shape[1], height=image.shape[0],
                 iou_threshold=args.iou_threshold, accepted=accepted or [False] * len(detected),
-                truth_masks=native_truth_masks,
+                truth_masks=native_truth_masks, diagnose_instances=True,
             )
             page_metrics.append(metrics)
             if args.calibration_output:
@@ -1030,7 +1082,7 @@ def main() -> None:
                 final_metrics = evaluate_page_crops(
                     expected, final_polygons, width=image.shape[1], height=image.shape[0],
                     iou_threshold=args.iou_threshold, accepted=accepted or [False] * len(detected),
-                    truth_masks=native_truth_masks,
+                    truth_masks=native_truth_masks, diagnose_instances=True,
                 )
             final_instance_page_metrics.append(final_metrics)
             rows = _rendered_quality(
