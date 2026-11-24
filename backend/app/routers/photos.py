@@ -1,20 +1,25 @@
+import asyncio
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
-from uuid import UUID
+import shutil
+from uuid import UUID, uuid4, uuid5
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from PIL import Image
 
 from app.config import Settings, get_settings
 from app.core.auth import Principal, get_principal, require_write_principal
 from app.database import get_async_session
-from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PhotoStatus, ProcessingRun, StageRun
+from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PageStatus, PhotoStatus, ProcessingRun, StageRun
+from app.pipeline.crop_validation import route_ready_crop_modes_to_review
+from app.pipeline.decisions import is_reviewed_non_print
 from app.pipeline.image_ops import normalized_box_to_pixels
-from app.pipeline.perspective import validate_review_quads
+from app.pipeline.perspective import manual_print_intersects, validate_review_quads
 from app.pipeline.presets import available_presets
 from app.pipeline.variants import (
     MOTIF_REVIEW_PREVIEW,
@@ -25,6 +30,7 @@ from app.pipeline.variants import (
 )
 from app.schemas import BoundingBoxUpdate, OCRRead, OCRUpdate, PhotoDetail, PhotoRead
 from app.schemas.common import PrintSizeMM
+from app.schemas.pipeline import ManualPhotoCreate
 from app.services.pipeline import (
     deduplication_task_logic,
     enhancement_task_logic,
@@ -42,25 +48,46 @@ async def _photo_for_principal(
     if principal is not None:
         query = query.where(ExtractedPhoto.album.has(tenant_id=principal.tenant_id))
     if for_update:
-        query = query.with_for_update()
+        query = query.with_for_update().execution_options(populate_existing=True)
     photo = await session.scalar(query)
     if photo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.")
     return photo
 
 
-async def _page_for_principal(session: AsyncSession, page_id: UUID, principal: Principal | None) -> Page:
+async def _page_for_principal(
+    session: AsyncSession, page_id: UUID, principal: Principal | None, *, for_update: bool = False,
+) -> Page:
     query = select(Page).where(Page.id == page_id)
     if principal is not None:
         query = query.where(Page.album.has(tenant_id=principal.tenant_id))
+    if for_update:
+        query = query.with_for_update()
     page = await session.scalar(query)
     if page is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Page not found.")
     return page
 
 
+async def _locked_review_photo(
+    session: AsyncSession, photo_id: UUID, principal: Principal | None,
+) -> tuple[Page, ExtractedPhoto]:
+    photo = await _photo_for_principal(session, photo_id, principal)
+    page = await _page_for_principal(session, photo.page_id, principal, for_update=True)
+    return page, await _photo_for_principal(session, photo_id, principal, for_update=True)
+
+
 def _photo_urls(photo: ExtractedPhoto) -> dict[str, str | None]:
     return variant_urls(photo)
+
+
+def _source_size(page: Page) -> tuple[int, int]:
+    try:
+        with Image.open(page.storage_path) as source:
+            width, height = source.size
+            return (height, width) if source.getexif().get(274) in {5, 6, 7, 8} else (width, height)
+    except OSError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo source image could not be opened.") from exc
 
 
 def _rect_mask_from_box(box: dict[str, float], width: int, height: int) -> dict:
@@ -127,14 +154,78 @@ def _geometry_snapshot(photo: ExtractedPhoto) -> dict:
     }
 
 
-async def _restore_review_provenance(session: AsyncSession, photo_id: UUID, review_provenance: dict) -> ExtractedPhoto:
+async def _render_photo_edit(
+    session: AsyncSession, photo_id: UUID, settings: Settings, *,
+    reject_invalid_edit: bool = True, preset: str | None = "auto",
+) -> ExtractedPhoto:
+    output_directories: set[Path] = set()
+    try:
+        try:
+            correction = await perspective_correction_task_logic(
+                session, photo_id, settings, reject_invalid_edit=reject_invalid_edit,
+                commit=False, output_directories=output_directories,
+            )
+        except ValueError as exc:
+            if not reject_invalid_edit:
+                raise
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        if not correction.get("review_required"):
+            await enhancement_task_logic(
+                session, photo_id, settings, preset=preset, commit=False, output_directories=output_directories,
+            )
+            await deduplication_task_logic(session, photo_id, settings, commit=False)
+            await persistence_task_logic(session, photo_id, settings, commit=False)
+    except BaseException:
+        await session.rollback()
+        for directory in output_directories:
+            await asyncio.to_thread(shutil.rmtree, directory, ignore_errors=True)
+        raise
+    await session.commit()
     photo = await session.get(ExtractedPhoto, photo_id, populate_existing=True)
     if photo is None:
         raise ValueError(f"Photo not found after correction: {photo_id}")
-    metadata = deepcopy(photo.enhancement_applied or {})
-    metadata["review_provenance"] = deepcopy(review_provenance)
-    photo.enhancement_applied = metadata
-    await session.commit()
+    return photo
+
+
+async def _review_overlapping_exports(
+    session: AsyncSession, photo: ExtractedPhoto, width: int, height: int,
+) -> None:
+    quad = (photo.segmentation_mask or {}).get("warp_quad")
+    if quad is None:
+        return
+    neighbors = await session.scalars(
+        select(ExtractedPhoto)
+        .where(ExtractedPhoto.page_id == photo.page_id, ExtractedPhoto.id != photo.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    for neighbor in neighbors:
+        metadata = deepcopy(neighbor.enhancement_applied or {})
+        modes = (metadata.get("correction") or {}).get("crop_modes") or {}
+        if is_reviewed_non_print(metadata.get("review_rejected_detection"), neighbor.bounding_box, neighbor.segmentation_mask):
+            continue
+        if not any(mode.get("status") == "ready" for mode in modes.values()):
+            continue
+        neighbor_quad = (modes.get("full_print") or {}).get("warp_quad")
+        if not manual_print_intersects(neighbor_quad, quad, width, height):
+            continue
+        reason = "PRINT_POSSIBLY_OCCLUDED"
+        route_ready_crop_modes_to_review(modes, [reason])
+        metadata["review_reasons"] = list(dict.fromkeys([*(metadata.get("review_reasons") or []), reason]))
+        neighbor.enhancement_applied = metadata
+        neighbor.status = PhotoStatus.review_needed
+        session.add(AuditLog(
+            entity_type="photo", entity_id=neighbor.id, action="crop_review_reopened",
+            details={"reason": reason, "overlapping_photo_id": str(photo.id)},
+        ))
+
+
+def _replay_manual_photo(photo: ExtractedPhoto, page_id: UUID, quad: list[dict], response: Response) -> ExtractedPhoto:
+    provenance = (photo.enhancement_applied or {}).get("review_provenance") or {}
+    creation = provenance.get("manual_creation") or {}
+    if photo.page_id != page_id or creation.get("warp_quad") != quad:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This request already saved different corners.")
+    response.status_code = status.HTTP_200_OK
     return photo
 
 
@@ -228,6 +319,68 @@ async def get_page_ocr(
     ).all()
 
 
+@router.post("/pages/{page_id}/manual-photos", response_model=PhotoRead, status_code=status.HTTP_201_CREATED)
+async def create_manual_photo(
+    page_id: UUID,
+    payload: ManualPhotoCreate,
+    response: Response,
+    session: AsyncSession = Depends(get_async_session),
+    settings: Settings = Depends(get_settings),
+    principal: Principal | None = Depends(require_write_principal),
+) -> ExtractedPhoto:
+    page = await _page_for_principal(session, page_id, principal, for_update=True)
+    photo_id = uuid5(page.id, str(payload.request_id))
+    quad = [point.model_dump() for point in payload.warp_quad]
+    existing = await session.get(ExtractedPhoto, photo_id)
+    if existing is not None:
+        return _replay_manual_photo(existing, page_id, quad, response)
+    if page.status not in {PageStatus.completed, PageStatus.review_needed}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Wait for page analysis before adding a print.")
+    if not settings.enable_precise_photo_crops:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Manual additions require precise crop modes.")
+    width, height = _source_size(page)
+    mask = {"source": "manual_added", "manual_added": True, "polygon": quad, "visible_polygon": quad, "warp_quad": quad}
+    try:
+        validate_review_quads(mask, width, height, require_cyclic=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    box = {
+        "x1": min(point["x"] for point in quad), "y1": min(point["y"] for point in quad),
+        "x2": max(point["x"] for point in quad), "y2": max(point["y"] for point in quad),
+    }
+    photo = ExtractedPhoto(
+        id=photo_id, page_id=page.id, album_id=page.album_id, storage_path="",
+        bounding_box=box, segmentation_mask=mask, segmentation_confidence=None,
+        aspect_ratio=(box["x2"] - box["x1"]) * (width - 1) / ((box["y2"] - box["y1"]) * (height - 1)),
+        geometry_valid=True, status=PhotoStatus.pending,
+    )
+    creation = {
+        "request_id": str(payload.request_id), "warp_quad": deepcopy(quad),
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    review_provenance = {
+        "manual_creation": creation,
+        "prediction_provenance": await _prediction_provenance(session, photo),
+    }
+    photo.enhancement_applied = {"review_provenance": review_provenance}
+    page.processing_metadata = {**(page.processing_metadata or {}), "photo_count_revision": str(photo_id)}
+    session.add(photo)
+    session.add(AuditLog(
+        entity_type="photo", entity_id=photo_id, action="manual_photo_created",
+        details={"page_id": str(page_id), "page_sha256": page.file_hash_sha256, **creation},
+    ))
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        existing = await session.get(ExtractedPhoto, photo_id)
+        if existing is None:
+            raise
+        return _replay_manual_photo(existing, page_id, quad, response)
+    await _review_overlapping_exports(session, photo, width, height)
+    return await _render_photo_edit(session, photo_id, settings)
+
+
 @router.patch("/photos/{photo_id}/bounding-box", response_model=PhotoRead)
 async def update_photo_bounding_box(
     photo_id: UUID,
@@ -236,24 +389,19 @@ async def update_photo_bounding_box(
     settings: Settings = Depends(get_settings),
     principal: Principal | None = Depends(require_write_principal),
 ) -> ExtractedPhoto:
-    photo = await _photo_for_principal(session, photo_id, principal, for_update=True)
+    page, photo = await _locked_review_photo(session, photo_id, principal)
     before = _geometry_snapshot(photo)
     box = payload.bounding_box.as_dict()
     if box["x2"] <= box["x1"] or box["y2"] <= box["y1"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bounding box must have positive area.")
-    page = await session.get(Page, photo.page_id)
-    if page is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo source page not found.")
     try:
-        with Image.open(page.storage_path) as source:
-            width, height = source.size
-            if source.getexif().get(274) in {5, 6, 7, 8}:
-                width, height = height, width
+        width, height = _source_size(page)
         segmentation_mask = (
             payload.segmentation_mask.as_dict() if payload.segmentation_mask else _rect_mask_from_box(box, width, height)
         )
-        if (photo.segmentation_mask or {}).get("album_window_occluded") is True:
-            segmentation_mask["album_window_occluded"] = True
+        for flag in ("album_window_occluded", "manual_added"):
+            if (photo.segmentation_mask or {}).get(flag) is True:
+                segmentation_mask[flag] = True
         if "visible_polygon" not in segmentation_mask:
             segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask.get("polygon"))
         if "warp_quad" not in segmentation_mask and len(segmentation_mask.get("polygon") or []) == 4:
@@ -274,9 +422,13 @@ async def update_photo_bounding_box(
             old_corners = {(p["x"], p["y"]) for p in previous_quad}
             if old_corners == {(p["x"], p["y"]) for p in updated_quad}:
                 segmentation_mask["image_quad"] = deepcopy(previous_mask["image_quad"])
-        validate_review_quads(segmentation_mask, width, height)
-    except OSError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo source image could not be opened.") from exc
+        manual_addition = segmentation_mask.get("manual_added") is True
+        if manual_addition and segmentation_mask.get("warp_quad") is None:
+            raise ValueError("manual_print_requires_warp_quad")
+        validate_review_quads(segmentation_mask, width, height, require_cyclic=manual_addition)
+        if manual_addition:
+            segmentation_mask["polygon"] = deepcopy(segmentation_mask["warp_quad"])
+            segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask["warp_quad"])
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     prediction_provenance = await _prediction_provenance(session, photo)
@@ -289,6 +441,11 @@ async def update_photo_bounding_box(
         "status": PhotoStatus.pending.value,
     }
     metadata = deepcopy(photo.enhancement_applied or {})
+    if is_reviewed_non_print(metadata.get("review_rejected_detection"), photo.bounding_box, photo.segmentation_mask):
+        page.processing_metadata = {**(page.processing_metadata or {}), "photo_count_revision": str(uuid4())}
+        metadata["review_reasons"] = [
+            reason for reason in metadata.get("review_reasons") or [] if reason != "GEOMETRY_REVIEW_WRONG_OBJECT"
+        ]
     metadata.pop("review_rejected_detection", None)
     review_provenance = deepcopy(metadata.get("review_provenance") or {})
     review_provenance.setdefault("original_prediction", before)
@@ -328,19 +485,9 @@ async def update_photo_bounding_box(
         )
     )
     await session.flush()
-    try:
-        correction = await perspective_correction_task_logic(session, photo.id, settings, reject_invalid_edit=True)
-    except ValueError as exc:
-        await session.rollback()
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-    refreshed = await _restore_review_provenance(session, photo.id, review_provenance)
-    if correction.get("review_required"):
-        return refreshed
-    await enhancement_task_logic(session, photo.id, settings)
-    await _restore_review_provenance(session, photo.id, review_provenance)
-    await deduplication_task_logic(session, photo.id, settings)
-    await persistence_task_logic(session, photo.id, settings)
-    return await _restore_review_provenance(session, photo.id, review_provenance)
+    if segmentation_mask.get("manual_added") is True:
+        await _review_overlapping_exports(session, photo, width, height)
+    return await _render_photo_edit(session, photo.id, settings)
 
 
 @router.patch("/ocr/{ocr_id}", response_model=OCRRead)
@@ -377,12 +524,5 @@ async def reprocess_photo(
     settings: Settings = Depends(get_settings),
     principal: Principal | None = Depends(require_write_principal),
 ) -> ExtractedPhoto:
-    photo = await _photo_for_principal(session, photo_id, principal)
-    correction = await perspective_correction_task_logic(session, photo.id, settings)
-    if correction.get("review_required"):
-        return await session.get(ExtractedPhoto, photo_id)
-    await enhancement_task_logic(session, photo.id, settings, preset=preset)
-    await deduplication_task_logic(session, photo.id, settings)
-    await persistence_task_logic(session, photo.id, settings)
-    refreshed = await session.get(ExtractedPhoto, photo_id)
-    return refreshed
+    _, photo = await _locked_review_photo(session, photo_id, principal)
+    return await _render_photo_edit(session, photo.id, settings, reject_invalid_edit=False, preset=preset)

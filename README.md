@@ -75,6 +75,9 @@ correction in both crop modes and retains them for subsequent processing.
 In the crop editor, choose **Ausrichtung ab Albumseite** to keep the source
 orientation or rotate the rectified photo in 90° steps. The selection applies
 to both crop modes and is retained when the photo is reprocessed.
+Use **Fehlenden Abzug ergänzen** in the desktop review and mark the four
+corners to add a print that was missed during analysis. Saving the print
+reopens the page's photo-count review and adds it to the crop editor.
 
 `ENABLE_BORDER_TRIM=false` disables automatic inner-edge detection. Reviewers
 can still provide inner corners. `ENABLE_PRECISE_PHOTO_CROPS=false` switches

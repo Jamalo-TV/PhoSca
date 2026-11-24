@@ -22,6 +22,7 @@ from app.models import (
     ReviewEvent,
     StageRun,
 )
+from app.pipeline.decisions import is_reviewed_non_print
 from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import ReviewItem
 
@@ -137,6 +138,13 @@ def _photo_snapshot(photo: ExtractedPhoto, provenance: dict) -> dict:
     }
 
 
+def _rejected_detection(photo: ExtractedPhoto) -> bool:
+    return is_reviewed_non_print(
+        (photo.enhancement_applied or {}).get("review_rejected_detection"),
+        photo.bounding_box, photo.segmentation_mask,
+    )
+
+
 async def _task_context(
     session: AsyncSession,
     task_type: str,
@@ -147,7 +155,7 @@ async def _task_context(
         query = select(Page).where(Page.id == task_id)
         if principal is not None:
             query = query.where(Page.album.has(tenant_id=principal.tenant_id))
-        page = await session.scalar(query)
+        page = await session.scalar(query.with_for_update())
         if page is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Segmentation review task not found.")
         photos = (
@@ -157,7 +165,7 @@ async def _task_context(
                 .order_by(ExtractedPhoto.created_at.asc())
             )
         ).all()
-        return {"page": page, "photos": photos}
+        return {"page": page, "photos": [photo for photo in photos if not _rejected_detection(photo)]}
 
     if task_type in {"geometry", "enhancement"}:
         query = select(ExtractedPhoto).where(ExtractedPhoto.id == task_id)
@@ -168,7 +176,11 @@ async def _task_context(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"{task_type.title()} review task not found."
             )
-        page = await session.get(Page, photo.page_id)
+        page = await session.get(Page, photo.page_id, with_for_update=task_type == "geometry")
+        if task_type == "geometry":
+            photo = await session.scalar(query.with_for_update().execution_options(populate_existing=True))
+            if photo is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Geometry review task not found.")
         return {"page": page, "photo": photo, "photos": [photo]}
 
     query = select(OCRResult).join(Page, Page.id == OCRResult.page_id).where(OCRResult.id == task_id)
@@ -196,6 +208,7 @@ async def _snapshot_task(session: AsyncSession, payload: MobileReviewAnswer, con
             "storage_path": page.storage_path,
             "sha256": page.file_hash_sha256,
             "status": page.status.value,
+            "photo_count_revision": (page.processing_metadata or {}).get("photo_count_revision"),
         },
         "provenance": provenance,
         "photos": [_photo_snapshot(photo, provenance) for photo in context.get("photos", [])],
@@ -286,6 +299,7 @@ def _validate_enhancement_decision(payload: MobileReviewAnswer, context: dict) -
 def _apply_review_decision(event: ReviewEvent, payload: MobileReviewAnswer, context: dict) -> None:
     if payload.task_type == "geometry":
         photo: ExtractedPhoto = context["photo"]
+        previously_rejected = _rejected_detection(photo)
         accepted = payload.answer == "correct"
         state = "accepted" if accepted else ("uncertain" if payload.answer == "unsure" else "rejected")
         metadata = _store_entity_decision(
@@ -297,7 +311,10 @@ def _apply_review_decision(event: ReviewEvent, payload: MobileReviewAnswer, cont
             metadata["review_rejected_detection"] = {
                 "bounding_box": deepcopy(photo.bounding_box), "segmentation_mask": deepcopy(photo.segmentation_mask),
             }
-        else:
+            if not previously_rejected:
+                page: Page = context["page"]
+                page.processing_metadata = {**(page.processing_metadata or {}), "photo_count_revision": str(event.id)}
+        elif not previously_rejected:
             metadata.pop("review_rejected_detection", None)
         reasons = [
             str(reason)
@@ -394,6 +411,14 @@ async def add_review_event(
         _validate_idempotent_replay(existing, payload, principal)
         return {"id": existing.id, "saved": True, "duplicate": True}
 
+    if payload.task_type == "segmentation":
+        page_revision = (context["page"].processing_metadata or {}).get("photo_count_revision")
+        if payload.metadata.get("photo_count_revision") != page_revision:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Die Abzüge auf dieser Seite haben sich geändert. Prüfe die aktuelle Anzahl.",
+            )
+
     if payload.task_type == "geometry" and payload.answer == "correct":
         photo = context["photo"]
         metadata = photo.enhancement_applied or {}
@@ -457,12 +482,16 @@ async def review_progress(
 
 
 def _completed_review_exists(task_type: str, task_id_column):
+    query = select(ReviewEvent.answer).where(
+        ReviewEvent.task_type == task_type,
+        ReviewEvent.task_id == task_id_column,
+    )
+    if task_type == "segmentation":
+        snapshot_revision = ReviewEvent.event_metadata["snapshot"]["page"]["photo_count_revision"].as_string()
+        page_revision = Page.processing_metadata["photo_count_revision"].as_string()
+        query = query.where(func.coalesce(snapshot_revision, "") == func.coalesce(page_revision, ""))
     latest_answer = (
-        select(ReviewEvent.answer)
-        .where(
-            ReviewEvent.task_type == task_type,
-            ReviewEvent.task_id == task_id_column,
-        )
+        query
         .order_by(ReviewEvent.created_at.desc(), ReviewEvent.id.desc())
         .limit(1)
         .correlate_except(ReviewEvent)
@@ -592,7 +621,7 @@ async def get_review_queue(
                     .order_by(ExtractedPhoto.created_at.asc())
                 )
             ).all()
-            detections = [_photo_review_payload(photo) for photo in photos]
+            detections = [_photo_review_payload(photo) for photo in photos if not _rejected_detection(photo)]
             items.append(
                 ReviewItem(
                     item_type="segmentation",
@@ -602,7 +631,10 @@ async def get_review_queue(
                     status=page.status.value,
                     reason=page.error_message,
                     preview_url=f"/api/v1/pages/{page.id}/image",
-                    payload={"detection_count": len(photos), "detections": detections},
+                    payload={
+                        "detection_count": len(detections), "detections": detections,
+                        "photo_count_revision": (page.processing_metadata or {}).get("photo_count_revision"),
+                    },
                 )
             )
     elif review_type == "geometry":

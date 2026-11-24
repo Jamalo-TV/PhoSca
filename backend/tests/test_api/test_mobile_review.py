@@ -530,6 +530,172 @@ async def test_saving_coordinates_cannot_release_a_photo_hidden_by_an_album_wind
         assert (await client.get(f"{url}/image?variant={name}")).status_code == 404
 
 
+async def test_add_missed_photo_reopens_count_review_and_supports_both_downloads(client, monkeypatch) -> None:
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+
+    monkeypatch.setenv("ENABLE_BORDER_TRIM", "false")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    image = np.full((120, 160, 3), 35, dtype=np.uint8)
+    image[12:108, 15:145] = 240
+    image[20:101, 23:138] = (50, 90, 150)
+    album_id, page_id, placeholder = await _seed_review_data(image)
+    async with get_session_factory()() as session:
+        await session.delete(await session.get(ExtractedPhoto, placeholder))
+        await session.commit()
+
+    page_url = f"/api/v1/pages/{page_id}"
+    create_url = f"{page_url}/manual-photos"
+    source = (await client.get(f"{page_url}/image")).content
+    queue_url = f"/api/v1/review/queue?type=segmentation&album_id={album_id}"
+    events_url = "/api/v1/review/events"
+    first_decision = {
+        "task_type": "segmentation", "task_id": str(page_id), "answer": "correct",
+        "idempotency_key": uuid4().hex,
+    }
+    assert (await client.post(events_url, json=first_decision)).status_code == 201
+    assert (await client.get(queue_url)).json() == []
+    outer = [{"x": x / 159, "y": y / 119} for x, y in [(15, 12), (144, 12), (144, 107), (15, 107)]]
+    inner = [{"x": x / 159, "y": y / 119} for x, y in [(23, 20), (137, 20), (137, 100), (23, 100)]]
+    body = {"request_id": str(uuid4()), "warp_quad": outer}
+    crossed = {**body, "warp_quad": [outer[index] for index in (0, 2, 1, 3)]}
+    assert (await client.post(create_url, json=crossed)).status_code == 422
+
+    result = await client.post(create_url, json=body)
+    assert result.status_code == 201, result.text
+    photo = result.json()
+    photo_url = f"/api/v1/photos/{photo['id']}"
+    assert photo["segmentation_confidence"] is None
+    assert photo["segmentation_mask"]["source"] == "manual_added"
+    assert photo["crop_download_urls"]["full_print"]
+    assert not photo["crop_download_urls"]["image_only"]
+    replay = await client.post(create_url, json=body)
+    assert replay.status_code == 200 and replay.json()["id"] == photo["id"]
+    assert (await client.post(create_url, json={**body, "warp_quad": inner})).status_code == 409
+    assert (await client.get(f"/api/v1/albums/{album_id}")).json()["photos_extracted"] == 1
+
+    item, = (await client.get(queue_url)).json()
+    assert item["payload"]["detection_count"] == 1
+    revision = item["payload"]["photo_count_revision"]
+    assert revision == photo["id"]
+    stale = {**first_decision, "idempotency_key": uuid4().hex}
+    assert (await client.post(events_url, json=stale)).status_code == 409
+    current = {**stale, "metadata": {"photo_count_revision": revision}}
+    assert (await client.post(events_url, json=current)).status_code == 201
+    assert (await client.get(queue_url)).json() == []
+
+    corrected = await client.patch(f"{photo_url}/bounding-box", json={
+        "bounding_box": photo["bounding_box"],
+        "segmentation_mask": {"polygon": outer, "warp_quad": outer, "image_quad": inner, "source": "manual_quad"},
+    })
+    assert corrected.status_code == 200, corrected.text
+    assert corrected.json()["segmentation_mask"]["manual_added"] is True
+    reprocessed = await client.post(f"{photo_url}/reprocess")
+    assert reprocessed.status_code == 200, reprocessed.text
+    for mode, shape in (("full_print", (96, 130)), ("image_only", (81, 115))):
+        download = await client.get(reprocessed.json()["crop_download_urls"][mode])
+        assert download.status_code == 200
+        crop = cv2.imdecode(np.frombuffer(download.content, np.uint8), cv2.IMREAD_COLOR)
+        assert crop.shape[:2] == shape
+    assert (await client.get(f"{page_url}/image")).content == source
+    assert (await client.post(create_url, json=body)).status_code == 200
+
+    rejected = await client.post(events_url, json={
+        "task_type": "geometry", "task_id": photo["id"], "answer": "wrong_object",
+        "idempotency_key": uuid4().hex,
+    })
+    assert rejected.status_code == 201, rejected.text
+    item, = (await client.get(queue_url)).json()
+    assert item["payload"]["detection_count"] == 0
+    removed_revision = item["payload"]["photo_count_revision"]
+    assert removed_revision != revision
+    after_retry = await client.post(f"{photo_url}/reprocess")
+    assert after_retry.status_code == 200
+    for mode in ("full_print", "image_only"):
+        assert not after_retry.json()["crop_download_urls"][mode]
+    assert (await client.post(events_url, json={
+        **stale, "idempotency_key": uuid4().hex, "metadata": {"photo_count_revision": removed_revision},
+    })).status_code == 201
+    assert (await client.get(queue_url)).json() == []
+    restored = await client.patch(f"{photo_url}/bounding-box", json={"bounding_box": photo["bounding_box"],
+        "segmentation_mask": {"polygon": outer, "warp_quad": outer, "image_quad": inner},
+    })
+    assert restored.status_code == 200 and restored.json()["crop_download_urls"]["full_print"]
+    item, = (await client.get(queue_url)).json()
+    assert item["payload"]["detection_count"] == 1
+    assert item["payload"]["photo_count_revision"] not in (revision, removed_revision)
+
+
+async def test_new_overlapping_print_reopens_existing_downloads_for_review(client, monkeypatch) -> None:
+    from app.config import get_settings
+
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    page = np.full((190, 260, 3), 35, dtype=np.uint8)
+    page[20:150, 25:163] = (67, 111, 144)
+    page[75:166, 127:234] = (118, 90, 55)
+    _, page_id, old_id = await _seed_review_data(page)
+    old_url = f"/api/v1/photos/{old_id}"
+    old_quad = [{"x": x / 259, "y": y / 189} for x, y in [(25, 20), (162, 20), (162, 149), (25, 149)]]
+    saved = await client.patch(f"{old_url}/bounding-box", json={
+        "bounding_box": {"x1": 25 / 259, "y1": 20 / 189, "x2": 162 / 259, "y2": 149 / 189},
+        "segmentation_mask": {"polygon": old_quad, "warp_quad": old_quad},
+    })
+    assert saved.status_code == 200 and saved.json()["crop_download_urls"]["full_print"]
+    new_quad = [{"x": x / 259, "y": y / 189} for x, y in [(127, 75), (233, 75), (233, 165), (127, 165)]]
+    added = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": new_quad,
+    })
+    assert added.status_code == 201, added.text
+    assert not added.json()["crop_download_urls"]["full_print"]
+    assert (await client.get(f"{old_url}/image?variant=full_print")).status_code == 404
+    reprocessed = await client.post(f"{old_url}/reprocess")
+    assert reprocessed.status_code == 200 and not reprocessed.json()["crop_download_urls"]["full_print"]
+
+
+async def test_failed_manual_addition_rolls_back_before_an_identical_retry(client, monkeypatch) -> None:
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.routers import photos
+
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    image = np.full((120, 160, 3), 35, dtype=np.uint8)
+    image[15:80, 12:90] = (64, 111, 145)
+    album_id, page_id, _ = await _seed_review_data(image)
+    photo_list = f"/api/v1/albums/{album_id}/photos"
+    existing = (await client.get(photo_list)).json()
+    body = {"request_id": str(uuid4()), "warp_quad": [
+        {"x": x / 159, "y": y / 119} for x, y in [(12, 15), (89, 15), (89, 79), (12, 79)]
+    ]}
+    url = f"/api/v1/pages/{page_id}/manual-photos"
+
+    # Leave the existing proposal on the other side of the album page.
+    async with get_session_factory()() as session:
+        neighbor = await session.get(ExtractedPhoto, UUID(existing[0]["id"]))
+        neighbor.segmentation_mask = {"polygon": [
+            {"x": x, "y": y} for x, y in ((.72, .2), (.9, .2), (.9, .7), (.72, .7))
+        ]}
+        await session.commit()
+
+    async def fail(*args, **kwargs):
+        raise RuntimeError("simulated enhancement failure")
+
+    processed = get_settings().storage_path / "processed"
+    before = set(processed.rglob("*.jpg"))
+    with monkeypatch.context() as faults:
+        faults.setattr(photos, "enhancement_task_logic", fail)
+        with pytest.raises(RuntimeError, match="simulated enhancement failure"):
+            await client.post(url, json=body)
+    assert len((await client.get(photo_list)).json()) == 1
+    assert set(processed.rglob("*.jpg")) == before
+    assert (await client.post(url, json=body)).status_code == 201
+    assert len((await client.get(photo_list)).json()) == 2
+
+
 async def test_wide_motif_suggestion_requires_explicit_confirmation_before_download(client, monkeypatch) -> None:
     from app.config import get_settings
 

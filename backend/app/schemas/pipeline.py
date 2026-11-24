@@ -106,6 +106,11 @@ class BoundingBoxUpdate(StrictSchema):
     segmentation_mask: ReviewSegmentationMask | None = None
 
 
+class ManualPhotoCreate(StrictSchema):
+    request_id: Annotated[UUID, Field(strict=False)]
+    warp_quad: list[NormalizedPoint] = Field(min_length=4, max_length=4)
+
+
 class OCRUpdate(StrictSchema):
     text_content: str = Field(min_length=1, max_length=20_000)
     text_type: OCRTextType

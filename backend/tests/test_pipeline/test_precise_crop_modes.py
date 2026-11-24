@@ -618,6 +618,24 @@ def test_enclosed_neighbor_keeps_outer_print_in_review_even_with_filled_model_ma
     assert np.array_equal(visible.image_only, page[96:242, 170:284])
 
 
+@pytest.mark.parametrize("obstruction", ["neighbor", "capture_edge"])
+def test_manually_added_outline_requires_a_visible_print(obstruction) -> None:
+    page = np.full((220, 340, 3), 55, np.uint8)
+    left = 0 if obstruction == "capture_edge" else 20
+    page[23:194, left:214] = (109, 130, 169)
+    outer = _vertices(_rect(left, 23, 213, 193), page)
+    mask = {"source": "manual_added", "manual_added": True, "warp_quad": outer, "visible_polygon": outer}
+    neighbors = []
+    if obstruction == "neighbor":
+        page[69:187, 164:318] = (159, 80, 52)
+        neighbors.append({"polygon": _vertices(_rect(164, 69, 317, 186), page)})
+    crop = _crop(page, {}, mask, dual_mode=True, trim_border=False, neighbor_masks=neighbors)
+    assert crop.image_only is None
+    reason = "PRINT_AT_CAPTURE_EDGE" if obstruction == "capture_edge" else "PRINT_POSSIBLY_OCCLUDED"
+    assert all(mode["status"] == "review_needed" and reason in mode["reason_codes"]
+               for mode in crop.metadata["crop_modes"].values())
+
+
 def test_both_mode_transforms_include_the_same_applied_rotation(monkeypatch) -> None:
     from app.pipeline import perspective
 

@@ -2,10 +2,12 @@ from sqlalchemy import select
 
 
 async def test_api_key_authentication_roles_and_album_tenant_scope(client, monkeypatch) -> None:
+    from uuid import uuid4
+
     from app.config import get_settings
     from app.core.auth import hash_api_key
     from app.database import get_session_factory
-    from app.models import Album, ApiKey, ApiRole, Tenant
+    from app.models import Album, ApiKey, ApiRole, Page, PageStatus, Tenant
 
     monkeypatch.setenv("AUTH_REQUIRED", "true")
     get_settings.cache_clear()
@@ -35,6 +37,19 @@ async def test_api_key_authentication_roles_and_album_tenant_scope(client, monke
     async with get_session_factory()() as session:
         album = await session.scalar(select(Album).where(Album.id == album_id))
         assert album is not None and album.tenant_id is not None
+        page = Page(
+            album_id=album.id, original_filename="private.jpg", storage_path="private.jpg",
+            file_hash_sha256="a" * 64, status=PageStatus.completed,
+        )
+        session.add(page)
+        await session.commit()
+        url = f"/api/v1/pages/{page.id}/manual-photos"
+    draft = {"request_id": str(uuid4()), "warp_quad": [
+        {"x": x, "y": y} for x, y in ((.1, .1), (.7, .1), (.7, .6), (.1, .6))
+    ]}
+    assert (await client.post(url, json=draft)).status_code == 401
+    assert (await client.post(url, json=draft, headers={"X-API-Key": "viewer-key"})).status_code == 403
+    assert (await client.post(url, json=draft, headers={"X-API-Key": "other-key"})).status_code == 404
 
 
 async def test_browser_session_scopes_requests_and_revokes_the_cookie(client, monkeypatch) -> None:

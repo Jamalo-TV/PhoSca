@@ -349,15 +349,23 @@ async def perspective_correction_task_logic(
     page_image: np.ndarray | None = None,
     page_camera: CameraCalibration | None = None,
     page_plane: PrintPagePlane | None = None,
+    commit: bool = True,
+    output_directories: set[Path] | None = None,
 ) -> dict:
     photo = await session.scalar(
         select(ExtractedPhoto)
         .options(selectinload(ExtractedPhoto.page))
         .where(ExtractedPhoto.id == photo_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if photo is None:
         raise ValueError(f"Photo not found: {photo_id}")
+    if is_reviewed_non_print(
+        (photo.enhancement_applied or {}).get("review_rejected_detection"),
+        photo.bounding_box, photo.segmentation_mask,
+    ):
+        return {"photo_id": str(photo.id), "review_required": True, "reason": "GEOMETRY_REVIEW_WRONG_OBJECT"}
     run = await get_or_create_run(session, photo.page, settings)
     if skip_if_exists and photo.original_storage_path and Path(photo.original_storage_path).exists():
         previous = (photo.enhancement_applied or {}).get("correction") or {}
@@ -380,11 +388,12 @@ async def perspective_correction_task_logic(
             }
     stage = await start_stage(session, run, "perspective_correction", input_path=Path(photo.page.storage_path))
 
+    precise_crops = settings.enable_precise_photo_crops or (photo.segmentation_mask or {}).get("manual_added") is True
     loads_source = page_image is None
     if page_image is None:
         page_image, page_camera = await asyncio.to_thread(
             load_crop_source, Path(photo.page.storage_path), photo.page.file_hash_sha256,
-            settings.camera_calibration_path if settings.enable_precise_photo_crops else None,
+            settings.camera_calibration_path if precise_crops else None,
         )
     automatic_detection = photo.segmentation_confidence is not None
     page_steps = (photo.page.processing_metadata or {}).get("steps") or {}
@@ -392,7 +401,7 @@ async def perspective_correction_task_logic(
     protected_regions = protection_evidence.get("regions") if protection_evidence.get("enabled", True) else None
     neighbor_masks = []
     measured_references = []
-    if settings.enable_precise_photo_crops:
+    if precise_crops:
         rows = await session.execute(
             select(
                 ExtractedPhoto.id,
@@ -419,7 +428,7 @@ async def perspective_correction_task_logic(
         manual_aspect = None
         if not automatic_detection and size is not None:
             manual_aspect = PrintSizeMM.model_validate(size).aspect_ratio
-        if loads_source and settings.enable_precise_photo_crops and automatic_detection and len(neighbor_masks) >= 5:
+        if loads_source and precise_crops and automatic_detection and len(neighbor_masks) >= 5:
             page_plane = await asyncio.to_thread(
                 page_plane_from_prints, page_image, page_camera.matrix if page_camera is not None else None,
                 [photo.segmentation_mask or {}, *neighbor_masks], measured_references=measured_references,
@@ -437,7 +446,7 @@ async def perspective_correction_task_logic(
             allow_page_face_overlap=automatic_detection and photo.geometry_valid,
             # Saving reviewer corners clears prediction confidence, even when the client retains its model tag.
             allow_border_expansion=automatic_detection,
-            dual_mode=settings.enable_precise_photo_crops,
+            dual_mode=precise_crops,
             enable_classical_retry=settings.enable_classical_segmentation_fallback,
             print_aspect_ratio=manual_aspect,
             camera_matrix=page_camera.matrix if page_camera is not None else None,
@@ -458,7 +467,7 @@ async def perspective_correction_task_logic(
         )
         prior_correction = metadata.get("correction") or {}
         metadata["correction"] = {"status": "rejected", "reason": reason}
-        if settings.enable_precise_photo_crops or prior_correction.get("crop_modes"):
+        if precise_crops or prior_correction.get("crop_modes"):
             metadata["correction"]["crop_modes"] = {
                 name: {"status": "review_needed", "reason_codes": [reason]}
                 for name in ("full_print", "image_only")
@@ -468,7 +477,10 @@ async def perspective_correction_task_logic(
             AuditLog(entity_type="photo", entity_id=photo.id, action="correction_rejected", details={"reason": reason})
         )
         finish_stage(stage, status=RunStatus.review_needed, details={"reason": reason})
-        await session.commit()
+        if commit:
+            await session.commit()
+        else:
+            await session.flush()
         return {"photo_id": str(photo.id), "storage_path": None, "review_required": True, "reason": reason}
     output_dir = (
         settings.storage_path
@@ -480,6 +492,8 @@ async def perspective_correction_task_logic(
         / str(stage.id)
         / "photos"
     )
+    if output_directories is not None:
+        output_directories.add(output_dir.parent)
     untrimmed_path = output_dir / f"{photo.id}_source_corrected_untrimmed.jpg"
     crop_modes = correction_metadata.get("crop_modes") or {}
     orientation_reason = (correction_metadata.get("orientation") or {}).get("reason_code")
@@ -647,7 +661,10 @@ async def perspective_correction_task_logic(
     )
     stage_status = RunStatus.review_needed if photo.status == PhotoStatus.review_needed else RunStatus.completed
     finish_stage(stage, status=stage_status, details=correction_metadata, output_path=source_path)
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return {
         "photo_id": str(photo.id),
         "storage_path": str(source_path),
@@ -708,7 +725,8 @@ async def ocr_task_logic(session: AsyncSession, page_id: UUID, settings: Setting
 
 
 async def enhancement_task_logic(
-    session: AsyncSession, photo_id: UUID, settings: Settings, preset: str | None = "auto"
+    session: AsyncSession, photo_id: UUID, settings: Settings, preset: str | None = "auto", *, commit: bool = True,
+    output_directories: set[Path] | None = None,
 ) -> dict:
     photo = await session.get(ExtractedPhoto, photo_id)
     if photo is None:
@@ -721,6 +739,9 @@ async def enhancement_task_logic(
         raise ValueError(f"Page not found for photo {photo_id}")
     run = await get_or_create_run(session, page, settings)
     stage = await start_stage(session, run, "enhancement", input_path=source_path)
+    output_dir = settings.storage_path / "processed" / str(photo.album_id) / "runs" / str(run.id) / "stages" / str(stage.id)
+    if output_directories is not None:
+        output_directories.add(output_dir)
 
     from app.pipeline.diffusion_restoration import premium_enhance_photo
 
@@ -743,17 +764,7 @@ async def enhancement_task_logic(
             ENHANCEMENT_ROUTES.labels(route="conservative_noop").inc()
             conservative = None
         else:
-            conservative_path = (
-                settings.storage_path
-                / "processed"
-                / str(photo.album_id)
-                / "runs"
-                / str(run.id)
-                / "stages"
-                / str(stage.id)
-                / "photos"
-                / f"{photo.id}_conservative.jpg"
-            )
+            conservative_path = output_dir / "photos" / f"{photo.id}_conservative.jpg"
             save_jpeg(conservative_path, conservative)
     else:
         ENHANCEMENT_ROUTES.labels(route="conservative_disabled").inc()
@@ -811,17 +822,7 @@ async def enhancement_task_logic(
                 restoration = None
                 ENHANCEMENT_ROUTES.labels(route="restoration_noop_or_failed").inc()
             else:
-                restoration_path = (
-                    settings.storage_path
-                    / "processed"
-                    / str(photo.album_id)
-                    / "runs"
-                    / str(run.id)
-                    / "stages"
-                    / str(stage.id)
-                    / "photos"
-                    / f"{photo.id}_restoration.jpg"
-                )
+                restoration_path = output_dir / "photos" / f"{photo.id}_restoration.jpg"
                 save_jpeg(restoration_path, restoration)
     else:
         ENHANCEMENT_ROUTES.labels(route="restoration_disabled").inc()
@@ -838,17 +839,7 @@ async def enhancement_task_logic(
             preset=effective_preset,
             degradation_report=degradation_report,
         )
-        premium_path = (
-            settings.storage_path
-            / "processed"
-            / str(photo.album_id)
-            / "runs"
-            / str(run.id)
-            / "stages"
-            / str(stage.id)
-            / "photos"
-            / f"{photo.id}_premium.jpg"
-        )
+        premium_path = output_dir / "photos" / f"{photo.id}_premium.jpg"
         save_jpeg(premium_path, premium)
 
     previous_metadata = dict(photo.enhancement_applied or {})
@@ -878,7 +869,10 @@ async def enhancement_task_logic(
         restoration=restoration,
         restoration_metadata=restoration_metadata,
     )
-    for preserved_key in ("review_reasons", "correction", "release_policy", "confidence_components"):
+    for preserved_key in (
+        "review_reasons", "correction", "release_policy", "confidence_components",
+        "review_provenance", "review_rejected_detection", "review_decisions",
+    ):
         if previous_metadata.get(preserved_key):
             variant_bundle[preserved_key] = previous_metadata[preserved_key]
     prior_variants = dict(previous_metadata.get("variants") or {})
@@ -955,11 +949,16 @@ async def enhancement_task_logic(
         details=photo.enhancement_applied | {"assets": produced_assets},
         output_path=Path(selected_path),
     )
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return {"photo_id": str(photo.id), "storage_path": selected_path, "metadata": photo.enhancement_applied}
 
 
-async def deduplication_task_logic(session: AsyncSession, photo_id: UUID, settings: Settings | None = None) -> dict:
+async def deduplication_task_logic(
+    session: AsyncSession, photo_id: UUID, settings: Settings | None = None, *, commit: bool = True,
+) -> dict:
     photo = await session.get(ExtractedPhoto, photo_id)
     if photo is None:
         raise ValueError(f"Photo not found: {photo_id}")
@@ -1009,11 +1008,16 @@ async def deduplication_task_logic(session: AsyncSession, photo_id: UUID, settin
         details={"phash": phash, "duplicate_of": str(duplicate_of) if duplicate_of else None, "distance": distance},
         output_path=Path(photo.storage_path),
     )
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return {"photo_id": str(photo.id), "phash": phash, "duplicate_of": str(duplicate_of) if duplicate_of else None}
 
 
-async def persistence_task_logic(session: AsyncSession, photo_id: UUID, settings: Settings | None = None) -> dict:
+async def persistence_task_logic(
+    session: AsyncSession, photo_id: UUID, settings: Settings | None = None, *, commit: bool = True,
+) -> dict:
     photo = await session.get(ExtractedPhoto, photo_id)
     if photo is None:
         raise ValueError(f"Photo not found: {photo_id}")
@@ -1074,7 +1078,10 @@ async def persistence_task_logic(session: AsyncSession, photo_id: UUID, settings
         details=exif_metadata | {"caption": caption, "asset_id": str(released_asset.id)},
         output_path=final_path,
     )
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return {"photo_id": str(photo.id), "status": photo.status.value, "exif": exif_metadata}
 
 

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  addManualPhoto,
   analyzeAlbumNow,
   createAlbum,
   deleteSegmentationTrainingImage,
@@ -1347,15 +1348,19 @@ function TrainingAnnotationView() {
   );
 }
 
-function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto }) {
+function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, selectedPhotoId, onSelectPhoto }) {
   const canvasRef = useRef(null);
   const [pageImage, setPageImage] = useState(null);
   const [draftShapes, setDraftShapes] = useState({});
   const [editMode, setEditMode] = useState("full_print");
   const [saveState, setSaveState] = useState(null);
+  const [addition, setAddition] = useState(null);
   const dragRef = useRef(null);
   const editingImage = editMode === "image_only";
   const pageId = page?.id;
+  const activePage = useRef(pageId);
+  const newPrint = addition?.pageId === pageId ? addition : null;
+  const canAddPhoto = pageImage?.pageId === pageId && ["completed", "review_needed"].includes(page?.status);
   const selected = photos.find((photo) => photo.id === selectedPhotoId);
   const selectedShape = selected && (draftShapes[selected.id] || draftShapeFromPhoto(selected));
   const motifReview = (selected?.crop_modes || getCropModes(selected))?.image_only;
@@ -1365,6 +1370,8 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
   const needsMotifSelection = editingImage && Boolean(imageSuggestion) && !selectedShape?.imageQuad;
   const measurement = selectedShape && parsePrintSize(selectedShape.printSizeFields);
   const sizeError = editingImage ? "" : measurement?.error;
+
+  useEffect(() => { activePage.current = pageId; }, [pageId]);
 
   useEffect(() => {
     setDraftShapes(Object.fromEntries(photos.map((photo) => [photo.id, draftShapeFromPhoto(photo)])));
@@ -1455,7 +1462,23 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
         }
       });
     });
-  }, [draftShapes, editingImage, pageId, pageImage, photos, selectedPhotoId, seamTraces]);
+    if (newPrint?.corners.length) {
+      const points = newPrint.corners.map(({ x, y }) => [x * canvas.width, y * canvas.height]);
+      context.strokeStyle = "#2563eb";
+      context.fillStyle = "#2563eb";
+      context.lineWidth = 3;
+      context.beginPath();
+      context.moveTo(...points[0]);
+      points.slice(1).forEach((point) => context.lineTo(...point));
+      if (points.length === 4) context.closePath();
+      context.stroke();
+      points.forEach(([x, y]) => {
+        context.beginPath();
+        context.arc(x, y, 6, 0, 2 * Math.PI);
+        context.fill();
+      });
+    }
+  }, [draftShapes, editingImage, newPrint, pageId, pageImage, photos, selectedPhotoId, seamTraces]);
 
   useEffect(() => {
     draw();
@@ -1479,6 +1502,12 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
   function onPointerDown(event) {
     if (saveState?.saving) return;
     const point = pointToBox(event);
+    if (newPrint) {
+      if (newPrint.saving || newPrint.corners.length === 4) return;
+      const corners = [...newPrint.corners, { x: clampUnit(point.x), y: clampUnit(point.y) }];
+      setAddition({ ...newPrint, corners: cyclicQuad(corners) || corners, error: null });
+      return;
+    }
     for (const photo of [...photos].reverse()) {
       const saved = draftShapeFromPhoto(photo);
       const shape = draftShapes[photo.id] || saved;
@@ -1555,6 +1584,27 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
     }
   }
 
+  function startAddition() {
+    setEditMode("full_print");
+    onSelectPhoto(null);
+    setSaveState(null);
+    setAddition({ pageId, requestId: crypto.randomUUID(), corners: [] });
+  }
+
+  async function saveNewPrint() {
+    if (!newPrint || newPrint.saving || newPrint.corners.length !== 4) return;
+    setAddition({ ...newPrint, saving: true, error: null });
+    try {
+      const photo = await onAddPhoto(pageId, newPrint.requestId, newPrint.corners);
+      if (activePage.current !== pageId) return;
+      setAddition(null);
+      onSelectPhoto(photo.id);
+      setSaveState({ photoId: photo.id, mode: "full_print", url: photo.urls?.full_print });
+    } catch (error) {
+      if (activePage.current === pageId) setAddition({ ...newPrint, error: error.message });
+    }
+  }
+
   if (!page) return <EmptyState label="Select a page to review." />;
 
   const currentSave = saveState?.photoId === selectedPhotoId && saveState?.mode === editMode ? saveState : null;
@@ -1562,11 +1612,21 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
     <div className="canvas-wrap">
       <div className="variant-tabs crop-mode-tabs" role="group" aria-label="Zu bearbeitenden Ausschnitt wählen">
         {Object.entries(cropModeLabels).map(([mode, label]) => (
-          <button key={mode} type="button" aria-pressed={editMode === mode} onClick={() => setEditMode(mode)} disabled={saveState?.saving}>
+          <button key={mode} type="button" aria-pressed={editMode === mode} onClick={() => setEditMode(mode)} disabled={saveState?.saving || Boolean(newPrint)}>
             {label}
           </button>
         ))}
       </div>
+      {!newPrint && canAddPhoto && (
+        <button className="text-button compact" type="button" onClick={startAddition} disabled={saveState?.saving}>
+          Fehlenden Abzug ergänzen
+        </button>
+      )}
+      {newPrint && (
+        <p className="crop-editor-hint" aria-live="polite">
+          Markiere die vier Ecken des Abzugs auf der Albumseite. {newPrint.corners.length} von 4 gesetzt.
+        </p>
+      )}
       {editingImage && selected && (
         <p className="crop-editor-hint">
           {seamTraces?.length
@@ -1588,8 +1648,25 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        aria-label="Segmented album page"
+        className={newPrint ? "mark-print-corners" : undefined}
+        aria-label="Albumseite mit markierten Abzügen"
       />
+      {newPrint && (
+        <div className="manual-print-actions">
+          <button className="primary-button compact" type="button" onClick={saveNewPrint}
+            disabled={newPrint.saving || newPrint.corners.length !== 4}>
+            {newPrint.saving ? "Abzug wird berechnet …" : "Abzug speichern"}
+          </button>
+          <button className="text-button compact" type="button" onClick={startAddition}
+            disabled={newPrint.saving || newPrint.corners.length === 0}>
+            Ecken zurücksetzen
+          </button>
+          <button className="text-button compact" type="button" onClick={() => setAddition(null)} disabled={newPrint.saving}>
+            Abbrechen
+          </button>
+          {newPrint.error && <p role="alert">{newPrint.error}</p>}
+        </div>
+      )}
       {!editingImage && selectedShape && (
         <PrintSizeFields
           value={selectedShape.printSizeFields}
@@ -1607,10 +1684,10 @@ function ReviewCanvas({ page, photos, onSaveBox, selectedPhotoId, onSelectPhoto 
           setSaveState(null);
         }} />
       )}
-      <button className="primary-button compact" type="button" disabled={!selected || saveState?.saving || Boolean(sizeError) || needsMotifSelection} onClick={saveSelected}>
+      {!newPrint && <button className="primary-button compact" type="button" disabled={!selected || saveState?.saving || Boolean(sizeError) || needsMotifSelection} onClick={saveSelected}>
         <Save size={16} />
         {currentSave?.saving ? "Ausschnitt wird berechnet …" : "Zuschnitt speichern"}
-      </button>
+      </button>}
       {currentSave?.error && <p role="alert">{currentSave.error}</p>}
       {currentSave?.url && <img className="review-crop-preview" src={currentSave.url} alt={cropModeLabels[editMode]} />}
       {editingImage && motifPreview && !currentSave?.url && (
@@ -1672,6 +1749,12 @@ function ReviewView({ albumId, albumStatus, pages, photos, selectedPageId, setSe
     return detail;
   }
 
+  async function addPhoto(pageId, requestId, corners) {
+    const photo = await addManualPhoto(pageId, requestId, corners);
+    const [detail] = await Promise.all([getPhoto(photo.id), refreshCorrections()]);
+    return detail;
+  }
+
   async function reprocessSelected() {
     if (!selectedPhotoId) return;
     await reprocessPhoto(selectedPhotoId);
@@ -1701,6 +1784,7 @@ function ReviewView({ albumId, albumStatus, pages, photos, selectedPageId, setSe
           selectedPhotoId={selectedPhotoId}
           onSelectPhoto={setSelectedPhotoId}
           onSaveBox={saveBox}
+          onAddPhoto={addPhoto}
         />
       </section>
       <section className="side-surface">

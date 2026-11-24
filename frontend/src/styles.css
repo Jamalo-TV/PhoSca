@@ -656,6 +656,21 @@ select {
   margin-bottom: 10px;
 }
 
+.canvas-wrap .mark-print-corners {
+  cursor: crosshair;
+}
+
+.manual-print-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.manual-print-actions p {
+  flex-basis: 100%;
+}
+
 .crop-editor-hint {
   margin: 0 0 10px;
   color: #40534e;

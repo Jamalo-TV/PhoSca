@@ -126,6 +126,16 @@ def test_bright_insert_with_a_beveled_aperture_cannot_release_cardboard():
             assert mode["status"] == "review_needed" and ALBUM_WINDOW_STOCK_UNCERTAIN in mode["reason_codes"]
 
 
+def test_manually_added_album_window_stays_in_review():
+    image, expected = _album_scene("rectangle", tilted=False)
+    quad = [{"x": float(x), "y": float(y)} for x, y in expected[0]]
+    mask = {"source": "manual_added", "manual_added": True, "warp_quad": quad, "visible_polygon": quad}
+    crop = correct_photo_crop(image, {}, mask, auto_orient=False, protect_regions=False, dual_mode=True)
+    assert crop.image_only is None
+    for mode in crop.metadata["crop_modes"].values():
+        assert mode["status"] == "review_needed" and ALBUM_WINDOW_OCCLUDED in mode["reason_codes"]
+
+
 def test_learned_neighbor_cannot_claim_fixed_window_pixels(tmp_path, monkeypatch):
     from app.pipeline import segmentation, visible_mask_refinement
     from app.pipeline.geometry import normalized_polygon_overlap

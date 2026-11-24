@@ -4,7 +4,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN
+from app.pipeline.album_windows import (
+    ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves,
+)
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
 from app.pipeline.geometry import (
@@ -81,10 +83,10 @@ def _explicit_quad(
     return points
 
 
-def validate_review_quads(mask: dict, width: int, height: int) -> None:
+def validate_review_quads(mask: dict, width: int, height: int, *, require_cyclic: bool = False) -> None:
     """Validate authoritative reviewer vertices before storing a correction revision."""
     measured = mask.get("print_size_mm") is not None
-    outer = _explicit_quad(mask, "warp_quad", width, height, preserve_width_edge=measured)
+    outer = _explicit_quad(mask, "warp_quad", width, height, preserve_width_edge=measured or require_cyclic)
     if measured and outer is None:
         raise ValueError("measured_print_requires_warp_quad")
     inner = _explicit_quad(mask, "image_quad", width, height)
@@ -92,6 +94,21 @@ def validate_review_quads(mask: dict, width: int, height: int) -> None:
         return
     if outer is None or any(cv2.pointPolygonTest(outer, tuple(point), True) < -0.02 for point in inner):
         raise ValueError("image_quad_outside_print")
+
+
+def manual_print_intersects(
+    crop_quad: list[dict] | None, marked_quad: list[dict], width: int, height: int,
+) -> bool:
+    """Treat a material intersection with an unverified mark as ambiguous ownership."""
+    try:
+        crop = _explicit_quad({"warp_quad": crop_quad}, "warp_quad", width, height)
+        mark = _explicit_quad({"warp_quad": marked_quad}, "warp_quad", width, height)
+    except ValueError:
+        return False
+    if crop is None or mark is None:
+        return False
+    overlap, _ = cv2.intersectConvexConvex(crop, mark)
+    return overlap >= max(6.0, 0.002 * cv2.contourArea(crop))
 
 
 def _points_from_mask(
@@ -1033,6 +1050,7 @@ def _inspect_print(
     page: np.ndarray, quad: np.ndarray, mask: dict, visible: np.ndarray | None,
     neighbors: list[np.ndarray], regions: list[dict], *, dual_mode: bool, manual: bool,
     allow_page_face_overlap: bool, protect_regions: bool, enable_classical_retry: bool,
+    manual_neighbors: list[dict] | None = None,
 ) -> _PrintInspection:
     height, width = page.shape[:2]
     metrics = _validate_quad(quad, width, height)
@@ -1078,11 +1096,19 @@ def _inspect_print(
                 quad = refined
                 metrics = _validate_quad(quad, width, height)
     if dual_mode:
+        manual_addition = mask.get("manual_added") is True
         if mask.get("album_window_occluded") is True:
             reasons.append(ALBUM_WINDOW_OCCLUDED)
         elif mask.get("source") == ALBUM_WINDOW_SOURCE:
             reasons.append(ALBUM_WINDOW_STOCK_UNCERTAIN)
-        if not manual and np.any((quad < 0.5) | (quad > np.array([width, height]) - 1.5)):
+        elif manual_addition:
+            outline = pixel_vertices_to_normalized(quad, width, height)
+            for leaf in album_window_leaves(page):
+                if (leaf.print_outline is not None
+                        and normalized_polygon_overlap(outline, leaf.print_outline).first_containment >= .80):
+                    reasons.append(ALBUM_WINDOW_OCCLUDED if leaf.aperture_quad is not None else ALBUM_WINDOW_STOCK_UNCERTAIN)
+                    break
+        if (not manual or manual_addition) and np.any((quad < 0.5) | (quad > np.array([width, height]) - 1.5)):
             reasons.append("PRINT_AT_CAPTURE_EDGE")
         sides = [boundary.get(side, {}) for side in ("top", "right", "bottom", "left")]
         inferred = tuple(index for index, evidence in enumerate(sides) if evidence.get("matched_print_rim"))
@@ -1093,7 +1119,13 @@ def _inspect_print(
             and (evidence.get("corner_support") or 0) >= 0.8
             and "observed_rim_lab" in evidence and index not in inferred
         }
-        occluded = _neighbor_occlusion(page, quad, visible, neighbors, inferred_sides=inferred, observed_sides=observed)
+        occluded = _neighbor_occlusion(
+            page, quad, None if manual_addition else visible, neighbors,
+            inferred_sides=inferred, observed_sides=observed,
+        )
+        if not occluded and manual_neighbors:
+            target = _vertices_on_page(quad, width, height)
+            occluded = any(manual_print_intersects(target, mark, width, height) for mark in manual_neighbors)
         if _clipped_visible_corner(quad, visible) or occluded:
             reasons.append("PRINT_POSSIBLY_OCCLUDED")
         if not reasons and missing_corner_material(page, quad):
@@ -1219,6 +1251,8 @@ def correct_photo_crop(
         page_image, src_points, mask, visible, neighbor_polygons, regions,
         dual_mode=dual_mode, manual=manual, allow_page_face_overlap=allow_page_face_overlap,
         protect_regions=protect_regions, enable_classical_retry=enable_classical_retry,
+        manual_neighbors=[neighbor["warp_quad"] for neighbor in neighbor_masks or []
+                          if neighbor.get("manual_added") is True and neighbor.get("warp_quad")],
     )
     src_points, quad_metrics = inspection.quad, inspection.metrics
     boundary_refinement, full_reasons = inspection.boundary, inspection.reasons.copy()

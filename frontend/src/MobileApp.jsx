@@ -314,6 +314,8 @@ function LiveCropPreview({ src, quad, savedCropUrl, measuredAspect, orientation 
 
 function CropReview({ albumId, goHome }) {
   const [type, setType] = useState("segmentation"); const [items, setItems] = useState([]); const [index, setIndex] = useState(0); const [message, setMessage] = useState("");
+  const [answerError, setAnswerError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const leavingRef=useRef(false); const goHomeRef=useRef(goHome);
   const load = useCallback(async () => { setItems(await getReviewQueue(albumId || undefined, type)); setIndex(0); }, [albumId, type]);
   useEffect(() => { load().catch(e => setMessage(e.message)); }, [load]); const item = items[index];
@@ -331,12 +333,31 @@ function CropReview({ albumId, goHome }) {
     return ()=>removeEventListener("popstate",keepReviewOpen);
   },[]);
   function leaveReview(){ leavingRef.current=true; history.back(); }
-  async function record(value, metadata = {}) {
-    if (!item) return; await submitReviewEvent({ task_type: type, task_id: item.id, answer: value, reason_code: value === "correct" ? null : value, idempotency_key: crypto.randomUUID(), metadata: { page_id: item.page_id, ui: "mobile-v2", ...metadata } }); setMessage("Antwort gespeichert"); setIndex(i => i + 1);
+  async function record(value) {
+    if (!item || submitting) return;
+    setSubmitting(true);
+    setAnswerError("");
+    const metadata = { page_id: item.page_id, ui: "mobile-v2" };
+    if (type === "segmentation") metadata.photo_count_revision = item.payload.photo_count_revision;
+    try {
+      await submitReviewEvent({
+        task_type: type, task_id: item.id, answer: value,
+        reason_code: value === "correct" ? null : value,
+        idempotency_key: crypto.randomUUID(), metadata,
+      });
+      setMessage("Antwort gespeichert");
+      setIndex((current) => current + 1);
+    } catch (error) {
+      setAnswerError(error.message);
+      await load().catch(() => {});
+    } finally {
+      setSubmitting(false);
+    }
   }
   return <div className="mobile-shell crop-review-shell"><MobileHeader title="Cropping prüfen" onBack={leaveReview}/><main className="mobile-content"><div className="review-top"><div><span>Kurze Sitzung</span><strong>{Math.min(index + 1, items.length || 5)} / {Math.min(items.length, 5) || 5}</strong></div><div className="review-progress"><i style={{width:`${Math.min(100, index / Math.max(1, Math.min(items.length,5)) * 100)}%`}}/></div></div>
-    <div className="task-switch"><button className={type === "segmentation" ? "active" : ""} onClick={() => setType("segmentation")}>Printanzahl</button><button className={type === "geometry" ? "active" : ""} onClick={() => setType("geometry")}>Crop-Qualität</button></div>
-    {item ? <><DetectionOverlay item={item} editable={type === "geometry"} onSaved={() => setMessage("Vier Ecken gespeichert und Perspektive korrigiert")}/><section className="answer-grid">{cropAnswers[type].map(([value,label]) => <button key={value} className={value === "correct" ? "good" : ""} onClick={() => record(value)}>{label}</button>)}</section></> : <section className="review-done"><Check size={48}/><h2>{message || "Keine Aufgaben offen"}</h2><p>Neue Aufgaben erscheinen nach der Bildanalyse automatisch.</p><button onClick={load}><RefreshCw/> Neu laden</button></section>}{item && <button className="skip-task" onClick={() => setIndex(i => i + 1)}>Überspringen</button>}
+    <div className="task-switch"><button className={type === "segmentation" ? "active" : ""} onClick={() => setType("segmentation")} disabled={submitting}>Printanzahl</button><button className={type === "geometry" ? "active" : ""} onClick={() => setType("geometry")} disabled={submitting}>Crop-Qualität</button></div>
+    {answerError && <p role="alert">{answerError}</p>}
+    {item ? <><DetectionOverlay item={item} editable={type === "geometry"} onSaved={() => setMessage("Vier Ecken gespeichert und Perspektive korrigiert")}/><section className="answer-grid">{cropAnswers[type].map(([value,label]) => <button key={value} className={value === "correct" ? "good" : ""} disabled={submitting} onClick={() => record(value)}>{label}</button>)}</section></> : <section className="review-done"><Check size={48}/><h2>{message || "Keine Aufgaben offen"}</h2><p>Neue Aufgaben erscheinen nach der Bildanalyse automatisch.</p><button onClick={load}><RefreshCw/> Neu laden</button></section>}{item && <button className="skip-task" disabled={submitting} onClick={() => setIndex(i => i + 1)}>Überspringen</button>}
   </main></div>;
 }
 
