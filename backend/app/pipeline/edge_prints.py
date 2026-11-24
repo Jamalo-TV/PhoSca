@@ -9,10 +9,11 @@ from app.pipeline.geometry import order_quad_cyclic
 from app.pipeline.print_edges import _side_line
 
 
-CAPTURE_EDGE_REVISION = 2
+CAPTURE_EDGE_REVISION = 3
 CAPTURE_EDGE_SOURCE = "capture_edge_boundary"
 CAPTURE_EDGE_HOLD = "PRINT_AT_CAPTURE_EDGE"
 SCANNER_BACKING_REVIEW = "SCANNER_BACKING_UNCERTAIN"
+CLIPPED_PRINT_OVERLAP_REVIEW = "CLIPPED_PRINT_OVERLAP_UNCERTAIN"
 
 
 def _photo_texture(image: np.ndarray, quad: np.ndarray) -> bool:
@@ -157,6 +158,28 @@ def clipped_print_outlines(image: np.ndarray) -> list[np.ndarray]:
         if quad is not None:
             outlines.append(quad)
     return outlines
+
+
+def clipped_print_overlap_uncertain(image: np.ndarray, quad: np.ndarray, clipped: np.ndarray) -> bool:
+    """Check whether a contained contour reuses a visible side of another print."""
+    height, width = image.shape[:2]
+    ends = np.roll(clipped, -1, axis=0)
+    sides = ends - clipped
+    norms = sides[:, [1, 0]] * np.float32([-1, 1]) / np.linalg.norm(sides, axis=1)[:, None]
+    # The capture edge contains no physical paper boundary to share.
+    frame_side = ((clipped == ends) & ((clipped == 0) | (clipped == [width - 1, height - 1]))).any(axis=1)
+    if frame_side.all():
+        return False
+    distances = np.abs(np.einsum("vsi,si->vs", quad[:, None] - clipped, norms))[:, ~frame_side]
+    shared = (np.maximum(distances, np.roll(distances, -1, axis=0)) <= 3).any(axis=1)
+    if not shared.any() or shared.all():
+        return False
+    radius = int(np.clip(round(min(height, width) * .008), 4, 18))
+    for index in np.flatnonzero(~shared):
+        line, evidence = _side_line(image, quad[index], quad[(index + 1) % 4], radius)
+        if line is None or evidence["support"] < .80 or (evidence["corner_support"] or 0) < .60:
+            return True
+    return False
 
 
 def _sample_backing(

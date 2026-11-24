@@ -38,13 +38,16 @@ import {
   reprocessPhoto,
   saveSegmentationTrainingLabels,
   search,
+  submitReviewEvent,
   uploadSegmentationTrainingImages,
   uploadFileChunked,
   uploadFiles,
 } from "./api.js";
 import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
-import { CropOrientationField, CropVariants, cropModeLabels, getCropModes } from "./CropVariants.jsx";
+import {
+  clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
+} from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
 const tabs = [
@@ -1348,7 +1351,7 @@ function TrainingAnnotationView() {
   );
 }
 
-function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, selectedPhotoId, onSelectPhoto }) {
+function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, selectedPhotoId, onSelectPhoto }) {
   const canvasRef = useRef(null);
   const [pageImage, setPageImage] = useState(null);
   const [draftShapes, setDraftShapes] = useState({});
@@ -1362,6 +1365,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, selectedPhotoId, on
   const newPrint = addition?.pageId === pageId ? addition : null;
   const canAddPhoto = pageImage?.pageId === pageId && ["completed", "review_needed"].includes(page?.status);
   const selected = photos.find((photo) => photo.id === selectedPhotoId);
+  const overlapReview = selected?.segmentation_confidence != null
+    && selected.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
+  const rejectedDetection = overlapReview && Boolean(selected.enhancement_applied?.review_rejected_detection);
   const selectedShape = selected && (draftShapes[selected.id] || draftShapeFromPhoto(selected));
   const motifReview = (selected?.crop_modes || getCropModes(selected))?.image_only;
   const imageSuggestion = cyclicQuad(sanitizePolygon(motifReview?.suggested_warp_quad));
@@ -1584,6 +1590,17 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, selectedPhotoId, on
     }
   }
 
+  async function rejectSelected() {
+    const target = { photoId: selected.id, mode: editMode };
+    setSaveState({ ...target, saving: true, rejecting: true });
+    try {
+      await onRejectPhoto(selected.id);
+      setSaveState({ ...target, rejected: true });
+    } catch (error) {
+      setSaveState({ ...target, error: error.message });
+    }
+  }
+
   function startAddition() {
     setEditMode("full_print");
     onSelectPhoto(null);
@@ -1651,6 +1668,14 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, selectedPhotoId, on
         className={newPrint ? "mark-print-corners" : undefined}
         aria-label="Albumseite mit markierten Abzügen"
       />
+      {!newPrint && overlapReview && !rejectedDetection && (
+        <div className="manual-print-actions">
+          <p className="crop-editor-hint">{clippedOverlapHint}</p>
+          <button className="text-button compact" type="button" onClick={rejectSelected} disabled={saveState?.saving}>
+            {currentSave?.rejecting ? "Vorschlag wird geprüft …" : "Falsches Objekt"}
+          </button>
+        </div>
+      )}
       {newPrint && (
         <div className="manual-print-actions">
           <button className="primary-button compact" type="button" onClick={saveNewPrint}
@@ -1686,14 +1711,15 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, selectedPhotoId, on
       )}
       {!newPrint && <button className="primary-button compact" type="button" disabled={!selected || saveState?.saving || Boolean(sizeError) || needsMotifSelection} onClick={saveSelected}>
         <Save size={16} />
-        {currentSave?.saving ? "Ausschnitt wird berechnet …" : "Zuschnitt speichern"}
+        {currentSave?.saving && !currentSave.rejecting ? "Ausschnitt wird berechnet …" : "Zuschnitt speichern"}
       </button>}
       {currentSave?.error && <p role="alert">{currentSave.error}</p>}
+      {(rejectedDetection || currentSave?.rejected) && <p role="status">Vorschlag als falsches Objekt markiert.</p>}
       {currentSave?.url && <img className="review-crop-preview" src={currentSave.url} alt={cropModeLabels[editMode]} />}
       {editingImage && motifPreview && !currentSave?.url && (
         <img className="review-crop-preview" src={motifPreview} alt="Konturgetreue Motivvorschau zur Prüfung" />
       )}
-      {currentSave && !currentSave.saving && !currentSave.error && !currentSave.url && (
+      {currentSave && !currentSave.saving && !currentSave.error && !currentSave.url && !currentSave.rejected && (
         <p role="status">Der gespeicherte Ausschnitt muss geprüft werden.</p>
       )}
     </div>
@@ -1755,6 +1781,14 @@ function ReviewView({ albumId, albumStatus, pages, photos, selectedPageId, setSe
     return detail;
   }
 
+  async function rejectPhoto(photoId) {
+    await submitReviewEvent({
+      task_type: "geometry", task_id: photoId, answer: "wrong_object",
+      idempotency_key: crypto.randomUUID(), metadata: { ui: "desktop" },
+    });
+    await refreshCorrections();
+  }
+
   async function reprocessSelected() {
     if (!selectedPhotoId) return;
     await reprocessPhoto(selectedPhotoId);
@@ -1785,6 +1819,7 @@ function ReviewView({ albumId, albumStatus, pages, photos, selectedPageId, setSe
           onSelectPhoto={setSelectedPhotoId}
           onSaveBox={saveBox}
           onAddPhoto={addPhoto}
+          onRejectPhoto={rejectPhoto}
         />
       </section>
       <section className="side-surface">

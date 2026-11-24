@@ -1,0 +1,23 @@
+{
+  "split_policy": {
+    "role": "development",
+    "album_independent": false
+  },
+  "pages": [
+    {
+      "id": "domoritz-2021-loose-flatbed",
+      "source_group": "domoritz-loose-prints-physical-album-unconfirmed",
+      "annotation_provenance": "development_draft",
+      "page_category": "real_flatbed",
+      "difficulty_tags": ["adjacent_prints", "white_on_white", "flatbed_scan"],
+      "image": "../../runs/crop-quality/domoritz-flatbed-development.jpg",
+      "image_sha256": "c0228db8de84c6277e03b2f6871124eac9377f57204731893700c33e50915b81",
+      "source_image_url": "https://raw.githubusercontent.com/domoritz/domoritz.github.io/1b850fd3a58519d3fa896b9da1f4d121e55434f7/images/scan.jpg",
+      "source_raster_pixels": [600, 851],
+      "rights": "The blog publishes this scan. Print rights and source album are unverified. Keep the source and derivatives local.",
+      "annotations": "domoritz-flatbed-labels.txt",
+      "annotations_sha256": "1246d6bc1e345aa9e7b6e4563781d3e43e90798f1a11357418b6cd8095325bd9",
+      "expected_count": 4
+    }
+  ]
+}

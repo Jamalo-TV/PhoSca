@@ -6,6 +6,9 @@ export const cropModeLabels = {
   image_only: "Nur Bildmotiv",
 };
 
+export const clippedOverlapReason = "CLIPPED_PRINT_OVERLAP_UNCERTAIN";
+export const clippedOverlapHint = "Prüfe am Original, ob hier ein weiterer Papierabzug aufliegt. Ziehe die Ecken an seine Papierkante oder markiere den Vorschlag als «Falsches Objekt».";
+
 export function getCropModes(photo) {
   return photo?.enhancement_applied?.correction?.crop_modes || null;
 }
@@ -63,16 +66,19 @@ export function CropVariants({ photo, hidden = false }) {
   const url = result?.status === "ready" ? photo.urls?.[mode] : null;
   const possibleMultipanel = photo.enhancement_applied?.segmentation_review_reasons?.includes("MULTIPANEL_PRINT_REVIEW");
   const scannerBackingUncertain = photo.enhancement_applied?.segmentation_review_reasons?.includes("SCANNER_BACKING_UNCERTAIN");
+  const clippedOverlapUncertain = photo.segmentation_confidence != null
+    && photo.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
   const captureEdgeClipped = photo.segmentation_mask?.capture_edge_clipped === true;
   const fullPreview = photo.urls?.source_corrected_untrimmed || photo.urls?.original;
   const motifPreview = photo.urls?.image_only_preview;
   const preview = mode === "image_only"
-    ? motifPreview || ((possibleMultipanel || scannerBackingUncertain || captureEdgeClipped) && fullPreview)
+    ? motifPreview || ((possibleMultipanel || scannerBackingUncertain || clippedOverlapUncertain || captureEdgeClipped) && fullPreview)
     : fullPreview;
   const reviewMessage = (captureEdgeClipped
     && "Der vorgeschlagene Abzug reicht bis an den Aufnahmerand. Lade für den Zuschnitt eine Aufnahme hoch, die ihn ganz zeigt.")
     || (possibleMultipanel && reviewMessages.MULTIPANEL_PRINT_REVIEW)
     || (scannerBackingUncertain && reviewMessages.SCANNER_BACKING_UNCERTAIN)
+    || (clippedOverlapUncertain && clippedOverlapHint)
     || result?.reason_codes?.map((code) => reviewMessages[code]).find(Boolean)
     || (result?.status === "ready" && !url && reviewMessages.CROP_VALIDATION_UNAVAILABLE)
     || (mode === "image_only" ? reviewMessages.IMAGE_BOUNDARY_UNCERTAIN : "Die Aussenkante des Abzugs muss geprüft werden.");

@@ -8,7 +8,9 @@ import pytest
 
 from app.config import Settings
 from app.pipeline import segmentation
-from app.pipeline.edge_prints import CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, SCANNER_BACKING_REVIEW
+from app.pipeline.edge_prints import (
+    CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
+)
 from app.pipeline.variants import variant_path_from_photo
 
 
@@ -77,6 +79,105 @@ def test_capture_edge_recovery_abstains_without_source_or_detector_support(reaso
         original = segmentation.SegmentationResult(original.detections[:1], {})
 
     assert segmentation._recover_capture_edge_prints(page, original, settings) is original
+
+
+def scan_with_nested_candidate(settings, case):
+    page, _, original = scan_with_clipped_prints(settings)
+    height, width = page.shape[:2]
+    quad = np.float32([[392, 85], [584, 98], [574, 215], [392, 205]])
+    if case == "separate_paper":
+        cv2.fillConvexPoly(page, quad.astype(np.int32), (98, 105, 114))
+    elif case == "low_contrast_paper":
+        visible = np.zeros((height, width), np.uint8)
+        cv2.fillConvexPoly(visible, quad.astype(np.int32), 1)
+        page[visible != 0] -= 2
+    elif case == "fully_inside":
+        quad[[0, 3], 0] += 20
+    extra = segmentation._make_detection(
+        box={}, points=quad, confidence=.86, image_width=width, image_height=height,
+        settings=settings, source="classical_border_quad", detector_source="edge_contour",
+    )
+    if case == "model_support":
+        extra = replace(extra, mask={**extra.mask, "fusion": {"proposal_families": ["classical", "model"]}})
+    return page, segmentation.SegmentationResult([*original.detections, extra], {})
+
+
+@pytest.mark.parametrize("case", ["fragment", "separate_paper", "low_contrast_paper", "fully_inside", "model_support"])
+def test_capture_edge_overlap_holds_unsupported_shared_contour(case):
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    page, original = scan_with_nested_candidate(settings, case)
+    result = segmentation._recover_capture_edge_prints(page, original, settings)
+
+    ambiguous = case in {"fragment", "low_contrast_paper"}
+    assert result.metadata["capture_edge_outlines_recovered"] == 2
+    assert result.metadata.get("capture_edge_overlap_reviews", 0) == int(ambiguous)
+    assert len(result.detections) == 3
+    assert result.detections[-1].mask == original.detections[-1].mask
+    assert (CLIPPED_PRINT_OVERLAP_REVIEW in result.detections[-1].review_reasons) == ambiguous
+
+
+@pytest.mark.parametrize("review_action", ["wrong_object", "manual_correction"])
+async def test_nested_capture_candidate_reaches_review_without_a_download(client, monkeypatch, review_action):
+    from app.config import get_settings
+    from app.services import pipeline
+
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
+    monkeypatch.setenv("MAX_UPLOAD_SIZE", "1048576")
+    monkeypatch.setenv("MAX_REQUEST_SIZE", "2097152")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    get_settings.cache_clear()
+    case = "fragment" if review_action == "wrong_object" else "low_contrast_paper"
+    page, original = scan_with_nested_candidate(get_settings(), case)
+    monkeypatch.setattr(segmentation, "_segment_album_page", lambda *_: original)
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    album = await client.post("/api/v1/albums", json={"name": "Unklares Foto im Abzug"})
+    assert album.status_code == 201, album.text
+    album_id = album.json()["id"]
+    base = f"/api/v1/albums/{album_id}"
+    ok, image = cv2.imencode(".jpg", page, [cv2.IMWRITE_JPEG_QUALITY, 97])
+    assert ok
+    upload = await client.post(f"{base}/pages/upload", files=[("files", ("scan.jpg", image.tobytes(), "image/jpeg"))])
+    assert upload.status_code == 201, upload.text
+    photos = (await client.get(f"{base}/photos")).json()
+    candidate, = [photo for photo in photos if not photo["segmentation_mask"].get("capture_edge_clipped")]
+    assert candidate["status"] == "review_needed"
+    assert CLIPPED_PRINT_OVERLAP_REVIEW in candidate["enhancement_applied"]["segmentation_review_reasons"]
+    queue = f"/api/v1/review/queue?album_id={album_id}"
+    items = (await client.get(f"{queue}&type=geometry")).json()
+    item, = [item for item in items if item["id"] == candidate["id"]]
+    assert CLIPPED_PRINT_OVERLAP_REVIEW in item["payload"]["review_reasons"]
+    for mode, download_url in candidate["crop_download_urls"].items():
+        assert download_url is None
+        assert (await client.get(f"/api/v1/photos/{candidate['id']}/image?variant={mode}")).status_code == 404
+    assert (await client.get(item["payload"]["untrimmed_url"])).status_code == 200
+
+    body = {"task_type": "geometry", "task_id": candidate["id"], "idempotency_key": str(uuid4())}
+    events = "/api/v1/review/events"
+    assert (await client.post(events, json={**body, "answer": "correct"})).status_code == 409
+    if review_action == "manual_correction":
+        outer = candidate["segmentation_mask"]["polygon"]
+        photo_url = f"/api/v1/photos/{candidate['id']}"
+        corrected = await client.patch(f"{photo_url}/bounding-box", json={
+            "bounding_box": candidate["bounding_box"],
+            "segmentation_mask": {"source": "manual_quad", "polygon": outer, "warp_quad": outer,
+                                  "image_quad": outer, "print_size_mm": {"width": 150., "height": 95.}},
+        })
+        assert corrected.status_code == 200, corrected.text
+        for mode, url in corrected.json()["crop_download_urls"].items():
+            assert url, corrected.json()["enhancement_applied"]["correction"]["crop_modes"][mode]
+            download = await client.get(url)
+            assert download.status_code == 200
+            rendered = cv2.imdecode(np.frombuffer(download.content, np.uint8), cv2.IMREAD_COLOR)
+            assert abs(rendered.shape[1] / rendered.shape[0] - 150 / 95) < .02
+        return
+    rejected = await client.post(events, json={**body, "answer": "wrong_object", "metadata": {"ui": "desktop"}})
+    assert rejected.status_code == 201, rejected.text
+    page_item, = (await client.get(f"{queue}&type=segmentation")).json()
+    assert page_item["payload"]["detection_count"] == 2
+    assert {entry["photo_id"] for entry in page_item["payload"]["detections"]} == {
+        photo["id"] for photo in photos if photo["id"] != candidate["id"]
+    }
 
 
 def scan_with_backing_rails(settings, case):

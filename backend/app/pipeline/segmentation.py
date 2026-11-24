@@ -11,7 +11,8 @@ import numpy as np
 from app.config import Settings
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves
 from app.pipeline.edge_prints import (
-    CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, SCANNER_BACKING_REVIEW, clipped_print_outlines, scanner_backing_evidence,
+    CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
+    clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
 )
 from app.pipeline.geometry import (
     PolygonOverlap,
@@ -1608,29 +1609,39 @@ def _recover_capture_edge_prints(
     replacements = proposals[0]
     updated = [replacements.get(index, item) for index, item in enumerate(detections)]
     metadata = {**result.metadata, "capture_edge_outlines_recovered": len(replacements)}
+    recovered = [_detection_polygon(item) for item in replacements.values()]
+    clipped = [normalized_vertices_to_pixels(outline, width, height) for outline in recovered]
     rejected = set()
-    if len(replacements) >= 3:
-        recovered = [_detection_polygon(item) for item in replacements.values()]
-        clipped = [normalized_vertices_to_pixels(outline, width, height) for outline in recovered]
-        for index, item in enumerate(detections):
-            if (index in replacements or item.mask.get("detector_source") != "edge_contour"
-                    or "model" in (item.mask.get("fusion") or {}).get("proposal_families", [])
-                    or MULTIPANEL_PRINT_REVIEW in item.review_reasons):
-                continue
-            outline = _detection_polygon(item)
-            if len(outline) != 4 or sum(
-                normalized_polygon_overlap(outline, other).first_containment >= .02 for other in recovered
-            ) < 3:
-                continue
-            try:
-                quad = order_quad_cyclic(normalized_vertices_to_pixels(outline, width, height))
+    overlap_reviews = 0
+    for index, item in enumerate(detections):
+        if (index in replacements or item.mask.get("detector_source") != "edge_contour"
+                or "model" in (item.mask.get("fusion") or {}).get("proposal_families", [])
+                or MULTIPANEL_PRINT_REVIEW in item.review_reasons):
+            continue
+        outline = _detection_polygon(item)
+        if len(outline) != 4:
+            continue
+        overlaps = [normalized_polygon_overlap(outline, other) for other in recovered]
+        shared = [clip for clip, overlap in zip(clipped, overlaps, strict=True)
+                  if overlap.first_containment >= .985 and overlap.second_containment <= .45]
+        crosses_multiple = sum(overlap.first_containment >= .02 for overlap in overlaps) >= 3
+        if len(shared) != 1 and not crosses_multiple:
+            continue
+        try:
+            quad = order_quad_cyclic(normalized_vertices_to_pixels(outline, width, height))
+            if len(shared) == 1 and clipped_print_overlap_uncertain(image, quad, shared[0]):
+                updated[index] = replace(item, review_reasons=[CLIPPED_PRINT_OVERLAP_REVIEW, *item.review_reasons])
+                overlap_reviews += 1
+            elif crosses_multiple:
                 evidence = scanner_backing_evidence(image, quad, clipped)
-            except (cv2.error, ValueError):
-                continue
-            if evidence == "backing":
-                rejected.add(index)
-            elif evidence == "uncertain":
-                updated[index] = replace(item, review_reasons=[SCANNER_BACKING_REVIEW, *item.review_reasons])
+                if evidence == "backing":
+                    rejected.add(index)
+                elif evidence == "uncertain":
+                    updated[index] = replace(item, review_reasons=[SCANNER_BACKING_REVIEW, *item.review_reasons])
+        except (cv2.error, ValueError):
+            continue
+    if overlap_reviews:
+        metadata["capture_edge_overlap_reviews"] = overlap_reviews
     if rejected:
         metadata["scanner_backing_outlines_rejected"] = len(rejected)
         updated = [item for index, item in enumerate(updated) if index not in rejected]

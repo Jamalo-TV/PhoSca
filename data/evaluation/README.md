@@ -1175,12 +1175,46 @@ the same. The visibly incomplete source provides no motif release reference.
 The upload flow returned review previews and withheld both downloads for
 all three clipped prints in every quarter turn. At 90° and 270° a different
 classical proposal remains inside the bottom print, covering about 13% of
-its area. JPEG70 in the original orientation produced three clipped prints
-with no other proposal. Five independently probed dark counterexamples
-kept the ambiguous area in review. Those inserted prints still need
-manual localization. Twelve warmed measurements of the scanner check on
-the 2179 × 3000 raster gave about 57 ms median and 60 ms p95.
+its area. The candidate shares the parent's measured paper edge, and its
+remaining sides lack enough support for a separate print. The right side
+cuts a tree branch. A nearly registered laid-on copy can still reproduce
+a continuous branch, so the candidate stays in review with an overlap
+reason. Marking it as a wrong object through the desktop editor or the
+mobile review removes it from the photo-count task. The API replay
+returned three remaining proposals after that correction in each quarter
+turn. A low-contrast laid-on print was preserved in the test and both
+variants exported after a manual corner and size confirmation. Twenty
+warmed measurements of the overlap check gave about 5 ms median.
+
+JPEG70 in the original orientation produced three clipped prints with no
+other proposal. Five independently probed dark counterexamples kept the
+ambiguous area in review. Those inserted prints still need manual
+localization. Twelve warmed measurements of the scanner check on the
+2179 × 3000 raster gave about 57 ms median and 60 ms p95.
 
 The frozen geometry still passes 11 full prints and 12 motifs. The
 model-free Golden and frozen synthetic comparisons retain their prior
 instance counts and crop measurements.
+
+## Four neighboring loose prints on a flatbed
+
+The published 600 × 851 JPEG shows four separate prints that the author
+placed on the scanner. The outer polygons are development drafts. The
+capture has no independent motif or metric references. Keep the image
+local and out of calibration and release evidence. [Source description](https://www.domoritz.de/blog/2021/01/photo-scans)
+
+Save the pinned JPEG as `runs/crop-quality/domoritz-flatbed-development.jpg`
+and check its manifest hash before running the diagnostic.
+[Pinned source](https://github.com/domoritz/domoritz.github.io/blob/1b850fd3a58519d3fa896b9da1f4d121e55434f7/images/scan.jpg)
+
+```powershell
+python scripts/evaluate_onnx_segmentation.py --classical-only --dataset-manifest data/evaluation/domoritz-flatbed-development.json --visuals --output runs/crop-quality/domoritz-flatbed-development-report.json
+```
+
+At IoU 0.85 the fallback matches all four separate prints with zero false
+or merged proposals and 0.960 mean mask IoU. The instance masks omit
+about 3.7% of the draft source footprint on average. The bottom-left
+proposal omits about 7.8%, with one corner 36 native pixels from the
+draft. Independent boundary fits can jump to the next print across the
+pale gutter. The page's ownership guard limits the final preview in these
+cases. Both crop modes stay in review.
