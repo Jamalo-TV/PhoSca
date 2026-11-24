@@ -399,7 +399,7 @@ async def update_photo_bounding_box(
         segmentation_mask = (
             payload.segmentation_mask.as_dict() if payload.segmentation_mask else _rect_mask_from_box(box, width, height)
         )
-        for flag in ("album_window_occluded", "manual_added"):
+        for flag in ("album_window_occluded", "manual_added", "capture_edge_clipped"):
             if (photo.segmentation_mask or {}).get(flag) is True:
                 segmentation_mask[flag] = True
         if "visible_polygon" not in segmentation_mask:

@@ -1136,11 +1136,28 @@ are needed to replay the reported nine-view comparison. Restore the
 exact artifacts or document the provenance of a replacement detector and
 reserve independently sourced albums for its final evaluation.
 
-As an additional development probe, NerdScan's original upload has
+## Clipped prints in the NerdScan development scan
+
+NerdScan's original upload has
 SHA-256 `6e9b834cea27386399d8beb58bb242098ee02ffadf0f6d866f2387cde733e92f`.
-At 2179 × 3000 pixels the fallback found one of three visible print
-footprints at IoU 0.85. Two proposed masks cut away 35% and 45% of the
-respective visible prints, and a fourth proposal covered scanner backing.
-Both modes remained in review for all four proposals. The photos continue
-past the capture edge, and the photo rights and physical album ID remain
-unconfirmed. [Pinned development source](https://github.com/klimentij/NerdScan/blob/0cb6cc25e14a023e2c55daf4698cd1c4be59ab99/input/1979/2025-04-29-0022.jpg)
+The photos continue past the capture edge. The photo rights and physical
+album ID remain unconfirmed. The manifest and visible outlines are
+development drafts. Keep the source raster local. [Pinned development source](https://github.com/klimentij/NerdScan/blob/0cb6cc25e14a023e2c55daf4698cd1c4be59ab99/input/1979/2025-04-29-0022.jpg)
+
+With Pillow 11.3.0, apply EXIF orientation to the pinned JPEG, convert to
+RGB, resize with `thumbnail((3000, 3000), Image.Resampling.LANCZOS)`, and
+save the PNG as `runs/crop-quality/nerdscan-clipped-source.png`. The
+manifest pins the resulting 2179 × 3000 raster and the draft label file.
+
+```powershell
+python scripts/evaluate_onnx_segmentation.py --classical-only --dataset-manifest data/evaluation/nerdscan-clipped-development.json --visuals --output runs/crop-quality/nerdscan-clipped-report.json
+```
+
+The original fallback matched 1 of 3 prints at IoU 0.85. Two proposals cut
+away 35% and 45% of the respective visible prints. The new recovery requires
+at least two matching detector proposals on the same capture edge, continuous
+material changes along the visible sides, native pixels reaching the edge,
+and distributed interior texture. It matches all three draft footprints
+with mean IoU 0.999. A separate proposal on the scanner backing remains.
+Both crop modes stay in review, including after a manual corner or
+print-size edit. The previews retain the visibly captured portion.

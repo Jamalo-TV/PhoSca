@@ -61,12 +61,15 @@ export function CropVariants({ photo, hidden = false }) {
   const result = getCropModes(photo)?.[mode];
   const url = result?.status === "ready" ? photo.urls?.[mode] : null;
   const possibleMultipanel = photo.enhancement_applied?.segmentation_review_reasons?.includes("MULTIPANEL_PRINT_REVIEW");
+  const captureEdgeClipped = photo.segmentation_mask?.capture_edge_clipped === true;
   const fullPreview = photo.urls?.source_corrected_untrimmed || photo.urls?.original;
   const motifPreview = photo.urls?.image_only_preview;
   const preview = mode === "image_only"
-    ? motifPreview || (possibleMultipanel && fullPreview)
+    ? motifPreview || ((possibleMultipanel || captureEdgeClipped) && fullPreview)
     : fullPreview;
-  const reviewMessage = (possibleMultipanel && reviewMessages.MULTIPANEL_PRINT_REVIEW)
+  const reviewMessage = (captureEdgeClipped
+    && "Der vorgeschlagene Abzug reicht bis an den Aufnahmerand. Lade für den Zuschnitt eine Aufnahme hoch, die ihn ganz zeigt.")
+    || (possibleMultipanel && reviewMessages.MULTIPANEL_PRINT_REVIEW)
     || result?.reason_codes?.map((code) => reviewMessages[code]).find(Boolean)
     || (result?.status === "ready" && !url && reviewMessages.CROP_VALIDATION_UNAVAILABLE)
     || (mode === "image_only" ? reviewMessages.IMAGE_BOUNDARY_UNCERTAIN : "Die Aussenkante des Abzugs muss geprüft werden.");

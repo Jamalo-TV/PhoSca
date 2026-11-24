@@ -1,0 +1,179 @@
+{
+  "split_policy": {
+    "role": "development",
+    "album_independent": false
+  },
+  "pages": [
+    {
+      "id": "nerdscan-2025-04-29-0022",
+      "source_group": "nerdscan-example-physical-album-unknown",
+      "annotation_provenance": "development_draft",
+      "page_category": "real_scan_clipped",
+      "difficulty_tags": [
+        "capture_edge",
+        "adjacent_prints",
+        "dark_album_background",
+        "flatbed_scan"
+      ],
+      "image": "../../runs/crop-quality/nerdscan-clipped-source.png",
+      "image_sha256": "cfefac6b174db5ff7a5dd40b736a7f15c25992e20d4d09c0fcee008e16091ba4",
+      "source_image_url": "https://raw.githubusercontent.com/klimentij/NerdScan/0cb6cc25e14a023e2c55daf4698cd1c4be59ab99/input/1979/2025-04-29-0022.jpg",
+      "source_image_sha256": "6e9b834cea27386399d8beb58bb242098ee02ffadf0f6d866f2387cde733e92f",
+      "source_raster_pixels": [
+        10200,
+        14040
+      ],
+      "preparation": "Pillow 11.3.0 EXIF transpose, RGB, LANCZOS thumbnail within 3000 \u00d7 3000, lossless PNG",
+      "rights": "NerdScan repository MIT notice covers software and associated documentation; photograph reuse rights and physical album identity unverified. Keep source and derivatives local.",
+      "annotations": "nerdscan-clipped-labels.txt",
+      "annotations_sha256": "b26c067a0dbd60f4a3da68f630a2b50062727f3ea02d24d2a191cd18f7d8c813",
+      "expected_count": 3,
+      "expected_final_crops": [
+        {
+          "full_print": {
+            "polygon": [
+              [
+                0.472910927456382,
+                0.0
+              ],
+              [
+                1.0,
+                0.0
+              ],
+              [
+                1.0,
+                0.29709903301100365
+              ],
+              [
+                0.472910927456382,
+                0.29709903301100365
+              ]
+            ],
+            "recoverable": false,
+            "annotation_provenance": "development_draft",
+            "notes": "Photograph continues past the right capture edge."
+          },
+          "image_only": {
+            "polygon": [
+              [
+                0.472910927456382,
+                0.0
+              ],
+              [
+                1.0,
+                0.0
+              ],
+              [
+                1.0,
+                0.29709903301100365
+              ],
+              [
+                0.472910927456382,
+                0.29709903301100365
+              ]
+            ],
+            "recoverable": false,
+            "annotation_provenance": "development_draft",
+            "notes": "Photograph continues past the right capture edge."
+          }
+        },
+        {
+          "full_print": {
+            "polygon": [
+              [
+                0.6124885215794307,
+                0.3071023674558186
+              ],
+              [
+                1.0,
+                0.3071023674558186
+              ],
+              [
+                1.0,
+                0.7115705235078359
+              ],
+              [
+                0.6124885215794307,
+                0.7115705235078359
+              ]
+            ],
+            "recoverable": false,
+            "annotation_provenance": "development_draft",
+            "notes": "Photograph continues past the right capture edge."
+          },
+          "image_only": {
+            "polygon": [
+              [
+                0.6124885215794307,
+                0.3071023674558186
+              ],
+              [
+                1.0,
+                0.3071023674558186
+              ],
+              [
+                1.0,
+                0.7115705235078359
+              ],
+              [
+                0.6124885215794307,
+                0.7115705235078359
+              ]
+            ],
+            "recoverable": false,
+            "annotation_provenance": "development_draft",
+            "notes": "Photograph continues past the right capture edge."
+          }
+        },
+        {
+          "full_print": {
+            "polygon": [
+              [
+                0.472910927456382,
+                0.719239746582194
+              ],
+              [
+                1.0,
+                0.719239746582194
+              ],
+              [
+                1.0,
+                1.0
+              ],
+              [
+                0.472910927456382,
+                1.0
+              ]
+            ],
+            "recoverable": false,
+            "annotation_provenance": "development_draft",
+            "notes": "Photograph continues past the right capture edge."
+          },
+          "image_only": {
+            "polygon": [
+              [
+                0.472910927456382,
+                0.719239746582194
+              ],
+              [
+                1.0,
+                0.719239746582194
+              ],
+              [
+                1.0,
+                1.0
+              ],
+              [
+                0.472910927456382,
+                1.0
+              ]
+            ],
+            "recoverable": false,
+            "annotation_provenance": "development_draft",
+            "notes": "Photograph continues past the right capture edge."
+          }
+        }
+      ]
+    }
+  ]
+}

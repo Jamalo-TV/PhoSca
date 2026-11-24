@@ -241,6 +241,8 @@ def variant_path_from_photo(photo: Any, variant: str) -> str | None:
                     and isinstance(path, str) and Path(path).is_file()):
                 return path
             return None
+        if (getattr(photo, "segmentation_mask", None) or {}).get("capture_edge_clipped") is True:
+            return None
         if (modes.get(mode) or {}).get("status") != "ready":
             return None
         automatic = getattr(photo, "segmentation_confidence", None) is not None

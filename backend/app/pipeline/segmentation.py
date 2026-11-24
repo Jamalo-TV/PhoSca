@@ -10,6 +10,7 @@ import numpy as np
 
 from app.config import Settings
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves
+from app.pipeline.edge_prints import CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, clipped_print_outlines
 from app.pipeline.geometry import (
     PolygonOverlap,
     normalized_polygon_overlap,
@@ -1548,6 +1549,65 @@ def _recover_multipanel_prints(
     return SegmentationResult(updated, {**result.metadata, "multipanel_outlines_recovered": len(recovered)})
 
 
+def _unrotate_capture_quad(quad: np.ndarray, turns: int, width: int, height: int) -> np.ndarray:
+    x, y = quad.T
+    choices = ((x, y), (width - 1 - y, x), (width - 1 - x, height - 1 - y), (y, height - 1 - x))
+    return order_quad_cyclic(np.column_stack(choices[turns]))
+
+
+def _recover_capture_edge_prints(
+    image: np.ndarray, result: SegmentationResult, settings: Settings,
+) -> SegmentationResult:
+    height, width = image.shape[:2]
+    detections = result.detections
+    eligible = [
+        index for index, item in enumerate(detections)
+        if item.mask.get("detector_source") not in {"chromatic_mount", ALBUM_WINDOW_SOURCE, CONTRAST_COMPONENT_SOURCE}
+        and MULTIPANEL_PRINT_REVIEW not in item.review_reasons
+    ]
+    if len(eligible) < 2:
+        return result
+    polygons = {index: _detection_polygon(detections[index]) for index in eligible}
+    proposals = []
+    for turns, (key, position) in enumerate((("x2", 1.), ("y2", 1.), ("x1", 0.), ("y1", 0.))):
+        edge = [index for index in eligible if abs(detections[index].bounding_box[key] - position) < .008]
+        if len(edge) < 2:
+            continue
+        try:
+            quads = [_unrotate_capture_quad(quad, turns, width, height)
+                     for quad in clipped_print_outlines(np.rot90(image, turns))]
+        except (cv2.error, ValueError):
+            continue
+        replacements = {}
+        for quad in quads:
+            outline = pixel_vertices_to_normalized(quad, width, height)
+            comparisons = {index: normalized_polygon_overlap(polygons[index], outline) for index in edge}
+            matches = [index for index, overlap in comparisons.items()
+                       if overlap.first_containment >= .88 and overlap.second_containment >= .42]
+            if len(matches) != 1 or matches[0] in replacements:
+                break
+            index = matches[0]
+            item = _make_detection(
+                box={}, points=quad, confidence=detections[index].confidence,
+                image_width=width, image_height=height, settings=settings,
+                source=CAPTURE_EDGE_SOURCE, detector_source=CAPTURE_EDGE_SOURCE,
+            )
+            if item is None:
+                break
+            mask = {**item.mask, "warp_quad": item.mask["polygon"], "capture_edge_clipped": True}
+            replacements[index] = replace(item, mask=mask, review_reasons=[CAPTURE_EDGE_HOLD, *item.review_reasons])
+        else:
+            if len(replacements) >= 2:
+                proposals.append(replacements)
+    # A corner can produce two distinct edge interpretations. Keep the
+    # original suggestions in this case.
+    if len(proposals) != 1:
+        return result
+    replacements = proposals[0]
+    updated = [replacements.get(index, item) for index, item in enumerate(detections)]
+    return SegmentationResult(updated, {**result.metadata, "capture_edge_outlines_recovered": len(replacements)})
+
+
 def _filter_nested_classical_detections(
     detections: list[SegmentationDetection],
 ) -> tuple[list[SegmentationDetection], dict[str, int]]:
@@ -2520,7 +2580,7 @@ def _refine_source_contours(
     originals = [normalized_vertices_to_pixels(_detection_polygon(item), width, height) for item in result.detections]
     candidates = {}
     for index, (item, own) in enumerate(zip(result.detections, originals, strict=True)):
-        if item.mask.get("detector_source") in {CONTRAST_COMPONENT_SOURCE, RECOVERED_STOCK_SOURCE}:
+        if item.mask.get("detector_source") in {CONTRAST_COMPONENT_SOURCE, RECOVERED_STOCK_SOURCE, CAPTURE_EDGE_SOURCE}:
             continue
         measured = measure_detected_visibility(
             image, item.mask, own, [other for i, other in enumerate(originals) if i != index], regions,
@@ -2567,6 +2627,7 @@ def segment_album_page(
         if settings.enable_precise_photo_crops:
             result = _refine_album_windows(evidence_source, result)
             result = _recover_multipanel_prints(evidence_source, result, settings)
+            result = _recover_capture_edge_prints(evidence_source, result, settings)
     model_path = settings.visible_mask_model_path
     if not settings.enable_precise_photo_crops:
         return result
@@ -2577,7 +2638,7 @@ def segment_album_page(
 
     fixed_indices = {index for index, detection in enumerate(result.detections)
                      if detection.mask.get("source") == ALBUM_WINDOW_SOURCE
-                     or detection.mask.get("detector_source") == CONTRAST_COMPONENT_SOURCE
+                     or detection.mask.get("detector_source") in {CONTRAST_COMPONENT_SOURCE, CAPTURE_EDGE_SOURCE}
                      or MULTIPANEL_PRINT_REVIEW in detection.review_reasons}
     refinable = [index for index in range(len(result.detections)) if index not in fixed_indices]
     originals = [_detection_polygon(result.detections[index]) for index in refinable]

@@ -9,6 +9,7 @@ from app.pipeline.album_windows import (
 )
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
+from app.pipeline.edge_prints import CAPTURE_EDGE_HOLD
 from app.pipeline.geometry import (
     normalized_polygon_overlap,
     normalized_vertices_to_pixels,
@@ -1108,8 +1109,10 @@ def _inspect_print(
                         and normalized_polygon_overlap(outline, leaf.print_outline).first_containment >= .80):
                     reasons.append(ALBUM_WINDOW_OCCLUDED if leaf.aperture_quad is not None else ALBUM_WINDOW_STOCK_UNCERTAIN)
                     break
-        if (not manual or manual_addition) and np.any((quad < 0.5) | (quad > np.array([width, height]) - 1.5)):
-            reasons.append("PRINT_AT_CAPTURE_EDGE")
+        if mask.get("capture_edge_clipped") is True or (
+            (not manual or manual_addition) and np.any((quad < 0.5) | (quad > np.array([width, height]) - 1.5))
+        ):
+            reasons.append(CAPTURE_EDGE_HOLD)
         sides = [boundary.get(side, {}) for side in ("top", "right", "bottom", "left")]
         inferred = tuple(index for index, evidence in enumerate(sides) if evidence.get("matched_print_rim"))
         observed = {
@@ -1326,7 +1329,8 @@ def correct_photo_crop(
     stock_suggestion = any(isinstance(side, dict) and side.get("review_stock_fit") for side in boundary_refinement.values())
     owned_sampling = dual_mode and (
         set(full_reasons) <= _CROP_PREVIEW_REASONS
-        or (stock_suggestion and not set(full_reasons) & {"PRINT_AT_CAPTURE_EDGE", "PRINT_POSSIBLY_OCCLUDED"})
+        or mask.get("capture_edge_clipped") is True
+        or (stock_suggestion and not set(full_reasons) & {CAPTURE_EDGE_HOLD, "PRINT_POSSIBLY_OCCLUDED"})
     )
     if owned_sampling:
         analysis, supported = warp_owned_crop(page_image, matrix, (target_width, target_height))
