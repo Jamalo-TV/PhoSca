@@ -200,6 +200,16 @@ threshold still applied 10 wrong rotations. The reports are under
 `runs/crop-quality/orientation-archival-development/`. The candidates remain
 development artifacts. [Pretrained model](https://github.com/duartebarbosadev/deep-image-orientation-detection/releases/tag/v2)
 
+With `onnx` and `onnxruntime` installed, prepare the upstream
+`orientation_model_v2_0.9882.onnx` for the PhoSca evaluator. The preparation
+checks the upstream SHA-256, adds the upstream center crop and normalization to
+the graph, and checks the converted logits against the original graph. The
+runtime supplies RGB resized with OpenCV's area interpolation.
+
+```powershell
+python scripts/prepare_orientation_candidate.py --source path/to/orientation_model_v2_0.9882.onnx --output runs/crop-quality/orientation-candidate/phosca-v2.onnx
+```
+
 `orientation-archival-holdout.json` pins 61 oriented crops from 47 Rijksmuseum
 scans across six album groups. It records source URLs, archive and crop
 hashes, crop rectangles and visual evidence for each upright label. The set
