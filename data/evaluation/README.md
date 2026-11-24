@@ -1098,18 +1098,24 @@ validated detection path while this case remains unresolved.
 
 The shared-stock check measures the perimeter on the original page when
 the proposals include an enclosing print and at least two adjacent motifs.
-For a pair without an enclosing proposal, it can also recover a candidate
-from connected pale stock around the gap. Candidate discovery uses a bounded
-image region. The perimeter and the separator are verified on the source
-pixels. A break or step in the rim, a faint or slanted join, or overlap with
-a third print preserves the original proposals. Pages with more than twelve
-plausible pairs keep their proposals at this stage. Every recovered print
-requires review in both crop modes.
+Without an enclosing proposal, it looks for connected pale stock around
+rows and grids of up to six neighboring motifs. It checks every full paper
+separator and the portions between crossing separators on the original
+pixels. A join in one row can then veto grouping even when the other rows
+share continuous stock. At a narrow gutter, stock observed inside a recovered
+print can distinguish its outer edge from the facing edge of its neighbor.
+The bounding geometry of the recovered print must still be valid.
+
+The search tries the entire connected proposal group, groups with one
+neighbor removed, and individual pairs. Irregular layouts without full
+separating strips and competing outlines keep their original proposals.
+Pages with more than twelve plausible pairs keep their proposals at this
+stage. Every recovered print requires review in both crop modes.
 
 `backend/tests/test_pipeline/test_multipanel_prints.py` covers rotated
-pages, narrow gutters, a separate neighboring print, cross-detector fusion,
-and the upload, review and export flow with and without an enclosing
-proposal. A separate replay on the ten Golden originals, with native,
+pages, narrow gutters, partial joins in a grid, a separate neighboring print,
+cross-detector fusion, and the upload, review and export flow with and
+without an enclosing proposal. A separate replay on the ten Golden originals, with native,
 resized and JPEG75 views and exact or inset inputs, found no false merges
 in 198 separate-print pair checks. The Golden pages come from one album
 and provide separate-print controls.

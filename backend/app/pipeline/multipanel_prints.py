@@ -11,7 +11,7 @@ from app.pipeline.geometry import order_quad_cyclic, quad_from_polygon
 from app.pipeline.print_edges import _is_pale_stock, refine_print_boundary
 
 
-MULTIPANEL_PRINT_REVISION = 2
+MULTIPANEL_PRINT_REVISION = 3
 MULTIPANEL_PRINT_REVIEW = "MULTIPANEL_PRINT_REVIEW"
 RECOVERED_STOCK_SOURCE = "shared_stock_boundary"
 _UNIT_QUAD = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
@@ -48,7 +48,10 @@ def _common_stock(image: np.ndarray, quad: np.ndarray) -> np.ndarray | None:
         rim_matches = np.linalg.norm(inside - stock, axis=2) <= 7
         if rim_matches.mean() < .85 or not rim_matches.any(axis=0).all():
             return None
-        if np.mean(np.linalg.norm(outside - stock, axis=2) >= 11) < .80:
+        backing = np.linalg.norm(outside - stock, axis=2) >= 11
+        if backing.mean() < .80 and backing[0].mean() < .90:
+            # In a narrow gutter, the nearer sample can be album backing even
+            # when the farther sample is already on a neighboring print.
             return None
     return stock
 
@@ -68,13 +71,30 @@ def _bridge_intervals(
                 yield axis, float(left), float(right)
 
 
-def _panel_layout(panels: list[np.ndarray], quad: np.ndarray) -> Iterator[tuple[int, float, float]]:
+def _panel_layout(panels: list[np.ndarray], quad: np.ndarray) -> list[tuple[int, float, float]]:
     to_unit = cv2.getPerspectiveTransform(quad, _UNIT_QUAD)
     lengths = np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1)
     dimensions = (lengths[:2] + lengths[2:]) * .5
     projected = [cv2.perspectiveTransform(panel[None], to_unit)[0] for panel in panels]
     bounds = [(panel.min(axis=0), panel.max(axis=0)) for panel in projected]
-    return _bridge_intervals(bounds, dimensions)
+    if len(panels) == 2:
+        return list(_bridge_intervals(bounds, dimensions))
+
+    # Find full strips of paper that no motif crosses. Every motif must occupy
+    # its own cell, so a single clean seam cannot justify grouping a mixed layout.
+    separators = []
+    for axis in range(2):
+        ranges = sorted((float(low[axis]), float(high[axis])) for low, high in bounds)
+        end = ranges[0][1]
+        for start, stop in ranges[1:]:
+            if 4 / dimensions[axis] <= start - end <= .22:
+                separators.append((axis, end, start))
+            end = max(end, stop)
+    cells = {
+        tuple(sum(low[axis] >= right for direction, _, right in separators if direction == axis) for axis in range(2))
+        for low, _ in bounds
+    }
+    return separators if len(cells) == len(panels) else []
 
 
 def _source_points(transform: np.ndarray, axis: int, across: np.ndarray, along: np.ndarray) -> np.ndarray:
@@ -84,38 +104,60 @@ def _source_points(transform: np.ndarray, axis: int, across: np.ndarray, along: 
 
 
 def shared_stock_outline(
-    image: np.ndarray, seed: np.ndarray, panels: list[np.ndarray], *, recovered: bool = False,
+    image: np.ndarray, seed: np.ndarray, panels: list[np.ndarray], *, observed_stock: np.ndarray | None = None,
 ) -> np.ndarray | None:
     """Measure an outer edge and check that a separator joins opposite paper rims."""
     if np.linalg.norm(np.roll(seed, -1, axis=0) - seed, axis=1).min() < 48:
         return None
-    if next(_panel_layout(panels, seed), None) is None:
+    if not _panel_layout(panels, seed):
         return None
     quad, sides, reasons = refine_print_boundary(image, seed)
-    support = .95 if recovered else .80
+    if observed_stock is not None and reasons == ["PRINT_BOUNDARY_AMBIGUOUS"]:
+        # Two sides of a gutter can produce equally strong edges. Require
+        # the connected stock seen inside the print to be on the inner side.
+        quad, sides, reasons = refine_print_boundary(image, seed, rim_color=observed_stock)
+    support = .95 if observed_stock is not None else .80
     if quad is None or reasons or any(side["support"] < support for side in sides.values()):
         return None
     stock = _common_stock(image, quad)
     if stock is None:
         return None
+    layout = _panel_layout(panels, quad)
+    if not layout or any(left < .06 or right > .94 for _, left, right in layout):
+        return None
     from_unit = cv2.getPerspectiveTransform(_UNIT_QUAD, quad)
-    for axis, left, right in _panel_layout(panels, quad):
-        if left < .06 or right > .94:
-            continue
-        along = np.linspace(.035, .965, 75, dtype=np.float32)
-        across = np.linspace(left, right, 7, dtype=np.float32)[1:-1]
-        colors = _sample_lab(image, _source_points(from_unit, axis, across, along))
-        if colors is None or np.mean(np.linalg.norm(colors - stock, axis=2) <= 8) < .88:
-            continue
-        if _has_stock_join(image, quad, from_unit, stock, axis, left, right):
-            continue
-        return quad
-    return None
+    axes = {axis for axis, _, _ in layout}
+    if any(_edge_has_step(image, quad[index], quad[(index + 1) % 4])
+           for axis in axes for index in (axis, axis + 2)):
+        return None
+    for axis, left, right in layout:
+        crosses = sorted((start + stop) / 2 for other, start, stop in layout if other != axis)
+        bounds = [0., *crosses, 1.]
+        # Test each row or column as well as the entire separator. A seam along
+        # just one row of a mosaic can disappear in the full-height average.
+        parts = [(0., 1.)] if not crosses else [(0., 1.), *zip(bounds[:-1], bounds[1:], strict=True)]
+        if any(not _continuous_bridge(image, quad, from_unit, stock, axis, left, right, start, stop)
+               for start, stop in parts):
+            return None
+    return quad
+
+
+def _continuous_bridge(
+    image: np.ndarray, quad: np.ndarray, transform: np.ndarray, stock: np.ndarray,
+    axis: int, left: float, right: float, start: float, stop: float,
+) -> bool:
+    span = stop - start
+    along = start + np.linspace(.035, .965, 75, dtype=np.float32) * span
+    across = np.linspace(left, right, 7, dtype=np.float32)[1:-1]
+    colors = _sample_lab(image, _source_points(transform, axis, across, along))
+    if colors is None or np.mean(np.linalg.norm(colors - stock, axis=2) <= 8) < .88:
+        return False
+    return not _has_stock_join(image, quad, transform, stock, axis, left, right, start, stop)
 
 
 def _has_stock_join(
     image: np.ndarray, quad: np.ndarray, transform: np.ndarray, stock: np.ndarray,
-    axis: int, left: float, right: float,
+    axis: int, left: float, right: float, start: float, stop: float,
 ) -> bool:
     edges = np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1)
     longest = max(edges[axis::2])
@@ -124,9 +166,8 @@ def _has_stock_join(
     # band densely enough across its width to resolve a narrow print seam.
     margin = min((right - left) * .20, 4 / longest)
     count = max(5, min(2048, int(width * 2)))
-    colors = _sample_lab(image, _source_points(
-        transform, axis, np.linspace(left + margin, right - margin, count), np.linspace(.12, .88, 96),
-    ))
+    along = start + np.linspace(.12, .88, 96, dtype=np.float32) * (stop - start)
+    colors = _sample_lab(image, _source_points(transform, axis, np.linspace(left + margin, right - margin, count), along))
     if colors is None:
         return True
     departures = np.linalg.norm(colors - stock, axis=2) > 8
@@ -144,14 +185,14 @@ def _has_stock_join(
         ridge = middle - np.maximum(first, last)
         step = np.abs(last - first)
         seam = (trough > 1.5) | (ridge > 1.5) | (step > 2.5)
-        length = .76 * max(edges[1 - axis::2])
+        length = .76 * (stop - start) * max(edges[1 - axis::2])
         drift = round(length * .10 * samples_per_pixel)
         if _coherent_join(seam, drift):
             return True
         delta = last - first
         if max(np.mean(delta > 1.5, axis=0).max(), np.mean(delta < -1.5, axis=0).max()) >= .85:
             return True
-    return any(_edge_has_step(image, quad[index], quad[(index + 1) % 4]) for index in (axis, axis + 2))
+    return False
 
 
 def _coherent_join(seam: np.ndarray, max_drift: int) -> bool:
@@ -195,11 +236,16 @@ def _edge_has_step(image: np.ndarray, start: np.ndarray, end: np.ndarray) -> boo
 
 def recover_shared_stock_outline(image: np.ndarray, panels: list[np.ndarray]) -> np.ndarray | None:
     """Find a physical outline when the detector proposed only the interior panels."""
-    frame = order_quad_cyclic(cv2.boxPoints(cv2.minAreaRect(np.concatenate(panels))))
-    layout = next(_panel_layout(panels, frame), None)
-    if layout is None:
+    points = np.concatenate(panels)
+    frame = order_quad_cyclic(cv2.boxPoints(cv2.minAreaRect(points)))
+    layout = _panel_layout(panels, frame)
+    if not layout and len(panels) > 2:
+        # Perspective can close a narrow projected divider in the rotated box.
+        frame, _ = quad_from_polygon(points)
+        layout = _panel_layout(panels, frame)
+    if not layout:
         return None
-    axis, left, right = layout
+    axis, left, right = max(layout, key=lambda separator: separator[2] - separator[1])
     low, high = frame.min(axis=0), frame.max(axis=0)
     pad = np.linalg.norm(np.roll(frame, -1, axis=0) - frame, axis=1).min() * .16
     origin = np.maximum(0, np.floor(low - pad).astype(int))
@@ -239,4 +285,4 @@ def recover_shared_stock_outline(image: np.ndarray, panels: list[np.ndarray]) ->
     if any(cv2.pointPolygonTest(contour, tuple(point), True) < -2 for panel in panels for point in panel):
         return None
     seed, _ = quad_from_polygon(outline)
-    return shared_stock_outline(image, seed, panels, recovered=True)
+    return shared_stock_outline(image, seed, panels, observed_stock=stock)

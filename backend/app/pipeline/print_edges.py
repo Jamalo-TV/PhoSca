@@ -531,6 +531,7 @@ def suggest_ambiguous_stock_edge(
 
 def refine_print_boundary(
     image: np.ndarray, proposal: np.ndarray, *, search_radius: int | None = None,
+    rim_color: np.ndarray | None = None,
 ) -> tuple[np.ndarray | None, dict, list[str]]:
     sides = np.linalg.norm(np.roll(proposal, -1, axis=0) - proposal, axis=1)
     radius = search_radius or min(56, max(4, round(float(sides.min()) * 0.042)))
@@ -539,8 +540,8 @@ def refine_print_boundary(
     fitted = []
     rings = {}
     for index, (start, end) in enumerate(zip(proposal, np.roll(proposal, -1, axis=0))):
-        line, result = _side_line(image, start, end, radius)
-        if search_radius is None and not result["ambiguous"] and wider >= radius + 4:
+        line, result = _side_line(image, start, end, radius, rim_color=rim_color)
+        if search_radius is None and rim_color is None and not result["ambiguous"] and wider >= radius + 4:
             first, last = _line_endpoints(start, end, line) if line is not None else (start, end)
             if line is None or _pale_outside_strip(image, first, last):
                 alternate, retry = _side_line(image, first, last, wider, outward_only=True)
@@ -573,14 +574,14 @@ def refine_print_boundary(
                 fitted[index] = alternate, result
             maximum_excursion = wider + radius
             if len(coherent) < 4:
-                rim_color = np.median([rings[index][2] for index in coherent], axis=0)
+                observed_stock = np.median([rings[index][2] for index in coherent], axis=0)
                 verified = set(coherent)
                 for index in range(4):
                     if index in verified:
                         continue
                     line, retry = _side_line(
                         image, proposal[index], proposal[(index + 1) % 4],
-                        maximum_excursion, rim_color=rim_color,
+                        maximum_excursion, rim_color=observed_stock,
                     )
                     if line is not None:
                         fitted[index] = line, {**fitted[index][1], **retry, "matched_print_rim": True}

@@ -35,6 +35,8 @@ from app.pipeline.segmentation_filter import (
 
 _CLASSICAL_MIN_AREA_RATIO = 0.02
 _MULTIPANEL_PAIR_LIMIT = 12
+_MULTIPANEL_GROUP_LIMIT = 12
+_MULTIPANEL_MAX_GROUP_SIZE = 6
 
 
 @dataclass(frozen=True)
@@ -1443,13 +1445,57 @@ def _adjacent_panel_boxes(first: dict[str, float], second: dict[str, float]) -> 
     return False
 
 
+def _connected_panel_indices(seed: int, allowed: set[int], neighbors: dict[int, set[int]]) -> set[int]:
+    connected = {seed}
+    frontier = [seed]
+    while frontier:
+        unseen = (neighbors[frontier.pop()] & allowed) - connected
+        connected.update(unseen)
+        frontier.extend(unseen)
+    return connected
+
+
+def _adjacent_panel_groups(pairs: list[tuple[int, int]]) -> list[tuple[int, ...]]:
+    """Try neighboring layouts and their subsets when one neighbor may be a separate print."""
+    neighbors: dict[int, set[int]] = {}
+    for first, second in pairs:
+        neighbors.setdefault(first, set()).add(second)
+        neighbors.setdefault(second, set()).add(first)
+    remaining = set(neighbors)
+    groups = []
+    while remaining:
+        component = _connected_panel_indices(min(remaining), remaining, neighbors)
+        remaining.difference_update(component)
+        if 3 <= len(component) <= _MULTIPANEL_MAX_GROUP_SIZE:
+            groups.append(tuple(sorted(component)))
+        if 4 <= len(component) <= _MULTIPANEL_MAX_GROUP_SIZE + 1:
+            for index in sorted(component):
+                subset = component - {index}
+                if _connected_panel_indices(min(subset), subset, neighbors) == subset:
+                    groups.append(tuple(sorted(subset)))
+    if len(groups) > _MULTIPANEL_GROUP_LIMIT:
+        return pairs
+    return sorted(groups, key=lambda group: (-len(group), group)) + pairs
+
+
+def _can_seed_shared_stock(item: SegmentationDetection) -> bool:
+    if MULTIPANEL_PRINT_REVIEW in item.review_reasons or item.mask.get("detector_source") in {
+        "chromatic_mount", ALBUM_WINDOW_SOURCE, CONTRAST_COMPONENT_SOURCE,
+    }:
+        return False
+    # An interior image can legitimately be much narrower than a physical
+    # print. The recovered outer outline must still pass the normal geometry check.
+    return item.geometry_valid or (
+        item.mask.get("source") == "yolo_seg_mask"
+        and item.review_reasons in (["aspect_ratio_too_tall"], ["aspect_ratio_too_wide"])
+    )
+
+
 def _recover_multipanel_prints(
     image: np.ndarray, result: SegmentationResult, settings: Settings,
 ) -> SegmentationResult:
     detections = result.detections
-    eligible = [i for i, item in enumerate(detections)
-                if item.geometry_valid and MULTIPANEL_PRINT_REVIEW not in item.review_reasons
-                and item.mask.get("detector_source") not in {"chromatic_mount", ALBUM_WINDOW_SOURCE, CONTRAST_COMPONENT_SOURCE}]
+    eligible = [index for index, item in enumerate(detections) if _can_seed_shared_stock(item)]
     possible_pairs = (
         (first, second) for first, second in combinations(eligible, 2)
         if _adjacent_panel_boxes(detections[first].bounding_box, detections[second].bounding_box)
@@ -1462,9 +1508,9 @@ def _recover_multipanel_prints(
     polygons = [_detection_polygon(item) for item in detections]
     native = [normalized_vertices_to_pixels(polygon, width, height) for polygon in polygons]
     recovered = []
-    for first, second in pairs:
+    for indices in _adjacent_panel_groups(pairs):
         try:
-            quad = recover_shared_stock_outline(image, [native[first], native[second]])
+            quad = recover_shared_stock_outline(image, [native[index] for index in indices])
         except (cv2.error, ValueError):
             continue
         if quad is None:
@@ -1473,7 +1519,7 @@ def _recover_multipanel_prints(
         if not .025 * width * height <= area <= .75 * width * height:
             continue
         item = _make_detection(
-            box={}, points=quad, confidence=min(detections[first].confidence, detections[second].confidence),
+            box={}, points=quad, confidence=min(detections[index].confidence for index in indices),
             image_width=width, image_height=height, settings=settings,
             source=RECOVERED_STOCK_SOURCE, detector_source=RECOVERED_STOCK_SOURCE,
         )
@@ -1483,21 +1529,21 @@ def _recover_multipanel_prints(
         if any(
             _normalized_box_overlap(item.bounding_box, other.bounding_box)[0] > 0
             and normalized_polygon_overlap(outline, polygons[index]).second_containment > .03
-            for index, other in enumerate(detections) if index not in (first, second)
+            for index, other in enumerate(detections) if index not in indices
         ):
             continue
-        recovered.append((first, second, replace(item, review_reasons=[MULTIPANEL_PRINT_REVIEW])))
+        recovered.append((indices, replace(item, review_reasons=[MULTIPANEL_PRINT_REVIEW])))
     if not recovered:
         return result
-    used = {index for first, second, _ in recovered for index in (first, second)}
-    if len(used) != 2 * len(recovered) or any(
+    used = {index for indices, _ in recovered for index in indices}
+    if len(used) != sum(len(indices) for indices, _ in recovered) or any(
         _normalized_box_overlap(first.bounding_box, second.bounding_box)[0] > 0
         and normalized_polygon_overlap(_detection_polygon(first), _detection_polygon(second)).iou > .01
-        for (_, _, first), (_, _, second) in combinations(recovered, 2)
+        for (_, first), (_, second) in combinations(recovered, 2)
     ):
         return result
     updated = [item for index, item in enumerate(detections) if index not in used]
-    updated.extend(item for _, _, item in recovered)
+    updated.extend(item for _, item in recovered)
     updated.sort(key=lambda item: (item.bounding_box["y1"], item.bounding_box["x1"]))
     return SegmentationResult(updated, {**result.metadata, "multipanel_outlines_recovered": len(recovered)})
 

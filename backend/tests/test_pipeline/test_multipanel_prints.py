@@ -193,8 +193,79 @@ def test_real_separate_prints_with_narrow_gutters_are_retained(page):
     assert segmentation._recover_multipanel_prints(original, proposals, settings) is proposals
 
 
-@pytest.mark.parametrize("enclosing_proposal", [True, False])
-async def test_shared_stock_upload_preserves_both_panels_in_review_and_export(client, monkeypatch, enclosing_proposal):
+def grid_page(settings, rows, columns):
+    page = np.full((640, 940, 3), (77, 84, 88), np.uint8)
+    page[94:554, 108:832] = (229, 232, 235)
+    panel_width = (680 - (columns - 1) * 32) // columns
+    panel_height = (408 - (rows - 1) * 32) // rows
+    rng = np.random.default_rng(924)
+    panels = []
+    for row in range(rows):
+        for column in range(columns):
+            left = 130 + column * (panel_width + 32)
+            top = 118 + row * (panel_height + 32)
+            right = left + panel_width
+            bottom = top + panel_height
+            texture = rng.integers(35, 184, size=(16, 12, 3), dtype=np.uint8)
+            page[top:bottom, left:right] = cv2.resize(texture, (panel_width, panel_height), interpolation=cv2.INTER_CUBIC)
+            panels.append(np.float32([[left, top], [right - 1, top], [right - 1, bottom - 1], [left, bottom - 1]]))
+    outer = np.float32([[108, 94], [831, 94], [831, 553], [108, 553]])
+    detections = [
+        segmentation._make_detection(
+            box={}, points=quad, confidence=.92, image_width=940, image_height=640, settings=settings,
+            source="yolo_seg_mask", detector_source="yolo_onnx",
+        )
+        for quad in (outer, *panels)
+    ]
+    return page, outer, detections
+
+
+@pytest.mark.parametrize(("rows", "columns"), [(1, 3), (1, 4), (2, 2), (2, 3)])
+def test_recovers_complete_motif_layout_without_outer_proposal(monkeypatch, rows, columns):
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    original, expected, detections = grid_page(settings, rows, columns)
+    monkeypatch.setattr(segmentation, "_segment_album_page",
+                        lambda *_: segmentation.SegmentationResult(detections[1:], {}))
+
+    result = segmentation.segment_album_page(original, settings, source_image=original, protected_regions=[])
+
+    recovered, = result.detections
+    assert result.metadata["multipanel_outlines_recovered"] == 1
+    assert recovered.review_reasons == [MULTIPANEL_PRINT_REVIEW]
+    outline = segmentation.normalized_vertices_to_pixels(
+        [(point["x"], point["y"]) for point in recovered.mask["polygon"]], 940, 640,
+    )
+    assert np.max(np.linalg.norm(outline - expected, axis=1)) < 1
+
+
+@pytest.mark.parametrize("color", [(196, 200, 205), (223, 226, 229)])
+def test_partial_grid_join_vetoes_group_even_with_other_clean_separators(color):
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    original, _, detections = grid_page(settings, 2, 2)
+    # Only the bottom half of the vertical separator has a seam. The other
+    # neighboring panels would still be connected by common-looking stock.
+    cv2.line(original, (464, 339), (472, 545), color, 2)
+    without_parent = segmentation.SegmentationResult(detections[1:], {})
+
+    assert segmentation._group_multipanel_prints(original, detections) == (detections, 0)
+    assert segmentation._recover_multipanel_prints(original, without_parent, settings) is without_parent
+
+
+def test_recovers_adjacent_panels_without_absorbing_separate_print_in_same_row():
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    original, _, detections = grid_page(settings, 1, 3)
+    original[94:554, 584:588] = (77, 84, 88)
+    without_parent = segmentation.SegmentationResult(detections[1:], {})
+
+    recovered = segmentation._recover_multipanel_prints(original, without_parent, settings)
+
+    assert len(recovered.detections) == 2
+    assert recovered.metadata["multipanel_outlines_recovered"] == 1
+    assert detections[-1] in recovered.detections
+
+
+@pytest.mark.parametrize(("enclosing_proposal", "grid"), [(True, False), (False, False), (False, True)])
+async def test_shared_stock_upload_preserves_all_panels_in_review_and_export(client, monkeypatch, enclosing_proposal, grid):
     from app.config import get_settings
     from app.services import pipeline
 
@@ -204,7 +275,10 @@ async def test_shared_stock_upload_preserves_both_panels_in_review_and_export(cl
     monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
     monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
     get_settings.cache_clear()
-    original, _, proposals = page_and_proposals(get_settings(), 0, 0)
+    if grid:
+        original, _, proposals = grid_page(get_settings(), 2, 2)
+    else:
+        original, _, proposals = page_and_proposals(get_settings(), 0, 0)
     predictions = proposals if enclosing_proposal else proposals[1:]
     monkeypatch.setattr(segmentation, "_segment_album_page",
                         lambda *_: segmentation.SegmentationResult(predictions, {}))
@@ -222,13 +296,14 @@ async def test_shared_stock_upload_preserves_both_panels_in_review_and_export(cl
     assert all(photo["crop_download_urls"][mode] is None for mode in ("full_print", "image_only"))
     photo_url = f"/api/v1/photos/{photo['id']}"
     outer = proposals[0].mask["polygon"]
-    inner = [{"x": x / 939, "y": y / 639} for x, y in ((130, 118), (808, 118), (808, 525), (130, 525))]
+    right = 809 if grid else 808
+    inner = [{"x": x / 939, "y": y / 639} for x, y in ((130, 118), (right, 118), (right, 525), (130, 525))]
     reviewed = await client.patch(f"{photo_url}/bounding-box", json={
         "bounding_box": photo["bounding_box"],
         "segmentation_mask": {"polygon": outer, "warp_quad": outer, "image_quad": inner, "source": "manual_quad"},
     })
     assert reviewed.status_code == 200, reviewed.text
-    for mode, expected in (("full_print", original[94:554, 108:832]), ("image_only", original[118:526, 130:809])):
+    for mode, expected in (("full_print", original[94:554, 108:832]), ("image_only", original[118:526, 130:right + 1])):
         response = await client.get(reviewed.json()["crop_download_urls"][mode])
         assert response.status_code == 200, response.text
         crop = cv2.imdecode(np.frombuffer(response.content, np.uint8), cv2.IMREAD_COLOR)
