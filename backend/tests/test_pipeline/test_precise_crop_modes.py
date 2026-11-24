@@ -63,6 +63,34 @@ def test_ambiguous_paper_rim_requires_clear_backing_beyond_the_edge() -> None:
         assert all(mode["status"] == "review_needed" for mode in crop.metadata["crop_modes"].values())
 
 
+@pytest.mark.parametrize("obstruction", [None, "corner", "neighbor"])
+def test_ambiguous_stock_fit_improves_only_the_review_warp(obstruction) -> None:
+    backing = (124, 136, 146)
+    page = np.full((670, 820, 3), backing, np.uint8)
+    page[80:620, 120:711] = (189, 212, 228)
+    page[114:586, 154:694] = (109, 125, 143)
+    page[89:611, 673:694] = (109, 125, 143)
+    if obstruction == "corner":
+        page[80:90, 700:711] = backing
+    neighbors = [{"polygon": _vertices(_rect(709, 200, 800, 480), page)}] if obstruction == "neighbor" else []
+    proposal = _rect(120, 80, 708, 619)
+    mask = {"source": "yolo_seg_mask", "polygon": _vertices(proposal, page)}
+
+    crop = _crop(page, {}, mask, dual_mode=True, neighbor_masks=neighbors)
+    full, motif = (crop.metadata["crop_modes"][mode] for mode in ("full_print", "image_only"))
+    assert full["status"] == motif["status"] == "review_needed"
+    assert "PRINT_BOUNDARY_AMBIGUOUS" in full["reason_codes"]
+    assert crop.image_only is None and crop.image_only_preview is None
+    measured = normalized_vertices_to_pixels([(p["x"], p["y"]) for p in full["warp_quad"]], *page.shape[1::-1])
+    boundary = crop.metadata["boundary_refinement"]["right"]
+    if obstruction is None:
+        assert "review_stock_fit" in boundary and full["sampling"] == OWNED_BILINEAR
+        np.testing.assert_allclose(measured, _rect(120, 80, 710, 619), atol=.01)
+    else:
+        assert "review_stock_fit" not in boundary
+        np.testing.assert_allclose(measured, proposal, atol=.01)
+
+
 def test_faint_outer_edge_extends_review_preview_unless_a_neighbor_claims_the_band() -> None:
     from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE
 

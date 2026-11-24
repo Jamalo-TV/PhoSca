@@ -34,6 +34,7 @@ from app.pipeline.print_edges import (
     print_corner_coverage,
     refine_print_boundary,
     retry_ambiguous_stock_edge,
+    suggest_ambiguous_stock_edge,
 )
 from app.pipeline.print_stock import find_outer_stock_candidate
 from app.pipeline.protected_regions import detect_protected_regions, merge_protected_regions, validate_protected_regions
@@ -1051,11 +1052,18 @@ def _inspect_print(
                 if recovered is not None and not remaining:
                     refined, reasons = recovered, []
                     boundary = {**evidence, "seed": "local_outer_contour"}
+        suggestion = None
+        if refined is not None and reasons == ["PRINT_BOUNDARY_AMBIGUOUS"]:
+            suggestion = suggest_ambiguous_stock_edge(page, quad, refined, boundary, neighbors)
+            if suggestion is not None:
+                refined = suggestion[0]
         if refined is not None and "PRINT_OUTER_RIM_UNCERTAIN" not in reasons:
             refined_protection = validate_protected_regions(refined, regions, width=width, height=height)
             if not refined_protection["passed"] and not _advisory_face_overlap(refined_protection, allow_page_face_overlap):
                 reasons.append("PRINT_BOUNDARY_PROTECTED_CONTENT_VETO")
             else:
+                if suggestion is not None:
+                    boundary = suggestion[1]
                 quad = refined
                 metrics = _validate_quad(quad, width, height)
     if dual_mode:
@@ -1269,7 +1277,11 @@ def correct_photo_crop(
         left, top, right, bottom = _analysis_padding(destination, rectified_to_page, width, height)
     page_to_analysis = matrix.copy()
     page_to_analysis[:2] += np.array([[left], [top]]) * matrix[2]
-    owned_sampling = dual_mode and set(full_reasons) <= _CROP_PREVIEW_REASONS
+    stock_suggestion = any(isinstance(side, dict) and side.get("review_stock_fit") for side in boundary_refinement.values())
+    owned_sampling = dual_mode and (
+        set(full_reasons) <= _CROP_PREVIEW_REASONS
+        or (stock_suggestion and not set(full_reasons) & {"PRINT_AT_CAPTURE_EDGE", "PRINT_POSSIBLY_OCCLUDED"})
+    )
     if owned_sampling:
         analysis, supported = warp_owned_crop(page_image, matrix, (target_width, target_height))
         if not supported:

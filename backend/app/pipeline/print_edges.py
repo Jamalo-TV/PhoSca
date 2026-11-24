@@ -381,10 +381,14 @@ def continuous_motif_rim(image: np.ndarray, quad: np.ndarray) -> bool:
     return _is_pale_stock(stock) and bool(np.all(np.linalg.norm(colors - stock, axis=1) <= 16))
 
 
-def _edge_band(image: np.ndarray, start: np.ndarray, end: np.ndarray, offsets: list[float]) -> np.ndarray | None:
+def _edge_band(
+    image: np.ndarray, start: np.ndarray, end: np.ndarray, offsets: list[float], *, fractions: np.ndarray | None = None,
+) -> np.ndarray | None:
     edge = end - start
     inward = np.array([-edge[1], edge[0]], np.float32) / np.linalg.norm(edge)
-    middle = start + np.linspace(.10, .90, 64, dtype=np.float32)[:, None] * edge
+    if fractions is None:
+        fractions = np.linspace(.10, .90, 64, dtype=np.float32)
+    middle = start + fractions[:, None] * edge
     points = middle[:, None] + np.float32(offsets)[None, :, None] * inward
     if np.any((points < 0) | (points > np.array(image.shape[1::-1]) - 1)):
         return None
@@ -415,6 +419,23 @@ def _stock_ring(image: np.ndarray, quad: np.ndarray, backing: np.ndarray) -> boo
     )
 
 
+def _replace_quad_side(
+    quad: np.ndarray, index: int, line: np.ndarray, radius: int, shape: tuple[int, ...],
+) -> np.ndarray | None:
+    homogeneous = np.column_stack((quad, np.ones(4)))
+    lines = np.cross(homogeneous, np.roll(homogeneous, -1, axis=0))
+    lines[index] = line
+    crossings = np.cross(np.roll(lines, 1, axis=0), lines)
+    if np.any(np.abs(crossings[:, 2]) < 1e-6):
+        return None
+    candidate = np.float32(crossings[:, :2] / crossings[:, 2:3])
+    if (np.max(np.linalg.norm(candidate - quad, axis=1)) > 1.8 * radius
+            or not cv2.isContourConvex(candidate) or cv2.contourArea(candidate, oriented=True) <= 0
+            or np.any((candidate < 0) | (candidate > np.array(shape[1::-1]) - 1))):
+        return None
+    return candidate
+
+
 def retry_ambiguous_stock_edge(
     image: np.ndarray, proposal: np.ndarray, quad: np.ndarray, evidence: dict,
 ) -> tuple[np.ndarray, dict] | None:
@@ -437,16 +458,8 @@ def retry_ambiguous_stock_edge(
     line, observed = _side_line(image, start, end, radius)
     if line is None or observed["support"] < .83 or observed["corner_support"] < .55:
         return None
-    homogeneous = np.column_stack((quad, np.ones(4)))
-    lines = np.cross(homogeneous, np.roll(homogeneous, -1, axis=0))
-    lines[index] = line
-    crossings = np.cross(np.roll(lines, 1, axis=0), lines)
-    if np.any(np.abs(crossings[:, 2]) < 1e-6):
-        return None
-    candidate = np.float32(crossings[:, :2] / crossings[:, 2:3])
-    if (np.max(np.linalg.norm(candidate - quad, axis=1)) > 1.8 * radius
-            or not cv2.isContourConvex(candidate) or cv2.contourArea(candidate, oriented=True) <= 0
-            or np.any((candidate < 0) | (candidate > np.array(image.shape[1::-1]) - 1))):
+    candidate = _replace_quad_side(quad, index, line, radius, image.shape)
+    if candidate is None:
         return None
     exterior = _edge_band(image, candidate[index], candidate[next_index], [-2, -3, -4, -5, -6, -7, -8])
     # A near-background surround can still belong to the same print.
@@ -455,6 +468,65 @@ def retry_ambiguous_stock_edge(
         return None
     observed["matched_stock_ring"] = True
     return candidate, {**evidence, sides[index]: observed}
+
+
+def suggest_ambiguous_stock_edge(
+    image: np.ndarray, proposal: np.ndarray, quad: np.ndarray, evidence: dict, neighbors: list[np.ndarray],
+) -> tuple[np.ndarray, dict] | None:
+    """Improve the review warp using the material observed on three fitted sides."""
+    names = ("top", "right", "bottom", "left")
+    ambiguous = [i for i, side in enumerate(names) if evidence[side]["ambiguous"]]
+    if len(ambiguous) != 1:
+        return None
+    index = ambiguous[0]
+    trusted = [i for i in range(4) if i != index]
+    if any(evidence[names[i]]["support"] < .9 or (evidence[names[i]]["corner_support"] or 0) < .8
+           or (evidence[names[i]]["maximum_residual_px"] or 0) > 1.1 for i in trusted):
+        return None
+
+    offsets = [-5, -3, 3, 5]
+    bands = [_edge_band(image, quad[i], quad[(i + 1) % 4], offsets) for i in trusted]
+    if any(band is None for band in bands):
+        return None
+    samples = np.stack(bands)
+    stock = np.median(samples[:, :, 2:], axis=(0, 1, 2))
+    backing = np.median(samples[:, :, :2], axis=(0, 1, 2))
+    if not _is_pale_stock(stock) or np.linalg.norm(stock - backing) <= 16:
+        return None
+
+    def material_supported(band: np.ndarray) -> np.ndarray:
+        outside, inside = band[..., :2, :], band[..., 2:, :]
+        return ((np.linalg.norm(outside - backing, axis=-1) <= 16).all(axis=-1)
+                & (np.linalg.norm(outside - stock, axis=-1) >= 12).all(axis=-1)
+                & (np.linalg.norm(inside - stock, axis=-1) <= 12).all(axis=-1))
+
+    if not (material_supported(samples).mean(axis=1) >= .9).all():
+        return None
+    radius = 3
+    next_index = (index + 1) % 4
+    line, observed = _side_line(image, proposal[index], proposal[next_index], radius, rim_color=stock)
+    if line is None or observed["support"] < .9 or observed["corner_support"] < .8:
+        return None
+    candidate = _replace_quad_side(quad, index, line, radius, image.shape)
+    if candidate is None or any(cv2.intersectConvexConvex(candidate, cv2.convexHull(neighbor))[0] > 1 for neighbor in neighbors):
+        return None
+    band = _edge_band(image, candidate[index], candidate[next_index], offsets)
+    if band is None or material_supported(band).mean() < .9:
+        return None
+
+    # Both arms of each changed corner must carry the same local transition.
+    for side, from_end in (((index - 1) % 4, True), (index, False), (index, True), (next_index, False)):
+        start, end = candidate[side], candidate[(side + 1) % 4]
+        fractions = np.float32([4, 6, 8, 10, 13, 16, 20]) / np.linalg.norm(end - start)
+        if fractions[-1] >= .5:
+            return None
+        arm = _edge_band(image, start, end, offsets, fractions=1 - fractions if from_end else fractions)
+        if arm is None:
+            return None
+        supported = material_supported(arm)
+        if not supported[:2].all() or np.count_nonzero(supported) < 5:
+            return None
+    return candidate, {**evidence, names[index]: {**evidence[names[index]], "review_stock_fit": observed}}
 
 
 def refine_print_boundary(

@@ -958,6 +958,19 @@ reduces some mask errors while losing passing crops or adding duplicates.
 The frozen runs retain 18 detections and 11 whole-print and 12 motif passes.
 See `runs/crop-quality/cloud-v34/`.
 
+Version 35 uses local stock and backing observations from three fitted edges
+to guide a nearby ambiguous fourth edge in the review preview. The material
+transition must continue on both arms of each affected corner. A neighboring
+print can veto the proposal. The ambiguous crop keeps its review status.
+In the Whiting 81 Registered replay, whole-print cutoff beyond one native
+pixel goes from 124 to zero, foreign interpolation samples go from 972 to
+zero, and maximum corner error against the paired draft drops from 1.91 to
+0.93 native pixels. Landmark p95 error drops from 1.75 to 1.38 output pixels,
+with 0.60% aspect error. A stock-colored exterior strip can still resemble
+the same transition in one capture and requires review. The frozen detection
+and crop pass counts hold across Geometry-only, Registered and Local.
+See `runs/crop-quality/cloud-v35/`.
+
 The frozen seeded-geometry benchmark passes all 23 recoverable mode crops.
 The v21 and v22 Registered end-to-end runs match six of 18 raw instances
 at IoU 0.85. On the development white-margin and white-on-white pages the
