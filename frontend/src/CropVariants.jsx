@@ -32,6 +32,7 @@ const reviewMessages = {
   ORIENTATION_UNCERTAIN: "Prüfe die Ausrichtung und speichere die passende Drehung im Zuschnitt-Editor.",
   SEGMENTATION_CONFIDENCE_UNCALIBRATED: "Prüfe und speichere die Abzugsecken, um den Download freizugeben.",
   MULTIPANEL_PRINT_REVIEW: "Prüfe die Papierkanten am Original. Auf einem Abzug muss der Motivzuschnitt alle Bilder enthalten. Sind es getrennte Abzüge, korrigierst du die Ecken für den ersten und ergänzt die übrigen im Editor.",
+  SCANNER_BACKING_UNCERTAIN: "Prüfe am Original, ob im markierten Bereich ein weiterer Abzug liegt. Ziehe die Ecken an seine Papierkante, wenn du sie erkennen kannst.",
   CROP_VALIDATION_UNAVAILABLE: "Prüfe und speichere den Zuschnitt, um den Download freizugeben.",
   CAMERA_ASPECT_REVIEW: "Die Vorschau nutzt die Kamerakalibrierung. Prüfe und bestätige die Fotoecken.",
   PRINT_AT_CAPTURE_EDGE: "Der Abzug reicht bis an den Aufnahmerand. Prüfe, ob er vollständig zu sehen ist.",
@@ -61,15 +62,17 @@ export function CropVariants({ photo, hidden = false }) {
   const result = getCropModes(photo)?.[mode];
   const url = result?.status === "ready" ? photo.urls?.[mode] : null;
   const possibleMultipanel = photo.enhancement_applied?.segmentation_review_reasons?.includes("MULTIPANEL_PRINT_REVIEW");
+  const scannerBackingUncertain = photo.enhancement_applied?.segmentation_review_reasons?.includes("SCANNER_BACKING_UNCERTAIN");
   const captureEdgeClipped = photo.segmentation_mask?.capture_edge_clipped === true;
   const fullPreview = photo.urls?.source_corrected_untrimmed || photo.urls?.original;
   const motifPreview = photo.urls?.image_only_preview;
   const preview = mode === "image_only"
-    ? motifPreview || ((possibleMultipanel || captureEdgeClipped) && fullPreview)
+    ? motifPreview || ((possibleMultipanel || scannerBackingUncertain || captureEdgeClipped) && fullPreview)
     : fullPreview;
   const reviewMessage = (captureEdgeClipped
     && "Der vorgeschlagene Abzug reicht bis an den Aufnahmerand. Lade für den Zuschnitt eine Aufnahme hoch, die ihn ganz zeigt.")
     || (possibleMultipanel && reviewMessages.MULTIPANEL_PRINT_REVIEW)
+    || (scannerBackingUncertain && reviewMessages.SCANNER_BACKING_UNCERTAIN)
     || result?.reason_codes?.map((code) => reviewMessages[code]).find(Boolean)
     || (result?.status === "ready" && !url && reviewMessages.CROP_VALIDATION_UNAVAILABLE)
     || (mode === "image_only" ? reviewMessages.IMAGE_BOUNDARY_UNCERTAIN : "Die Aussenkante des Abzugs muss geprüft werden.");

@@ -1158,6 +1158,29 @@ away 35% and 45% of the respective visible prints. The new recovery requires
 at least two matching detector proposals on the same capture edge, continuous
 material changes along the visible sides, native pixels reaching the edge,
 and distributed interior texture. It matches all three draft footprints
-with mean IoU 0.999. A separate proposal on the scanner backing remains.
-Both crop modes stay in review, including after a manual corner or
-print-size edit. The previews retain the visibly captured portion.
+with mean IoU 0.999. Both crop modes stay in review, including after a
+manual corner or print-size edit. The previews retain the visibly captured
+portion.
+
+The scanner check removed the remaining false contour on the upright
+development scan at IoU 0.85, giving three matches and zero false proposals.
+It applies to standalone classical contours crossing at least three
+source-confirmed clipped prints. Two perpendicular scanner rails must
+continue across two different unsupported sides of the candidate. A
+coherent material change on a side prevents rejection. Compact tone
+changes or bidirectional texture inside the candidate keep it in review.
+The original print contours and the full-print preview metrics stayed
+the same. The visibly incomplete source provides no motif release reference.
+
+The upload flow returned review previews and withheld both downloads for
+all three clipped prints in every quarter turn. At 90° and 270° a different
+classical proposal remains inside the bottom print, covering about 13% of
+its area. JPEG70 in the original orientation produced three clipped prints
+with no other proposal. Five independently probed dark counterexamples
+kept the ambiguous area in review. Those inserted prints still need
+manual localization. Twelve warmed measurements of the scanner check on
+the 2179 × 3000 raster gave about 57 ms median and 60 ms p95.
+
+The frozen geometry still passes 11 full prints and 12 motifs. The
+model-free Golden and frozen synthetic comparisons retain their prior
+instance counts and crop measurements.

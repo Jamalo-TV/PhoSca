@@ -1,5 +1,7 @@
 """Visible outlines of bright prints cut by a dark-backed capture edge."""
 
+from typing import Literal
+
 import cv2
 import numpy as np
 
@@ -7,9 +9,10 @@ from app.pipeline.geometry import order_quad_cyclic
 from app.pipeline.print_edges import _side_line
 
 
-CAPTURE_EDGE_REVISION = 1
+CAPTURE_EDGE_REVISION = 2
 CAPTURE_EDGE_SOURCE = "capture_edge_boundary"
 CAPTURE_EDGE_HOLD = "PRINT_AT_CAPTURE_EDGE"
+SCANNER_BACKING_REVIEW = "SCANNER_BACKING_UNCERTAIN"
 
 
 def _photo_texture(image: np.ndarray, quad: np.ndarray) -> bool:
@@ -154,3 +157,153 @@ def clipped_print_outlines(image: np.ndarray) -> list[np.ndarray]:
         if quad is not None:
             outlines.append(quad)
     return outlines
+
+
+def _sample_backing(
+    image: np.ndarray, occluded: np.ndarray, points: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    x, y = [np.ascontiguousarray(axis) for axis in np.moveaxis(points, -1, 0)]
+    colors = cv2.cvtColor(cv2.remap(image, x, y, cv2.INTER_LINEAR), cv2.COLOR_BGR2LAB)
+    blocked = cv2.remap(occluded, x, y, cv2.INTER_NEAREST, borderValue=1)
+    height, width = occluded.shape
+    outside = (x < 0) | (x > width - 1) | (y < 0) | (y > height - 1)
+    return colors.astype(np.float32), (blocked != 0) | outside
+
+
+def _quiet_backing_across_side(
+    image: np.ndarray, occluded: np.ndarray, start: np.ndarray, end: np.ndarray, normal: np.ndarray,
+) -> bool:
+    centers = start + np.linspace(.035, .965, 120, dtype=np.float32)[:, None] * (end - start)
+    offsets = np.arange(-8, 9, dtype=np.float32)
+    samples, blocked = _sample_backing(image, occluded, centers[:, None, :] + offsets[:, None] * normal)
+    visible = ~blocked.any(axis=1)
+    if np.count_nonzero(visible) < 18:
+        return False
+    samples = samples[visible]
+    quiet = (samples[..., 0].max(axis=1) <= 76) & (np.linalg.norm(samples[:, -1] - samples[:, 0], axis=1) <= 4)
+    # A weak but consistently signed material change is still evidence for a
+    # physical edge. Texture noise in a single surface is much less coherent.
+    step = samples[:, 9:].mean(axis=1) - samples[:, :8].mean(axis=1)
+    return np.mean(quiet) >= .80 and np.linalg.norm(np.median(step, axis=0)) <= 1.25
+
+
+def _continuous_rail_across_side(
+    image: np.ndarray, occluded: np.ndarray, start: np.ndarray, end: np.ndarray, axis: int,
+) -> bool:
+    across = 1 - axis
+    first, last = np.sort([start[across], end[across]])
+    inset = .07 * (last - first)
+    # One native station per possible rail, capped for very large captures.
+    coordinates = np.arange(np.ceil(first + inset), np.floor(last - inset) + 1,
+                            max(1, int(np.ceil((last - first) / 3000))), dtype=np.float32)
+    if not len(coordinates):
+        return False
+    centers = start + ((coordinates - start[across]) / (end[across] - start[across]))[:, None] * (end - start)
+    along = np.linspace(-32, 32, 17, dtype=np.float32)
+    across_offsets = np.arange(-4, 5, dtype=np.float32)
+    points = np.broadcast_to(centers[:, None, None, :], (len(centers), len(along), len(across_offsets), 2)).copy()
+    points[..., axis] += along[None, :, None]
+    points[..., across] += across_offsets[None, None, :]
+    colors, blocked = _sample_backing(image, occluded, points.reshape(len(centers), -1, 2))
+    light = colors[..., 0].reshape(points.shape[:3])
+    available = ~blocked.any(axis=1) & (light.max(axis=(1, 2)) <= 76)
+    if not available.any():
+        return False
+    step = light[available, :, 5:].mean(axis=-1) - light[available, :, :4].mean(axis=-1)
+    median = np.median(step, axis=1)
+    signed = step * np.sign(median[:, None])
+    # Verify the same side of the same line stays brighter both before and
+    # after it crosses the supposed print edge.
+    stable = (signed >= 2)
+    return bool(np.any(
+        (np.abs(median) >= 3.5) & stable[:, 0] & stable[:, -1]
+        & (stable[:, :8].sum(axis=1) >= 7) & (stable[:, 9:].sum(axis=1) >= 7)
+    ))
+
+
+def _has_compact_tone_change(light: np.ndarray, surface: np.ndarray, reduction: float) -> bool:
+    width, height = (max(1, round(size * reduction)) for size in light.shape[::-1])
+    reduced = cv2.resize(light, (width, height), interpolation=cv2.INTER_AREA)
+    clear = np.uint8(cv2.resize(255 * surface, (width, height), interpolation=cv2.INTER_AREA) == 255)
+    horizontal = np.ones((1, 75), np.uint8)
+    vertical = horizontal.T
+    inspected = (cv2.erode(clear, horizontal, borderType=cv2.BORDER_CONSTANT, borderValue=0)
+                 & cv2.erode(clear, vertical, borderType=cv2.BORDER_CONSTANT, borderValue=0))
+    # Compare a patch to the backing in both axes. A dark rectangle with a
+    # blurred edge can have a coherent tone but barely any texture.
+    for operation, fill, threshold in ((cv2.MORPH_BLACKHAT, 0, 5), (cv2.MORPH_TOPHAT, 255, 8)):
+        tones = np.where(clear, reduced, fill).astype(np.uint8)
+        differences = np.minimum(cv2.morphologyEx(tones, operation, horizontal),
+                                 cv2.morphologyEx(tones, operation, vertical))
+        changed = np.uint8((differences >= threshold) & (inspected != 0))
+        if np.any(cv2.boxFilter(changed, cv2.CV_32F, (17, 17), normalize=False) >= 160):
+            return True
+    return False
+
+
+def _has_independent_content(image: np.ndarray, occluded: np.ndarray, quad: np.ndarray) -> bool:
+    x, y, width, height = cv2.boundingRect(quad)
+    surface = np.zeros((height, width), np.uint8)
+    cv2.fillConvexPoly(surface, np.rint(quad - np.float32([x, y])).astype(np.int32), 1)
+    region = np.s_[y:y + height, x:x + width]
+    surface[occluded[region] != 0] = 0
+    surface = cv2.erode(surface, np.ones((17, 17), np.uint8), borderType=cv2.BORDER_CONSTANT, borderValue=0)
+    light = cv2.cvtColor(image[region], cv2.COLOR_BGR2LAB)[..., 0]
+    if _has_compact_tone_change(light, surface, min(1., 544 / min(image.shape[:2]))):
+        return True
+
+    # A rail can be strong in one direction. A small patch of photographic
+    # texture within the proposed outline cannot be dismissed as backing.
+    observed = False
+    window = (97, 97)
+    # Use bounded strips on large scans, with native context for the
+    # box window, Gaussian filter and gradients on strip boundaries.
+    for top in range(0, height, 256):
+        bottom = min(top + 256, height)
+        start, end = max(0, top - 53), min(height, bottom + 53)
+        core = slice(top - start, bottom - start)
+        clear = surface[start:end]
+        inspected = cv2.boxFilter(clear, cv2.CV_32F, window, normalize=False,
+                                 borderType=cv2.BORDER_CONSTANT)[core] >= 8200
+        if not inspected.any():
+            continue
+        observed = True
+        smoothed = cv2.GaussianBlur(light[start:end].astype(np.float32), (0, 0), 1)
+        dx = np.abs(cv2.Sobel(smoothed, cv2.CV_32F, 1, 0, scale=1 / 8))
+        dy = np.abs(cv2.Sobel(smoothed, cv2.CV_32F, 0, 1, scale=1 / 8))
+        detail = np.uint8((np.minimum(dx, dy) > 1.45) & (clear != 0))
+        counts = cv2.boxFilter(detail, cv2.CV_32F, window, normalize=False, borderType=cv2.BORDER_CONSTANT)[core]
+        if np.any(counts[inspected] > 275):
+            return True
+    return not observed
+
+
+def scanner_backing_evidence(
+    image: np.ndarray, quad: np.ndarray, clipped: list[np.ndarray],
+) -> Literal["backing", "uncertain"] | None:
+    """Check whether a classical outline follows scanner hardware across neighboring prints."""
+    sides = np.roll(quad, -1, axis=0) - quad
+    lengths = np.linalg.norm(sides, axis=1)
+    if np.any(lengths < 100):
+        return None
+    directions = sides / lengths[:, None]
+    aligned = np.abs(directions).max(axis=1) >= .998
+    oblique = np.flatnonzero(~aligned)
+    if (len(oblique) != 2 or (oblique[1] - oblique[0]) % 2 != 1
+            or len(set(np.abs(directions[aligned]).argmax(axis=1))) != 2
+            or np.abs(directions[oblique]).min() < .25):
+        return None
+    occluded = np.zeros(image.shape[:2], np.uint8)
+    for print_outline in clipped:
+        cv2.fillConvexPoly(occluded, np.rint(print_outline).astype(np.int32), 1)
+    occluded = cv2.dilate(occluded, np.ones((13, 13), np.uint8))
+    normals = directions[:, [1, 0]] * np.float32([-1, 1])
+    sides_to_test = [(quad[index], quad[(index + 1) % 4]) for index in oblique]
+    if not all(_quiet_backing_across_side(image, occluded, start, end, normals[index])
+               for index, (start, end) in zip(oblique, sides_to_test, strict=True)):
+        return None
+    tracks = [{axis for axis in (0, 1) if _continuous_rail_across_side(image, occluded, start, end, axis)}
+              for start, end in sides_to_test]
+    if not tracks[0] or not tracks[1] or len(tracks[0] | tracks[1]) != 2:
+        return None
+    return "uncertain" if _has_independent_content(image, occluded, quad) else "backing"
