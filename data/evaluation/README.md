@@ -28,6 +28,11 @@ python scripts/evaluate_onnx_segmentation.py --include-classical-fallback --visu
 python scripts/evaluate_onnx_segmentation.py --include-classical-fallback --legacy-crop --output runs/crop-quality/rollback.json
 ```
 
+To diagnose the fallback on a checkout without the registered detector, run
+`--classical-only`. Use `--model` to point to an absent file if the registered
+weights are present. The report has no model digest and cannot supply release
+or detector calibration evidence.
+
 The report assigns detections to visible instances once and scores the final
 source-to-output transform of each crop. It reports the sampled footprint,
 missing content, foreign samples, samples outside the capture, and corner
@@ -118,11 +123,12 @@ requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. At least two
 of the same physical album groups must have recoverable references in both
 modes. The 90% threshold also applies to each group with recoverable examples
-in the mode being scored. Report schema 30 binds
+in the mode being scored. Report schema 31 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled and deskewed inference,
-the classical line-pair fallback, separated contrast recovery, empty drawn
-frame rejection, print edge recovery, page-plane estimation, curved motif
+the classical line-pair fallback, separated contrast recovery, shared print
+stock grouping, empty drawn frame rejection, print edge recovery, page-plane
+estimation, curved motif
 checks, the configured source or learned mask refiner and detector-bound
 confidence calibration.
 A verified motif can qualify separately when its print corners require review.

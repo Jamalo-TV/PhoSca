@@ -106,7 +106,7 @@ def _runtime_settings(args: argparse.Namespace):
         VISIBLE_MASK_MODEL_PATH=args.visible_mask_model,
         MODEL_MANIFEST_PATH=args.manifest,
         REQUIRE_REGISTERED_MODELS=True,
-        ENABLE_CLASSICAL_SEGMENTATION_FALLBACK=args.include_classical_fallback,
+        ENABLE_CLASSICAL_SEGMENTATION_FALLBACK=args.include_classical_fallback or args.classical_only,
         YOLO_PROPOSAL_THRESHOLD=args.proposal_threshold,
         YOLO_CONFIDENCE_THRESHOLD=args.acceptance_threshold,
         ENABLE_PRECISE_PHOTO_CROPS=not args.legacy_crop,
@@ -728,6 +728,7 @@ def main() -> None:
     parser.add_argument("--proposal-threshold", type=float, default=0.25)
     parser.add_argument("--acceptance-threshold", type=float, default=0.70)
     parser.add_argument("--include-classical-fallback", action="store_true")
+    parser.add_argument("--classical-only", action="store_true", help="Benchmark the production fallback without a model.")
     parser.add_argument("--dataset-manifest", type=Path)
     parser.add_argument("--calibration-output", type=Path, help="Export labelled detector scores from a verified calibration split.")
     parser.add_argument("--check-references", action="store_true", help="Validate real reference files and report readiness without running inference.")
@@ -763,6 +764,9 @@ def main() -> None:
         parser.error("--geometry-only requires a synthetic split and the precise crop path")
     if args.visible_mask_model and (args.legacy_crop or args.geometry_only or args.check_references):
         parser.error("--visible-mask-model requires detector inference with the precise crop path")
+    if args.classical_only and (args.geometry_only or args.check_references or args.calibration_output
+                                or args.visible_mask_model or args.model.is_file()):
+        parser.error("--classical-only requires inference with an absent --model path and no learned refiner")
     if args.synthetic and args.dataset_manifest:
         parser.error("--synthetic and --dataset-manifest are separate inputs")
     if args.check_references and not args.dataset_manifest:
@@ -773,7 +777,7 @@ def main() -> None:
         paths = (args.dataset_manifest, args.apply_reference_review, args.reviewed_manifest, args.output)
         if len({path.resolve() for path in paths}) != len(paths):
             parser.error("Review input manifest, receipt, reviewed manifest and report need separate paths")
-    if not args.check_references and not args.geometry_only and not args.model.is_file():
+    if not (args.check_references or args.geometry_only or args.classical_only or args.model.is_file()):
         raise SystemExit(f"ONNX model missing: {args.model}")
     settings = _runtime_settings(args)
     from app.evaluation.cropping import evaluate_cropping_dataset, evaluate_page_crops, is_locked_album_manifest
@@ -1109,8 +1113,8 @@ def main() -> None:
     }
     report = {
         "schema_version": CROP_VALIDATION_SCHEMA,
-        "model": str(args.model),
-        "model_sha256": sha256_file(args.model) if not args.geometry_only else None,
+        "model": None if args.classical_only else str(args.model),
+        "model_sha256": sha256_file(args.model) if not (args.geometry_only or args.classical_only) else None,
         "manifest": str(args.manifest),
         "dataset_manifest": str(args.dataset_manifest) if args.dataset_manifest else None,
         "dataset_manifest_sha256": getattr(args, "dataset_manifest_sha256", None),
@@ -1118,7 +1122,8 @@ def main() -> None:
         "geometry_only": args.geometry_only,
         "legacy_crop": args.legacy_crop,
         "iou_threshold": args.iou_threshold,
-        "classical_evidence_enabled": args.include_classical_fallback,
+        "classical_evidence_enabled": settings.enable_classical_segmentation_fallback,
+        "classical_only": args.classical_only,
         "validation_profile": crop_validation_profile(settings),
         "primary_detector_metrics": (
             evaluate_cropping_dataset(primary_page_metrics).as_dict() if primary_page_metrics else None

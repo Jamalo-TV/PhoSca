@@ -871,6 +871,7 @@ async def enhancement_task_logic(
     )
     for preserved_key in (
         "review_reasons", "correction", "release_policy", "confidence_components",
+        "segmentation_review_reasons", "segmentation_confidence",
         "review_provenance", "review_rejected_detection", "review_decisions",
     ):
         if previous_metadata.get(preserved_key):

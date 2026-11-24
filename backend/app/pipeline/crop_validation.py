@@ -14,9 +14,10 @@ from app.pipeline.crop_sampling import OWNED_BILINEAR
 from app.pipeline.confidence import is_sha256, load_confidence_calibration
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.model_registry import sha256
+from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVISION
 from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
 
-CROP_VALIDATION_SCHEMA = 30
+CROP_VALIDATION_SCHEMA = 31
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
 
 
@@ -60,6 +61,10 @@ def crop_validation_profile(settings: Settings) -> dict:
         ),
         "album_window_detection": (
             1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+        ),
+        "multipanel_print_detection": (
+            MULTIPANEL_PRINT_REVISION
+            if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "dense_tile_inference": (
             2 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
@@ -128,7 +133,7 @@ def detector_calibration_profile(settings: Settings, *, segmentation: dict | Non
         "pipeline_version", "precise_photo_crops", "model_registry_sha256", "visible_mask_refinement", "source_contour_refinement",
         "print_boundary",
         "classical_fallback", "classical_line_pairs", "separated_contrast_prints", "empty_drawn_frame_rejection",
-        "album_window_detection", "dense_tile_inference",
+        "album_window_detection", "multipanel_print_detection", "dense_tile_inference",
         "deskew_inference", "proposal_threshold",
         "acceptance_threshold", "min_detection_aspect_ratio",
         "max_detection_aspect_ratio", "opencv_version",

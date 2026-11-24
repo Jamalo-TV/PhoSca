@@ -20,6 +20,7 @@ from app.pipeline.geometry import (
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, pixel_box_to_normalized
 from app.pipeline.mounted_prints import mounted_print_evidence
+from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVIEW, shared_stock_outline
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.print_edges import _is_pale_stock, refine_print_boundary
 from app.pipeline.quality import evaluate_segmentation_geometry
@@ -1310,6 +1311,13 @@ def fuse_candidate_evidence(
             "proposal_families": sorted({item["family"] for item in cluster}),
         }
         winner_detection = winner["detection"]
+        shared_stock = next((item["detection"] for item in ranked
+                             if MULTIPANEL_PRINT_REVIEW in item["detection"].review_reasons
+                             and item["detection"].mask.get("visible_polygon")), None)
+        if shared_stock is not None and shared_stock is not winner_detection:
+            winner_detection = replace(winner_detection, mask={
+                **winner_detection.mask, "visible_polygon": shared_stock.mask["visible_polygon"],
+            }, review_reasons=[*winner_detection.review_reasons, MULTIPANEL_PRINT_REVIEW])
         selected.append(
             replace(
                 winner_detection,
@@ -1375,6 +1383,50 @@ def _is_photo_like_parent(detection: SegmentationDetection) -> bool:
     outline_sides = _score_value(detection, "outline_supported_sides")
     exterior_sides = _score_value(detection, "exterior_background_sides")
     return area_ratio <= 0.62 and (outline_sides >= 3 or exterior_sides >= 2 or detection.confidence >= 0.56)
+
+
+def _group_multipanel_prints(
+    image: np.ndarray, detections: list[SegmentationDetection],
+) -> tuple[list[SegmentationDetection], int]:
+    if len(detections) < 3:
+        return detections, 0
+    height, width = image.shape[:2]
+    polygons = [_detection_polygon(item) for item in detections]
+    areas = [float(cv2.contourArea(polygon)) for polygon in polygons]
+    removed = set()
+    grouped = {}
+    order = sorted(range(len(detections)), key=areas.__getitem__, reverse=True)
+    for index in order:
+        if index in removed or not .025 <= areas[index] <= .75:
+            continue
+        parent = detections[index]
+        children = _distinct_nested_children(index, detections, areas)
+        children = [child for child in children if child not in removed
+                    and normalized_polygon_overlap(polygons[child], polygons[index]).first_containment >= .96]
+        if len(children) < 2 or sum(areas[child] for child in children) < .27 * areas[index]:
+            continue
+        if any(detections[child].mask.get("detector_source") == "chromatic_mount" for child in children):
+            continue
+        panels = [normalized_vertices_to_pixels(polygons[child], width, height) for child in children]
+        try:
+            seed, _ = quad_from_polygon(normalized_vertices_to_pixels(polygons[index], width, height))
+            quad = shared_stock_outline(image, seed, panels)
+        except (cv2.error, ValueError):
+            continue
+        if quad is None:
+            continue
+        proposed = _normalized_polygon(quad, width, height)
+        measured = pixel_vertices_to_normalized(quad, width, height)
+        if normalized_polygon_overlap(polygons[index], measured).iou < .90 or any(
+            normalized_polygon_overlap(polygons[child], measured).first_containment < .96 for child in children
+        ):
+            continue
+        # Keep the detector's outline for scoring and seed both crop modes with
+        # the measured physical perimeter. Confirmation remains a review action.
+        grouped[index] = replace(parent, mask={**parent.mask, "visible_polygon": proposed},
+                                 review_reasons=list(dict.fromkeys([*parent.review_reasons, MULTIPANEL_PRINT_REVIEW])))
+        removed.update(children)
+    return [grouped.get(index, item) for index, item in enumerate(detections) if index not in removed], len(removed)
 
 
 def _filter_nested_classical_detections(
@@ -1445,6 +1497,7 @@ def select_candidate_set(detections: list[SegmentationDetection]) -> tuple[list[
 def detect_photos_classical(
     image: np.ndarray, *, min_area_ratio: float = _CLASSICAL_MIN_AREA_RATIO,
     max_line_refinement_pixels: int | None = None,
+    multipanel_source: np.ndarray | None = None,
 ) -> SegmentationResult:
     started = perf_counter()
     height, width = image.shape[:2]
@@ -1530,6 +1583,10 @@ def detect_photos_classical(
             )
         )
 
+    if multipanel_source is not None:
+        detections, panels = _group_multipanel_prints(multipanel_source, detections)
+        if panels:
+            rejected_counts["panels_on_shared_print_stock"] = panels
     detections, nested_rejections = select_candidate_set(detections)
     for reason, count in nested_rejections.items():
         rejected_counts[reason] = rejected_counts.get(reason, 0) + count
@@ -2107,8 +2164,11 @@ def refine_album_page_result(
                 review_reasons=[*quality.review_reasons, "chromatic_mount_boundary_needs_review"],
             )
         )
+    panels = 0
+    if source_image is not None:
+        detections, panels = _group_multipanel_prints(source_image, detections)
     containers = _page_containers(detections, image)
-    if not rejected and not quads and not containers:
+    if not rejected and not quads and not containers and not panels:
         return result
     detections = [detection for index, detection in enumerate(detections) if index not in containers]
     detections.sort(key=lambda detection: (detection.bounding_box["y1"], detection.bounding_box["x1"]))
@@ -2118,6 +2178,7 @@ def refine_album_page_result(
         "mount_replacements": replacement_count,
         "page_proposal_rejections": rejected,
         "container_rejections": len(containers),
+        "multipanel_fragments": panels,
     }
     return SegmentationResult(detections=detections, metadata=metadata)
 
@@ -2396,7 +2457,8 @@ def segment_album_page(
 
     fixed_indices = {index for index, detection in enumerate(result.detections)
                      if detection.mask.get("source") == ALBUM_WINDOW_SOURCE
-                     or detection.mask.get("detector_source") == CONTRAST_COMPONENT_SOURCE}
+                     or detection.mask.get("detector_source") == CONTRAST_COMPONENT_SOURCE
+                     or MULTIPANEL_PRINT_REVIEW in detection.review_reasons}
     refinable = [index for index in range(len(result.detections)) if index not in fixed_indices]
     originals = [_detection_polygon(result.detections[index]) for index in refinable]
     fixed = [_detection_polygon(result.detections[index]) for index in sorted(fixed_indices)]
@@ -2435,6 +2497,7 @@ def segment_album_page(
 def _segment_album_page(image: np.ndarray, settings: Settings, source: np.ndarray | None = None) -> SegmentationResult:
     model_path = Path(settings.yolo_model_path)
     line_budget = min(3 * image.shape[0] * image.shape[1], 12_000_000) if settings.enable_precise_photo_crops else None
+    multipanel_source = (source if source is not None else image) if settings.enable_precise_photo_crops else None
     metadata: dict = {
         "model_path": str(model_path),
         "confidence_threshold": settings.yolo_confidence_threshold,
@@ -2553,7 +2616,9 @@ def _segment_album_page(image: np.ndarray, settings: Settings, source: np.ndarra
                     }
                 del inputs
                 if detections and settings.enable_classical_segmentation_fallback and risk_reasons and not dense_small_prints:
-                    fallback = detect_photos_classical(image, max_line_refinement_pixels=line_budget)
+                    fallback = detect_photos_classical(
+                        image, max_line_refinement_pixels=line_budget, multipanel_source=multipanel_source,
+                    )
                     merged, fusion = fuse_candidate_evidence(
                         image, detections, fallback.detections, model_evidence=model_evidence
                     )
@@ -2579,7 +2644,7 @@ def _segment_album_page(image: np.ndarray, settings: Settings, source: np.ndarra
     if not settings.enable_classical_segmentation_fallback:
         return SegmentationResult(detections=[], metadata={**metadata, "fallback_used": False})
 
-    fallback = detect_photos_classical(image, max_line_refinement_pixels=line_budget)
+    fallback = detect_photos_classical(image, max_line_refinement_pixels=line_budget, multipanel_source=multipanel_source)
     selected, fusion = fuse_candidate_evidence(image, [], fallback.detections)
     return SegmentationResult(
         detections=selected,
