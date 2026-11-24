@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App.jsx";
+import BrowserSession from "./BrowserSession.jsx";
 import "./styles.css";
 
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
@@ -18,6 +18,6 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <App />
+    <BrowserSession />
   </React.StrictMode>
 );

@@ -12,7 +12,7 @@ from app.core.logging import configure_logging
 from app.core.rate_limit import limiter
 from app.database import get_session_factory
 from app.models import AuditLog
-from app.routers import albums, health, jobs, pages, photos, review, runs, search, training
+from app.routers import albums, authentication, health, jobs, pages, photos, review, runs, search, training
 
 
 def error_response(request: Request, status_code: int, error: str, detail: str) -> JSONResponse:
@@ -33,8 +33,8 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Content-Type", "Authorization", "X-CSRF-Token", "X-Upload-Retry", "Content-Range", "X-Upload-ID", "X-Filename"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization", "X-API-Key", "X-CSRF-Token", "X-Upload-Retry", "Content-Range", "X-Upload-ID", "X-Filename"],
     )
 
     @app.middleware("http")
@@ -68,6 +68,8 @@ def create_app() -> FastAPI:
                 structlog.get_logger(__name__).warning("mutation_audit_failed", error=str(exc))
 
         response.headers["X-Request-ID"] = request_id
+        if request.url.path.startswith("/api/v1/") and get_settings().auth_required:
+            response.headers["Cache-Control"] = "private, no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Content-Security-Policy"] = (
@@ -120,6 +122,7 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(albums.router)
+    app.include_router(authentication.router)
     app.include_router(pages.router)
     app.include_router(jobs.router)
     app.include_router(photos.router)

@@ -170,10 +170,13 @@ async def get_photo_image(
     if not selected_path or not Path(selected_path).exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
     preview = selected_variant == MOTIF_REVIEW_PREVIEW
+    filename = Path(selected_path).name
+    if selected_variant in {"full_print", "image_only"}:
+        filename = f"photo-{photo.id}-{selected_variant}.jpg"
     return FileResponse(
         selected_path,
         media_type="image/png" if preview else "image/jpeg",
-        filename=Path(selected_path).name,
+        filename=filename,
         content_disposition_type="inline",
         headers={"Cache-Control": "private, no-store"} if preview else None,
     )

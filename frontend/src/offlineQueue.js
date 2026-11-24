@@ -12,11 +12,11 @@ async function db() {
   });
 }
 
-export async function queueUpload(albumId, files) {
+export async function queueUpload(albumId, files, scope = null) {
   const database = await db();
   for (const file of files) {
     await database.put(STORE, {
-      id: crypto.randomUUID(), albumId, file, createdAt: Date.now(),
+      id: crypto.randomUUID(), albumId, file, scope, createdAt: Date.now(),
       status: "queued", attempts: 0, error: null,
     });
   }
@@ -26,18 +26,20 @@ export async function queueUpload(albumId, files) {
   }
 }
 
-export async function listQueuedUploads() {
-  return (await db()).getAll(STORE);
+export async function listQueuedUploads(scope = null) {
+  const uploads = await (await db()).getAll(STORE);
+  return uploads.filter((upload) => (upload.scope ?? null) === scope);
 }
 
 export async function removeQueuedUpload(id) {
   return (await db()).delete(STORE, id);
 }
 
-export async function retryQueuedUploads(onMessage) {
+export async function retryQueuedUploads(onMessage, scope = null) {
   const database = await db();
   const uploads = await database.getAll(STORE);
   for (const upload of uploads) {
+    if ((upload.scope ?? null) !== scope) continue;
     try {
       await database.put(STORE, { ...upload, status: "uploading", attempts: (upload.attempts || 0) + 1, error: null });
       if (upload.file.size > 20 * 1024 * 1024) {

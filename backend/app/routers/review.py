@@ -10,7 +10,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import Principal, get_principal
+from app.core.auth import Principal, get_principal, require_write_principal
 from app.database import get_async_session
 from app.models import (
     ExtractedPhoto,
@@ -381,7 +381,7 @@ def _apply_review_decision(event: ReviewEvent, payload: MobileReviewAnswer, cont
 async def add_review_event(
     payload: MobileReviewAnswer,
     session: AsyncSession = Depends(get_async_session),
-    principal: Principal | None = Depends(get_principal),
+    principal: Principal | None = Depends(require_write_principal),
 ):
     if payload.answer not in ALLOWED_ANSWERS[payload.task_type]:
         raise HTTPException(

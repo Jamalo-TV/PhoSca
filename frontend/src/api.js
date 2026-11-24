@@ -1,4 +1,29 @@
 const jsonHeaders = { "Content-Type": "application/json" };
+const sessionUrl = "/api/v1/auth/session";
+
+async function apiFetch(url, options) {
+  const headers = new Headers(options?.headers);
+  if (options?.method && !["GET", "HEAD", "OPTIONS"].includes(options.method)) {
+    headers.set("X-CSRF-Token", "1");
+  }
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 401 && url !== sessionUrl) {
+    window.dispatchEvent(new Event("phosca-session-expired"));
+  }
+  return response;
+}
+
+export async function getBrowserSession() {
+  return parseResponse(await apiFetch(sessionUrl));
+}
+
+export async function signIn(apiKey) {
+  return parseResponse(await apiFetch(sessionUrl, { method: "POST", headers: { "X-API-Key": apiKey } }));
+}
+
+export async function signOut() {
+  return parseResponse(await apiFetch(sessionUrl, { method: "DELETE" }));
+}
 
 async function parseResponse(response) {
   if (!response.ok) {
@@ -16,23 +41,23 @@ async function parseResponse(response) {
 }
 
 export async function listAlbums() {
-  return parseResponse(await fetch("/api/v1/albums"));
+  return parseResponse(await apiFetch("/api/v1/albums"));
 }
 
 export async function createAlbum(payload) {
-  return parseResponse(await fetch("/api/v1/albums", { method: "POST", headers: jsonHeaders, body: JSON.stringify(payload) }));
+  return parseResponse(await apiFetch("/api/v1/albums", { method: "POST", headers: jsonHeaders, body: JSON.stringify(payload) }));
 }
 
 export async function getAlbum(albumId) {
-  return parseResponse(await fetch(`/api/v1/albums/${albumId}`));
+  return parseResponse(await apiFetch(`/api/v1/albums/${albumId}`));
 }
 
 export async function listPages(albumId, signal) {
-  return parseResponse(await fetch(`/api/v1/albums/${albumId}/pages`, { signal }));
+  return parseResponse(await apiFetch(`/api/v1/albums/${albumId}/pages`, { signal }));
 }
 
 export async function listPhotos(albumId) {
-  return parseResponse(await fetch(`/api/v1/albums/${albumId}/photos`));
+  return parseResponse(await apiFetch(`/api/v1/albums/${albumId}/photos`));
 }
 
 export function hasPhotoCrop(photo) {
@@ -42,7 +67,7 @@ export function hasPhotoCrop(photo) {
 
 export async function analyzeAlbumNow(albumId, pageIds = null) {
   return parseResponse(
-    await fetch(`/api/v1/albums/${albumId}/analyze-now`, {
+    await apiFetch(`/api/v1/albums/${albumId}/analyze-now`, {
       method: "POST",
       headers: jsonHeaders,
       body: JSON.stringify({ page_ids: pageIds }),
@@ -51,29 +76,29 @@ export async function analyzeAlbumNow(albumId, pageIds = null) {
 }
 
 export async function getPhoto(photoId) {
-  return parseResponse(await fetch(`/api/v1/photos/${photoId}`));
+  return parseResponse(await apiFetch(`/api/v1/photos/${photoId}`));
 }
 
 export async function getPresets() {
-  return parseResponse(await fetch("/api/v1/presets"));
+  return parseResponse(await apiFetch("/api/v1/presets"));
 }
 
 export async function getPhotoVariants(photoId) {
-  return parseResponse(await fetch(`/api/v1/photos/${photoId}/variants`));
+  return parseResponse(await apiFetch(`/api/v1/photos/${photoId}/variants`));
 }
 
 export async function getPageOcr(pageId) {
-  return parseResponse(await fetch(`/api/v1/pages/${pageId}/ocr`));
+  return parseResponse(await apiFetch(`/api/v1/pages/${pageId}/ocr`));
 }
 
 export async function getReviewQueue(albumId, type) {
   const params = new URLSearchParams({ type });
   if (albumId) params.set("album_id", albumId);
-  return parseResponse(await fetch(`/api/v1/review/queue?${params}`));
+  return parseResponse(await apiFetch(`/api/v1/review/queue?${params}`));
 }
 
 export async function submitReviewEvent(payload) {
-  return parseResponse(await fetch("/api/v1/review/events", {
+  return parseResponse(await apiFetch("/api/v1/review/events", {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify(payload),
@@ -81,13 +106,13 @@ export async function submitReviewEvent(payload) {
 }
 
 export async function getReviewProgress() {
-  return parseResponse(await fetch("/api/v1/review/progress"));
+  return parseResponse(await apiFetch("/api/v1/review/progress"));
 }
 
 export async function patchBoundingBox(photoId, boundingBox, segmentationMask = null) {
   const body = segmentationMask ? { bounding_box: boundingBox, segmentation_mask: segmentationMask } : { bounding_box: boundingBox };
   return parseResponse(
-    await fetch(`/api/v1/photos/${photoId}/bounding-box`, {
+    await apiFetch(`/api/v1/photos/${photoId}/bounding-box`, {
       method: "PATCH",
       headers: jsonHeaders,
       body: JSON.stringify(body),
@@ -97,7 +122,7 @@ export async function patchBoundingBox(photoId, boundingBox, segmentationMask = 
 
 export async function patchOcr(ocrId, payload) {
   return parseResponse(
-    await fetch(`/api/v1/ocr/${ocrId}`, {
+    await apiFetch(`/api/v1/ocr/${ocrId}`, {
       method: "PATCH",
       headers: jsonHeaders,
       body: JSON.stringify(payload),
@@ -107,17 +132,17 @@ export async function patchOcr(ocrId, payload) {
 
 export async function reprocessPhoto(photoId, preset = "auto") {
   const params = new URLSearchParams({ preset });
-  return parseResponse(await fetch(`/api/v1/photos/${photoId}/reprocess?${params}`, { method: "POST" }));
+  return parseResponse(await apiFetch(`/api/v1/photos/${photoId}/reprocess?${params}`, { method: "POST" }));
 }
 
 export async function search(q) {
-  return parseResponse(await fetch(`/api/v1/search?q=${encodeURIComponent(q)}`));
+  return parseResponse(await apiFetch(`/api/v1/search?q=${encodeURIComponent(q)}`));
 }
 
 export async function uploadFiles(albumId, files) {
   const form = new FormData();
   files.forEach((file) => form.append("files", file, file.name));
-  return parseResponse(await fetch(`/api/v1/albums/${albumId}/pages/upload`, { method: "POST", headers: { "X-Upload-Retry": "1" }, body: form }));
+  return parseResponse(await apiFetch(`/api/v1/albums/${albumId}/pages/upload`, { method: "POST", headers: { "X-Upload-Retry": "1" }, body: form }));
 }
 
 export async function uploadFileChunked(albumId, file, onProgress) {
@@ -131,7 +156,7 @@ export async function uploadFileChunked(albumId, file, onProgress) {
     const form = new FormData();
     form.append("file", chunk, file.name);
     finalResponse = await parseResponse(
-      await fetch(`/api/v1/albums/${albumId}/pages/upload/chunk`, {
+      await apiFetch(`/api/v1/albums/${albumId}/pages/upload/chunk`, {
         method: "POST",
         headers: {
           "Content-Range": `bytes ${offset}-${end}/${file.size}`,
@@ -149,30 +174,30 @@ export async function uploadFileChunked(albumId, file, onProgress) {
 }
 
 export async function listSegmentationTrainingImages() {
-  return parseResponse(await fetch("/api/v1/training/segmentation"));
+  return parseResponse(await apiFetch("/api/v1/training/segmentation"));
 }
 
 export async function uploadSegmentationTrainingImages(files) {
   const form = new FormData();
   files.forEach((file) => form.append("files", file, file.name));
-  return parseResponse(await fetch("/api/v1/training/segmentation/images", { method: "POST", body: form }));
+  return parseResponse(await apiFetch("/api/v1/training/segmentation/images", { method: "POST", body: form }));
 }
 
 export async function deleteSegmentationTrainingImage(filename) {
-  return parseResponse(await fetch(`/api/v1/training/segmentation/images/${encodeURIComponent(filename)}`, { method: "DELETE" }));
+  return parseResponse(await apiFetch(`/api/v1/training/segmentation/images/${encodeURIComponent(filename)}`, { method: "DELETE" }));
 }
 
 export async function getSegmentationTrainingLabels(filename) {
-  return parseResponse(await fetch(`/api/v1/training/segmentation/images/${encodeURIComponent(filename)}/labels`));
+  return parseResponse(await apiFetch(`/api/v1/training/segmentation/images/${encodeURIComponent(filename)}/labels`));
 }
 
 export async function detectSegmentationTrainingLabels(filename) {
-  return parseResponse(await fetch(`/api/v1/training/segmentation/images/${encodeURIComponent(filename)}/detect`, { method: "POST" }));
+  return parseResponse(await apiFetch(`/api/v1/training/segmentation/images/${encodeURIComponent(filename)}/detect`, { method: "POST" }));
 }
 
 export async function saveSegmentationTrainingLabels(filename, polygons) {
   return parseResponse(
-    await fetch(`/api/v1/training/segmentation/images/${encodeURIComponent(filename)}/labels`, {
+    await apiFetch(`/api/v1/training/segmentation/images/${encodeURIComponent(filename)}/labels`, {
       method: "PUT",
       headers: jsonHeaders,
       body: JSON.stringify({ polygons }),
@@ -181,5 +206,5 @@ export async function saveSegmentationTrainingLabels(filename, polygons) {
 }
 
 export async function prepareSegmentationTrainingDataset() {
-  return parseResponse(await fetch("/api/v1/training/segmentation/prepare", { method: "POST" }));
+  return parseResponse(await apiFetch("/api/v1/training/segmentation/prepare", { method: "POST" }));
 }

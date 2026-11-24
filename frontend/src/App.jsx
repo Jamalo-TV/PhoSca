@@ -1879,7 +1879,7 @@ function GalleryView({ photos, processing, onOpenPhoto = () => {} }) {
   );
 }
 
-function CaptureView({ albumId, refresh }) {
+function CaptureView({ albumId, refresh, uploadQueueScope }) {
   const videoRef = useRef(null);
   const [streaming, setStreaming] = useState(false);
   const [tilt, setTilt] = useState(0);
@@ -1893,13 +1893,17 @@ function CaptureView({ albumId, refresh }) {
       setTilt(Math.round(levelTilt));
     }
     window.addEventListener("deviceorientation", onOrientation);
-    navigator.serviceWorker?.addEventListener("message", (event) => {
+    function onUploadSync(event) {
       if (event.data?.type === "retry-upload-queue") {
-        retryQueuedUploads(setMessage).then(refresh);
+        retryQueuedUploads(setMessage, uploadQueueScope).then(refresh);
       }
-    });
-    return () => window.removeEventListener("deviceorientation", onOrientation);
-  }, [refresh]);
+    }
+    navigator.serviceWorker?.addEventListener("message", onUploadSync);
+    return () => {
+      window.removeEventListener("deviceorientation", onOrientation);
+      navigator.serviceWorker?.removeEventListener("message", onUploadSync);
+    };
+  }, [refresh, uploadQueueScope]);
 
   async function startCamera() {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -1929,7 +1933,7 @@ function CaptureView({ albumId, refresh }) {
     try {
       for (const file of batch) {
         if (!navigator.onLine) {
-          await queueUpload(albumId, [file]);
+          await queueUpload(albumId, [file], uploadQueueScope);
           setMessage("Upload queued for retry.");
         } else if (file.size > 20 * 1024 * 1024) {
           await uploadFileChunked(albumId, file, setProgress);
@@ -1941,7 +1945,7 @@ function CaptureView({ albumId, refresh }) {
       setProgress(0);
       await refresh();
     } catch (error) {
-      await queueUpload(albumId, batch);
+      await queueUpload(albumId, batch, uploadQueueScope);
       setMessage(error.message || "Upload queued for retry.");
     }
   }
@@ -1991,8 +1995,8 @@ function CaptureView({ albumId, refresh }) {
   );
 }
 
-export default function App() {
-  if (window.location.pathname.startsWith("/mobile")) return <MobileApp />;
+export default function App({ uploadQueueScope }) {
+  if (window.location.pathname.startsWith("/mobile")) return <MobileApp uploadQueueScope={uploadQueueScope} />;
   const [activeTab, setActiveTab] = useState("analyze");
   const [albums, setAlbums] = useState([]);
   const [selectedAlbumId, setSelectedAlbumId] = useState(null);
@@ -2180,7 +2184,7 @@ export default function App() {
       )}
       {activeTab === "training" && <TrainingAnnotationView />}
       {activeTab === "gallery" && <GalleryView photos={photos} processing={selectedAlbum?.status === "processing"} onOpenPhoto={openPhoto} />}
-      {activeTab === "capture" && <CaptureView albumId={selectedAlbumId} refresh={refreshAlbumData} />}
+      {activeTab === "capture" && <CaptureView albumId={selectedAlbumId} refresh={refreshAlbumData} uploadQueueScope={uploadQueueScope} />}
       {photoViewerDetail && (
         <PhotoCompareModal detail={photoViewerDetail} title={`Photo ${String(photoViewerDetail.id).slice(0, 8)}`} onClose={() => setPhotoViewerDetail(null)} />
       )}

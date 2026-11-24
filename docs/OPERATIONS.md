@@ -96,7 +96,9 @@ python scripts/create_api_key.py --tenant <tenant-name> --label <operator> --rol
 ```
 
 Das Kommando zeigt das Geheimnis nur einmal. Clients senden es als
-`X-API-Key`. `viewer` darf nur lesen, `editor` darf Alben und Fotos verändern,
+`X-API-Key`. Im Browser erfolgt die Anmeldung mit demselben Schlüssel über die
+HTTPS-Adresse von PhoSca. Die Browsersitzung gilt acht Stunden und nutzt Redis.
+`viewer` darf nur lesen, `editor` darf Alben und Fotos verändern,
 und `admin` ist zusätzlich für Trainingsdaten-Endpunkte erforderlich. Jeder
 Album-, Foto-, Seiten-, Review-, Such- und Run-Abruf wird bei aktivierter
 Authentifizierung auf den Tenant des Schlüssels eingeschränkt und gibt für

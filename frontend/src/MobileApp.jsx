@@ -32,11 +32,11 @@ function MobileHeader({ title, onBack }) {
   return <header className="mobile-header"><div>{onBack && <button className="mobile-icon" onClick={onBack} aria-label="Zurück"><ChevronLeft /></button>}<span className="mobile-mark">P</span><strong>{title}</strong></div><OnlineBadge /></header>;
 }
 
-function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome }) {
+function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome, uploadQueueScope }) {
   const [queue, setQueue] = useState([]); const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false);
   const [streaming, setStreaming] = useState(false); const [cameraError, setCameraError] = useState(""); const [lastCapture, setLastCapture] = useState("");
   const videoRef = useRef(null); const streamRef = useRef(null);
-  const refreshQueue = useCallback(() => listQueuedUploads().then(setQueue), []);
+  const refreshQueue = useCallback(() => listQueuedUploads(uploadQueueScope).then(setQueue), [uploadQueueScope]);
   useEffect(() => { refreshQueue(); }, [refreshQueue]);
   useEffect(() => () => streamRef.current?.getTracks().forEach(track => track.stop()), []);
 
@@ -77,13 +77,13 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome }) {
         if (!result?.pages?.[0]?.verified) throw new Error("Serverbestätigung fehlt");
         setMessage(result.analysis_queued ? "Auf PC gespeichert. Fotos werden automatisch ausgeschnitten." : "Auf PC gespeichert und geprüft.");
       } catch {
-        await queueUpload(activeAlbumId, [file]); setMessage("Lokal gesichert – wartet auf Upload.");
+        await queueUpload(activeAlbumId, [file], uploadQueueScope); setMessage("Lokal gesichert – wartet auf Upload.");
       }
     }
     await refreshQueue(); await reload(); setBusy(false);
   }
 
-  async function retry() { setBusy(true); await retryQueuedUploads(setMessage); await refreshQueue(); await reload(); setBusy(false); }
+  async function retry() { setBusy(true); await retryQueuedUploads(setMessage, uploadQueueScope); await refreshQueue(); await reload(); setBusy(false); }
 
   return <div className="mobile-shell"><MobileHeader title="Seiten aufnehmen" onBack={goHome} /><main className="mobile-content">
     <section className="mobile-card batch-picker"><label>Album / Batch</label><div><select value={activeAlbumId || ""} onChange={e => setActiveAlbumId(e.target.value)}><option value="" disabled>Batch auswählen</option>{albums.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select><button className="mobile-icon light" onClick={addBatch}>+</button></div></section>
@@ -408,7 +408,7 @@ function Progress({ albums, goHome }) {
   return <div className="mobile-shell"><MobileHeader title="Fortschritt" onBack={goHome}/><main className="mobile-content"><h2 className="mobile-title">Dein lokaler Fortschritt</h2><div className="metric-grid"><div><strong>{pages}</strong><span>Seiten gespeichert</span></div><div><strong>{photos}</strong><span>Prints erkannt</span></div><div><strong>{progress.completed}</strong><span>Reviews erledigt</span></div><div><strong>{progress.by_type?.enhancement || 0}</strong><span>A/B-Vergleiche</span></div></div><section className="mobile-card"><strong>Daten bleiben lokal</strong><p>Originale bleiben unverändert. Feedback wird versioniert; neue Modelle werden erst nach Tests aktiviert.</p></section></main></div>;
 }
 
-export default function MobileApp() {
+export default function MobileApp({ uploadQueueScope }) {
   const route = location.pathname; const [view,setView] = useState(route.includes("/capture") ? "capture" : route.includes("/batches") ? "batches" : route.includes("/progress") ? "progress" : route.includes("/enhancement") ? "enhancement" : route.includes("/review") ? "review" : "home");
   const [albums,setAlbums] = useState([]); const [albumId,setAlbumId] = useState(localStorage.getItem("phosca-batch") || "");
   const reload = useCallback(async () => { const next = await listAlbums(); setAlbums(next); if (!albumId && next[0]) setAlbumId(next[0].id); }, [albumId]);
@@ -420,7 +420,7 @@ export default function MobileApp() {
     return () => window.clearInterval(timer);
   }, [processing, reload, view]);
   const nav = v => { setView(v); history.replaceState({},"", v === "home" ? "/mobile" : `/mobile/${v}`); };
-  if(view === "capture") return <Capture albums={albums} activeAlbumId={albumId} setActiveAlbumId={setAlbumId} reload={reload} goHome={()=>nav("home")}/>;
+  if(view === "capture") return <Capture albums={albums} activeAlbumId={albumId} setActiveAlbumId={setAlbumId} reload={reload} goHome={()=>nav("home")} uploadQueueScope={uploadQueueScope}/>;
   if(view === "batches") return <BatchGallery albums={albums} goHome={()=>nav("home")}/>;
   if(view === "review") return <CropReview albumId={albumId} goHome={()=>nav("home")}/>;
   if(view === "enhancement") return <EnhancementReview albumId={albumId} goHome={()=>nav("home")}/>;

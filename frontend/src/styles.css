@@ -34,6 +34,51 @@ main {
   background: #f7faf9;
 }
 
+.browser-sign-in {
+  max-width: 28rem;
+  margin: auto;
+  padding: 12vh 1.5rem 2rem;
+}
+
+.browser-sign-in h1 {
+  margin-bottom: 1rem;
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.browser-sign-in label {
+  display: grid;
+  gap: .4rem;
+}
+
+.browser-sign-in input {
+  padding: .65rem;
+  border: 1px solid #b9cdc6;
+  border-radius: .35rem;
+  background: #fff;
+}
+
+.browser-sign-in button,
+.browser-session-controls button {
+  border-radius: .35rem;
+  padding: .4rem .75rem;
+  color: #fff;
+  background: #0f766e;
+}
+
+.browser-sign-in button {
+  margin-top: .75rem;
+}
+
+.browser-session-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .5rem;
+  padding: .5rem 1rem;
+}
+
 .app-header {
   display: flex;
   align-items: center;
