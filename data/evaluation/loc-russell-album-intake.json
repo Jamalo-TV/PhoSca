@@ -1,0 +1,174 @@
+{
+  "current_split": "intake_only",
+  "date_utc": "2026-11-25",
+  "native_assets_acquired": 0,
+  "release_eligibility": "pending_native_sources_and_independent_reference_review",
+  "id": "loc-russell-usmrr-2018661418",
+  "title": "United States Military Rail Road Photographic Album",
+  "institution": "Library of Congress, Prints and Photographs Division",
+  "album_item": "https://www.loc.gov/pictures/item/2018661418/",
+  "album_marc": "https://www.loc.gov/pictures/item/2018661418/marc/",
+  "call_number": "LOT 15069 [P&P]",
+  "album_accession": "DLC/PP-2018:092",
+  "whole_album_asset": "LC-DIG-ppmsca-78514",
+  "prints_in_album": 108,
+  "stock": "108 albumen print photographs in one bound physical album, original digital page-turner and item-specific catalogued stock dimensions.",
+  "album_manifest": "https://www.loc.gov/resource/ppmsca.78514/?fo=json",
+  "alternate_catalog_link": "https://hdl.loc.gov/loc.pnp/ppmsca.78514",
+  "object_provenance": "Library of Congress catalog traces the album through R. K. Hawley and General Winfield Scott Hancock; purchased in 2018 from 19th Century Rare Book & Photograph Shop.",
+  "page_number_rule": "Page values are printed catalog page numbers, not IIIF canvas or presentation-sequence indices. Cross-map each catalog item to a downloaded canvas by title, text and visible image content before recording a file as a match.",
+  "rights_status": "Page-38 print advisory verified. Verify album-level advisory and each other candidate asset. The MARC collection record documents original access on appointment for preservation.",
+  "collection_rights_guidance": "https://www.loc.gov/rr/print/res/rights.html",
+  "failed_requests": [
+    {
+      "url": "https://www.loc.gov/resource/ppmsca.78514/?fo=json",
+      "status": 403,
+      "phase": "managed proxy CONNECT"
+    },
+    {
+      "url": "https://hdl.loc.gov/loc.pnp/ppmsca.78514",
+      "status": 403,
+      "phase": "managed proxy CONNECT"
+    },
+    {
+      "url": "https://tile.loc.gov/storage-services/master/pnp/ppmsca/80100/80172u.tif",
+      "status": 403,
+      "phase": "managed proxy CONNECT"
+    },
+    {
+      "url": "https://tile.loc.gov/storage-services/service/pnp/ppmsca/80100/80172v.jpg",
+      "status": 403,
+      "phase": "managed proxy CONNECT"
+    }
+  ],
+  "references": [
+    {
+      "printed_page": 9,
+      "item": "https://www.loc.gov/item/2022652193/",
+      "title": "Arsenal, Washington, D.C., north front. Interior court - officers in foreground",
+      "sheet_height_width_mm": [
+        236,
+        387
+      ]
+    },
+    {
+      "printed_page": 16,
+      "item": "https://www.loc.gov/pictures/item/2022652200/",
+      "accession": "LC-DIG-ppmsca-80150",
+      "title": "Cartridge Manufactory, Washington Arsenal, blown up June, 1864",
+      "sheet_height_width_mm": [
+        207,
+        329
+      ]
+    },
+    {
+      "printed_page": 17,
+      "item": "https://www.loc.gov/item/2022652201/",
+      "title": "Lower wharf, Belle Plain, built by U.S.M.R.R. Construction Corps",
+      "sheet_height_width_mm": [
+        250,
+        333
+      ]
+    },
+    {
+      "printed_page": 18,
+      "item": "https://www.loc.gov/item/2022652202/",
+      "title": "Slough Barracas [i.e. Barracks], Alexandria, Va.",
+      "sheet_height_width_mm": [
+        216,
+        334
+      ]
+    },
+    {
+      "printed_page": 25,
+      "item": "https://www.loc.gov/item/2022652209/",
+      "accession": "LC-DIG-ppmsca-80159",
+      "title": "Gen. Patrick's headquarters, Brandy, April 15, 1864. Gen Meade's headquarters in distance",
+      "sheet_height_width_mm": [
+        235,
+        329
+      ]
+    },
+    {
+      "printed_page": 28,
+      "item": "https://www.loc.gov/resource/ppmsca.80162/",
+      "accession": "LC-DIG-ppmsca-80162",
+      "title": "Depot buildings and wharves of City Point Railroad",
+      "sheet_height_width_mm": [
+        206,
+        304
+      ]
+    },
+    {
+      "printed_page": 38,
+      "item": "https://www.loc.gov/pictures/item/2022654764/",
+      "accession": "LC-DIG-ppmsca-80172",
+      "tiff": "https://tile.loc.gov/storage-services/master/pnp/ppmsca/80100/80172u.tif",
+      "rights_advisory": "No known restrictions on publication",
+      "title": "Provost Marshal's office, Alexandria, Va.",
+      "sheet_height_width_mm": [
+        248,
+        325
+      ]
+    },
+    {
+      "printed_page": 53,
+      "item": "https://www.loc.gov/item/2022654783/",
+      "title": "Engines stored in Washington, D.C. To prevent their falling into rebel hands, in case of a raid on Alexandria",
+      "sheet_height_width_mm": [
+        236,
+        294
+      ]
+    },
+    {
+      "printed_page": 74,
+      "item": "https://www.loc.gov/item/2022887189/",
+      "title": "Ruins of rail road bridge with engine and cars in bed of River, April 1865",
+      "sheet_height_width_mm": [
+        174,
+        239
+      ]
+    },
+    {
+      "printed_page": 85,
+      "item": "https://www.loc.gov/item/2023632608/",
+      "title": "Richmond across the canal basin. Showing ruined buildings, Capitol in distance. April, 1865",
+      "sheet_height_width_mm": [
+        210,
+        303
+      ]
+    },
+    {
+      "printed_page": 86,
+      "item": "https://www.loc.gov/pictures/item/2023632609/",
+      "accession": "LC-DIG-ppmsca-80225",
+      "title": "Railroad mortar at Petersburg, Va., July 25, 1864",
+      "sheet_height_width_mm": [
+        242,
+        322
+      ]
+    },
+    {
+      "printed_page": 96,
+      "item": "https://www.loc.gov/item/2023632621/",
+      "title": "Fort Brady, James River. April, 1865",
+      "sheet_height_width_mm": [
+        164,
+        259
+      ]
+    }
+  ],
+  "pending": [
+    "Download full native leaves and the same-print reference item files once authorized network access is available.",
+    "Verify item rights and bind provenance to one physical group.",
+    "Match the page-turner canvas to each printed page. Pin native bytes with SHA-256 and retain resolution, capture metadata and source URL.",
+    "Compare TIFF metadata and original pixel grids for independent exposure evidence. An accession and dimensions alone establish item identity and full stock size, while motif dimensions still need independent support.",
+    "Use native rank and plane checks for capture correspondence. Compare full stock and the photographic image boundaries, with held-out landmarks where a separately captured exposure exists. Send ambiguous borders and obscured corners to review.",
+    "Check training, development, and calibration manifests and near-duplicates. Preserve candidate release identity until independent label and split validation."
+  ],
+  "catalogued_page_height_width_mm": [
+    338,
+    451
+  ],
+  "mirror_search": "Documented official handle and catalog both describe the same volume. Public search surfaced other physical copies, individual photographic prints and auction illustrations. No mirror of the full exact LoC page rasters was located."
+}

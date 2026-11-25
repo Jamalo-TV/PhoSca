@@ -1,5 +1,5 @@
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from functools import lru_cache
 from itertools import combinations, islice
@@ -33,7 +33,7 @@ from app.pipeline.geometry import (
 from app.pipeline.image_ops import normalized_box_to_pixels, pixel_box_to_normalized
 from app.pipeline.mounted_prints import mounted_print_evidence
 from app.pipeline.multipanel_prints import (
-    MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE, nested_print_on_shared_stock,
+    MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE, grid_fragment_on_shared_stock, nested_print_on_shared_stock,
     recover_shared_stock_outline, shared_stock_outline,
 )
 from app.pipeline.page_deskew import album_rotation, deskewed_view
@@ -3010,6 +3010,38 @@ def _suggest_adjacent_album_edge_print(image: np.ndarray, result: SegmentationRe
     )
 
 
+def _grid_fragment_candidates(
+    image: np.ndarray, detections: list[SegmentationDetection], quads: dict[int, np.ndarray],
+) -> Iterator[tuple[int, int, np.ndarray]]:
+    height, width = image.shape[:2]
+    for child, item in enumerate(detections):
+        if (not item.geometry_valid or item.review_reasons or item.mask.get("source") != "yolo_seg_mask"
+                or (item.mask.get("boundary_evidence") or {}).get("score", 1) > .62):
+            continue
+        polygon = _detection_polygon(item)
+        if len(polygon) < 4:
+            continue
+        for parent, outer_quad in quads.items():
+            anchor = detections[parent]
+            if (anchor.mask.get("detector_source") != "edge_contour" or anchor.confidence < .75
+                    or (anchor.mask.get("boundary_evidence") or {}).get("score", 0) < .75):
+                continue
+            iou, _, _, contained = _normalized_box_overlap(anchor.bounding_box, item.bounding_box)
+            if not .28 <= iou <= .65 or contained < .96:
+                continue
+            overlap = normalized_polygon_overlap(_detection_polygon(anchor), polygon)
+            if not .28 <= overlap.iou < .60 or overlap.second_containment < .99:
+                continue
+            try:
+                inner_quad, method = quad_from_polygon(normalized_vertices_to_pixels(polygon, width, height))
+                if method != "minimum_area_rect" and grid_fragment_on_shared_stock(
+                    image, _order_points(outer_quad), inner_quad,
+                ):
+                    yield parent, child, inner_quad
+            except (cv2.error, ValueError):
+                continue
+
+
 def _defer_nested_print_candidates(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
     detections = result.detections
     if len(detections) < 2:
@@ -3034,6 +3066,10 @@ def _defer_nested_print_candidates(image: np.ndarray, result: SegmentationResult
         if nested_print_on_shared_stock(image, outer_quad, inner_quad):
             quads[child] = inner_quad
             pairs.append((parent, child))
+    suggestions = quads.copy()
+    for parent, child, inner_quad in _grid_fragment_candidates(image, detections, quads):
+        suggestions[child] = inner_quad
+        pairs.append((parent, child))
     degree = Counter(index for pair in pairs for index in pair)
     deferred = {
         parent: child for parent, child in pairs
@@ -3045,7 +3081,7 @@ def _defer_nested_print_candidates(image: np.ndarray, result: SegmentationResult
     for parent, child in deferred.items():
         item = updated[parent]
         updated[parent] = replace(item, mask={
-            **item.mask, "nested_print_suggestion": _normalized_polygon(quads[child], width, height),
+            **item.mask, "nested_print_suggestion": _normalized_polygon(suggestions[child], width, height),
         }, review_reasons=[MULTIPANEL_PRINT_REVIEW])
     uncounted = set(deferred.values())
     return SegmentationResult(

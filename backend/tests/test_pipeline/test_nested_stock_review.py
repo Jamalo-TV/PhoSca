@@ -2,7 +2,9 @@ import cv2
 import numpy as np
 import pytest
 
-from app.pipeline.multipanel_prints import nested_print_on_shared_stock
+from app.config import Settings
+from app.pipeline import segmentation
+from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVIEW, nested_print_on_shared_stock
 
 
 _OUTER = np.float32([[78, 75], [629, 75], [629, 477], [78, 477]])
@@ -64,6 +66,74 @@ def test_distributed_paper_shadow_keeps_an_inset_print_out_of_the_link(blur):
         separate = cv2.GaussianBlur(separate, (0, 0), blur)
 
     assert not nested_print_on_shared_stock(separate, _OUTER, _INNER)
+
+
+@pytest.mark.parametrize("layout", [
+    "continuous", "perspective_jpeg", "second_rim", "raised_print", "top_shadow", "side_shadow", "broken_cadence",
+])
+def test_partial_grid_count_requires_original_pixel_evidence(layout):
+    height, width = 1140, 900
+    page = np.full((height, width, 3), (88, 96, 102), np.uint8)
+    page[50:1090, 50:850] = (214, 217, 219)
+    page[80:1088, 118:782] = (45, 49, 47)
+    rails = (89, 195, 229, 325, 359, 463, 499, 594, 630, 731, 768, 863, 901, 1006)
+    for row in rails:
+        if layout == "broken_cadence" and row > 480:
+            continue
+        for x in range(124, 773, 17):
+            cv2.rectangle(page, (x, row + 46), (x + 6, row + 54), (236, 238, 239), -1)
+
+    outer = np.float32([[50, 50], [849, 50], [849, 1089], [50, 1089]])
+    inner = np.float32([[109, 534], [492, 533], [791, 535], [793, 782],
+                        [792, 1083], [395, 1083], [106, 1082]])
+    if layout == "second_rim":
+        page[535:544, 109:791] = (214, 217, 219)
+    elif layout in {"raised_print", "top_shadow", "side_shadow"}:
+        shadow = np.zeros(page.shape[:2], np.uint8)
+        cv2.fillConvexPoly(shadow, cv2.convexHull(np.rint(inner).astype(np.int32)), 1)
+        distance = cv2.distanceTransform(1 - shadow, cv2.DIST_L2, 5)
+        reach = 10 if layout == "top_shadow" else 25
+        shade = 20 * (distance > 0) * (.5 + .5 * np.cos(np.pi * np.minimum(1, distance / reach)))
+        if layout == "top_shadow":
+            shade[534:] = 0
+        elif layout == "side_shadow":
+            shade[:, 110:] = 0
+        page = np.uint8(np.clip(page - shade[..., None], 0, 255))
+    elif layout == "perspective_jpeg":
+        aligned = np.float32([[80, 61], [838, 32], [860, 1088], [40, 1060]])
+        transform = cv2.getPerspectiveTransform(outer, aligned)
+        page = cv2.warpPerspective(page, transform, (width, height))
+        inner = cv2.perspectiveTransform(inner[None], transform)[0]
+        outer = aligned
+        ok, jpeg = cv2.imencode(".jpg", page, [cv2.IMWRITE_JPEG_QUALITY, 75])
+        assert ok
+        page = cv2.rotate(cv2.imdecode(jpeg, cv2.IMREAD_COLOR), cv2.ROTATE_90_CLOCKWISE)
+        outer, inner = [np.column_stack((height - 1 - quad[:, 1], quad[:, 0])) for quad in (outer, inner)]
+        height, width = page.shape[:2]
+
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    detections = []
+    for points, source, detector, score in (
+        (outer, "classical_border_quad", "edge_contour", .89),
+        (inner, "yolo_seg_mask", "yolo_onnx", .54),
+    ):
+        item = segmentation._make_detection(
+            box={}, points=points, confidence=.89, image_width=width, image_height=height,
+            settings=settings, source=source, detector_source=detector,
+        )
+        item.mask["boundary_evidence"] = {"score": score}
+        detections.append(item)
+
+    proposals = segmentation.SegmentationResult(detections, {})
+    result = segmentation._defer_nested_print_candidates(page, proposals)
+    if layout in {"continuous", "perspective_jpeg"}:
+        photo, = result.detections
+        assert photo.mask["polygon"] == detections[0].mask["polygon"]
+        assert len(photo.mask["nested_print_suggestion"]) == 4
+        assert photo.review_reasons == [MULTIPANEL_PRINT_REVIEW]
+        assert result.metadata["nested_print_count_suggestions"] == 1
+    else:
+        assert result is proposals
 
 
 @pytest.mark.parametrize("separate_print", [False, True])

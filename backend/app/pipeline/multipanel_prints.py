@@ -11,7 +11,7 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic,
 from app.pipeline.print_edges import _edge_band, _is_pale_stock, refine_print_boundary
 
 
-MULTIPANEL_PRINT_REVISION = 4
+MULTIPANEL_PRINT_REVISION = 5
 MULTIPANEL_PRINT_REVIEW = "MULTIPANEL_PRINT_REVIEW"
 RECOVERED_STOCK_SOURCE = "shared_stock_boundary"
 _UNIT_QUAD = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
@@ -109,6 +109,142 @@ def _nested_print_cast_shadow(image: np.ndarray, start: np.ndarray, stop: np.nda
         and all(part.mean() >= .27 for part in np.array_split(darkens_toward_edge, 4))
         and _is_pale_stock(np.median(colors, axis=(0, 1)))
     )
+
+
+def grid_fragment_on_shared_stock(image: np.ndarray, outer_quad: np.ndarray, inner_quad: np.ndarray) -> bool:
+    """Check whether a proposed fragment cuts across a regular printed grid."""
+    if min(np.linalg.norm(np.roll(outer_quad, -1, axis=0) - outer_quad, axis=1)) < 480:
+        return False
+    for turn in range(4):
+        outer = np.roll(outer_quad, -turn, axis=0)
+        transform = cv2.getPerspectiveTransform(outer, _UNIT_QUAD)
+        inner = order_quad_cyclic(cv2.perspectiveTransform(inner_quad[None], transform)[0])
+        left, right = float(inner[:, 0].min()), float(inner[:, 0].max())
+        upper_edge = inner[:2, 1]
+        seam = float(upper_edge.mean())
+        if (not .26 <= seam <= .74 or np.ptp(upper_edge) > .025 or inner[2:, 1].min() < .96
+                or inner[:, 1].max() > 1.012 or left < .04 or right > .96 or right - left < .78):
+            continue
+
+        from_unit = np.linalg.inv(transform)
+        native = cv2.perspectiveTransform(inner[None], from_unit)[0]
+        if _grid_fragment_has_paper_edge(image, native):
+            return False
+        if any(_grid_fragment_corner_shadow(image, from_unit, corner, outward)
+               for corner, outward in zip(inner[:2], (-1, 1), strict=True)):
+            return False
+        if (_grid_fragment_side_shadow(image, from_unit, inner[0], inner[3], -1)
+                or _grid_fragment_side_shadow(image, from_unit, inner[1], inner[2], 1)):
+            return False
+
+        width, height = 800, 1040
+        to_grid = np.diag([width - 1., height - 1., 1.]) @ transform
+        aligned = cv2.warpPerspective(image, to_grid, (width, height))
+        lab = cv2.cvtColor(aligned, cv2.COLOR_BGR2LAB)
+        center = round(seam * (height - 1))
+        # A separate layer can interrupt either lateral strip beside the cut.
+        strips = (lab[center - 38:center + 39, round(.024 * width):round((left - .012) * width)],
+                  lab[center - 38:center + 39, round((right + .012) * width):round(.976 * width)])
+        if not all(_continuous_grid_margin(strip) for strip in strips):
+            return False
+        start, end = round((left + .10 * (right - left)) * width), round((right - .10 * (right - left)) * width)
+        return _perforation_rails_cross_split(lab[:, start:end, 0], center)
+    return False
+
+
+def _grid_fragment_has_paper_edge(image: np.ndarray, quad: np.ndarray) -> bool:
+    # A border along the proposed cut or a shadow alongside it is evidence
+    # for a layered print even when both layers carry the same design.
+    seam = _edge_band(image, quad[0], quad[1], [2, 3, 4, 5, 6, 7, 8])
+    if seam is None:
+        return True
+    pale = (seam[..., 0] >= 172) & (np.max(np.abs(seam[..., 1:] - 128), axis=2) <= 16)
+    if np.count_nonzero(pale.mean(axis=0) >= .75) >= 2:
+        return True
+    sides = ((quad[1], quad[2]), (quad[3], quad[0]))
+    return any(_nested_print_cast_shadow(image, start, stop) for start, stop in sides)
+
+
+def _grid_fragment_corner_shadow(
+    image: np.ndarray, from_unit: np.ndarray, corner: np.ndarray, outward: int,
+) -> bool:
+    # Look outside the ink for a shadow that ends at the proposed cut.
+    for near, far, above, below in (
+        ([.001, .002, .003], [.014, .016, .018, .020], [-.003, -.002, -.001], [.005, .007, .009, .010]),
+        ([.004, .006, .008, .010], [.020, .025, .032], [-.009, -.007, -.005, -.003], [.003, .005, .007, .009, .011]),
+    ):
+        dx = outward * np.float32([*near, *far])
+        dy = np.float32([*above, *below])
+        colors = _sample_lab(image, _source_points(from_unit, 0, corner[0] + dx, corner[1] + dy))
+        if colors is None:
+            return True
+        lightness = colors[..., 0]
+        height, width = len(above), len(near)
+        shaded = lightness[:height, :width]
+        other_stock = min(np.median(lightness[:height, width:]), np.median(lightness[height:, :width]))
+        if np.percentile(shaded, 20) >= 185 and other_stock - np.median(shaded) >= 5:
+            return True
+    return False
+
+
+def _grid_fragment_side_shadow(
+    image: np.ndarray, from_unit: np.ndarray, start: np.ndarray, end: np.ndarray, outward: int,
+) -> bool:
+    fractions = np.linspace(.06, .87, 96, dtype=np.float32)
+    along = start + fractions[:, None] * (end - start)
+    offsets = outward * np.float32([.0025, .0035, .0045, .0055, .022, .026, .030, .034])
+    points = along[:, None, :] + np.column_stack((offsets, np.zeros_like(offsets)))
+    native = cv2.perspectiveTransform(points.reshape(1, -1, 2), from_unit)[0].reshape(points.shape)
+    colors = _sample_lab(image, native)
+    if colors is None:
+        return True
+    near, far = (part.mean(axis=1) for part in np.split(colors[..., 0], 2, axis=1))
+    return bool(np.mean((near >= 172) & (far >= 183) & (far - near >= 5)) >= .70)
+
+
+def _continuous_grid_margin(strip: np.ndarray) -> bool:
+    if strip.shape[1] < 3:
+        return False
+    rows = np.median(strip, axis=1)
+    stock = np.median(rows, axis=0)
+    first, last = (np.median(half, axis=0) for half in np.array_split(rows, 2))
+    levels = np.percentile(rows[:, 0], (10, 90))
+    return bool(_is_pale_stock(stock) and levels[1] - levels[0] <= 7
+                and np.linalg.norm(last - first) <= 3.5
+                and np.mean(np.linalg.norm(rows - stock, axis=1) <= 8) >= .92)
+
+
+def _perforation_rails_cross_split(luminance: np.ndarray, split: int) -> bool:
+    light = luminance.astype(np.float32)
+    detail = np.clip(light - cv2.GaussianBlur(light, (41, 1), 7), -64, 64)
+    strength = np.minimum(np.percentile(np.abs(light[:, 2:] - light[:, :-2]), 90, axis=1), 100) / 100
+    lags = np.arange(8, 38)
+    correlations = []
+    for lag in lags:
+        left, right = detail[:, :-lag], detail[:, lag:]
+        energy = np.sqrt(np.maximum(1, (left ** 2).sum(axis=1) * (right ** 2).sum(axis=1)))
+        correlations.append((left * right).sum(axis=1) / energy)
+    correlations = np.stack(correlations, axis=1)
+    best = correlations.max(axis=1)
+    scores = best * strength
+    # Repeated holes can correlate just as well at twice the true pitch.
+    pitch = lags[(correlations >= best[:, None] - .012).argmax(axis=1)]
+    active = scores >= .50
+    bounds = np.flatnonzero(np.diff(np.r_[False, active, False]))
+    rails = np.array([(start + stop) // 2 for start, stop in bounds.reshape(-1, 2)
+                      if stop - start >= 3], dtype=int)
+    before, after = rails[rails < split], rails[rails > split]
+    if len(before) < 3 or len(after) < 3:
+        return False
+    rails = np.r_[before[-3:], after[:3]]
+    if np.ptp(pitch[rails]) > 1 or scores[rails].min() < .65:
+        return False
+    gaps = np.diff(rails)
+    short, long = gaps[::2], gaps[1::2]
+    # Printed strips repeat a short inter-strip gap and a wider frame row.
+    return bool(short.min() >= 12 and short.max() <= 55
+                and short.max() <= 1.3 * short.min() and long.max() <= 1.3 * long.min()
+                and 2 * short.max() <= long.min() <= 4.5 * short.min())
 
 
 def _bridge_intervals(

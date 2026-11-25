@@ -2136,3 +2136,64 @@ Keep these leaves in one tentative physical group. The reproduction field
 may be printed on the page, and the rights for the full native scans and
 individual crop boundaries still need confirmation. Intake records stay
 outside training, calibration and release evaluation.
+
+### Review partial grids inside a contact print
+
+The native [camera contact sheet](contact-sheet-camera-development.json)
+contains one paper print with 35 frames beside a negative-film sleeve. The
+registered mixed development model and classical fallback originally counted
+one lower section of the print as another print. The enclosing paper contour
+had strong boundary evidence, and the inner model outline had weak boundary
+evidence along its proposed cut.
+
+The precise path now checks for repeated perforation rows with matching pitch
+and spacing across that cut. It samples the original pixels at both paper
+margins and looks for a separate rim or cast shadow. With a unique
+parent-to-fragment match, the enclosing print keeps its original outline and
+the fragment becomes a dashed count-review suggestion. Reviewers can add
+the fragment as a separate print if they find a physical edge on the source.
+Both crop modes remain in review. Multipanel revision 5 records this change
+in the validation and calibration profiles.
+
+With the same mixed checkpoint and the thresholds above, the 4080 × 3072
+camera image retains its one match. Counted false proposals go from four to
+three, raising precision from 20% to 25% at 100% recall on this image. The
+retained print has the same 0.9947 instance mask IoU and the same whole-print
+warp. Against the draft paper reference, that warp has footprint IoU 0.9945,
+corner distances of 2.0–7.5 native pixels, 0.46% content cutoff and 0.12%
+foreign fraction. The 6,491 foreign source samples are unchanged. Verified
+aspect, landmarks and independent motif boundaries are still pending for
+this source. The normal upload serves the rectified whole print for review.
+The motif has no preview and both automatic exports are held. Adding the
+dashed outline manually is idempotent.
+
+The source check took about 53 ms warmed on one CPU thread. It reproduced
+the review suggestion for the same contours through all four quarter turns
+and all five tested scale and JPEG settings. The full detector reproduced
+the suggestion on three of the five unrotated inputs. At 75%/JPEG75 the
+detector's paper outline lost part of the right side, and at 33%/JPEG55 it
+selected a weaker contrast outline. Quarter turns led to different model
+proposals. The three remaining native false proposals belong to the sleeve.
+Shared artwork, inverted tones, warmth and glare also occur in controls
+representing glossy negative prints, so those cues cannot establish the
+physical carrier.
+
+Independent controls retained all 48 touching or overlapping comparisons,
+six separate rims and 60 clearly raised-layer variants. Generated tests
+cover projective JPEG reconstruction, weakly supported inner proposals,
+visible rims, directional shadows and interrupted grid spacing. Golden
+(29/29 matches, zero false proposals), Domoritz (4/4, zero), the frozen
+mixed hybrid (17/18, four) and the generated stock challenge (43/46, 17)
+reproduced their previous instance and crop metrics. The frozen seeded
+geometry control retains 11/11 whole-print and 12/12 motif passes, with zero
+obstructed cases marked ready. No model weights were promoted.
+
+### Identify mounted prints in the Russell railroad album
+
+The Library of Congress catalog cross-references twelve printed pages in the
+bound Russell album with item records and measured print-stock dimensions.
+The [intake receipt](loc-russell-album-intake.json) records the whole-volume
+accession, the page-to-item mapping, and an item TIFF with its rights advisory.
+The managed network returned HTTP 403 for the official full-leaf manifest
+and the item download. The intake remains pending until the original rasters,
+independent capture and motif geometry can be checked.
