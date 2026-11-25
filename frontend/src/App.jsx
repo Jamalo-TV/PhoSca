@@ -47,7 +47,7 @@ import MobileApp from "./MobileApp.jsx";
 import {
   clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   fragmentOutlineHint, fragmentOutlineReason, getFragmentOutline,
-  shadowEdgeReviewHint, shadowEdgeReviewReason,
+  getPrintEdgeReviewHint,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
@@ -1381,7 +1381,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
   const scallopedAlternate = useMemo(() => cyclicQuad(sanitizePolygon(alternatePolygon)), [alternatePolygon]);
   const selectedShape = selected && (draftShapes[selected.id] || draftShapeFromPhoto(selected));
   const selectedModes = selected?.crop_modes || getCropModes(selected);
-  const shadowEdgeReview = selectedModes?.full_print?.reason_codes?.includes(shadowEdgeReviewReason);
+  const printEdgeReviewHint = getPrintEdgeReviewHint(selectedModes?.full_print);
   const motifReview = selectedModes?.image_only;
   const imageSuggestion = cyclicQuad(sanitizePolygon(motifReview?.suggested_warp_quad));
   const seamTraces = motifReview?.suggested_seam_traces;
@@ -1694,7 +1694,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
           </button>
         </>
       )}
-      {!newPrint && !editingImage && shadowEdgeReview && <p className="crop-editor-hint">{shadowEdgeReviewHint}</p>}
+      {!newPrint && !editingImage && printEdgeReviewHint && <p className="crop-editor-hint">{printEdgeReviewHint}</p>}
       {editingImage && selected && (
         <p className="crop-editor-hint">
           {seamTraces?.length

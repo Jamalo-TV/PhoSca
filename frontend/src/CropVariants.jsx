@@ -12,8 +12,15 @@ export const fragmentOutlineReason = "FRAGMENT_OUTLINE_UNCERTAIN";
 export const fragmentOutlineHint = "Prüfe am Original, ob die Ausschnitte zu einem Abzug gehören. Falls ja, korrigiere einen Ausschnitt mit dem Aussenumriss und markiere die übrigen darin als «Falsches Objekt».";
 export const scallopedOutlineReviewReason = "PRINT_SCALLOPED_OUTLINE_REVIEW";
 export const scallopedOutlineReviewHint = "Die Vorschau folgt der gewellten Papierkante. Prüfe am Original, ob der ganze Abzug sichtbar ist.";
-export const shadowEdgeReviewReason = "PRINT_SHADOW_EDGE_REVIEW";
-export const shadowEdgeReviewHint = "Prüfe die markierte Kante am Original. Achte darauf, wo der Schatten endet und der Abzug beginnt.";
+const printEdgeReviewHints = {
+  PRINT_SHADOW_EDGE_REVIEW: "Prüfe die markierte Kante am Original. Achte darauf, wo der Schatten endet und der Abzug beginnt.",
+  PRINT_FAINT_OUTER_RIM_REVIEW: "Prüfe am Original, ob der helle Rand zur markierten Papierkante des Abzugs gehört.",
+  PRINT_OUTER_EDGE_CONFLICT_REVIEW: "Aussen sind mehrere Kanten sichtbar. Lege die Ecken im Editor an die tatsächliche Papierkante.",
+};
+
+export function getPrintEdgeReviewHint(fullPrint) {
+  return fullPrint?.reason_codes?.map((reason) => printEdgeReviewHints[reason]).find(Boolean);
+}
 
 export function getFragmentOutline(mask) {
   const { quad, uncertain_edge: edge } = mask?.fragment_outline_suggestion || {};
@@ -61,7 +68,7 @@ const reviewMessages = {
   [scallopedOutlineReviewReason]: scallopedOutlineReviewHint,
   PRINT_SCALLOPED_OWNERSHIP_UNCERTAIN: "Prüfe am Original, ob ein zweiter Abzug auf dem gezackten Papier aufliegt. Passe bei getrennten Abzügen beide Zuschnitte einzeln an.",
   PRINT_BOUNDARY_BLURRED: "Die Abzugskante ist unscharf. Prüfe den Zuschnitt am Original.",
-  [shadowEdgeReviewReason]: shadowEdgeReviewHint,
+  ...printEdgeReviewHints,
   ALBUM_WINDOW_OCCLUDED: "Der Abzug steckt in einem Albumfenster. Prüfe, welche Teile sichtbar sind.",
   ALBUM_WINDOW_STOCK_UNCERTAIN: "Prüfe, ob der helle Rand zum Abzug oder zum Albumkarton gehört.",
   PRINT_CORNERS_UNCERTAIN: "Mindestens eine Ecke des Abzugs muss geprüft werden.",

@@ -9,7 +9,9 @@ import numpy as np
 
 
 PRINT_SHADOW_EDGE_REVIEW = "PRINT_SHADOW_EDGE_REVIEW"
-PRINT_BOUNDARY_REVISION = 8
+PRINT_FAINT_RIM_REVIEW = "PRINT_FAINT_OUTER_RIM_REVIEW"
+PRINT_OUTER_EDGE_CONFLICT_REVIEW = "PRINT_OUTER_EDGE_CONFLICT_REVIEW"
+PRINT_BOUNDARY_REVISION = 9
 
 
 def _measured_side_bow(fitted: np.ndarray, length: float) -> float | None:
@@ -686,6 +688,55 @@ def suggest_missing_pale_backing_edge(
     return candidate, {**evidence, names[index]: side}
 
 
+def _quad_from_lines(lines: np.ndarray) -> np.ndarray | None:
+    intersections = np.cross(np.roll(lines, 1, axis=0), lines)
+    if np.any(np.abs(intersections[:, 2]) < 1e-6):
+        return None
+    return (intersections[:, :2] / intersections[:, 2:3]).astype(np.float32)
+
+
+def _weak_rim_transition(image: np.ndarray, quad: np.ndarray) -> float | None:
+    """Verify a small material change at four lines with terminating corners."""
+    body_samples = 64
+    bands = []
+    for start, end in zip(quad, np.roll(quad, -1, axis=0), strict=True):
+        near = np.float32([6, 9, 12, 16, 21]) / np.linalg.norm(end - start)
+        body = np.linspace(.14, .86, body_samples, dtype=np.float32)
+        fractions = np.r_[body, near, 1 - near, -near, 1 + near]
+        sampled = _edge_band(image, start, end, list(range(-14, 15)), fractions=fractions)
+        if sampled is None:
+            return None
+        bands.append(sampled)
+    profiles = np.asarray(bands)
+    body = profiles[:, :body_samples]
+    # The zero offset is index 14. The inside and outside averages start
+    # five pixels from the candidate so blur at the line cannot dominate.
+    stock = profiles[:, :, 19:24].mean(axis=2)
+    step = stock - profiles[:, :, 5:10].mean(axis=2)
+    direction = np.median(step[:, :body_samples], axis=(0, 1))
+    magnitude = float(np.linalg.norm(direction))
+    if not 3.4 <= magnitude <= 9.5:
+        return None
+    direction /= magnitude
+    signed = step @ direction
+    body_step = signed[:, :body_samples]
+    middle = np.median(body_step, axis=1)
+    if np.any(np.quantile(body_step, .10, axis=1) < 2.8):
+        return None
+    colors = np.median(stock[:, :body_samples], axis=1)
+    if (np.any(colors[:, 0] < 210) or np.any(np.linalg.norm(colors[:, 1:] - 128, axis=1) > 17)
+            or np.any(np.linalg.norm(colors - np.median(colors, axis=0), axis=1) >= 5)):
+        return None
+    corners = np.median(signed[:, body_samples:].reshape(4, 4, 5), axis=2)
+    if (np.any(corners[:, :2] < .58 * middle[:, None])
+            or np.any(np.abs(corners[:, 2:]) > np.maximum(1.8, .32 * middle[:, None]))):
+        return None
+    changes = np.diff(np.median(body, axis=1) @ direction, axis=1)
+    central = changes[:, 11:16].sum(axis=1)
+    opposite = np.maximum(0, -changes).sum(axis=1)
+    return magnitude if np.all(central >= .76 * middle) and np.all(opposite <= .33 * middle) else None
+
+
 def refine_print_boundary(
     image: np.ndarray, proposal: np.ndarray, *, search_radius: int | None = None,
     rim_color: np.ndarray | None = None,
@@ -696,6 +747,8 @@ def refine_print_boundary(
     maximum_excursion = radius
     fitted = []
     rings = {}
+    supported_outward = {}
+    conflicting_outward = 0
     rejected_shadow = False
     for index, (start, end) in enumerate(zip(proposal, np.roll(proposal, -1, axis=0))):
         line, result = _side_line(image, start, end, radius, rim_color=rim_color)
@@ -703,6 +756,8 @@ def refine_print_boundary(
             first, last = _line_endpoints(start, end, line) if line is not None else (start, end)
             if line is None or _pale_outside_strip(image, first, last):
                 alternate, retry = _side_line(image, first, last, wider, outward_only=True)
+                if line is not None and result["support"] >= .88:
+                    conflicting_outward += int(retry["ambiguous"] and retry["support"] >= .88)
                 observation = None if alternate is None else _observe_print_rim(
                     image, first, last, alternate, minimum_transition=8 if line is None else 5,
                 )
@@ -711,6 +766,9 @@ def refine_print_boundary(
                     rejected_shadow = True
                     observation = None
                 result["outward_search"] = {**retry, "print_rim_supported": observation is not None}
+                if (line is not None and alternate is not None and retry["support"] >= .88
+                        and (retry["corner_support"] or 0) >= .78):
+                    supported_outward[index] = (alternate, retry)
                 if observation is not None:
                     color, depth = observation.color, observation.depth
                     retry.update(observed_rim_lab=color.tolist(), observed_rim_depth_px=depth)
@@ -721,7 +779,20 @@ def refine_print_boundary(
                         line = alternate
         fitted.append((line, result))
     reasons = [PRINT_SHADOW_EDGE_REVIEW] if rejected_shadow else []
-    if any(replaces_supported for _, _, _, replaces_supported in rings.values()):
+    weak_step = None
+    resolved_outer_rim = False
+    if not rejected_shadow and len(rings) < 4 and len(supported_outward) == 4:
+        outer = _quad_from_lines(np.array([line for line, _ in supported_outward.values()]))
+        if (outer is not None and cv2.isContourConvex(outer) and cv2.contourArea(outer, oriented=True) > 0
+                and np.max(np.linalg.norm(outer - proposal, axis=1)) <= 1.8 * (wider + radius)):
+            weak_step = _weak_rim_transition(image, outer)
+    if weak_step is not None:
+        for index, (alternate, retry) in supported_outward.items():
+            evidence = {**fitted[index][1], **retry, "weak_rim_transition_lab": round(weak_step, 4)}
+            fitted[index] = alternate, evidence
+        maximum_excursion = wider + radius
+        reasons.append(PRINT_FAINT_RIM_REVIEW)
+    elif any(replaces_supported for _, _, _, replaces_supported in rings.values()):
         # A strong near line can bound the image ink. Move past it when a common
         # physical rim continues on more than one side. An incomplete rim is review evidence.
         coherent = max((
@@ -735,6 +806,7 @@ def refine_print_boundary(
                 result.update(retry)
                 fitted[index] = alternate, result
             maximum_excursion = wider + radius
+            resolved_outer_rim = len(coherent) == 4
             if len(coherent) < 4:
                 observed_stock = np.median([rings[index][2] for index in coherent], axis=0)
                 verified = set(coherent)
@@ -750,6 +822,10 @@ def refine_print_boundary(
                         verified.add(index)
                 if len(verified) < 4:
                     reasons.append("PRINT_OUTER_RIM_UNCERTAIN")
+                else:
+                    resolved_outer_rim = True
+    if not reasons and not resolved_outer_rim and conflicting_outward >= 2:
+        reasons.append(PRINT_OUTER_EDGE_CONFLICT_REVIEW)
     evidence = {side: result[1] for side, result in zip(("top", "right", "bottom", "left"), fitted)}
     if any(line is None for line, _ in fitted):
         reason = "PRINT_BOUNDARY_AMBIGUOUS" if any(item["ambiguous"] for item in evidence.values()) else "PRINT_BOUNDARY_UNSUPPORTED"
@@ -780,10 +856,9 @@ def refine_print_boundary(
     fallback_lines = np.cross(np.column_stack((proposal, np.ones(4))),
                               np.column_stack((np.roll(proposal, -1, axis=0), np.ones(4))))
     lines = np.array([line if line is not None else fallback for (line, _), fallback in zip(fitted, fallback_lines)])
-    intersections = np.cross(np.roll(lines, 1, axis=0), lines)
-    if np.any(np.abs(intersections[:, 2]) < 1e-6):
+    corners = _quad_from_lines(lines)
+    if corners is None:
         return None, evidence, ["PRINT_BOUNDARY_UNSUPPORTED"]
-    corners = (intersections[:, :2] / intersections[:, 2:3]).astype(np.float32)
     if (
         np.any(np.linalg.norm(corners - proposal, axis=1) > 1.8 * maximum_excursion)
         or not cv2.isContourConvex(corners)

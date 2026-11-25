@@ -1323,6 +1323,16 @@ geometry. No newly held crops were counted in the two uploads. The desktop
 and mobile editors can load the outline on demand and highlight its uncertain
 edge. Both downloads still require review.
 
+An independent stress test accepted no false joins in 1,116 transformed
+controls with narrow gutters, touching equal stock and overlapping
+prints. The real development case recovered at blur sigma 0.8 and 1.
+Some stronger blur and recompressed variants still split. The same
+comparison on the unchanged JPEG, the model-free Golden pages and the
+frozen synthetic fixtures retained their prior results. The frozen
+seeded geometry passes 23 of 23 recoverable crops. Twenty warmed
+measurements of the native check on the blur fixture gave 27 ms median
+and 43 ms p95 per considered parent.
+
 ### Scalloped paper on white scanner backing
 
 The ScanCropper development fixture pins two original rasters with five loose
@@ -1386,12 +1396,43 @@ time per case for image generation, geometry and both crops was about
 0.40 s before and after the change. The paired tests check native corners
 and interpolation ownership in both modes.
 
-An independent stress test accepted no false joins in 1,116 transformed
-controls with narrow gutters, touching equal stock and overlapping
-prints. The real development case recovered at blur sigma 0.8 and 1.
-Some stronger blur and recompressed variants still split. The same
-comparison on the unchanged JPEG, the model-free Golden pages and the
-frozen synthetic fixtures retained their prior results. The frozen
-seeded geometry passes 23 of 23 recoverable crops. Twenty warmed
-measurements of the native check on the blur fixture gave 27 ms median
-and 43 ms p95 per considered parent.
+The lower-left straight print on the later ScanCropper raster gains one
+full-print review. The measured shadow is on the right. Both warp coordinates
+and motif availability stay the same. Retaining the raw instance mask reduces
+mean mask IoU from 0.9965 to 0.9953 against the five draft contours. Over 80%
+of that straight print's previously measured missing paper falls in the
+neutral scanner-shadow transition. The exact boundary still needs review.
+All five instances still match.
+
+### Faint paper on pale backing
+
+When the strong lines follow only the motif, search outward for a four-sided
+rim. Sample the original pixels across each candidate, including beyond every
+corner. A small change in the same colour direction must span the sides and
+terminate at the corners. A plausible outline becomes a review suggestion.
+A pale patch on album stock can make the same transitions. If strong outward
+edge candidates compete on multiple sides, both modes require review and the
+editor preserves the measured inner fit.
+
+The controlled 60-case replay covers simulated paper and shadow profiles with
+independent pixel masks and exact corners. The faint neutral case with
+a motif seed goes from 24.74% paper excluded to 100% paper included at
+raster resolution. In the upload replay both suggestions were within one
+native pixel of the fixture corners. Both mode previews have zero measured
+foreign samples and zero cutoff beyond one pixel in the regression test.
+Stronger blur with JPEG70 and a dark stock with a neutral shadow each move
+one faulty full-print result to review pending correction. Neither of those
+cases obtains a verified outer boundary. A continued backing guide vetoes a
+faint rim suggestion.
+
+```bash
+python -m pytest -q backend/tests/test_pipeline/test_print_rim_shadows.py
+```
+
+The normal page upload emits both faint-rim suggestions and blocks both
+downloads. Desktop and mobile show the source-pixel correction hint. Saving
+both measured quadrilaterals in manual review enables the two normal JPEG
+downloads at the expected dimensions. The frozen seeded benchmark again
+matches 18 instances and passes all 23
+recoverable crops. The model-free frozen, Golden, ScanCropper and blurred
+Domoritz replays use the same scoring and availability as the shadow revision.

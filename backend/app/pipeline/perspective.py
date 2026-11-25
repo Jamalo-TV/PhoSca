@@ -32,6 +32,7 @@ from app.pipeline.page_plane import (
     measured_page_aspect,
 )
 from app.pipeline.print_edges import (
+    PRINT_FAINT_RIM_REVIEW,
     PRINT_SHADOW_EDGE_REVIEW,
     continuous_motif_rim,
     missing_corner_material,
@@ -53,7 +54,7 @@ _REFINED_VISIBILITY_SOURCES = {_PRINT_BOUNDARY_SOURCE, _PAPER_RIM_SOURCE}
 _LOCALIZED_OCCLUSION_REASONS = {"PRINT_CORNERS_UNCERTAIN", "PRINT_POSSIBLY_OCCLUDED"}
 _PRINT_EDGE_CONFIRMATION = "PRINT_EDGE_CONFIRMATION_REQUIRED"
 _CROP_PREVIEW_REASONS = {_PRINT_EDGE_CONFIRMATION, PRINT_ASPECT_REFERENCE_REVIEW, FRAGMENTED_PRINT_REVIEW,
-                         SCALLOPED_PRINT_REVIEW, PRINT_SHADOW_EDGE_REVIEW}
+                         SCALLOPED_PRINT_REVIEW, PRINT_SHADOW_EDGE_REVIEW, PRINT_FAINT_RIM_REVIEW}
 
 
 def _pale_backing_review_fit(boundary: dict) -> bool:

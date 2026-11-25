@@ -5,7 +5,7 @@ import { resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import {
   clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, fragmentOutlineHint,
   fragmentOutlineReason, getCropModes, getFragmentOutline,
-  shadowEdgeReviewHint, shadowEdgeReviewReason,
+  getPrintEdgeReviewHint,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
@@ -108,6 +108,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   const storedOrientation = item.payload?.segmentation_mask?.orientation_degrees ?? null;
   const fragmentReview = item.payload?.confidence != null && item.payload?.review_reasons?.includes(fragmentOutlineReason);
   const fragmentOutline = fragmentReview && getFragmentOutline(item.payload?.segmentation_mask);
+  const printEdgeReviewHint = getPrintEdgeReviewHint(item.payload?.crop_modes?.full_print);
   const scallopedAlternate = item.payload?.confidence != null && item.payload?.segmentation_mask?.scalloped_alternate_is_inner
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.scalloped_alternate_polygon));
   const savedQuad = sanitizeReviewPolygon(item.payload?.segmentation_mask?.warp_quad);
@@ -193,9 +194,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
         <p className="quad-hint">{clippedOverlapHint}</p>
       )}
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
-      {item.payload?.crop_modes?.full_print?.reason_codes?.includes(shadowEdgeReviewReason) && (
-        <p className="quad-hint">{shadowEdgeReviewHint}</p>
-      )}
+      {printEdgeReviewHint && <p className="quad-hint">{printEdgeReviewHint}</p>}
       {scallopedAlternate && <p className="quad-hint">Prüfe den gestrichelten Vorschlag am Original. Wähle «Prints zusammen», falls dort ein eigener Abzug aufliegt.</p>}
       {fragmentOutline && (
         <button className="magnifier-toggle" type="button" disabled={saving} onClick={() => {
