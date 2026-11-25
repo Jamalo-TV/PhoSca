@@ -8,7 +8,9 @@ from app.config import Settings
 from app.pipeline import segmentation
 from app.pipeline.crop_sampling import OWNED_BILINEAR
 from app.pipeline.geometry import normalized_vertices_to_pixels
-from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, nested_print_on_shared_stock
+from app.pipeline.multipanel_prints import (
+    GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, PAPER_GRID_REVIEW, nested_print_on_shared_stock,
+)
 from app.pipeline.perspective import _proposal_polygon, apply_refined_visibility, correct_photo_crop
 from app.pipeline.print_edges import PRINT_EDGE_CONFIRMATION
 
@@ -170,8 +172,9 @@ def test_partial_grid_count_requires_original_pixel_evidence(layout):
         assert result is proposals
 
 
-def _grid_with_weak_outer_proposal(settings, cut_edge=False):
+def _grid_with_weak_outer_proposal(settings, cut_edge=False, *, top_offset=0):
     page, outer, inner = _partial_grid_page("continuous")
+    inner[:3, 1] += top_offset
     paper = np.full(page.shape[:2], 0, np.uint8)
     cv2.fillConvexPoly(paper, outer.astype(np.int32), 1)
     page[paper == 0] = (111, 150, 185)
@@ -240,6 +243,46 @@ def test_recovering_grid_outline_retains_the_crop_seed_and_checks_thin_separatin
     assert full_mode["status"] == "review_needed"
     assert full_mode["suggested_warp_quad"] == photo.mask["visible_polygon"]
     assert disputed.full_print_preview is None and "outline_preview" not in full_mode
+
+
+@pytest.mark.parametrize("cut_edge", [False, True])
+def test_nearby_printed_grid_marks_only_a_review_and_keeps_both_proposals(cut_edge):
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    page, _, proposals = _grid_with_weak_outer_proposal(settings, cut_edge, top_offset=18)
+    proposals = replace(proposals, metadata={"fallback_used": True})
+    assert segmentation._defer_nested_print_candidates(page, proposals) is proposals
+
+    result = segmentation._flag_disputed_paper_grids(page, proposals)
+
+    if cut_edge:
+        assert result is proposals
+        return
+    parent, child = result.detections
+    before_parent, before_child = proposals.detections
+    outline = parent.mask["paper_grid_review"]["outline"]
+    cut = child.mask["paper_grid_review"]["cut"]
+    assert child.mask["paper_grid_review"]["outline"] == outline
+    assert result.metadata == proposals.metadata
+    assert len(cut) == 2
+    height, width = page.shape[:2]
+    np.testing.assert_allclose(normalized_vertices_to_pixels([(p["x"], p["y"]) for p in cut], width, height),
+                               [[109, 552], [791, 553]], atol=.01)
+    for before, marked in ((before_parent, parent), (before_child, child)):
+        assert before.bounding_box == marked.bounding_box
+        assert before.mask == {key: value for key, value in marked.mask.items() if key != "paper_grid_review"}
+        assert marked.review_reasons == [PAPER_GRID_REVIEW]
+
+    kwargs = dict(dual_mode=True, auto_orient=False, protect_regions=False, neighbor_masks=[child.mask])
+    original_crop = correct_photo_crop(page, parent.bounding_box, before_parent.mask, **kwargs)
+    review_crop = correct_photo_crop(page, parent.bounding_box, parent.mask, **kwargs)
+    assert review_crop.metadata["warp_quad"] == original_crop.metadata["warp_quad"]
+    assert np.array_equal(review_crop.rectified_untrimmed, original_crop.rectified_untrimmed)
+    modes = review_crop.metadata["crop_modes"]
+    np.testing.assert_allclose([(p["x"], p["y"]) for p in modes["full_print"]["suggested_warp_quad"]],
+                               [(p["x"], p["y"]) for p in outline], atol=1e-8)
+    assert all(mode["status"] == "review_needed" and PRINT_EDGE_CONFIRMATION in mode["reason_codes"]
+               for mode in modes.values())
+    assert review_crop.full_print_preview is None
 
 
 @pytest.mark.parametrize("offset,tilt,thickness,tone", [(-8, 0, 1, 150), (5, -3, 2, 145)])

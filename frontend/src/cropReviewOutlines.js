@@ -31,6 +31,30 @@ export function getFilmGridReviewSeams(photos) {
   return [...groups.values()].filter(({ photoIds }) => photoIds.size > 1);
 }
 
+export function getPaperGridReview(mask) {
+  const { outline, cut } = mask?.paper_grid_review || {};
+  if (!Array.isArray(outline) || outline.length !== 4 || !outline.every(isNormalizedPoint)) return null;
+  if (cut == null) return { outline, cut: null };
+  return Array.isArray(cut) && cut.length === 2 && cut.every(isNormalizedPoint) ? { outline, cut } : null;
+}
+
+export function getPaperGridReviewGroups(photos) {
+  const groups = new Map();
+  for (const photo of photos) {
+    const id = photo.photo_id ?? photo.id;
+    const { segmentation_confidence: confidence = photo.confidence } = photo;
+    if (!id || photo.reviewed_non_print || confidence == null) continue;
+    const review = getPaperGridReview(photo.segmentation_mask);
+    if (!review) continue;
+    const key = JSON.stringify(review.outline.map(({ x, y }) => [x, y]));
+    if (!groups.has(key)) groups.set(key, { key, outline: review.outline, parents: new Set(), cuts: new Map() });
+    const group = groups.get(key);
+    if (review.cut) group.cuts.set(id, review.cut);
+    else group.parents.add(id);
+  }
+  return [...groups.values()].filter(({ parents, cuts }) => parents.size === 1 && cuts.size > 0);
+}
+
 export function getFragmentReviewOutlines(photos) {
   const groups = new Map();
   for (const photo of photos) {

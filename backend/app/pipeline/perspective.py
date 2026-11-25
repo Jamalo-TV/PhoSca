@@ -1572,12 +1572,15 @@ def correct_photo_crop(
                 result = replace(result, full_print_preview=pixels)
             return result
         uncertain = {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_BOUNDARY_UNSUPPORTED", "PRINT_OUTER_RIM_UNCERTAIN"}
-        if (enable_classical_retry and not manual and mask.get("detector_source") == "contrast_region"
+        paper_grid = mask.get("paper_grid_review") or {}
+        grid_outline = not manual and paper_grid.get("outline") and "cut" not in paper_grid
+        if grid_outline or (enable_classical_retry and not manual and mask.get("detector_source") == "contrast_region"
                 and not mask.get("warp_quad") and not print_edge_traces and uncertain.intersection(full_reasons)
                 and CAPTURE_EDGE_HOLD not in full_reasons
                 and all(mode["status"] == "review_needed" for mode in modes.values())):
             try:
-                alternative = suggest_outer_print_outline(page_image, seed_points, src_points, neighbor_polygons)
+                alternative = (_explicit_quad(paper_grid, "outline", width, height) if grid_outline
+                               else suggest_outer_print_outline(page_image, seed_points, src_points, neighbor_polygons))
                 if alternative is not None:
                     _validate_quad(alternative, width, height)
             except (ValueError, cv2.error):
@@ -1585,6 +1588,7 @@ def correct_photo_crop(
             if alternative is not None:
                 modes["full_print"]["suggested_warp_quad"] = _vertices_on_page(alternative, width, height)
                 for mode in modes.values():
+                    mode["status"] = "review_needed"
                     if PRINT_EDGE_CONFIRMATION not in mode["reason_codes"]:
                         mode["reason_codes"].append(PRINT_EDGE_CONFIRMATION)
         return result

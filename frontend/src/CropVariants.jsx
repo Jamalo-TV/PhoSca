@@ -1,5 +1,6 @@
 import { Download } from "lucide-react";
 import { useState } from "react";
+import { getPaperGridReview } from "./cropReviewOutlines.js";
 
 export const cropModeLabels = {
   full_print: "Ganzer Abzug",
@@ -13,6 +14,10 @@ export const scannerBackingHint = "Prüfe am Original, ob die Markierung einen A
 export const filmGridReason = "FILM_GRID_REVIEW";
 export const filmGridHint = "Gehört der Vorschlag zur Negativhülle, wähle «Falsches Objekt». Liegt dort ein Papierabzug, setze unter «Ganzer Abzug» die Ecken an seinen Papierrand.";
 export const filmGridCountHint = "Prüfe die Vorschläge beidseits der türkis gestrichelten Linie im Original. Sind dort Papierabzüge oder Teile einer Negativhülle markiert?";
+export const paperGridReason = "PAPER_GRID_REVIEW";
+export const paperGridCountHint = "Die blau gestrichelte Kontur zeigt einen möglichen Aussenumriss. Prüfe am Original, ob die Ausschnitte an den gepunkteten Linien eigene Papierabzüge sind.";
+export const paperGridOuterHint = "Prüfe den möglichen Aussenumriss am Original. Lade ihn für einen ganzen Papierabzug in den Editor oder markiere den Vorschlag als «Falsches Objekt».";
+export const paperGridFragmentHint = "Prüfe am Original, ob die Markierung einen eigenen Papierabzug zeigt. Gehört der Ausschnitt zum grösseren Abzug, wähle «Falsches Objekt».";
 export const fragmentOutlineReason = "FRAGMENT_OUTLINE_UNCERTAIN";
 export const fragmentOutlineHint = "Prüfe am Original, ob die Ausschnitte zu einem Abzug gehören. Falls ja, korrigiere einen Ausschnitt mit dem Aussenumriss und markiere die übrigen darin als «Falsches Objekt».";
 export const fragmentCountHint = "Prüfe, ob die markierten Ausschnitte innerhalb der blauen Kontur zu einem Abzug gehören. Achte besonders auf die gepunktete Seite.";
@@ -138,6 +143,9 @@ export function CropVariants({ photo, hidden = false }) {
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(fragmentOutlineReason);
   const possibleFilmGrid = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(filmGridReason);
+  const paperGrid = photo.segmentation_confidence != null
+    && photo.enhancement_applied?.segmentation_review_reasons?.includes(paperGridReason)
+    && getPaperGridReview(photo.segmentation_mask);
   const possibleAdjacentPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.adjacent_print_suggestion;
   const possibleNestedPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.nested_print_suggestion;
   const possibleCrossingPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.crossing_print_suggestion;
@@ -153,7 +161,7 @@ export function CropVariants({ photo, hidden = false }) {
   const motifPreview = photo.urls?.image_only_preview;
   const preview = mode === "image_only"
     ? motifPreview || ((possibleMultipanel || possibleFragmentedPrint || possibleFragmentOutline || scannerBackingUncertain || clippedOverlapUncertain || possibleFilmGrid
-        || captureEdgeClipped || pendingPaperEdge) && fullPreview)
+        || paperGrid || captureEdgeClipped || pendingPaperEdge) && fullPreview)
     : fullPreview;
   const previewAlt = mode === "image_only" && motifPreview
     ? "Konturgetreue Motivvorschau zur Prüfung"
@@ -173,6 +181,7 @@ export function CropVariants({ photo, hidden = false }) {
     || (scannerBackingUncertain && scannerBackingHint)
     || (clippedOverlapUncertain && clippedOverlapHint)
     || (possibleFilmGrid && filmGridHint)
+    || (paperGrid && (paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint))
     || (scallopedOutline && scallopedOutlineReviewHint)
     || result?.reason_codes?.map((code) => reviewMessages[code]).find(Boolean)
     || (result?.status === "ready" && !url && reviewMessages.CROP_VALIDATION_UNAVAILABLE)

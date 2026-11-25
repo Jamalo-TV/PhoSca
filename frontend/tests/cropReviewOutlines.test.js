@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getFilmGridReviewSeams, getFragmentReviewOutlines } from "../src/cropReviewOutlines.js";
+import { getFilmGridReviewSeams, getFragmentReviewOutlines, getPaperGridReviewGroups } from "../src/cropReviewOutlines.js";
 
 const quad = [{ x: .1, y: .2 }, { x: .7, y: .2 }, { x: .7, y: .8 }, { x: .1, y: .8 }];
 const mask = { fragment_outline_suggestion: { quad, uncertain_edge: 1 } };
@@ -42,4 +42,21 @@ test("a film divider appears once while multiple active proposals still mark it"
     row, row, { ...second, segmentation_confidence: null },
     { ...row, id: "invalid", segmentation_mask: { film_grid_review_seam: [line[0], { x: 1.2, y: .5 }] } },
   ]), []);
+});
+
+test("each paper-grid cut follows its own active proposal", () => {
+  const firstCut = [{ x: .15, y: .4 }, { x: .65, y: .4 }];
+  const secondCut = [{ x: .15, y: .55 }, { x: .65, y: .55 }];
+  const parent = { id: "outer", segmentation_confidence: .7, segmentation_mask: { paper_grid_review: { outline: quad } } };
+  const fragment = (id, cut) => ({ photo_id: id, confidence: .8, segmentation_mask: { paper_grid_review: { outline: quad, cut } } });
+  const first = fragment("first", firstCut);
+  const second = fragment("second", secondCut);
+  const [group, ...others] = getPaperGridReviewGroups([parent, first, second]);
+  assert.deepEqual(others, []);
+  assert.deepEqual(group.outline, quad);
+  assert.deepEqual(group.cuts, new Map([["first", firstCut], ["second", secondCut]]));
+  assert.deepEqual(getPaperGridReviewGroups([parent, { ...first, reviewed_non_print: true }, second])[0].cuts,
+    new Map([["second", secondCut]]));
+  assert.deepEqual(getPaperGridReviewGroups([parent, { ...first, confidence: null }]), []);
+  assert.deepEqual(getPaperGridReviewGroups([{ ...parent, reviewed_non_print: true }, first, second]), []);
 });

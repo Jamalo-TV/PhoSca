@@ -33,9 +33,9 @@ from app.pipeline.geometry import (
 from app.pipeline.image_ops import normalized_box_to_pixels, pixel_box_to_normalized
 from app.pipeline.mounted_prints import mounted_print_evidence
 from app.pipeline.multipanel_prints import (
-    FILM_GRID_REVIEW, GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE,
-    film_grid_review_seam, grid_fragment_on_shared_stock, nested_print_on_shared_stock, recover_shared_stock_outline,
-    shared_stock_outline,
+    FILM_GRID_REVIEW, GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, PAPER_GRID_REVIEW, RECOVERED_STOCK_SOURCE,
+    film_grid_review_seam, grid_fragment_on_shared_stock, nested_print_on_shared_stock, paper_grid_review_seam,
+    recover_shared_stock_outline, shared_stock_outline,
 )
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.print_edges import (
@@ -3255,6 +3255,73 @@ def _suggest_crossing_print_outline(
     return SegmentationResult(detections, metadata)
 
 
+def _flag_disputed_paper_grids(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    detections = result.detections
+    if not result.metadata.get("fallback_used") or not 2 <= len(detections) <= _MULTIPANEL_GROUP_LIMIT:
+        return result
+    height, width = image.shape[:2]
+    scale = np.float32([width - 1, height - 1])
+    outlines = [_detection_polygon(item) for item in detections]
+    eligible = [index for index, item in enumerate(detections) if item.geometry_valid and not item.review_reasons]
+    children = [index for index in eligible if detections[index].mask.get("source") == "yolo_seg_mask"
+                and len(outlines[index]) >= 4
+                and (detections[index].mask.get("boundary_evidence") or {}).get("score", 1) <= .66]
+    if not children:
+        return result
+    disputes = []
+    for parent in eligible:
+        item, outline = detections[parent], outlines[parent]
+        score = (item.mask.get("boundary_evidence") or {}).get("score", 0)
+        if (item.mask.get("detector_source") != "contrast_region" or not .45 <= score < .75
+                or item.confidence < .75 or item.mask.get("warp_quad") or len(outline) != 4
+                or not cv2.isContourConvex(outline)):
+            continue
+        nested = [index for index in children
+                  if (match := normalized_polygon_overlap(outline, outlines[index])).second_containment >= .95
+                  and .28 <= match.iou <= .75]
+        if not 1 <= len(nested) <= 2:
+            continue
+        if len(nested) == 2:
+            overlap = normalized_polygon_overlap(outlines[nested[0]], outlines[nested[1]])
+            if max(overlap.first_containment, overlap.second_containment) < .95:
+                continue
+        try:
+            seed = order_quad_cyclic(outline * scale)
+            if np.linalg.norm(np.roll(seed, -1, axis=0) - seed, axis=1).min() < 480:
+                continue
+            neighbors = [(index, poly) for index, poly in enumerate(outlines) if index != parent]
+            measured = suggest_outer_print_outline(image, seed, seed, [poly * scale for _, poly in neighbors])
+            if measured is None:
+                continue
+            claims = {index for index, poly in neighbors
+                      if (overlap := normalized_polygon_overlap(measured / scale, poly)).second_containment >= .99
+                      and overlap.first_containment >= .15}
+            if claims != set(nested):
+                continue
+            cuts = {}
+            for index in nested:
+                quad, method = quad_from_polygon(outlines[index] * scale)
+                if method != "minimum_area_rect" and (cut := paper_grid_review_seam(image, measured, quad)) is not None:
+                    cuts[index] = _normalized_polygon(cut, width, height)
+        except (cv2.error, ValueError, np.linalg.LinAlgError):
+            continue
+        if cuts.keys() == claims:
+            disputes.append((parent, _normalized_polygon(measured, width, height), cuts))
+    owners = Counter(index for parent, _, cuts in disputes for index in (parent, *cuts))
+    updated = detections.copy()
+    for parent, outline, cuts in disputes:
+        group = {parent: {"outline": outline}, **{index: {"outline": outline, "cut": cut} for index, cut in cuts.items()}}
+        if any(owners[index] != 1 for index in group):
+            continue
+        # The exterior can surround a separate inset. Keep every proposed
+        # photo and attach the measured outline and proposed cuts for review.
+        for index, review in group.items():
+            item = updated[index]
+            updated[index] = replace(item, mask={**item.mask, "paper_grid_review": review},
+                                     review_reasons=[PAPER_GRID_REVIEW, *item.review_reasons])
+    return SegmentationResult(updated, result.metadata) if disputes else result
+
+
 def _flag_conflicting_film_grids(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
     detections = result.detections
     if not result.metadata.get("fallback_used") or not 3 <= len(detections) <= _MULTIPANEL_GROUP_LIMIT:
@@ -3330,6 +3397,7 @@ def segment_album_page(
             result = _suggest_adjacent_album_edge_print(evidence_source, result)
             result = _suggest_crossing_print_outline(evidence_source, result, prepared=image)
             result = _defer_nested_print_candidates(evidence_source, result)
+            result = _flag_disputed_paper_grids(evidence_source, result)
             result = _flag_conflicting_film_grids(evidence_source, result)
     model_path = settings.visible_mask_model_path
     if not settings.enable_precise_photo_crops:

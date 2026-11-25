@@ -9,9 +9,12 @@ import {
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
-  scannerBackingHint, scannerBackingReason,
+  paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
-import { getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines } from "./cropReviewOutlines.js";
+import {
+  getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
+  getPaperGridReview, getPaperGridReviewGroups,
+} from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
 
@@ -105,7 +108,7 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome, uplo
   </main></div>;
 }
 
-function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroups, onSaved }) {
+function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroups, paperGridGroups, onSaved }) {
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
   const [showMissingEdges, setShowMissingEdges] = useState(false);
@@ -127,6 +130,8 @@ function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroup
   const reviewedNonPrint = item.payload?.review_reasons?.includes("GEOMETRY_REVIEW_WRONG_OBJECT");
   const filmGrid = editable && !reviewedNonPrint && item.payload?.confidence != null
     && item.payload?.review_reasons?.includes(filmGridReason) && getFilmGridSeam(item.payload?.segmentation_mask);
+  const paperGrid = editable && !reviewedNonPrint && item.payload?.confidence != null
+    && item.payload?.review_reasons?.includes(paperGridReason) && getPaperGridReview(item.payload?.segmentation_mask);
   const crossingOutline = item.payload?.confidence != null
     && item.payload?.review_reasons?.includes(crossingPrintReason)
     && !reviewedNonPrint
@@ -253,8 +258,22 @@ function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroup
       strokeWidth="7" strokeDasharray="14 8" pointerEvents="none"
       points={line.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
   ));
+  const shownPaperGrids = paperGrid?.cut
+    ? [{ key: item.id, outline: paperGrid.outline, cuts: new Map([[item.id, paperGrid.cut]]) }]
+    : paperGridGroups;
+  const paperGridOverlay = shownPaperGrids.map(({ key, outline, cuts }) => (
+    <g key={key} fill="none" stroke="#1d4ed8" strokeWidth="6" pointerEvents="none">
+      <polygon aria-label="Möglicher Aussenumriss" strokeDasharray="18 10"
+        points={outline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
+      {[...cuts].map(([id, cut]) => (
+        <polyline key={id} aria-label="Kante eines Teilvorschlags" strokeDasharray="4 10"
+          points={cut.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
+      ))}
+    </g>
+  ));
   const overlayHints = [countOutlines.length && "mobile-fragment-count-review-hint",
-    filmGridGroups.length && "mobile-film-grid-count-hint"].filter(Boolean).join(" ");
+    filmGridGroups.length && "mobile-film-grid-count-hint", paperGridGroups.length && "mobile-paper-grid-count-hint",
+  ].filter(Boolean).join(" ");
   const paperTraceOverlay = printEdgeTraces.map((trace, index) => (
     <polyline key={index} points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />
@@ -277,7 +296,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroup
           <rect x={box.x1 * 1000} y={box.y1 * 1000} width={(box.x2 - box.x1) * 1000} height={(box.y2 - box.y1) * 1000} />
           <text x={box.x1 * 1000 + 12} y={box.y1 * 1000 + 38}>{index + 1}</text>
         </g>)}
-        {nestedOverlay}{deferredOverlay}{fragmentCountOverlay}{filmGridOverlay}
+        {nestedOverlay}{deferredOverlay}{fragmentCountOverlay}{filmGridOverlay}{paperGridOverlay}
         {Boolean(visibleTraces?.length) && <MeasuredEdgeOverlay traces={visibleTraces} />}
       </svg>
       {magnifier.visible && <div className="crop-magnifier" style={{
@@ -302,6 +321,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroup
     {showMissingEdges && missingTraces.length > 0 && <p className="quad-hint">{missingPrintEdgeHint}</p>}
     {countOutlines.length > 0 && <p className="quad-hint" id="mobile-fragment-count-review-hint">{fragmentCountHint}</p>}
     {filmGridGroups.length > 0 && <p className="quad-hint" id="mobile-film-grid-count-hint">{filmGridCountHint}</p>}
+    {paperGridGroups.length > 0 && <p className="quad-hint" id="mobile-paper-grid-count-hint">{paperGridCountHint}</p>}
     {nestedOutlines.length > 0 && <p className="quad-hint">{nestedPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
     {deferredProposals.length > 0 && <p className="quad-hint">{deferredPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
     {measurementPage && measurementPage === item.page_id && <EdgeMeasurement key={item.page_id} pageId={item.page_id}
@@ -314,6 +334,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroup
         <p className="quad-hint">{scannerBackingHint}</p>
       )}
       {filmGrid && <p className="quad-hint">{filmGridHint}</p>}
+      {paperGrid && <p className="quad-hint">{paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint}</p>}
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
       {printEdgeReviewHint && <p className="quad-hint">{printEdgeReviewHint}</p>}
@@ -492,6 +513,7 @@ function CropReview({ albumId, goHome }) {
   const deferredProposals = getDeferredPrintProposals(item?.payload?.deferred_print_proposals);
   const countOutlines = type === "segmentation" ? getFragmentReviewOutlines(item?.payload?.detections || []) : [];
   const filmGridGroups = type === "segmentation" ? getFilmGridReviewSeams(item?.payload?.detections || []) : [];
+  const paperGridGroups = type === "segmentation" ? getPaperGridReviewGroups(item?.payload?.detections || []) : [];
   useEffect(()=>{ goHomeRef.current=goHome; },[goHome]);
   useEffect(() => {
     if(!history.state?.phoscaCropGuard){
@@ -551,12 +573,12 @@ function CropReview({ albumId, goHome }) {
     {answerError && <p role="alert">{answerError}</p>}
     {item ? <>
       <DetectionOverlay item={item} editable={type === "geometry"} countOutlines={countOutlines}
-        filmGridGroups={filmGridGroups} onSaved={updateSavedCropModes} />
+        filmGridGroups={filmGridGroups} paperGridGroups={paperGridGroups} onSaved={updateSavedCropModes} />
       <section className="answer-grid">
         {cropAnswers[type].map(([value,label]) => (
           <button key={value} className={value === "correct" ? "good" : ""}
             disabled={submitting || (value === "correct" && captureReviewPending)} onClick={() => record(value)}>
-            {value === "correct" && (deferredProposals.length || countOutlines.length || filmGridGroups.length)
+            {value === "correct" && (deferredProposals.length || countOutlines.length || filmGridGroups.length || paperGridGroups.length)
               ? "Anzahl bestätigen" : label}
           </button>
         ))}

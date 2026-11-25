@@ -2636,6 +2636,35 @@ instance threshold at 0.8317 and 0.8286 mask IoU, respectively. The shared
 grid check reads a different perforation phase at those proposed cuts.
 The contact sheet remains a development source.
 
+### Compare the whole contact print with its counted fragments
+
+Multipanel revision 9 keeps the right paper outline, the original crop
+and the counted fragments available in the two 33% variants. The measured
+paper outlines reach 0.9885 mask IoU on JPEG75 and 0.9898 on the lossless
+copy against the draft. The original active masks score 0.8317 and 0.8286
+respectively. The wider outline is available for the reviewer to load.
+
+The reviewer sees the marks at the proposed cuts. Source checks require
+continuous material beside both ends, the regular grid within eight rows
+in the rectified chart and periodic contrast in the nearest native pixel
+samples. The cue can also appear over a separate paper piece with a rim
+thinner than two native pixels. Both parts remain counted in that case.
+An unrelated neighboring outline, a pronounced paper rim or a broken
+margin makes the check abstain. The original JPEG55 retains its existing
+deferred-fragment flow.
+
+With the normal upload route, Desktop loaded the JPEG75 outline as a draft.
+On mobile, rejecting one of the two lossless fragments removed just its own
+mark and changed the count from six to five. The other mask, preview JPEGs
+and per-mode crop metadata matched their earlier values. Both mode downloads
+and the trimmed alias were held before manual geometry review. Manual entry
+of test paper dimensions exposed a separate full-print export issue while
+a linked row was still counted. The same issue reproduced on the baseline.
+
+The added review stage took 114 ms median for JPEG75 and 182 ms for the
+lossless copy in 25 warm runs with one OpenCV thread and concurrent test
+load. Both crop-mode metrics reproduced across the regression sets.
+
 ### Verify that catalogued pairs represent independent acquisitions
 
 A leave-one-out affine fit of the 15 saved American Colony draft landmarks

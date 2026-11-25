@@ -11,9 +11,10 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic,
 from app.pipeline.print_edges import _edge_band, _is_pale_stock, refine_print_boundary
 
 
-MULTIPANEL_PRINT_REVISION = 8
+MULTIPANEL_PRINT_REVISION = 9
 MULTIPANEL_PRINT_REVIEW = "MULTIPANEL_PRINT_REVIEW"
 FILM_GRID_REVIEW = "FILM_GRID_REVIEW"
+PAPER_GRID_REVIEW = "PAPER_GRID_REVIEW"
 RECOVERED_STOCK_SOURCE = "shared_stock_boundary"
 GRID_OUTLINE_REVIEW_SOURCE = "shared_grid_outline_review"
 _UNIT_QUAD = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
@@ -117,8 +118,19 @@ def grid_fragment_on_shared_stock(
     image: np.ndarray, outer_quad: np.ndarray, inner_quad: np.ndarray, *, check_seam_edge: bool = False,
 ) -> bool:
     """Check whether a proposed fragment cuts across a regular printed grid."""
+    return _paper_grid_seam(image, outer_quad, inner_quad, check_seam_edge=check_seam_edge) is not None
+
+
+def paper_grid_review_seam(image: np.ndarray, outer_quad: np.ndarray, inner_quad: np.ndarray) -> np.ndarray | None:
+    """Return the proposal's cut when nearby print texture supports a review."""
+    return _paper_grid_seam(image, outer_quad, inner_quad, check_seam_edge=True, nearby_rows=8)
+
+
+def _paper_grid_seam(
+    image: np.ndarray, outer_quad: np.ndarray, inner_quad: np.ndarray, *, check_seam_edge: bool, nearby_rows: int = 0,
+) -> np.ndarray | None:
     if min(np.linalg.norm(np.roll(outer_quad, -1, axis=0) - outer_quad, axis=1)) < 480:
-        return False
+        return None
     for turn in range(4):
         outer = np.roll(outer_quad, -turn, axis=0)
         transform = cv2.getPerspectiveTransform(outer, _UNIT_QUAD)
@@ -133,13 +145,13 @@ def grid_fragment_on_shared_stock(
         from_unit = np.linalg.inv(transform)
         native = cv2.perspectiveTransform(inner[None], from_unit)[0]
         if _grid_fragment_has_paper_edge(image, native, check_seam_edge=check_seam_edge):
-            return False
+            return None
         if any(_grid_fragment_corner_shadow(image, from_unit, corner, outward)
                for corner, outward in zip(inner[:2], (-1, 1), strict=True)):
-            return False
+            return None
         if (_grid_fragment_side_shadow(image, from_unit, inner[0], inner[3], -1)
                 or _grid_fragment_side_shadow(image, from_unit, inner[1], inner[2], 1)):
-            return False
+            return None
 
         width, height = 800, 1040
         to_grid = np.diag([width - 1., height - 1., 1.]) @ transform
@@ -150,12 +162,17 @@ def grid_fragment_on_shared_stock(
         strips = (lab[center - 38:center + 39, round(.024 * width):round((left - .012) * width)],
                   lab[center - 38:center + 39, round((right + .012) * width):round(.976 * width)])
         if not all(_continuous_grid_margin(strip) for strip in strips):
-            return False
+            return None
         start, end = round((left + .10 * (right - left)) * width), round((right - .10 * (right - left)) * width)
-        if not _perforation_rails_cross_split(lab[:, start:end, 0], center):
-            return False
-        return not check_seam_edge or not _grid_fragment_has_offset_rim(image, native[0], native[1])
-    return False
+        witness = _perforation_witness(lab[:, start:end, 0], center, nearby_rows)
+        if witness is None:
+            return None
+        if check_seam_edge and _grid_fragment_has_offset_rim(image, native[0], native[1]):
+            return None
+        if nearby_rows and not _native_perforations_supported(image, np.linalg.inv(to_grid), start, end, *witness):
+            return None
+        return native[:2]
+    return None
 
 
 def _grid_fragment_has_paper_edge(image: np.ndarray, quad: np.ndarray, *, check_seam_edge: bool) -> bool:
@@ -244,6 +261,10 @@ def _continuous_grid_margin(strip: np.ndarray) -> bool:
 
 
 def _perforation_rails_cross_split(luminance: np.ndarray, split: int) -> bool:
+    return _perforation_witness(luminance, split) is not None
+
+
+def _perforation_witness(luminance: np.ndarray, split: int, nearby_rows: int = 0) -> tuple[int, int] | None:
     light = luminance.astype(np.float32)
     detail = np.clip(light - cv2.GaussianBlur(light, (41, 1), 7), -64, 64)
     strength = np.minimum(np.percentile(np.abs(light[:, 2:] - light[:, :-2]), 90, axis=1), 100) / 100
@@ -262,18 +283,55 @@ def _perforation_rails_cross_split(luminance: np.ndarray, split: int) -> bool:
     bounds = np.flatnonzero(np.diff(np.r_[False, active, False]))
     rails = np.array([(start + stop) // 2 for start, stop in bounds.reshape(-1, 2)
                       if stop - start >= 3], dtype=int)
-    before, after = rails[rails < split], rails[rails > split]
-    if len(before) < 3 or len(after) < 3:
-        return False
-    rails = np.r_[before[-3:], after[:3]]
-    if np.ptp(pitch[rails]) > 1 or scores[rails].min() < .65:
-        return False
-    gaps = np.diff(rails)
-    short, long = gaps[::2], gaps[1::2]
-    # Printed strips repeat a short inter-strip gap and a wider frame row.
-    return bool(short.min() >= 12 and short.max() <= 55
+    rows = sorted(range(split - nearby_rows, split + nearby_rows + 1), key=lambda row: abs(row - split))
+    for row in rows:
+        before, after = rails[rails < row], rails[rails > row]
+        if len(before) < 3 or len(after) < 3:
+            continue
+        near = np.r_[before[-3:], after[:3]]
+        if np.ptp(pitch[near]) > 1 or scores[near].min() < .65:
+            continue
+        gaps = np.diff(near)
+        short, long = gaps[::2], gaps[1::2]
+        # Printed strips repeat a short inter-strip gap and a wider frame row.
+        if (short.min() >= 12 and short.max() <= 55
                 and short.max() <= 1.3 * short.min() and long.max() <= 1.3 * long.min()
-                and 2 * short.max() <= long.min() <= 4.5 * short.min())
+                and 2 * short.max() <= long.min() <= 4.5 * short.min()):
+            witness = min(near[2:4], key=lambda rail: abs(rail - split))
+            if not nearby_rows or abs(witness - split) <= nearby_rows:
+                return int(witness), int(pitch[witness])
+    return None
+
+
+def _native_perforations_supported(
+    image: np.ndarray, from_grid: np.ndarray, start: int, end: int, row: int, pitch: int,
+) -> bool:
+    ends = cv2.perspectiveTransform(np.float32([[[start, row], [end - 1, row]]]), from_grid)[0]
+    count = min(2000, int(np.linalg.norm(ends[1] - ends[0])))
+    expected = round(pitch * (count - 1) / (end - start - 1))
+    if count < 160 or expected < 4 or expected + 1 >= count // 4:
+        return False
+    x = np.linspace(start, end - 1, count, dtype=np.float32)
+    points = np.column_stack((x, np.full_like(x, row)))
+    samples = np.rint(cv2.perspectiveTransform(points[None], from_grid)[0]).astype(int)
+    if ((samples < 0) | (samples >= np.array(image.shape[1::-1]))).any():
+        return False
+    # Read the nearest source pixels to corroborate the periodic ink contrast
+    # without the interpolation used by the normalized search.
+    bgr = image[samples[:, 1], samples[:, 0]][None]
+    light = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)[0, :, 0].astype(np.float32)
+    detail = np.clip(light - cv2.GaussianBlur(light[None], (31, 1), 4)[0], -64, 64)
+    strong = 0
+    for block, ink in zip(np.array_split(detail, 4), np.array_split(light, 4), strict=True):
+        correlations = []
+        for lag in range(expected - 1, expected + 2):
+            left, right = block[:-lag], block[lag:]
+            correlations.append((left @ right) / np.sqrt(max(1, (left @ left) * (right @ right))))
+        best = max(correlations)
+        if best < .45:
+            return False
+        strong += best >= .70 and np.percentile(np.abs(ink[2:] - ink[:-2]), 90) >= 30
+    return strong >= 3
 
 
 def film_grid_review_seam(image: np.ndarray, first: np.ndarray, second: np.ndarray) -> np.ndarray | None:

@@ -50,9 +50,12 @@ import {
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   deferredPrintHint, filmGridCountHint, filmGridHint, filmGridReason, getDeferredPrintProposals, getSourceEdgeTraces,
   getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
-  scannerBackingHint, scannerBackingReason,
+  paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
-import { getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines } from "./cropReviewOutlines.js";
+import {
+  getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
+  getPaperGridReview, getPaperGridReviewGroups,
+} from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
 const tabs = [
@@ -1405,8 +1408,14 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const filmGridSeam = useMemo(() => getFilmGridSeam(filmMask), [filmMask]);
   const filmGridGroups = useMemo(() => reviewingCount && !newPrint && !editingImage ? getFilmGridReviewSeams(photos) : [],
     [reviewingCount, newPrint, editingImage, photos]);
+  const paperGridMask = selected?.segmentation_confidence != null && !rejectedDetection
+    && selected.enhancement_applied?.segmentation_review_reasons?.includes(paperGridReason) ? selected.segmentation_mask : null;
+  const paperGrid = useMemo(() => getPaperGridReview(paperGridMask), [paperGridMask]);
+  const paperGridGroups = useMemo(() => reviewingCount && !newPrint && !editingImage ? getPaperGridReviewGroups(photos) : [],
+    [reviewingCount, newPrint, editingImage, photos]);
   const detectionReviewHint = (crossingReview && crossingPrintHint) || (scannerReview && scannerBackingHint)
-    || (overlapReview && clippedOverlapHint) || (filmGridSeam && filmGridHint) || (fragmentReview && fragmentOutlineHint);
+    || (overlapReview && clippedOverlapHint) || (filmGridSeam && filmGridHint)
+    || (paperGrid && (paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint)) || (fragmentReview && fragmentOutlineHint);
   const fragmentMask = fragmentReview && !rejectedDetection ? selected.segmentation_mask : null;
   const fragmentOutline = useMemo(() => getFragmentOutline(fragmentMask), [fragmentMask]);
   const suggestedNeighbor = selected?.segmentation_mask?.adjacent_print_suggestion;
@@ -1629,6 +1638,29 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       context.restore();
     }
+    if (!newPrint && !editingImage && (paperGridGroups.length || paperGrid?.cut)) {
+      const groups = paperGridGroups.length ? paperGridGroups
+        : [{ outline: paperGrid.outline, cuts: new Map([[selectedPhotoId, paperGrid.cut]]) }];
+      context.save();
+      context.strokeStyle = "#1d4ed8";
+      context.lineWidth = 3;
+      for (const { outline, cuts } of groups) {
+        context.setLineDash([9, 5]);
+        context.beginPath();
+        context.moveTo(outline[0].x * canvas.width, outline[0].y * canvas.height);
+        outline.slice(1).forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
+        context.closePath();
+        context.stroke();
+        context.setLineDash([2, 5]);
+        for (const [start, end] of cuts.values()) {
+          context.beginPath();
+          context.moveTo(start.x * canvas.width, start.y * canvas.height);
+          context.lineTo(end.x * canvas.width, end.y * canvas.height);
+          context.stroke();
+        }
+      }
+      context.restore();
+    }
     if (newPrint?.corners.length) {
       const points = newPrint.corners.map(({ x, y }) => [x * canvas.width, y * canvas.height]);
       context.strokeStyle = "#2563eb";
@@ -1648,7 +1680,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       });
     }
   }, [alternateOutline, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage,
-    filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces,
+    filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups,
     printSuggestion,
     missingTraces, newPrint, pageId, pageImage, photos, selectedPhotoId, showMissingEdges]);
 
@@ -1879,6 +1911,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {currentCountReview?.error && <p role="alert">{currentCountReview.error}</p>}
       {countOutlines.length > 0 && <p className="crop-editor-hint" id="fragment-count-review-hint">{fragmentCountHint}</p>}
       {filmGridGroups.length > 0 && <p className="crop-editor-hint" id="film-grid-count-hint">{filmGridCountHint}</p>}
+      {paperGridGroups.length > 0 && <p className="crop-editor-hint" id="paper-grid-count-hint">{paperGridCountHint}</p>}
       {!newPrint && !editingImage && !selected && pendingNested > 0 && (
         <p className="crop-editor-hint" role="status">
           {pendingNested === 1 ? "1 unklarer Vorschlag" : `${pendingNested} unklare Vorschläge`}. Wähle einen Abzug mit gestrichelter Innenkontur.
@@ -1947,6 +1980,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         aria-label="Albumseite mit markierten Abzügen"
         aria-describedby={[
           countOutlines.length && "fragment-count-review-hint", filmGridGroups.length && "film-grid-count-hint",
+          paperGridGroups.length && "paper-grid-count-hint",
         ].filter(Boolean).join(" ") || undefined}
       />
       {!newPrint && detectionReviewHint && !rejectedDetection && (
