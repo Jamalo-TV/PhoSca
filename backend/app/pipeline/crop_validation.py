@@ -61,7 +61,9 @@ def crop_validation_profile(settings: Settings) -> dict:
             "ownership_polygon_check": 1,
         },
         "classical_fallback": settings.enable_classical_segmentation_fallback,
-        "classical_line_pairs": 1 if settings.enable_classical_segmentation_fallback else None,
+        "classical_line_pairs": (
+            (2 if settings.enable_precise_photo_crops else 1) if settings.enable_classical_segmentation_fallback else None
+        ),
         "separated_contrast_prints": (
             1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),

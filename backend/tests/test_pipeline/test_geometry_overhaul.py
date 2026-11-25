@@ -164,6 +164,35 @@ def test_classical_line_pairs_reject_rectangle_interiors_of_crossing_texture() -
     assert _find_line_pair_candidates(page, .02) == []
 
 
+def test_rejected_fragments_do_not_prevent_line_pair_recovery(tmp_path) -> None:
+    from app.config import Settings
+    from app.pipeline.enhancement import prepare_for_cutout
+    from app.pipeline.geometry import normalized_polygon_overlap
+    from app.pipeline.image_ops import load_image
+    from app.pipeline.segmentation import _detection_polygon, segment_album_page
+
+    fixtures = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures"
+    source = load_image(fixtures / "page_11.jpg")
+    truth = np.loadtxt(fixtures / "labels" / "page_11.txt")[:, 1:].reshape(2, 4, 2)
+    prepared, _ = prepare_for_cutout(source)
+    settings = Settings(
+        DATABASE_URL="sqlite+aiosqlite://",
+        REDIS_URL="redis://localhost:6379/0",
+        YOLO_MODEL_PATH=tmp_path / "unused.onnx",
+        ENABLE_CLASSICAL_SEGMENTATION_FALLBACK=True,
+        ENABLE_PRECISE_PHOTO_CROPS=True,
+    )
+
+    result = segment_album_page(prepared, settings, source_image=source)
+
+    recovered, = result.detections
+    assert result.metadata["candidate_sources"]["edge_contour"] >= 1
+    assert recovered.mask["detector_source"] == "line_pairs"
+    overlaps = [normalized_polygon_overlap(_detection_polygon(recovered), target) for target in truth]
+    assert max(overlap.iou for overlap in overlaps) > .90
+    assert min(overlap.second_containment for overlap in overlaps) < .01
+
+
 def test_separate_contrast_prints_replace_weak_container_and_inner_motif(monkeypatch) -> None:
     from app.config import Settings
     from app.evaluation.crop_fixtures import synthetic_crop_pages

@@ -1162,6 +1162,19 @@ are needed to replay the reported nine-view comparison. Restore the
 exact artifacts or document the provenance of a replacement detector and
 reserve independently sourced albums for its final evaluation.
 
+The Commons catalogue of Adam Harangozó's Hungarian family album is a
+candidate for one physical group. It links individual files 1 and 2 to
+page 1 and file 10 to page 5. The same scanner's metadata records the
+individual files three to four minutes after their respective page files.
+The source describes each as a scan of an owned copy. Separate capture,
+usable geometry and usage rights still require verification. The original
+file requests returned HTTP 403 from the network proxy, so no file hashes
+or crop references from this album enter the final manifest.
+[Album catalogue](https://commons.wikimedia.org/wiki/Category:Photograph_album_of_an_unknown_Hungarian_family_(1920s,_30s)) ·
+[Page 1](https://commons.wikimedia.org/wiki/File:Hungarian_family_photo_album,_page_1.jpg) ·
+[Print 1](https://commons.wikimedia.org/wiki/File:Hungarian_family_photo_album,_photo_1.jpg) ·
+[Print 10](https://commons.wikimedia.org/wiki/File:Hungarian_family_photo_album,_photo_10.jpg)
+
 ## Clipped prints in the NerdScan development scan
 
 NerdScan's original upload has
@@ -1436,3 +1449,29 @@ downloads at the expected dimensions. The frozen seeded benchmark again
 matches 18 instances and passes all 23
 recoverable crops. The model-free frozen, Golden, ScanCropper and blurred
 Domoritz replays use the same scoring and availability as the shadow revision.
+
+### Line-pair search after rejected contours
+
+Golden page 11 previously yielded no print. Three raw contours described
+the same thin interior fragment and the fourth reached the page frame.
+All failed assessment. The existing line-pair search now runs when the
+precise classical path has no surviving detection. It uses the same
+candidate checks and the already computed edge map.
+
+The full model-free Golden replay gains one match, from 12 to 13 of 29,
+with 16 false proposals in both runs. The recovered print scores 0.911
+mask IoU. Its neighbour stays separate and remains undetected. The normal
+upload puts both crop modes in review for the unsupported boundary and
+uncertain aspect ratio. Both editors show how to correct the visible
+paper edge. Neither export is available. The median classical proposal time
+on this affected page was 0.98 s before and 1.30 s after in six warmed
+measurements at two OpenCV threads. The frozen model-free and seeded
+benchmarks and the two flatbed development sources retain their previous
+results.
+
+Golden page 37 has a separate ranking failure. A candidate at 0.950
+draft IoU passes assessment, then loses duplicate suppression to a partial
+contour at 0.796. An independent source-pixel remeasurement of the dropped
+candidate reaches 0.989 draft IoU. This analysis uses the Golden album for
+diagnosis. Both the ranking and the second missing print on page 37 still
+require work.

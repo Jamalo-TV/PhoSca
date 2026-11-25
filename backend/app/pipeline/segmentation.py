@@ -802,10 +802,13 @@ def _merge_axis_line_group(group: list[_AxisLine]) -> _AxisLine:
     )
 
 
-def _find_line_pair_candidates(image: np.ndarray, min_area_ratio: float) -> list[_ContourCandidate]:
+def _find_line_pair_candidates(
+    image: np.ndarray, min_area_ratio: float, *, edge_map: np.ndarray | None = None,
+) -> list[_ContourCandidate]:
     height, width = image.shape[:2]
     image_area = width * height
-    edge_map = _edge_support_map(image)
+    if edge_map is None:
+        edge_map = _edge_support_map(image)
     min_dimension = min(width, height)
     min_line_length = max(60, int(min_dimension * 0.16))
     lines = cv2.HoughLinesP(
@@ -1026,8 +1029,6 @@ def _find_contour_candidates(image: np.ndarray, min_area_ratio: float) -> list[_
                 candidates.append(candidate)
 
     candidates.extend(_find_contrast_candidates(image, min_area_ratio))
-    if not candidates:
-        candidates.extend(_find_line_pair_candidates(image, min_area_ratio))
     return candidates
 
 
@@ -1851,7 +1852,7 @@ def detect_photos_classical(
     edge_map = _edge_support_map(image)
     # Do not consolidate by area before candidate assessment.  Containers are
     # frequently larger than the true prints and used to erase them here.
-    filtered_contours = _find_contour_candidates(image, min_area_ratio)
+    contours = _find_contour_candidates(image, min_area_ratio)
     lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
     lab_background = _frame_background_lab_model(lab)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -1864,7 +1865,15 @@ def detect_photos_classical(
     line_pixels = 0
     unrefined_candidates = 0
     line_pad = 2 * int(max(12, min(width, height) * 0.025))
-    for candidate in filtered_contours:
+
+    def proposals():
+        yield from contours
+        # A raw fragment or album outline can fail assessment. Try the
+        # existing line search if the precise path still has no print.
+        if not contours or (multipanel_source is not None and not detections):
+            yield from _find_line_pair_candidates(image, min_area_ratio, edge_map=edge_map)
+
+    for candidate in proposals():
         polygon_points, polygon_source = _quadrilateral_from_contour(candidate.contour)
         _, _, candidate_width, candidate_height = candidate.box
         candidate_pixels = (candidate_width + line_pad) * (candidate_height + line_pad)
