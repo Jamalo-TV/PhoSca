@@ -56,6 +56,14 @@ export function getPrintEdgeReviewHint(fullPrint) {
   return fullPrint?.reason_codes?.map((reason) => printEdgeReviewHints[reason]).find(Boolean);
 }
 
+export function getPrintOutlinePreviewHint(fullPrint) {
+  const preview = fullPrint?.outline_preview;
+  if (!preview?.aspect_ratio_estimation) return null;
+  return preview.reason_codes?.includes("PRINT_ASPECT_UNCERTAIN")
+    ? "Vorgeschlagener Abzug mit geschätztem Seitenverhältnis."
+    : "Vorschau des vorgeschlagenen Aussenumrisses.";
+}
+
 export function getFragmentOutline(mask) {
   const { quad, uncertain_edge: edge } = mask?.fragment_outline_suggestion || {};
   if (!Array.isArray(quad) || quad.length !== 4 || !Number.isInteger(edge) || edge < 0 || edge > 3
@@ -151,6 +159,8 @@ export function CropVariants({ photo, hidden = false }) {
     : preview && preview === printOutline
       ? "Vorschau der Papierkontur zur Prüfung"
       : "Vorschau zur Prüfung";
+  const outlinePreviewHint = preview && preview === printOutline
+    && getPrintOutlinePreviewHint(getCropModes(photo)?.full_print);
   const reviewMessage = (captureEdgeClipped
     && "Der vorgeschlagene Abzug reicht bis an den Aufnahmerand. Lade für den Zuschnitt eine Aufnahme hoch, die ihn ganz zeigt.")
     || (possibleNestedPrint && nestedPrintHint)
@@ -188,6 +198,7 @@ export function CropVariants({ photo, hidden = false }) {
         <>
           <p className="crop-mode-status" role="status">{reviewMessage}</p>
           {preview && <img className="crop-variant-image" src={preview} alt={previewAlt} />}
+          {outlinePreviewHint && <p className="crop-mode-status">{outlinePreviewHint}</p>}
         </>
       )}
     </section>

@@ -6,6 +6,8 @@ import pytest
 
 from app.config import Settings
 from app.pipeline import segmentation
+from app.pipeline.crop_sampling import OWNED_BILINEAR
+from app.pipeline.geometry import normalized_vertices_to_pixels
 from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, nested_print_on_shared_stock
 from app.pipeline.perspective import _proposal_polygon, apply_refined_visibility, correct_photo_crop
 from app.pipeline.print_edges import PRINT_EDGE_CONFIRMATION
@@ -168,8 +170,7 @@ def test_partial_grid_count_requires_original_pixel_evidence(layout):
         assert result is proposals
 
 
-@pytest.mark.parametrize("cut_edge", [False, True])
-def test_recovering_grid_outline_retains_the_crop_seed_and_checks_thin_separating_edges(cut_edge):
+def _grid_with_weak_outer_proposal(settings, cut_edge=False):
     page, outer, inner = _partial_grid_page("continuous")
     paper = np.full(page.shape[:2], 0, np.uint8)
     cv2.fillConvexPoly(paper, outer.astype(np.int32), 1)
@@ -179,7 +180,6 @@ def test_recovering_grid_outline_retains_the_crop_seed_and_checks_thin_separatin
         cv2.line(page, tuple(inner[0].astype(int)), tuple(inner[2].astype(int)), (214, 217, 219), 2)
     seed = np.float32([[85, 61], [830, 107], [832, 1084], [79, 1084]])
     height, width = page.shape[:2]
-    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
     detections = []
     for points, source, detector_source, score in (
         (seed, "classical_border_quad", "contrast_region", .56),
@@ -191,7 +191,15 @@ def test_recovering_grid_outline_retains_the_crop_seed_and_checks_thin_separatin
         )
         item.mask["boundary_evidence"] = {"score": score}
         detections.append(item)
-    proposals = segmentation.SegmentationResult(detections, {})
+    return page, seed, segmentation.SegmentationResult(detections, {})
+
+
+@pytest.mark.parametrize("cut_edge", [False, True])
+def test_recovering_grid_outline_retains_the_crop_seed_and_checks_thin_separating_edges(cut_edge):
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    page, seed, proposals = _grid_with_weak_outer_proposal(settings, cut_edge)
+    height, width = page.shape[:2]
+    detections = proposals.detections
     result = segmentation._defer_nested_print_candidates(page, proposals)
     if cut_edge:
         assert result is proposals
@@ -214,6 +222,78 @@ def test_recovering_grid_outline_retains_the_crop_seed_and_checks_thin_separatin
     assert modes["full_print"]["suggested_warp_quad"] == photo.mask["visible_polygon"]
     assert all(mode["status"] == "review_needed" and PRINT_EDGE_CONFIRMATION in mode["reason_codes"]
                for mode in modes.values())
+    outline_preview = modes["full_print"]["outline_preview"]
+    preview_height, preview_width = review.full_print_preview.shape[:2]
+    assert outline_preview["sampling"] == OWNED_BILINEAR
+    assert outline_preview["shape"] == {"height": preview_height, "width": preview_width}
+    assert review.image_only_preview is baseline.image_only_preview is None
+    source_quad = normalized_vertices_to_pixels(
+        [[point["x"], point["y"]] for point in outline_preview["source_outline"]], width, height,
+    )
+    projected = cv2.perspectiveTransform(source_quad[None], np.asarray(outline_preview["page_to_output"]))[0]
+    assert np.allclose(projected, [[0, 0], [preview_width - 1, 0],
+                                  [preview_width - 1, preview_height - 1], [0, preview_height - 1]], atol=.01)
+
+    # A reviewer can restore a deferred candidate as a neighboring print.
+    disputed = correct_photo_crop(page, photo.bounding_box, photo.mask, neighbor_masks=[detections[1].mask], **options)
+    full_mode = disputed.metadata["crop_modes"]["full_print"]
+    assert full_mode["status"] == "review_needed"
+    assert full_mode["suggested_warp_quad"] == photo.mask["visible_polygon"]
+    assert disputed.full_print_preview is None and "outline_preview" not in full_mode
+
+
+async def test_restoring_grid_fragment_invalidates_the_overlapping_review_png(client, monkeypatch):
+    from uuid import uuid4
+
+    from app.config import get_settings
+    from app.services import pipeline
+
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
+    monkeypatch.setenv("MAX_UPLOAD_SIZE", "1048576")
+    monkeypatch.setenv("MAX_REQUEST_SIZE", "2097152")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    get_settings.cache_clear()
+    page, _, proposals = _grid_with_weak_outer_proposal(get_settings())
+    monkeypatch.setattr(segmentation, "_segment_album_page", lambda *_: proposals)
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    album = await client.post("/api/v1/albums", json={"name": "Kontaktabzug"})
+    assert album.status_code == 201, album.text
+    album_id = album.json()["id"]
+    ok, payload = cv2.imencode(".png", page)
+    assert ok
+    upload = await client.post(f"/api/v1/albums/{album_id}/pages/upload", files={
+        "files": ("album.png", payload.tobytes(), "image/png"),
+    })
+    assert upload.status_code == 201, upload.text
+    page_id = upload.json()["pages"][0]["page_id"]
+    queue, = (await client.get("/api/v1/review/queue", params={"type": "segmentation", "album_id": album_id})).json()
+    count = queue["payload"]
+    assert count["detection_count"] == 1
+    proposal, = count["deferred_print_proposals"]
+    url = f"/api/v1/photos/{count['detections'][0]['photo_id']}"
+    photo = (await client.get(url)).json()
+    preview = await client.get(photo["urls"]["full_print_preview"])
+    assert preview.status_code == 200 and preview.headers["content-type"] == "image/png"
+    original = (await client.get(photo["urls"]["source_corrected_untrimmed"])).content
+
+    add = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": proposal["polygon"], "deferred_proposal_id": proposal["id"],
+        "photo_count_revision": count["photo_count_revision"],
+    })
+    assert add.status_code == 201, add.text
+    for reprocess in (False, True):
+        if reprocess:
+            assert (await client.post(f"{url}/reprocess")).status_code == 200
+        updated = (await client.get(url)).json()
+        assert updated["urls"]["full_print_preview"] is None
+        assert (await client.get(photo["urls"]["full_print_preview"])).status_code == 404
+        modes = updated["enhancement_applied"]["correction"]["crop_modes"]
+        assert modes["full_print"]["suggested_warp_quad"] == photo["segmentation_mask"]["visible_polygon"]
+        assert all(mode["status"] == "review_needed" for mode in modes.values())
+        assert updated["crop_download_urls"] == {"full_print": None, "image_only": None}
+        if not reprocess:
+            assert (await client.get(updated["urls"]["source_corrected_untrimmed"])).content == original
 
 
 @pytest.mark.parametrize("separate_print", [False, True])

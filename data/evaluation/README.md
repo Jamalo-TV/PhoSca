@@ -2352,6 +2352,50 @@ whole-print and 12/12 motif passes. On the positive camera example, the
 count-review stage took 100 ms median and 114 ms p95 over 20 warm runs
 with one OpenCV thread.
 
+### Straighten the proposed contact print for review
+
+For the annotated 1346 × 1014 JPEG55 input, PhoSca now shows a separate
+610 × 782 lossless preview of the corroborated outer contour. Its own
+homography projects the four suggested corners onto the frame. Owned
+bilinear sampling uses the original page. The desktop and mobile editors
+label the preview as a proposal and flag the estimated aspect ratio. The
+source preview and the four initial warp transforms match the preceding
+revision. Both named exports still require review.
+
+| Whole-print measurement against the development draft | Source crop | Proposed preview |
+| --- | ---: | ---: |
+| Rendered footprint IoU | 0.8363 | 0.9884 |
+| Visible print area cut off | 16.37% | 1.07% |
+| Maximum corner error in source pixels | 60.37 | 4.84 |
+| Foreign interpolation contribution | 0% | 0.118% |
+| Output pixels with foreign taps beyond one source pixel | 0 | 220 |
+
+The preview shows the outer rows and handwritten header. The residual
+edge discrepancy includes a trace of wood at the bottom. The case lacks
+verified physical aspect, motif landmarks and a separate motif boundary.
+It remains development evidence. The JPEG75 and lossless variants still
+show the editable outline with their previous source previews.
+Searching eight pixels in each direction for a nearby rail pattern in the
+rectified analysis recovered a witness on three proposals in those two
+variants. The same search accepted 47 of 63 controls with independent
+one- to three-pixel paper rims at shifted positions. The fixed separation
+check remains in use.
+
+The normal desktop and mobile uploads showed the same PNG. Saving the
+edited corners removed the proposal PNG from the current photo and kept
+the count decision available. Restoring the deferred fragment invalidated
+the overlapping PNG immediately. Reprocessing left the outline hint
+available for comparison, with both exports still held. Before that count
+change, reprocessing regenerated identical PNG pixels. The PNG is 573,512
+bytes. Rendering, encoding and writing took 37.6 ms median and 40.3 ms
+p95 over 20 warm runs on one OpenCV thread.
+
+The instance, mode-availability and crop metrics match the previous
+replays for Golden, Domoritz, the stock challenge, both frozen detector
+comparisons and the seeded crop benchmark. The seeded results remain
+11/11 for whole prints and 12/12 for motifs. The configuration profiles
+record the preview under `print_outline_suggestion` revision 2.
+
 ### Verify that catalogued pairs represent independent acquisitions
 
 A leave-one-out affine fit of the 15 saved American Colony draft landmarks

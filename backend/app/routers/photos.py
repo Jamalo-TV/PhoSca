@@ -27,10 +27,12 @@ from app.pipeline.image_ops import load_image, normalized_box_to_pixels
 from app.pipeline.manual_paper_boundary import (
     capture_outline_review_required, paper_curve_from_review_traces, paper_curve_review_reference,
 )
+from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.perspective import manual_print_intersects, validate_review_quads
 from app.pipeline.presets import available_presets
 from app.pipeline.variants import (
     CROP_REVIEW_PREVIEWS,
+    FULL_PRINT_REVIEW_PREVIEW,
     released_variant_from_photo,
     variant_path_from_photo,
     variant_urls,
@@ -215,7 +217,7 @@ async def _render_photo_edit(
     return photo
 
 
-async def _review_overlapping_exports(
+async def _review_overlapping_crops(
     session: AsyncSession, photo: ExtractedPhoto, width: int, height: int,
 ) -> None:
     mask = photo.segmentation_mask or {}
@@ -229,16 +231,30 @@ async def _review_overlapping_exports(
         .execution_options(populate_existing=True)
     )
     for neighbor in neighbors:
+        metadata = deepcopy(neighbor.enhancement_applied or {})
+        if is_reviewed_non_print(metadata.get("review_rejected_detection"), neighbor.bounding_box, neighbor.segmentation_mask):
+            continue
+        correction = metadata.get("correction") or {}
+        modes = correction.get("crop_modes") or {}
+        full_mode = modes.get("full_print") or {}
+        preview = full_mode.get("outline_preview") or {}
+        if preview.get("source") == GRID_OUTLINE_REVIEW_SOURCE and manual_print_intersects(
+            preview.get("source_outline"), quad, width, height,
+        ):
+            full_mode.pop("outline_preview")
+            correction.pop(f"{FULL_PRINT_REVIEW_PREVIEW}_path", None)
+            correction.pop(f"{FULL_PRINT_REVIEW_PREVIEW}_asset_id", None)
+            neighbor.enhancement_applied = metadata
+            session.add(AuditLog(
+                entity_type="photo", entity_id=neighbor.id, action="overlapping_crop_preview_invalidated",
+                details={"overlapping_photo_id": str(photo.id)},
+            ))
         if (mask.get("manual_added") is not True and mask.get(REVIEWED_CROSSING_OUTLINE) is not True
                 and (neighbor.segmentation_mask or {}).get(REVIEWED_CROSSING_OUTLINE) is not True):
             continue
-        metadata = deepcopy(neighbor.enhancement_applied or {})
-        modes = (metadata.get("correction") or {}).get("crop_modes") or {}
-        if is_reviewed_non_print(metadata.get("review_rejected_detection"), neighbor.bounding_box, neighbor.segmentation_mask):
-            continue
         if not any(mode.get("status") == "ready" for mode in modes.values()):
             continue
-        neighbor_quad = (modes.get("full_print") or {}).get("warp_quad")
+        neighbor_quad = full_mode.get("warp_quad")
         if not manual_print_intersects(neighbor_quad, quad, width, height):
             continue
         reason = "PRINT_POSSIBLY_OCCLUDED"
@@ -555,7 +571,7 @@ async def create_manual_photo(
         if existing is None:
             raise
         return _replay_manual_photo(existing, page_id, creation_request, response)
-    await _review_overlapping_exports(session, photo, width, height)
+    await _review_overlapping_crops(session, photo, width, height)
     return await _render_photo_edit(session, photo_id, settings)
 
 
@@ -702,7 +718,7 @@ async def update_photo_bounding_box(
     prior_outer = prior_mask.get("warp_quad") or (prior_crop_modes.get("full_print") or {}).get("warp_quad")
     outer = segmentation_mask.get("warp_quad")
     if segmentation_mask.get("manual_added") is True or (outer and not _same_visible_outline(prior_outer, outer)):
-        await _review_overlapping_exports(session, photo, width, height)
+        await _review_overlapping_crops(session, photo, width, height)
     return await _render_photo_edit(session, photo.id, settings)
 
 

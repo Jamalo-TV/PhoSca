@@ -49,7 +49,7 @@ import {
   adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getFragmentOutline,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
-  getPrintEdgeReviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
+  getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
@@ -1424,6 +1424,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const edgeTraces = useMemo(() => getSourceEdgeTraces(traces), [traces]);
   const motifPreview = selected?.variant_urls?.image_only_preview || selected?.urls?.image_only_preview;
   const fullPrintPreview = selected?.variant_urls?.full_print_preview || selected?.urls?.full_print_preview;
+  const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const needsMotifSelection = editingImage && Boolean(imageSuggestion) && !selectedShape?.imageQuad;
   const measurement = selectedShape && parsePrintSize(selectedShape.printSizeFields);
   const sizeError = editingImage ? "" : measurement?.error;
@@ -1957,7 +1958,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         <img className="review-crop-preview" src={motifPreview} alt="Konturgetreue Motivvorschau zur Prüfung" />
       )}
       {!editingImage && !newPrint && fullPrintPreview && !currentSave?.url && (
-        <img className="review-crop-preview" src={fullPrintPreview} alt="Konturgetreue Abzugsvorschau zur Prüfung" />
+        <>
+          <img className="review-crop-preview" src={fullPrintPreview} alt="Abzugsvorschau zur Prüfung" />
+          {outlinePreviewHint && <p className="crop-mode-status">{outlinePreviewHint}</p>}
+        </>
       )}
       {currentSave && !currentSave.saving && !currentSave.error && !currentSave.url && !currentSave.rejected && (
         <p role="status">Der gespeicherte Ausschnitt muss geprüft werden.</p>

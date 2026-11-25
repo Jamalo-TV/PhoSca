@@ -7,7 +7,7 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic
 from app.pipeline.print_edges import _edge_band
 
 
-PRINT_OUTLINE_SUGGESTION_REVISION = 1
+PRINT_OUTLINE_SUGGESTION_REVISION = 2
 
 
 def _outline_at_distance(

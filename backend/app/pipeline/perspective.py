@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import cv2
@@ -130,6 +130,10 @@ def manual_print_intersects(
         return False
     if crop is None or mark is None:
         return False
+    return _material_print_intersection(crop, mark)
+
+
+def _material_print_intersection(crop: np.ndarray, mark: np.ndarray) -> bool:
     overlap, _ = cv2.intersectConvexConvex(crop, mark)
     return overlap >= max(6.0, 0.002 * cv2.contourArea(crop))
 
@@ -827,6 +831,44 @@ def _render_outline_preview(page: np.ndarray, outline: np.ndarray, matrix: np.nd
     }
 
 
+def _render_grid_outline_preview(
+    page: np.ndarray, mask: dict, rotation: int, neighbors: list[np.ndarray], regions: list[dict],
+    camera_matrix: np.ndarray | None, page_plane: PrintPagePlane | None,
+) -> tuple[np.ndarray, dict] | None:
+    """Straighten the proposed print outline independently of the primary crop."""
+    height, width = page.shape[:2]
+    try:
+        quad = _explicit_quad(mask, "visible_polygon", width, height)
+        if quad is None or any(_material_print_intersection(quad, cv2.convexHull(neighbor)) for neighbor in neighbors):
+            return None
+        if regions and not validate_protected_regions(quad, regions, width=width, height=height)["passed"]:
+            return None
+        out_width, out_height, aspect, reasons = _crop_dimensions(
+            quad, width, height, metric=True, camera_matrix=camera_matrix, print_aspect_ratio=None, page_plane=page_plane,
+        )
+        if min(out_width, out_height) < 2 or out_width * out_height > 2 * width * height:
+            return None
+        destination = _UNIT_QUAD * np.float32([out_width - 1, out_height - 1])
+        matrix = cv2.getPerspectiveTransform(quad, destination)
+        _assess_homography(quad, destination, matrix)
+        pixels, supported = warp_owned_crop(page, matrix, (out_width, out_height))
+        if not supported:
+            return None
+    except (ValueError, cv2.error, np.linalg.LinAlgError):
+        return None
+
+    geometry = _geometry_for_mode(quad, matrix, pixels, width, height, rotation, reasons)
+    return rotate_image(pixels, rotation), {
+        "source": GRID_OUTLINE_REVIEW_SOURCE,
+        "source_outline": geometry["warp_quad"],
+        "page_to_output": geometry["page_to_output"],
+        "shape": geometry["shape"],
+        "sampling": OWNED_BILINEAR,
+        "aspect_ratio_estimation": aspect,
+        "reason_codes": reasons,
+    }
+
+
 def _dual_crop_result(
     page: np.ndarray, full_image: np.ndarray, source_quad: np.ndarray, matrix: np.ndarray, metadata: dict,
     inner: np.ndarray | None, full_reasons: list[str], *, trim_border: bool, auto_orient: bool,
@@ -1521,6 +1563,13 @@ def correct_photo_crop(
                 mode["status"] = "review_needed"
                 if PRINT_EDGE_CONFIRMATION not in mode["reason_codes"]:
                     mode["reason_codes"].append(PRINT_EDGE_CONFIRMATION)
+            rotation = int(result.metadata["orientation"].get("rotation_degrees") or 0) % 360
+            preview = _render_grid_outline_preview(
+                page_image, mask, rotation, neighbor_polygons, regions, camera_matrix, page_plane,
+            )
+            if preview is not None:
+                pixels, modes["full_print"]["outline_preview"] = preview
+                result = replace(result, full_print_preview=pixels)
             return result
         uncertain = {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_BOUNDARY_UNSUPPORTED", "PRINT_OUTER_RIM_UNCERTAIN"}
         if (enable_classical_retry and not manual and mask.get("detector_source") == "contrast_region"

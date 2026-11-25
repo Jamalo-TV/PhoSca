@@ -7,7 +7,7 @@ import {
   adjacentPrintHint, captureOutlineReviewReason, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, crossingPrintHint,
   crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getCropModes, getFragmentOutline,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
-  getPrintEdgeReviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
+  getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
@@ -128,6 +128,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.crossing_print_suggestion));
   const fullPrintMode = reviewedNonPrint ? null : item.payload?.crop_modes?.full_print;
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
+  const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
   const printEdgeTraces = getSourceEdgeTraces(fullPrintMode?.suggested_edge_traces);
   const adjacentOutline = item.payload?.confidence != null
@@ -274,7 +275,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
           if (!suggestion) return;
           setQuad(suggestion);
           setUsingOutlineSuggestion(true);
-          setEditingPreview(true);
+          if (suggestion !== printSuggestion || !outlinePreviewHint) setEditingPreview(true);
           setSavedCropUrl("");
           setSaveError("");
         }}>Aussenumriss in den Editor laden</button>
@@ -305,6 +306,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
       {saveError && <p className="crop-save-error">{saveError}</p>}
       {quad && <LiveCropPreview src={item.preview_url} quad={quad} savedCropUrl={savedCropUrl}
         outlinePreviewUrl={editingPreview ? null : item.payload?.variant_urls?.full_print_preview}
+        outlinePreviewHint={outlinePreviewHint}
         measuredAspect={size ? size.width / size.height : null} orientation={orientation} />}
     </>}
   </>;
@@ -398,7 +400,7 @@ function drawQuadPreview(canvas, { image, pixels }, quad, measuredAspect, orient
   canvas.getContext("2d", { alpha: false }).putImageData(new ImageData(result.data, result.width, result.height), 0, 0);
 }
 
-function LiveCropPreview({ src, quad, savedCropUrl, outlinePreviewUrl, measuredAspect, orientation }) {
+function LiveCropPreview({ src, quad, savedCropUrl, outlinePreviewUrl, outlinePreviewHint, measuredAspect, orientation }) {
   const canvasRef = useRef(null);
   const [sample, setSample] = useState(null);
   const previewUrl = savedCropUrl || outlinePreviewUrl;
@@ -418,7 +420,7 @@ function LiveCropPreview({ src, quad, savedCropUrl, outlinePreviewUrl, measuredA
   }, [sample, src, quad, measuredAspect, orientation, previewUrl]);
   const title = savedCropUrl ? "Gerichteter Ausschnitt" : outlinePreviewUrl ? "Abzugsvorschau zur Prüfung" : "Live-Ausschnitt";
   const detail = savedCropUrl ? "Perspektive wurde aus den vier Ecken korrigiert" : outlinePreviewUrl
-    ? "Vorschau folgt der gezackten Papierkante" : "Vorschau folgt allen vier Ecken live";
+    ? outlinePreviewHint || "Vorschau folgt der gezackten Papierkante" : "Vorschau folgt allen vier Ecken live";
   return <section className={`live-crop-preview ${savedCropUrl ? "rectified" : ""}`}>
     <header><ZoomIn size={17}/><div><strong>{title}</strong><span>{detail}</span></div></header>
     {previewUrl ? <img src={previewUrl} alt={title} /> : <canvas ref={canvasRef}/>}
@@ -451,9 +453,13 @@ function CropReview({ albumId, goHome }) {
   function leaveReview(){ leavingRef.current=true; history.back(); }
   function updateSavedCropModes(cropModes, segmentationMask) {
     if (cropModes) {
-      setItems(current => current.map(task => task.id === item.id
-        ? { ...task, payload: { ...task.payload, crop_modes: cropModes, segmentation_mask: segmentationMask } }
-        : task));
+      setItems(current => current.map(task => {
+        if (task.id !== item.id) return task;
+        const variantUrls = { ...task.payload.variant_urls };
+        if (!cropModes.full_print?.outline_preview) delete variantUrls.full_print_preview;
+        return { ...task, payload: { ...task.payload, crop_modes: cropModes, segmentation_mask: segmentationMask,
+          variant_urls: variantUrls } };
+      }));
     }
     setMessage(cropModes?.full_print?.reason_codes?.includes(captureOutlineReviewReason)
       ? "Vier Ecken gespeichert. Die Papierkante bleibt in Prüfung."
