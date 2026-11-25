@@ -4,14 +4,16 @@ from datetime import datetime, timezone
 from math import hypot
 from pathlib import Path
 import shutil
+from typing import Annotated
 from uuid import UUID, uuid4, uuid5
 
+from anyio import CapacityLimiter, to_thread
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from PIL import Image
 
 from app.config import Settings, get_settings
 from app.core.auth import Principal, get_principal, require_write_principal
@@ -20,7 +22,8 @@ from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PageStatus, Ph
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
 from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE
 from app.pipeline.decisions import is_reviewed_non_print
-from app.pipeline.image_ops import normalized_box_to_pixels
+from app.pipeline.edge_trace import measure_edge_trace
+from app.pipeline.image_ops import load_image, normalized_box_to_pixels
 from app.pipeline.manual_paper_boundary import paper_curve_review_reference
 from app.pipeline.perspective import manual_print_intersects, validate_review_quads
 from app.pipeline.presets import available_presets
@@ -42,6 +45,8 @@ from app.services.pipeline import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["photos"])
+_edge_trace_decoders = CapacityLimiter(1)
+_EdgeCoordinate = Annotated[float, Query(ge=0, le=1, allow_inf_nan=False)]
 
 
 async def _photo_for_principal(
@@ -334,6 +339,45 @@ async def get_page_image(
         filename=path.name,
         content_disposition_type="attachment",
     )
+
+
+def _measure_page_edge(path: Path, anchors: list[tuple[float, float]], pixel_limit: int) -> list:
+    try:
+        with Image.open(path) as header:
+            if header.width * header.height > pixel_limit:
+                raise HTTPException(status_code=413, detail="edge_trace_image_too_large")
+        image = load_image(path)
+    except Image.DecompressionBombError as exc:
+        raise HTTPException(status_code=413, detail="edge_trace_image_too_large") from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="edge_trace_source_unavailable") from exc
+    try:
+        return measure_edge_trace(image, anchors)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/pages/{page_id}/edge-trace")
+async def get_page_edge_trace(
+    page_id: UUID, response: Response,
+    start_x: _EdgeCoordinate, start_y: _EdgeCoordinate,
+    middle_x: _EdgeCoordinate, middle_y: _EdgeCoordinate,
+    end_x: _EdgeCoordinate, end_y: _EdgeCoordinate,
+    session: AsyncSession = Depends(get_async_session),
+    settings: Settings = Depends(get_settings),
+    principal: Principal | None = Depends(get_principal),
+) -> dict:
+    page = await _page_for_principal(session, page_id, principal)
+    source = Path(page.storage_path)
+    # Return the database connection before waiting for a decoder.
+    await session.rollback()
+    response.headers["Cache-Control"] = "private, no-store"
+    anchors = [(start_x, start_y), (middle_x, middle_y), (end_x, end_y)]
+    traces = await to_thread.run_sync(
+        _measure_page_edge, source, anchors, settings.max_image_pixels,
+        limiter=_edge_trace_decoders,
+    )
+    return {"traces": traces}
 
 
 @router.get("/pages/{page_id}/ocr", response_model=list[OCRRead])

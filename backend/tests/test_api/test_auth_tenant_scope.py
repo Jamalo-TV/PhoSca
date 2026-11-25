@@ -1,8 +1,10 @@
 from sqlalchemy import select
 
 
-async def test_api_key_authentication_roles_and_album_tenant_scope(client, monkeypatch) -> None:
+async def test_api_key_authentication_roles_and_album_tenant_scope(client, monkeypatch, tmp_path) -> None:
     from uuid import uuid4
+
+    from PIL import Image
 
     from app.config import get_settings
     from app.core.auth import hash_api_key
@@ -34,22 +36,31 @@ async def test_api_key_authentication_roles_and_album_tenant_scope(client, monke
     assert (await client.get("/api/v1/albums", headers={"X-API-Key": "editor-key"})).json()[0]["id"] == album_id
     assert (await client.get(f"/api/v1/albums/{album_id}", headers={"X-API-Key": "other-key"})).status_code == 404
 
+    source = tmp_path / "private.jpg"
+    Image.new("RGB", (300, 300), "#eeeeee").save(source)
     async with get_session_factory()() as session:
         album = await session.scalar(select(Album).where(Album.id == album_id))
         assert album is not None and album.tenant_id is not None
         page = Page(
-            album_id=album.id, original_filename="private.jpg", storage_path="private.jpg",
+            album_id=album.id, original_filename=source.name, storage_path=str(source),
             file_hash_sha256="a" * 64, status=PageStatus.completed,
         )
         session.add(page)
         await session.commit()
         url = f"/api/v1/pages/{page.id}/manual-photos"
+        trace_url = f"/api/v1/pages/{page.id}/edge-trace"
     draft = {"request_id": str(uuid4()), "warp_quad": [
         {"x": x, "y": y} for x, y in ((.1, .1), (.7, .1), (.7, .6), (.1, .6))
     ]}
     assert (await client.post(url, json=draft)).status_code == 401
     assert (await client.post(url, json=draft, headers={"X-API-Key": "viewer-key"})).status_code == 403
     assert (await client.post(url, json=draft, headers={"X-API-Key": "other-key"})).status_code == 404
+    coords = dict(start_x=.15, start_y=.25, middle_x=.5, middle_y=.25, end_x=.85, end_y=.25)
+    assert (await client.get(trace_url, params=coords)).status_code == 401
+    assert (await client.get(trace_url, params=coords, headers={"X-API-Key": "other-key"})).status_code == 404
+    measured = await client.get(trace_url, params=coords, headers={"X-API-Key": "viewer-key"})
+    assert measured.status_code == 200
+    assert measured.json() == {"traces": []}
 
 
 async def test_browser_session_scopes_requests_and_revokes_the_cookie(client, monkeypatch) -> None:

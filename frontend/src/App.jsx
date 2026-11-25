@@ -44,6 +44,7 @@ import {
 } from "./api.js";
 import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
+import EdgeMeasurement from "./EdgeMeasurement.jsx";
 import {
   adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getFragmentOutline,
@@ -1362,6 +1363,8 @@ const adjacentAdditionErrors = {
 
 function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, selectedPhotoId, onSelectPhoto }) {
   const canvasRef = useRef(null);
+  const [measurementPage, setMeasurementPage] = useState(null);
+  const [measuredEdge, setMeasuredEdge] = useState(null);
   const [pageImage, setPageImage] = useState(null);
   const [draftShapes, setDraftShapes] = useState({});
   const [editMode, setEditMode] = useState("full_print");
@@ -1370,6 +1373,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
   const dragRef = useRef(null);
   const editingImage = editMode === "image_only";
   const pageId = page?.id;
+  const measuredTraces = measuredEdge?.pageId === pageId ? measuredEdge?.traces : null;
   const activePage = useRef(pageId);
   const newPrint = addition?.pageId === pageId ? addition : null;
   const additionSize = newPrint && parsePrintSize(newPrint.printSizeFields);
@@ -1411,7 +1415,11 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
   const measurement = selectedShape && parsePrintSize(selectedShape.printSizeFields);
   const sizeError = editingImage ? "" : measurement?.error;
 
-  useEffect(() => { activePage.current = pageId; }, [pageId]);
+  useEffect(() => {
+    activePage.current = pageId;
+    setMeasurementPage(null);
+    setMeasuredEdge(null);
+  }, [pageId]);
 
   useEffect(() => {
     setDraftShapes(Object.fromEntries(photos.map((photo) => [photo.id, draftShapeFromPhoto(photo)])));
@@ -1527,6 +1535,19 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         }
       });
     });
+    if (measuredTraces?.length && !editingImage) {
+      context.save();
+      context.strokeStyle = "#2563eb";
+      context.lineWidth = 3;
+      context.setLineDash([5, 4]);
+      for (const trace of measuredTraces) {
+        context.beginPath();
+        context.moveTo(trace[0].x * canvas.width, trace[0].y * canvas.height);
+        trace.slice(1).forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
+        context.stroke();
+      }
+      context.restore();
+    }
     if (newPrint?.corners.length) {
       const points = newPrint.corners.map(({ x, y }) => [x * canvas.width, y * canvas.height]);
       context.strokeStyle = "#2563eb";
@@ -1545,7 +1566,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         context.fillText(String(index + 1), x + 9, y - 7);
       });
     }
-  }, [alternateOutline, crossingOutline, draftShapes, edgeTraces, editingImage, fragmentOutline, newPrint, pageId, pageImage, photos, selectedPhotoId]);
+  }, [alternateOutline, crossingOutline, draftShapes, edgeTraces, editingImage, fragmentOutline, measuredTraces,
+    newPrint, pageId, pageImage, photos, selectedPhotoId]);
 
   useEffect(() => {
     draw();
@@ -1718,11 +1740,20 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
           </button>
         ))}
       </div>
-      {!newPrint && canAddPhoto && (
-        <button className="text-button compact" type="button" onClick={() => startAddition()} disabled={saveState?.saving}>
-          Fehlenden Abzug ergänzen
-        </button>
+      {pageId && (!editingImage || (canAddPhoto && !newPrint)) && (
+        <div className="edge-measurement-controls">
+          {canAddPhoto && !newPrint && <button className="text-button compact" type="button" onClick={() => startAddition()}
+            disabled={saveState?.saving}>Fehlenden Abzug ergänzen</button>}
+          {!editingImage && <>
+            <button className="text-button compact" type="button" onClick={() => setMeasurementPage(pageId)}
+              disabled={saveState?.saving}>Kantenmessung öffnen</button>
+            {Boolean(measuredTraces?.length) && <button className="text-button compact" type="button"
+              onClick={() => setMeasuredEdge(null)}>Messspur ausblenden</button>}
+          </>}
+        </div>
       )}
+      {measurementPage && measurementPage === pageId && <EdgeMeasurement key={pageId} pageId={pageId}
+        onClose={() => setMeasurementPage(null)} onMeasured={(traces) => setMeasuredEdge({ pageId, traces })} />}
       {newPrint && (
         <p className="crop-editor-hint" aria-live="polite">
           {newPrint.corners.length === 4 ? "Prüfe und verschiebe die Ecken an den sichtbaren Papierrand."

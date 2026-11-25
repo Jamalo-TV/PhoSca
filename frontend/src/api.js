@@ -52,6 +52,15 @@ export async function getAlbum(albumId) {
   return parseResponse(await apiFetch(`/api/v1/albums/${albumId}`));
 }
 
+export async function measurePageEdge(pageId, points, signal) {
+  const query = new URLSearchParams();
+  ["start", "middle", "end"].forEach((name, index) => {
+    query.set(`${name}_x`, points[index].x);
+    query.set(`${name}_y`, points[index].y);
+  });
+  return parseResponse(await apiFetch(`/api/v1/pages/${pageId}/edge-trace?${query}`, { signal }));
+}
+
 export async function listPages(albumId, signal) {
   return parseResponse(await apiFetch(`/api/v1/albums/${albumId}/pages`, { signal }));
 }

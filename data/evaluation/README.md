@@ -1702,6 +1702,36 @@ geometry, these measurements are insufficient to apply the same warp
 across the page. Published document dewarping methods can also use
 text-line constraints that album prints lack. [Grid regularisation study](https://openaccess.thecvf.com/content/CVPR2022/html/Jiang_Revisiting_Document_Image_Dewarping_by_Grid_Regularization_CVPR_2022_paper.html)
 
+### On-demand source edge measurement
+
+Desktop and mobile review let the operator mark three points on a visible
+edge, magnify the original, and move a point one original pixel at a time.
+The server looks for a sustained source transition around the marks. The
+blue dashes show the observed sections and leave gaps at competing or
+unsupported transitions. The measurement is a temporary overlay. Paper
+ownership still needs visual confirmation. Strong borders printed onto the
+stock and hard lighting transitions can produce the same contrast.
+
+On Golden page 04 the left outside edge is measurable over more than 1,000
+native pixels. Its trace departs by more than four pixels from the corner
+chord. Sections of the right top, outside and bottom edges are measurable.
+The outside trace leaves about 240 native pixels open, and the bottom
+trace leaves about 182. The adjoining sky on the right inner edge has
+insufficient evidence for a trace. The measurement is also tested on rotated
+controls with an obscured interval, thin ink, glare and competing parallel
+edges. Across twelve warmed repetitions on page 04, median original decode
+took 193 ms and tracing took 1.7 ms with two OpenCV threads.
+
+Through the ordinary upload and processing path, both existing page-04
+proposals stayed in review. The whole-print and motif downloads and the
+older motif alias all returned 404 before and after using both review
+interfaces. A separate manual right-side correction with an entered size
+can still yield a rectangular whole-print export despite unresolved
+curvature. The measurement does not change that path. Frozen seeded
+geometry passed 18/18 instances and 23/23 recoverable crops. The model-free
+frozen detection and Golden replays retained their detection, geometry
+and mode-availability metrics with zero newly held crops.
+
 ### Guard for a manual print rectangle that would cut a paper curve
 
 For a manual correction of the same print, PhoSca checks an outward

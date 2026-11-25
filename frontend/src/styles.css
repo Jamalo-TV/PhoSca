@@ -1301,3 +1301,115 @@ pre {
 .batch-crops button { aspect-ratio: 3 / 4; overflow: hidden; border: 0; padding: 0; background: #071a16; }
 .batch-crops img { object-fit: contain; }
 @media (min-width:700px) { .mobile-shell { padding-top:12px; }.mobile-header { width:min(680px,calc(100% - 24px));margin:auto;border:1px solid #234139;border-radius:18px; }.mobile-content { padding-left:0;padding-right:0; } }
+.edge-measurement-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  align-items: center;
+}
+
+.edge-measurement-dialog {
+  width: min(58rem, calc(100% - 1rem));
+  max-height: calc(100dvh - 1rem);
+  padding: .85rem;
+  color: #182927;
+  border: 1px solid #bacac5;
+  border-radius: .6rem;
+  background: #fff;
+}
+
+.edge-measurement-dialog::backdrop { background: rgb(14 32 31 / .62); }
+
+.edge-measurement-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+}
+
+.edge-measurement-header h2 { margin: 0; font-size: 1.2rem; }
+.edge-measurement-dialog p { margin: .55rem 0; }
+
+.edge-measurement-dialog button {
+  min-height: 2.25rem;
+  padding: .25rem .55rem;
+  border: 1px solid #bacac5;
+  border-radius: .4rem;
+  background: #f5f8f7;
+  color: inherit;
+  font: inherit;
+}
+
+.edge-measurement-dialog button[aria-pressed="true"] {
+  border-color: #0f766e;
+  background: #d8f5ef;
+}
+
+.edge-measurement-dialog button:disabled { opacity: .55; }
+
+.edge-measurement-viewport {
+  max-height: min(54dvh, 35rem);
+  margin: .55rem 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid #bacac5;
+  border-radius: .3rem;
+  background: #eef3f1;
+}
+
+.edge-measurement-image {
+  position: relative;
+  width: min(100%, calc((min(54dvh, 35rem) - 2px) * var(--edge-image-aspect, 1.333)));
+  margin-inline: auto;
+  cursor: crosshair;
+}
+
+.edge-measurement-image img { display: block; width: 100%; height: auto; }
+
+.edge-measurement-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.measured-edge-line {
+  stroke: #2563eb;
+  stroke-width: 3px;
+  stroke-dasharray: 5px 4px;
+  pointer-events: none;
+}
+
+.edge-anchor {
+  position: absolute;
+  pointer-events: none;
+}
+
+.edge-anchor::before {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  transform: translate(-50%, -50%);
+  border: 1px solid #fff;
+  border-radius: 50%;
+  background: #164e63;
+  content: "";
+}
+
+.edge-anchor b {
+  position: absolute;
+  left: .3rem;
+  bottom: .3rem;
+  display: grid;
+  width: 1.4rem;
+  height: 1.4rem;
+  place-items: center;
+  border: 1px solid #fff;
+  border-radius: 50%;
+  background: #164e63;
+  color: #fff;
+  font-size: .75rem;
+}
+
+.edge-anchor.active b { outline: 2px solid #2563eb; }

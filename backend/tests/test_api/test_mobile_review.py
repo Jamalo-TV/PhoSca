@@ -73,6 +73,56 @@ async def _seed_review_data(image=None):
         return album.id, page.id, photo.id
 
 
+async def test_edge_trace_reads_the_exif_oriented_source_without_editing_review(client, monkeypatch):
+    from PIL import Image
+    from sqlalchemy import func, select
+
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import AuditLog
+
+    album_id, page_id, photo_id = await _seed_review_data()
+    source = get_settings().storage_path / "uploads" / "review-page.jpg"
+    image = Image.new("RGB", (480, 320), "#dddddd")
+    image.paste("#505050", (0, 175, 480, 320))
+    exif = image.getexif()
+    exif[274] = 6
+    image.save(source, exif=exif, quality=96)
+    # The dark lower half of the stored image becomes the left half.
+    coords = dict(start_x=144 / 319, start_y=50 / 479, middle_x=144 / 319,
+                  middle_y=240 / 479, end_x=144 / 319, end_y=430 / 479)
+    url = f"/api/v1/pages/{page_id}/edge-trace"
+    photo_url = f"/api/v1/photos/{photo_id}"
+    photos_url = f"/api/v1/albums/{album_id}/photos"
+    before = (await client.get(photo_url)).json()
+    async with get_session_factory()() as session:
+        audit_count = await session.scalar(select(func.count()).select_from(AuditLog))
+
+    measured = await client.get(url, params=coords)
+    assert measured.status_code == 200, measured.text
+    assert measured.headers["cache-control"] == "private, no-store"
+    trace, = measured.json()["traces"]
+    assert all(abs(point["x"] * 319 - 144.5) < 1 for point in trace)
+    assert trace[0]["y"] < .15 and trace[-1]["y"] > .85
+
+    flat = await client.get(url, params=dict(coords, start_x=.75, middle_x=.75, end_x=.75))
+    assert flat.status_code == 200
+    assert flat.json() == {"traces": []}
+    too_short = await client.get(url, params=dict(coords, end_y=60 / 479))
+    assert too_short.status_code == 422
+    assert too_short.json()["detail"] == "edge_trace_points_too_close"
+    assert (await client.get(url, params=dict(coords, middle_x="nan"))).status_code == 422
+    assert (await client.get(photo_url)).json() == before
+    assert [photo["id"] for photo in (await client.get(photos_url)).json()] == [str(photo_id)]
+    async with get_session_factory()() as session:
+        assert await session.scalar(select(func.count()).select_from(AuditLog)) == audit_count
+
+    monkeypatch.setattr(get_settings(), "max_image_pixels", 100_000)
+    oversized = await client.get(url, params=coords)
+    assert oversized.status_code == 413
+    assert oversized.json()["detail"] == "edge_trace_image_too_large"
+
+
 @pytest.mark.parametrize("surface", ["bowed_paper", "straight_paper", "printed_arc"])
 async def test_manual_export_checks_the_server_owned_paper_outline(client, monkeypatch, surface):
     from app.config import get_settings
