@@ -70,6 +70,9 @@ direkt aus der Quellseite. Beim präzisen Sampling gehen in die
 Interpolation nur Quellpixel ein, die zur jeweiligen Fläche gehören.
 Die Randprüfung sucht auf den vorgeschlagenen hellen Abfallstreifen
 nach dunklen Markierungen und bestätigt den Kontrast im Original.
+Bei schwacher Schrift prüft sie zusätzlich die Strichform und die
+Originalpixel auf beiden Seiten des Strichs. Beide Seiten müssen
+zum selben sichtbaren Papierrand gehören.
 Sie kann einen Ausschnitt zurückhalten, wenn er Bildinhalt oder
 Beschriftung entfernen würde. Die Markierung zeigt eine Fundstelle.
 Der Hinweis fordert dazu auf, den gesamten Rand zu prüfen. Wenn

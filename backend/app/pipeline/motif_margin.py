@@ -1,8 +1,12 @@
 """Find source-supported markings a proposed motif would remove from light stock."""
 from __future__ import annotations
 
+from functools import partial
+
 import cv2
 import numpy as np
+
+from app.pipeline.faint_margin import faint_margin_region
 
 
 def _mark_clusters(lightness: np.ndarray, owned: np.ndarray) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
@@ -44,6 +48,13 @@ def _to_source(points: np.ndarray, origin: np.ndarray, along: np.ndarray, down: 
     return cv2.perspectiveTransform(plane[None].astype(np.float32), inverse)[0]
 
 
+def _add_region(regions: list[np.ndarray], region: np.ndarray) -> None:
+    area = cv2.contourArea(region)
+    if area > 0 and not any(cv2.intersectConvexConvex(region, previous)[0]
+                            > 0.5 * min(area, cv2.contourArea(previous)) for previous in regions):
+        regions.append(region)
+
+
 def motif_margin_marks(
     page: np.ndarray, full: np.ndarray, motif: np.ndarray, inverse: np.ndarray,
 ) -> list[np.ndarray]:
@@ -58,6 +69,7 @@ def motif_margin_marks(
         ((0, height - 1), (0, -1), (1, 0)),
     )
     result = []
+    faint_strips = []
     for edge, axes_for_side in enumerate(axes):
         origin, along, down = np.asarray(axes_for_side)
         plane = np.rot90(full, edge)
@@ -78,9 +90,14 @@ def motif_margin_marks(
         owned = np.arange(y0, y1)[:, None] <= seam - 1.5
         if np.count_nonzero(owned) < 100:
             continue
-        lightness = cv2.cvtColor(plane[y0:y1, x0:x1], cv2.COLOR_BGR2LAB)[:, :, 0]
-        if np.median(lightness[owned]) < 172:
+        lab = cv2.cvtColor(plane[y0:y1, x0:x1], cv2.COLOR_BGR2LAB)
+        lightness = lab[:, :, 0]
+        paper_lightness = np.median(lightness[owned])
+        if paper_lightness < 172:
             continue
+        project = partial(_to_source, origin=origin + x0 * along + y0 * down, along=along, down=down, inverse=inverse)
+        if paper_lightness >= 191 and end - start >= 30 and max(depth) >= 8:
+            faint_strips.append((lab, owned, project))
         background, labels, clusters = _mark_clusters(lightness, owned)
         checked = set()
         for block in clusters:
@@ -90,9 +107,7 @@ def motif_margin_marks(
             checked.add(key)
             rows, cols = np.nonzero(np.isin(labels, block))
             stride = max(1, len(rows) // 240)
-            native = _to_source(
-                np.column_stack((cols[::stride] + x0, rows[::stride] + y0)), origin, along, down, inverse,
-            )
+            native = project(np.column_stack((cols[::stride], rows[::stride])))
             nx, ny = np.rint(native).astype(int).T
             valid = (nx >= 0) & (nx < page.shape[1]) & (ny >= 0) & (ny < page.shape[0])
             native_bgr = page[ny[valid], nx[valid]].reshape(-1, 1, 3)
@@ -102,13 +117,16 @@ def motif_margin_marks(
             stock = background[rows[::stride][valid], cols[::stride][valid]].astype(np.int16)
             if np.count_nonzero(stock - native_lightness >= 32) < 0.7 * len(native):
                 continue
-            left, right = cols.min() + x0, cols.max() + x0
-            top, bottom = rows.min() + y0, rows.max() + y0
+            left, right = cols.min(), cols.max()
+            top, bottom = rows.min(), rows.max()
             if bottom > top and right > left:
                 box = np.array([[left, top], [right, top], [right, bottom], [left, bottom]])
-                native_box = _to_source(box, origin, along, down, inverse)
-                if not any(cv2.intersectConvexConvex(native_box, previous)[0]
-                           > 0.5 * min(cv2.contourArea(native_box), cv2.contourArea(previous)) for previous in result):
-                    result.append(native_box)
+                _add_region(result, project(box))
                 break
+    if not result and faint_strips:
+        forward = np.linalg.inv(inverse)
+        for lab, owned, project in faint_strips:
+            region = faint_margin_region(page, lab, owned, project, forward, (width, height), motif)
+            if region is not None:
+                _add_region(result, region)
     return result

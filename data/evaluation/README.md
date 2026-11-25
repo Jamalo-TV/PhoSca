@@ -2779,6 +2779,39 @@ characters and fully connected handwriting remain open cases. The
 validation fingerprint includes the margin check for precise crops with
 border analysis enabled.
 
+### Check faint graphite and blue ink against the original paper
+
+When the stronger mark check finds no evidence, the same discarded-paper
+strips are checked for a coherent line of faint, shaped strokes. Candidate
+strips use luminance or cool ink colour against the local paper. Native
+samples confirm a narrow stroke against matching stock on opposing sides.
+Both sides must be inside the measured print and outside the motif. A
+candidate that depends on a brighter album region or on image pixels
+across the seam cannot confirm a faint stroke.
+
+Against the previous mark check, the 162 paired development renders add
+three motif reviews with known content loss. All 162 whole-print
+statuses, output shapes and pixels reproduce. All 36 previously usable
+negative controls and six in-image lettering controls remain usable. The
+separate controlled strip set adds 33 detections among 216 faint dates
+and adds no review among 660 controls. Twelve of 18 attenuated copies of
+the contact-sheet heading also gain a review hint. The three matching
+cleared-paper controls abstain. These slices include model-free geometry
+fixtures and synthetic derivatives of real handwriting.
+
+The normal upload and export path used a reproducible pale-graphite
+fixture. The detector proposed one print and five extra areas on its
+synthetic motif texture. Reviewers removed the extra proposals and
+confirmed the paper outline. The graphite hint then kept the motif and
+trimmed alias at 404 while the whole print remained available. After a
+deliberate motif edit, the exported JPEG included all 147 sampled ink
+centres and the whole print was byte-identical. The real JPEG75 contact
+sheet also reproduced its existing mobile, desktop and Gallery workflow.
+The isolated mark check added roughly 1–8 ms median across the tested
+small strips with one OpenCV thread. Very faint graphite, isolated
+characters and connected handwriting remain open cases. The validation
+fingerprint now binds this check.
+
 ### Verify that catalogued pairs represent independent acquisitions
 
 A leave-one-out affine fit of the 15 saved American Colony draft landmarks
@@ -2816,3 +2849,11 @@ page 8 and a 1999 State Library of Queensland copy negative showing the
 same paper edges. The public article contains a page figure. A native
 full-page file and reuse terms for the pair remain unconfirmed.
 [Acquisition study](https://doi.org/10.1080/23257962.2023.2190085)
+
+The Karl Kleeman collection at the Tennessee State Library and Archives
+documents whole-page album scans in Box 1, Folder 1, accession 2006-059.
+Individual digitized prints are available and carry the archive's
+No Copyright – United States designation. The mounted page rasters
+could not be located publicly, so no pair enters the final split.
+[Finding aid](https://sos-tn-gov-files.s3.amazonaws.com/forms/KLEEMAN_KARL_M_WORLD_WAR_I_PHOTOGRAPH_COLLECTION_1914-1918.pdf) ·
+[Individual print](https://teva.contentdm.oclc.org/digital/collection/WWI/id/83/)
