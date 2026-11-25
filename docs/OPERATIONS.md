@@ -38,7 +38,8 @@ Run `scripts/backup.sh` from the backend or a maintenance container with `pg_dum
 
 Required environment:
 
-- `DATABASE_URL`: PostgreSQL connection string.
+- `DATABASE_URL`: PostgreSQL connection string. The backup accepts the application's
+  `postgresql+asyncpg:` scheme and converts it to libpq format.
 - `STORAGE_PATH`: storage volume path, default `/app/storage`.
 - `YOLO_MODEL_PATH` and `MODEL_MANIFEST_PATH`: mounted local segmentation
   artifact and its SHA-256/license manifest. The service refuses an
@@ -47,13 +48,27 @@ Required environment:
 
 Optional:
 
-- `GPG_RECIPIENT`: public-key recipient. If omitted, the script uses symmetric AES-256 encryption.
+- `GPG_RECIPIENT`: public-key recipient for unattended runs. If omitted, GPG
+  asks for a symmetric AES-256 passphrase.
+
+The script publishes the encrypted archive with mode 0600 and removes its
+private staging directory after a successful or failed run. In the local
+restore drill, four database rows and all four restored asset hashes matched
+the source, including both crop JPEGs. Failed database and encryption
+attempts left the backup destination empty.
 
 ## Restore
 
 1. Decrypt the backup archive with `gpg`.
 2. Stop backend and worker containers.
-3. Restore PostgreSQL with `psql "$DATABASE_URL" < database.sql`.
+3. Restore into an empty PostgreSQL database. Run the dump in one transaction
+   and stop on the first SQL error.
+
+   ```bash
+   psql --set=ON_ERROR_STOP=1 --single-transaction \
+     --dbname="${DATABASE_URL/#postgresql+asyncpg:/postgresql:}" --file=database.sql
+   ```
+
 4. Sync `storage/` back into the configured storage volume.
 5. Start services and run a small album retrieval smoke test.
 6. Dokumentiere Datum, Operator, Archiv-SHA-256, wiederhergestellte DB-Zeilen,
