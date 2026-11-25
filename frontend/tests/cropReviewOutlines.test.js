@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getFilmGridReviewSeams, getFragmentReviewOutlines, getPaperGridReviewGroups } from "../src/cropReviewOutlines.js";
+import {
+  getFilmGridReviewSeams, getFragmentReviewOutlines, getPaperGridReviewGroups, getStoredMotifQuad,
+} from "../src/cropReviewOutlines.js";
 
 const quad = [{ x: .1, y: .2 }, { x: .7, y: .2 }, { x: .7, y: .8 }, { x: .1, y: .8 }];
 const mask = { fragment_outline_suggestion: { quad, uncertain_edge: 1 } };
+
+test("held motif geometry requires selection while a saved or ready motif can be edited", () => {
+  const held = { status: "review_needed", warp_quad: quad, suggested_warp_quad: quad };
+  assert.equal(getStoredMotifQuad({ image_quad: quad }, held), null);
+  assert.equal(getStoredMotifQuad({ segmentation_mask: { image_quad: quad } }, held), quad);
+  assert.equal(getStoredMotifQuad({}, { status: "ready", warp_quad: quad }), quad);
+});
 
 test("a shared outline appears once with the same three supported sides and separate weak edge", () => {
   const [outline, ...others] = getFragmentReviewOutlines([

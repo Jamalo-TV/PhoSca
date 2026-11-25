@@ -1222,6 +1222,16 @@ give width-to-height ratios of 0.56782–0.56846 and agree within 1.84 native
 page pixels after registration. This motif geometry remains a draft pending
 review of the ink boundary and usage rights.
 
+Independent review of the loose card distinguishes its right ink line from
+the paper edge another 5.7–7.5 native page pixels to the right. The corrected
+paper outline projects all four corners outside the separate front scan.
+Minimizing the worst corner discrepancy still leaves 2.48 native pixels
+of disagreement in the scan plane. The separate 245 × 397 back
+scan also clips the card stock. Its SHA-256 is
+`914375d19407f25fd10188b9a2ae62bc6376477a4b51bf501113bc05d3cd2b62`.
+The whole-print reference still needs an unclipped acquisition or physical
+measurements and independent confirmation.
+
 | Page and SHA-256 | Print and SHA-256 |
 | --- | --- |
 | `6REDA.JPG` `fa66ebc5a49f18f37f3bf731ac020a16edc9ad862d2d0b570cee0adb228941d2` | `REDA6.jpg` `5f69b0e9bd7b0d7b1e8d690e1b5b6f10d282a6086207927b1c7cf6030ee72ce9` |
@@ -2685,6 +2695,32 @@ reopens even an approved geometry task. The synthetic lifecycle test moves
 the restored fragment outside the parent's footprint and checks release
 after reprocessing. Older manual records with paper-grid evidence need a
 current overlap check before their named downloads are available.
+
+### Require an intentional motif outline in review
+
+The right contact print in the 33% JPEG75 upload has a native motif trace
+but no proposed four-corner motif. Replaying the old desktop 6% inset on the
+measured print retained one of 1,938 sampled header pixels and cut all five
+bottom panels. The editor now starts its handles at the paper corners and
+keeps **Save** disabled until the reviewer adjusts a corner, loads a measured
+suggestion, or explicitly chooses the paper corners for a borderless motif.
+The source traces and the mobile review hint identify which content to check.
+
+For the same source with SHA-256
+`a3c019249af7ce646813de4e5ec6555699cc1785730b5016994d13206d70988e`,
+upload and process the page, load the suggested outer outline, and reject
+the remaining counted fragment explicitly. In this development replay,
+the test dimensions were 203 × 264 mm. After reprocessing, the whole print
+downloads and the motif and trimmed alias return 404. Switch to **Nur
+Bildmotiv**, check that a click, a one-screen-pixel nudge and a reverted
+drag each leave **Save** disabled, then set the motif corners near
+`(34, 7), (571, 7), (571, 789), (34, 789)` in the 609 × 792 test print
+plane. The saved 538 × 783 motif retained 1,938/1,938 header pixels and
+315/315 anchors across 35 image fields. Source-to-output comparison
+confirmed owned interpolation support. The 609 × 792 whole-print download
+was byte-identical before and after the motif edit. Both Gallery download
+links returned the verified JPEGs. These development measurements use a
+manual review and test paper dimensions.
 
 ### Verify that catalogued pairs represent independent acquisitions
 

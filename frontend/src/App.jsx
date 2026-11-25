@@ -49,12 +49,12 @@ import {
   adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   deferredPrintHint, filmGridCountHint, filmGridHint, filmGridReason, getDeferredPrintProposals, getSourceEdgeTraces,
-  getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
+  getMotifBoundaryReviewHint, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
 import {
   getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
-  getPaperGridReview, getPaperGridReviewGroups,
+  getPaperGridReview, getPaperGridReviewGroups, getStoredMotifQuad,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
@@ -761,9 +761,7 @@ function draftShapeFromPhoto(photo) {
     || (visiblePolygon.length === 4 ? cyclicQuad(visiblePolygon) : minimumAreaQuad(visiblePolygon))
     || boxToPolygon(photo.bounding_box)
   );
-  const imageQuad = cyclicQuad(sanitizePolygon(photo.segmentation_mask?.image_quad)
-    || sanitizePolygon(photo.image_quad)
-    || sanitizePolygon(cropModes?.image_only?.warp_quad));
+  const imageQuad = cyclicQuad(sanitizePolygon(getStoredMotifQuad(photo, cropModes?.image_only)));
   return {
     visiblePolygon,
     warpQuad,
@@ -773,11 +771,6 @@ function draftShapeFromPhoto(photo) {
     printSizeFields: printSizeInputs(printSize),
     orientationDegrees: photo.segmentation_mask?.orientation_degrees ?? null,
   };
-}
-
-function insetQuad(quad) {
-  const center = quad.reduce((sum, point) => ({ x: sum.x + point.x / 4, y: sum.y + point.y / 4 }), { x: 0, y: 0 });
-  return quad.map((point) => ({ x: point.x * 0.88 + center.x * 0.12, y: point.y * 0.88 + center.y * 0.12 }));
 }
 
 function pointInPolygon(point, polygon) {
@@ -1428,12 +1421,13 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const alternateOutline = useMemo(() => cyclicQuad(sanitizePolygon(alternatePolygon)), [alternatePolygon]);
   const crossingPolygon = crossingReview && !rejectedDetection ? selected.segmentation_mask?.crossing_print_suggestion : null;
   const crossingOutline = useMemo(() => cyclicQuad(sanitizePolygon(crossingPolygon)), [crossingPolygon]);
-  const selectedShape = selected && (draftShapes[selected.id] || draftShapeFromPhoto(selected));
+  const savedShape = useMemo(() => selected && draftShapeFromPhoto(selected), [selected]);
+  const selectedShape = selected && (draftShapes[selected.id] || savedShape);
   const fragmentGroups = useMemo(() => reviewingCount ? getFragmentReviewOutlines(photos) : [], [reviewingCount, photos]);
   const countOutlines = useMemo(() => !newPrint && !editingImage ? fragmentGroups.filter(
     ({ photoIds }) => !selectedShape?.usingOutlineSuggestion || !photoIds.has(selectedPhotoId),
   ) : [], [newPrint, editingImage, fragmentGroups, selectedShape?.usingOutlineSuggestion, selectedPhotoId]);
-  const crossingNeedsCorrection = crossingReview && (editingImage || draftShapeFromPhoto(selected).warpQuad.every(
+  const crossingNeedsCorrection = crossingReview && (editingImage || savedShape.warpQuad.every(
     (point, index) => point.x === selectedShape.warpQuad[index].x && point.y === selectedShape.warpQuad[index].y,
   ));
   const selectedModes = selected?.crop_modes || getCropModes(selected);
@@ -1443,6 +1437,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const printSuggestion = useMemo(() => cyclicQuad(sanitizePolygon(proposedPrintQuad)), [proposedPrintQuad]);
   const needsPrintReview = editingImage && Boolean(printSuggestion);
   const motifReview = selectedModes?.image_only;
+  const motifBoundaryReviewHint = getMotifBoundaryReviewHint(motifReview);
   const imageSuggestion = cyclicQuad(sanitizePolygon(motifReview?.suggested_warp_quad));
   const seamTraces = motifReview?.suggested_seam_traces;
   const traces = editingImage ? seamTraces : fullPrintMode?.suggested_edge_traces;
@@ -1450,7 +1445,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const motifPreview = selected?.variant_urls?.image_only_preview || selected?.urls?.image_only_preview;
   const fullPrintPreview = selected?.variant_urls?.full_print_preview || selected?.urls?.full_print_preview;
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
-  const needsMotifSelection = editingImage && Boolean(imageSuggestion) && !selectedShape?.imageQuad;
+  const motifCorners = selectedShape?.imageQuad || savedShape?.warpQuad;
+  const needsMotifSelection = editingImage && !selectedShape?.imageQuad;
   const measurement = selectedShape && parsePrintSize(selectedShape.printSizeFields);
   const sizeError = editingImage ? "" : measurement?.error;
 
@@ -1534,7 +1530,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       if (editingImage && photo.id !== selectedPhotoId) return;
       const handles = editingImage
-        ? (shape.imageQuad || insetQuad(outer)).map((point) => ({ x: point.x * canvas.width, y: point.y * canvas.height }))
+        ? motifCorners.map((point) => ({ x: point.x * canvas.width, y: point.y * canvas.height }))
         : points;
       if (editingImage) {
         context.strokeStyle = "#2563eb";
@@ -1682,7 +1678,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   }, [alternateOutline, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups,
     printSuggestion,
-    missingTraces, newPrint, pageId, pageImage, photos, selectedPhotoId, showMissingEdges]);
+    missingTraces, motifCorners, newPrint, pageId, pageImage, photos, selectedPhotoId, showMissingEdges]);
 
   useEffect(() => {
     draw();
@@ -1720,16 +1716,22 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       setAddition({ ...newPrint, corners: cyclicQuad(corners) || corners, error: null });
       return;
     }
-    for (const photo of [...photos].reverse()) {
-      const saved = draftShapeFromPhoto(photo);
-      const shape = draftShapes[photo.id] || saved;
+    const targets = editingImage && selected
+      ? [selected, ...photos.filter((photo) => photo.id !== selectedPhotoId).reverse()]
+      : [...photos].reverse();
+    for (const photo of targets) {
+      const shape = draftShapes[photo.id] || draftShapeFromPhoto(photo);
       const corners = editingImage
-        ? (photo.id === selectedPhotoId ? shape.imageQuad || insetQuad(saved.warpQuad) : [])
+        ? (photo.id === selectedPhotoId ? motifCorners : [])
         : shape.warpQuad;
       const cornerIndex = corners.findIndex((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) < 0.025);
       if (cornerIndex >= 0) {
         onSelectPhoto(photo.id);
         dragRef.current = { photoId: photo.id, pointIndex: cornerIndex };
+        if (editingImage) {
+          const { width, height } = canvasRef.current.getBoundingClientRect();
+          Object.assign(dragRef.current, { corner: corners[cornerIndex], clientX: event.clientX, clientY: event.clientY, width, height });
+        }
         setSaveState(null);
         canvasRef.current.setPointerCapture(event.pointerId);
         return;
@@ -1744,7 +1746,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   function onPointerMove(event) {
     if (!dragRef.current) return;
     const point = pointToBox(event);
-    const { addition: draggingAddition, photoId, pointIndex } = dragRef.current;
+    const drag = dragRef.current;
+    const { addition: draggingAddition, photoId, pointIndex } = drag;
     if (draggingAddition) {
       setAddition((current) => current && {
         ...current,
@@ -1754,16 +1757,27 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       });
       return;
     }
+    let nextPoint = { x: clampUnit(point.x), y: clampUnit(point.y) };
+    if (drag.corner) {
+      const dx = event.clientX - drag.clientX;
+      const dy = event.clientY - drag.clientY;
+      if (!drag.moved && Math.hypot(dx, dy) < 2) return;
+      drag.moved = true;
+      nextPoint = { x: clampUnit(drag.corner.x + dx / drag.width), y: clampUnit(drag.corner.y + dy / drag.height) };
+    }
     setDraftShapes((current) => {
       const photo = photos.find((candidate) => candidate.id === photoId);
       if (!photo) return current;
       const saved = draftShapeFromPhoto(photo);
       const currentShape = current[photoId] || saved;
-      const corners = editingImage ? currentShape.imageQuad || insetQuad(saved.warpQuad) : currentShape.warpQuad;
+      const corners = editingImage ? currentShape.imageQuad || saved.warpQuad : currentShape.warpQuad;
       const nextQuad = corners.map((corner, index) =>
-        index === pointIndex ? { x: clampUnit(point.x), y: clampUnit(point.y) } : corner
+        index === pointIndex ? nextPoint : corner
       );
-      const shape = editingImage ? { ...currentShape, imageQuad: nextQuad } : {
+      const unchangedPaperCorners = editingImage && !saved.imageQuad && nextQuad.every(
+        (corner, index) => Math.hypot(corner.x - saved.warpQuad[index].x, corner.y - saved.warpQuad[index].y) < 1e-8,
+      );
+      const shape = editingImage ? { ...currentShape, imageQuad: unchangedPaperCorners ? null : nextQuad } : {
         ...currentShape,
         warpQuad: nextQuad,
         visiblePolygon: currentShape.visibleFollowsWarp ? nextQuad : currentShape.visiblePolygon,
@@ -1774,6 +1788,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   }
 
   function onPointerUp(event) {
+    if (event.type === "pointerup" && dragRef.current?.corner) onPointerMove(event);
     if (dragRef.current && canvasRef.current.hasPointerCapture(event.pointerId)) {
       canvasRef.current.releasePointerCapture(event.pointerId);
     }
@@ -1782,12 +1797,11 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
 
   async function saveSelected() {
     if (!selected || sizeError || needsMotifSelection || crossingNeedsCorrection || needsPrintReview) return;
-    const saved = draftShapeFromPhoto(selected);
     const box = editingImage ? selected.bounding_box : selectedShape.boundingBox;
     const mask = editingImage
-      ? maskFromShape(saved, selectedShape.imageQuad || insetQuad(saved.warpQuad))
+      ? maskFromShape(savedShape, selectedShape.imageQuad)
       : maskFromShape(selectedShape);
-    if (selectedShape.orientationDegrees !== saved.orientationDegrees) {
+    if (selectedShape.orientationDegrees !== savedShape.orientationDegrees) {
       mask.orientation_degrees = selectedShape.orientationDegrees;
     }
     if (!editingImage) mask.print_size_mm = measurement.size;
@@ -1939,18 +1953,22 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {editingImage && crossingReview && <p className="crop-editor-hint">{crossingPrintSaveHint}</p>}
       {needsPrintReview && !crossingReview && <p className="crop-editor-hint">{printOutlineSaveHint}</p>}
       {editingImage && selected && !crossingReview && !needsPrintReview && (
-        <p className="crop-editor-hint">
-          {seamTraces?.length
-            ? "Die gestrichelten Linien zeigen den geschätzten Verlauf der Motivkante. Die vier blauen Punkte definieren den geraden Zuschnitt."
-            : "Setze die vier blauen Eckpunkte an die Grenze des Bildmotivs."}
-        </p>
+        <>
+          {motifBoundaryReviewHint && <p className="crop-editor-hint">{motifBoundaryReviewHint}</p>}
+          <p className="crop-editor-hint">
+            {edgeTraces.length > 0 && "Die gestrichelten Linien zeigen Abschnitte der gemessenen Motivkante. "}
+            {!savedShape.imageQuad && "Die blauen Ecken starten am Papierrand. "}
+            Verschiebe sie an die Motivgrenze und lass alle Bildfelder und zum Motiv gehörenden Beschriftungen im Zuschnitt.
+          </p>
+        </>
       )}
-      {editingImage && imageSuggestion && !crossingReview && !needsPrintReview && (
+      {editingImage && selected && !crossingReview && !needsPrintReview && (imageSuggestion || !savedShape.imageQuad) && (
         <button className="text-button compact" type="button" disabled={saveState?.saving} onClick={() => {
-          setDraftShapes((current) => ({ ...current, [selected.id]: { ...selectedShape, imageQuad: imageSuggestion } }));
+          const imageQuad = imageSuggestion || savedShape.warpQuad;
+          setDraftShapes((current) => ({ ...current, [selected.id]: { ...selectedShape, imageQuad } }));
           setSaveState(null);
         }}>
-          Motivvorschlag in den Editor laden
+          {imageSuggestion ? "Motivvorschlag in den Editor laden" : "Motiv reicht bis zum Papierrand"}
         </button>
       )}
       {!newPrint && !editingImage && (fragmentOutline || crossingOutline || printSuggestion) && (

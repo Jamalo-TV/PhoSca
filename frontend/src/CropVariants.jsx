@@ -32,6 +32,8 @@ export const crossingPrintSaveHint = "Korrigiere und speichere zuerst die vier E
 export const printOutlineSaveHint = "Prüfe und speichere zuerst die Papierkontur unter «Ganzer Abzug».";
 export const captureOutlineReviewReason = "PRINT_CAPTURE_OUTLINE_REVIEW";
 export const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
+const curvedMotifReviewReason = "IMAGE_BOUNDARY_CURVED";
+const curvedMotifReviewHint = "Die Motivkante verläuft unregelmässig. Prüfe am Original, welche Bildfelder und Beschriftungen zum Motiv gehören.";
 const printEdgeReviewHints = {
   PRINT_SHADOW_EDGE_REVIEW: "Prüfe die markierte Kante am Original. Achte darauf, wo der Schatten endet und der Abzug beginnt.",
   PRINT_FAINT_OUTER_RIM_REVIEW: "Prüfe am Original, ob der helle Rand zur markierten Papierkante des Abzugs gehört.",
@@ -66,6 +68,11 @@ export function getPrintEdgeReviewHint(fullPrint) {
     return "Die gestrichelten Abschnitte zeigen die gemessene Papierkante im Original. Vergleiche sie mit den geraden Zuschnittkanten.";
   }
   return fullPrint?.reason_codes?.map((reason) => printEdgeReviewHints[reason]).find(Boolean);
+}
+
+export function getMotifBoundaryReviewHint(motif) {
+  return motif?.status === "review_needed" && motif.reason_codes?.includes(curvedMotifReviewReason)
+    ? curvedMotifReviewHint : null;
 }
 
 export function getPrintOutlinePreviewHint(fullPrint) {
@@ -125,7 +132,7 @@ const reviewMessages = {
   PRINT_BOUNDARY_SAMPLING_UNCERTAIN: "An einer Abzugsecke fehlen eindeutig zuordenbare Bildpixel.",
   IMAGE_BOUNDARY_SAMPLING_UNCERTAIN: "An einer Motivecke fehlen eindeutig zuordenbare Bildpixel.",
   IMAGE_BOUNDARY_UNCERTAIN: "Die Grenze zwischen Rahmen und Bildmotiv muss geprüft werden.",
-  IMAGE_BOUNDARY_CURVED: "Die Motivkante ist gewölbt. Prüfe den Zuschnitt am Original.",
+  [curvedMotifReviewReason]: curvedMotifReviewHint,
   WIDE_MOTIF_CONFIRMATION_REQUIRED: "Prüfe den Motivvorschlag im Desktop-Editor und speichere die Motivecken.",
   IMAGE_VISIBILITY_UNCERTAIN: "Das vollständige Bildmotiv konnte nicht bestätigt werden.",
   IMAGE_BORDER_CLASSIFICATION_DISABLED: "Die automatische Bestimmung der Motivgrenze ist deaktiviert.",
@@ -133,7 +140,7 @@ const reviewMessages = {
   BORDER_PROTECTED_CONTENT_VETO: "An der Motivgrenze könnten Bildinhalte liegen. Prüfe den Zuschnitt.",
 };
 
-export function CropVariants({ photo, hidden = false }) {
+export function CropVariants({ photo, hidden = false, mobile = false }) {
   const [mode, setMode] = useState(() => !photo.urls?.full_print && photo.urls?.image_only ? "image_only" : "full_print");
   const label = cropModeLabels[mode];
   const result = getCropModes(photo)?.[mode];
@@ -210,6 +217,9 @@ export function CropVariants({ photo, hidden = false }) {
       ) : (
         <>
           <p className="crop-mode-status" role="status">{reviewMessage}</p>
+          {mobile && mode === "image_only" && getMotifBoundaryReviewHint(result) && (
+            <p className="crop-mode-status">Die Motivecken kannst du im Desktop-Editor setzen.</p>
+          )}
           {preview && <img className="crop-variant-image" src={preview} alt={previewAlt} />}
           {outlinePreviewHint && <p className="crop-mode-status">{outlinePreviewHint}</p>}
         </>

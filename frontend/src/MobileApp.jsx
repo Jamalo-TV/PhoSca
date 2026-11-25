@@ -8,7 +8,7 @@ import {
   crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridReason, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
-  getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
+  getMotifBoundaryReviewHint, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
 import {
@@ -138,6 +138,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroup
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.crossing_print_suggestion));
   const fullPrintMode = reviewedNonPrint ? null : item.payload?.crop_modes?.full_print;
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
+  const motifBoundaryReviewHint = !reviewedNonPrint && getMotifBoundaryReviewHint(item.payload?.crop_modes?.image_only);
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
   const printEdgeTraces = getSourceEdgeTraces(fullPrintMode?.suggested_edge_traces);
@@ -338,6 +339,9 @@ function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroup
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
       {printEdgeReviewHint && <p className="quad-hint">{printEdgeReviewHint}</p>}
+      {motifBoundaryReviewHint && <p className="quad-hint">
+        {motifBoundaryReviewHint} Die Motivecken kannst du im Desktop-Editor setzen.
+      </p>}
       {adjacentOutline && <p className="quad-hint">{adjacentPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
       {scallopedAlternate && <p className="quad-hint">Prüfe den gestrichelten Vorschlag am Original. Wähle «Prints zusammen», falls dort ein eigener Abzug aufliegt.</p>}
       {(fragmentOutline || crossingOutline || printSuggestion) && (
@@ -622,7 +626,7 @@ function MobilePhotoDetail({ photo, goBack }) {
       <main className="mobile-content">
         {error && <p role="alert">{error}</p>}
         {!detail && !error && <p role="status">Foto wird geladen …</p>}
-        {detail && (getCropModes(detail) ? <CropVariants photo={detail} /> : (
+        {detail && (getCropModes(detail) ? <CropVariants photo={detail} mobile /> : (
           <section className="crop-variants">
             <img className="crop-variant-image" src={legacyUrl} alt="Ausgeschnittenes Foto" />
             <a className="crop-download" href={legacyUrl} download={`photo-${photo.id}.jpg`}>Foto herunterladen</a>

@@ -70,3 +70,8 @@ export function getFragmentReviewOutlines(photos) {
   }
   return [...groups.values()].filter(({ photoIds }) => photoIds.size > 1);
 }
+
+export function getStoredMotifQuad(photo, mode) {
+  return photo.segmentation_mask?.image_quad
+    ?? (mode?.status === "ready" ? mode.warp_quad || photo.image_quad : null);
+}
