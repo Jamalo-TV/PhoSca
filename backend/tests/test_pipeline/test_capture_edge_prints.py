@@ -260,6 +260,45 @@ def test_ambiguous_match_keeps_its_proposals_but_allows_separate_recovery(ambigu
     assert all(item is prior for item, prior in zip(result.detections[2:], original.detections[2:], strict=True))
 
 
+@pytest.mark.parametrize("case,separate_fragment,scanner_review,fragment_review", [
+    ("scanner", False, True, True),
+    ("scanner", True, True, False),
+    ("single_rail", False, False, True),
+    ("model_support", False, False, True),
+])
+def test_supported_capture_conflict_gives_review_hints_without_removing_candidates(
+    case, separate_fragment, scanner_review, fragment_review,
+):
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    page, original = scan_with_backing_rails(settings, case)
+    height, width = page.shape[:2]
+    complete = max(segmentation.clipped_print_outlines(page), key=lambda outline: outline[:, 1].mean())
+    full = segmentation._make_detection(
+        box={}, points=complete, confidence=.91, image_width=width, image_height=height, settings=settings,
+        source="yolo_seg_mask", detector_source="yolo_onnx",
+    )
+    full = replace(full, mask={**full.mask, "fusion": {"proposal_families": ["model"]}})
+    fragment = np.float32([[533, 1010], [width - 1, 1001], [width - 1, 1240], [493, 1248]])
+    if separate_fragment:
+        cv2.fillConvexPoly(page, np.rint(fragment).astype(np.int32), (164, 168, 171))
+    original.detections[2] = segmentation._make_detection(
+        box={}, points=fragment, confidence=.82, image_width=width, image_height=height, settings=settings,
+        source="classical_border_quad", detector_source="edge_contour",
+    )
+    original.detections.append(full)
+
+    result = segmentation._recover_capture_edge_prints(page, original, settings)
+
+    assert result.metadata["capture_edge_outlines_recovered"] == 2
+    assert "scanner_backing_outlines_rejected" not in result.metadata
+    assert len(result.detections) == 5
+    partial, scanner, measured = result.detections[2:]
+    assert (CLIPPED_PRINT_OVERLAP_REVIEW in partial.review_reasons) == fragment_review
+    assert (SCANNER_BACKING_REVIEW in scanner.review_reasons) == scanner_review
+    assert [item.mask for item in result.detections[2:]] == [item.mask for item in original.detections[2:]]
+    assert measured is full
+
+
 def test_capture_edge_hold_applies_to_stale_download_metadata():
     modes = ("full_print", "image_only", "source_corrected_trimmed")
     photo = SimpleNamespace(

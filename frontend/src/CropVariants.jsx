@@ -8,6 +8,8 @@ export const cropModeLabels = {
 
 export const clippedOverlapReason = "CLIPPED_PRINT_OVERLAP_UNCERTAIN";
 export const clippedOverlapHint = "Prüfe am Original, ob hier ein weiterer Papierabzug aufliegt. Ziehe die Ecken an seine Papierkante oder markiere den Vorschlag als «Falsches Objekt».";
+export const scannerBackingReason = "SCANNER_BACKING_UNCERTAIN";
+export const scannerBackingHint = "Prüfe am Original, ob die Markierung einen Abzug zeigt. Gehört der Bereich zur Scannerauflage, wähle «Falsches Objekt».";
 export const fragmentOutlineReason = "FRAGMENT_OUTLINE_UNCERTAIN";
 export const fragmentOutlineHint = "Prüfe am Original, ob die Ausschnitte zu einem Abzug gehören. Falls ja, korrigiere einen Ausschnitt mit dem Aussenumriss und markiere die übrigen darin als «Falsches Objekt».";
 export const fragmentCountHint = "Prüfe, ob die markierten Ausschnitte innerhalb der blauen Kontur zu einem Abzug gehören. Achte besonders auf die gepunktete Seite.";
@@ -94,7 +96,7 @@ const reviewMessages = {
   FRAGMENTED_PRINT_REVIEW: "Prüfe die durchgehende Papierkante am Original. Liegen zwei einzelne Abzüge vor, korrigiere die Ecken des ersten und ergänze den zweiten im Editor.",
   [fragmentOutlineReason]: fragmentOutlineHint,
   [crossingPrintReason]: crossingPrintHint,
-  SCANNER_BACKING_UNCERTAIN: "Prüfe am Original, ob im markierten Bereich ein weiterer Abzug liegt. Ziehe die Ecken an seine Papierkante, wenn du sie erkennen kannst.",
+  [scannerBackingReason]: scannerBackingHint,
   CROP_VALIDATION_UNAVAILABLE: "Prüfe und speichere den Zuschnitt, um den Download freizugeben.",
   CAMERA_ASPECT_REVIEW: "Die Vorschau nutzt die Kamerakalibrierung. Prüfe und bestätige die Fotoecken.",
   PRINT_AT_CAPTURE_EDGE: "Der Abzug reicht bis an den Aufnahmerand. Prüfe, ob er vollständig zu sehen ist.",
@@ -133,7 +135,8 @@ export function CropVariants({ photo, hidden = false }) {
   const possibleAdjacentPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.adjacent_print_suggestion;
   const possibleNestedPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.nested_print_suggestion;
   const possibleCrossingPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.crossing_print_suggestion;
-  const scannerBackingUncertain = photo.enhancement_applied?.segmentation_review_reasons?.includes("SCANNER_BACKING_UNCERTAIN");
+  const scannerBackingUncertain = photo.segmentation_confidence != null
+    && photo.enhancement_applied?.segmentation_review_reasons?.includes(scannerBackingReason);
   const clippedOverlapUncertain = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
   const captureEdgeClipped = photo.segmentation_mask?.capture_edge_clipped === true;
@@ -161,7 +164,7 @@ export function CropVariants({ photo, hidden = false }) {
     || (possibleFragmentOutline && fragmentOutlineHint)
     || (possibleAdjacentPrint && adjacentPrintHint)
     || (possibleCrossingPrint && crossingPrintHint)
-    || (scannerBackingUncertain && reviewMessages.SCANNER_BACKING_UNCERTAIN)
+    || (scannerBackingUncertain && scannerBackingHint)
     || (clippedOverlapUncertain && clippedOverlapHint)
     || (scallopedOutline && scallopedOutlineReviewHint)
     || result?.reason_codes?.map((code) => reviewMessages[code]).find(Boolean)

@@ -8,6 +8,7 @@ import {
   crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
+  scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
 import { getFragmentOutline, getFragmentReviewOutlines } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -297,6 +298,9 @@ function DetectionOverlay({ item, editable = false, countOutlines, onSaved }) {
     {editable && <>
       {item.payload?.confidence != null && item.payload?.review_reasons?.includes(clippedOverlapReason) && (
         <p className="quad-hint">{clippedOverlapHint}</p>
+      )}
+      {item.payload?.confidence != null && item.payload?.review_reasons?.includes(scannerBackingReason) && (
+        <p className="quad-hint">{scannerBackingHint}</p>
       )}
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}

@@ -50,6 +50,7 @@ import {
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
+  scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
 import { getFragmentOutline, getFragmentReviewOutlines } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -1391,6 +1392,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const selected = photos.find((photo) => photo.id === selectedPhotoId);
   const overlapReview = selected?.segmentation_confidence != null
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
+  const scannerReview = selected?.segmentation_confidence != null
+    && selected.enhancement_applied?.segmentation_review_reasons?.includes(scannerBackingReason);
   const fragmentReview = selected?.segmentation_confidence != null
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(fragmentOutlineReason);
   const crossingReview = selected?.segmentation_confidence != null
@@ -1920,9 +1923,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         aria-label="Albumseite mit markierten Abzügen"
         aria-describedby={countOutlines.length ? "fragment-count-review-hint" : undefined}
       />
-      {!newPrint && (overlapReview || fragmentReview || crossingReview) && !rejectedDetection && (
+      {!newPrint && (overlapReview || scannerReview || fragmentReview || crossingReview) && !rejectedDetection && (
         <div className="manual-print-actions">
-          <p className="crop-editor-hint">{crossingReview ? crossingPrintHint : overlapReview ? clippedOverlapHint : fragmentOutlineHint}</p>
+          <p className="crop-editor-hint">{crossingReview ? crossingPrintHint
+            : scannerReview ? scannerBackingHint : overlapReview ? clippedOverlapHint : fragmentOutlineHint}</p>
           <button className="text-button compact" type="button" onClick={rejectSelected} disabled={saveState?.saving}>
             {currentSave?.rejecting ? "Vorschlag wird geprüft …" : "Falsches Objekt"}
           </button>

@@ -15,7 +15,7 @@ from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURC
 from app.pipeline.crossing_prints import CROSSING_PRINT_REVIEW, crossing_print_outlines, near_leaf_edge_traces
 from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
-    clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
+    clipped_fragment_needs_review, clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
 )
 from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
@@ -1627,19 +1627,30 @@ def _recover_capture_edge_prints(
         for quad in quads:
             outline = pixel_vertices_to_normalized(quad, width, height)
             comparisons = {index: normalized_polygon_overlap(polygons[index], outline) for index in edge}
-            matches = [index for index, overlap in comparisons.items()
-                       if overlap.first_containment >= .88 and overlap.second_containment >= .42]
+            matches = {index: overlap for index, overlap in comparisons.items()
+                       if overlap.first_containment >= .88 and overlap.second_containment >= .42}
             outline_owners.append((quad, matches))
         degree = Counter(index for _, matches in outline_owners for index in matches)
         ambiguous = {index for _, matches in outline_owners for index in matches
                      if len(matches) != 1 or degree[index] != 1}
+        supported_conflicts = []
         replacements = {}
         for quad, matches in outline_owners:
             # An ambiguous match leaves its contenders intact. It cannot
             # invalidate a disjoint outline with a unique owner.
-            if len(matches) != 1 or matches[0] in ambiguous:
+            if len(matches) > 1:
+                # The measured extent of a disjoint print can still mask its
+                # pixels during the independent check of the exposed scanner.
+                if (all(degree[index] == 1 and overlap.first_containment >= .97 for index, overlap in matches.items())
+                        and any(overlap.second_containment >= .97 for overlap in matches.values())
+                        and all(other is quad or cv2.intersectConvexConvex(quad, other)[0] <= 0.5 for other in quads)):
+                    supported_conflicts.append((quad, matches))
                 continue
-            index = matches[0]
+            if not matches:
+                continue
+            index = next(iter(matches))
+            if index in ambiguous:
+                continue
             item = _make_detection(
                 box={}, points=quad, confidence=detections[index].confidence,
                 image_width=width, image_height=height, settings=settings,
@@ -1651,18 +1662,39 @@ def _recover_capture_edge_prints(
             mask = {**item.mask, "warp_quad": item.mask["polygon"], "capture_edge_clipped": True}
             replacements[index] = replace(item, mask=mask, review_reasons=[CAPTURE_EDGE_HOLD, *item.review_reasons])
         if len(replacements) >= 2:
-            proposals.append((replacements, ambiguous))
+            proposals.append((replacements, ambiguous, supported_conflicts))
     # A corner can produce two distinct edge interpretations. Keep the
     # original suggestions in this case.
     if len(proposals) != 1:
         return result
-    replacements, ambiguous = proposals[0]
+    replacements, ambiguous, supported_conflicts = proposals[0]
     updated = [replacements.get(index, item) for index, item in enumerate(detections)]
     metadata = {**result.metadata, "capture_edge_outlines_recovered": len(replacements)}
     recovered = [_detection_polygon(item) for item in replacements.values()]
     clipped = [normalized_vertices_to_pixels(outline, width, height) for outline in recovered]
+    additional = [(quad, pixel_vertices_to_normalized(quad, width, height)) for quad, _ in supported_conflicts]
     rejected = set()
     overlap_reviews = 0
+    for _, matches in supported_conflicts:
+        if len(matches) != 2:
+            continue
+        fragment, full = sorted(matches, key=lambda index: matches[index].second_containment)
+        item = detections[fragment]
+        families = (item.mask.get("fusion") or {}).get("proposal_families", [])
+        full_families = (detections[full].mask.get("fusion") or {}).get("proposal_families", [])
+        outline = polygons[fragment]
+        if (item.mask.get("detector_source") != "edge_contour" or "model" in families or "model" not in full_families
+                or len(outline) != 4 or matches[fragment].first_containment < .985
+                or matches[fragment].second_containment > .65
+                or normalized_polygon_overlap(outline, polygons[full]).first_containment < .985):
+            continue
+        try:
+            quad = order_quad_cyclic(normalized_vertices_to_pixels(outline, width, height))
+            if clipped_fragment_needs_review(image, quad):
+                updated[fragment] = replace(item, review_reasons=[CLIPPED_PRINT_OVERLAP_REVIEW, *item.review_reasons])
+                overlap_reviews += 1
+        except (cv2.error, ValueError):
+            continue
     for index, item in enumerate(detections):
         if (index in replacements or index in ambiguous or item.mask.get("detector_source") != "edge_contour"
                 or "model" in (item.mask.get("fusion") or {}).get("proposal_families", [])
@@ -1674,7 +1706,10 @@ def _recover_capture_edge_prints(
         overlaps = [normalized_polygon_overlap(outline, other) for other in recovered]
         shared = [clip for clip, overlap in zip(clipped, overlaps, strict=True)
                   if overlap.first_containment >= .985 and overlap.second_containment <= .45]
-        crosses_multiple = sum(overlap.first_containment >= .02 for overlap in overlaps) >= 3
+        crossing_occlusions = [quad for quad, other in additional
+                               if normalized_polygon_overlap(outline, other).first_containment >= .02]
+        recovered_crossings = sum(overlap.first_containment >= .02 for overlap in overlaps)
+        crosses_multiple = recovered_crossings + len(crossing_occlusions) >= 3
         if len(shared) != 1 and not crosses_multiple:
             continue
         try:
@@ -1683,10 +1718,14 @@ def _recover_capture_edge_prints(
                 updated[index] = replace(item, review_reasons=[CLIPPED_PRINT_OVERLAP_REVIEW, *item.review_reasons])
                 overlap_reviews += 1
             elif crosses_multiple:
-                evidence = scanner_backing_evidence(image, quad, clipped)
+                evidence = scanner_backing_evidence(image, quad, clipped) if recovered_crossings >= 3 else None
                 if evidence == "backing":
                     rejected.add(index)
-                elif evidence == "uncertain":
+                    continue
+                # A disputed outline can also cover a separate dark print.
+                if evidence is None and crossing_occlusions:
+                    evidence = scanner_backing_evidence(image, quad, clipped + crossing_occlusions)
+                if evidence is not None:
                     updated[index] = replace(item, review_reasons=[SCANNER_BACKING_REVIEW, *item.review_reasons])
         except (cv2.error, ValueError):
             continue

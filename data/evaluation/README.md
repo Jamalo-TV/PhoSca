@@ -1356,6 +1356,43 @@ The mixed seven-view development comparison now reaches 24/24 matches
 and two false proposals. Other real development views and the frozen
 synthetic detection and crop metrics reproduce the previous results.
 
+### Explain the remaining clipped-scan proposals in review
+
+The lower measured footprint has a near-complete model proposal and a
+contained classical proposal. The classical contour cuts through branches,
+steps and the coat in the original. Its three visible sides have weak
+support for an independent paper edge. The existing overlap review now
+points to this particular proposal. A separate contour with a supported
+paper edge stays independent. Both lower masks and crop matrices stay
+unchanged.
+
+The lower footprint can also supply part of the scanner-backing check.
+The native outline must be disjoint, its contenders must link only to that
+outline and an existing proposal must cover almost all of it. With that
+footprint excluded, two perpendicular scanner rails continue through the
+unrelated broad candidate. Small, dark inserts near the lower print can
+produce the same signal. This additional evidence gives the broad candidate
+a scanner-backing review reason and keeps it counted. The rule based on
+three individually recovered prints still runs first. The revision is 5.
+
+In the normal upload flow, desktop and mobile explain both disputed rows
+and offer **Falsches Objekt**. After two explicit rejections, the three
+underlying prints remain in the current album and print-count task with
+their previous corners and preview JPEGs. Both crop exports and the old
+trimmed alias stayed blocked. The same mixed upload with a 165 × 150 px
+low-contrast insert crossing the lower footprint kept the broad candidate
+in review. A smaller edge-margin insert can still escape the older
+scanner suppression in the model-free arm. The dark-material tests stay
+outside release evidence.
+
+The pinned mixed result remains 3/3 with two extra proposals before review.
+The full measured regressions for Golden, Domoritz, the contact print, the
+stock challenge and the frozen synthetic sets reproduce the preceding
+instance and crop metrics. On the pinned five-proposal scan, the added
+source checks took the recovery step from 94.76 to 200.96 ms median and
+from 216.90 to 312.65 ms p95 over 40 paired warm calls with one OpenCV
+thread. Image preparation, ONNX inference and rendering were excluded.
+
 ## Four neighboring loose prints on a flatbed
 
 The published 600 × 851 JPEG shows four separate prints that the author

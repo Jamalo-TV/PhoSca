@@ -9,7 +9,7 @@ from app.pipeline.geometry import order_quad_cyclic
 from app.pipeline.print_edges import _side_line
 
 
-CAPTURE_EDGE_REVISION = 4
+CAPTURE_EDGE_REVISION = 5
 CAPTURE_EDGE_SOURCE = "capture_edge_boundary"
 CAPTURE_EDGE_HOLD = "PRINT_AT_CAPTURE_EDGE"
 SCANNER_BACKING_REVIEW = "SCANNER_BACKING_UNCERTAIN"
@@ -160,6 +160,11 @@ def clipped_print_outlines(image: np.ndarray) -> list[np.ndarray]:
     return outlines
 
 
+def _frame_sides(quad: np.ndarray, ends: np.ndarray, image: np.ndarray) -> np.ndarray:
+    limit = np.array(image.shape[1::-1]) - 1
+    return ((quad == ends) & ((quad == 0) | (quad == limit))).any(axis=1)
+
+
 def clipped_print_overlap_uncertain(image: np.ndarray, quad: np.ndarray, clipped: np.ndarray) -> bool:
     """Check whether a contained contour reuses a visible side of another print."""
     height, width = image.shape[:2]
@@ -167,7 +172,7 @@ def clipped_print_overlap_uncertain(image: np.ndarray, quad: np.ndarray, clipped
     sides = ends - clipped
     norms = sides[:, [1, 0]] * np.float32([-1, 1]) / np.linalg.norm(sides, axis=1)[:, None]
     # The capture edge contains no physical paper boundary to share.
-    frame_side = ((clipped == ends) & ((clipped == 0) | (clipped == [width - 1, height - 1]))).any(axis=1)
+    frame_side = _frame_sides(clipped, ends, image)
     if frame_side.all():
         return False
     distances = np.abs(np.einsum("vsi,si->vs", quad[:, None] - clipped, norms))[:, ~frame_side]
@@ -180,6 +185,20 @@ def clipped_print_overlap_uncertain(image: np.ndarray, quad: np.ndarray, clipped
         if line is None or evidence["support"] < .80 or (evidence["corner_support"] or 0) < .60:
             return True
     return False
+
+
+def clipped_fragment_needs_review(image: np.ndarray, quad: np.ndarray) -> bool:
+    """Check for three proposed sides with no supported separate paper edge."""
+    ends = np.roll(quad, -1, axis=0)
+    visible = np.flatnonzero(~_frame_sides(quad, ends, image))
+    if len(visible) != 3:
+        return False
+    radius = int(np.clip(round(min(image.shape[:2]) * .006), 5, 18))
+    for index in visible:
+        line, evidence = _side_line(image, quad[index], ends[index], radius)
+        if line is not None or evidence["ambiguous"] or evidence["support"] >= .55:
+            return False
+    return True
 
 
 def _sample_backing(
