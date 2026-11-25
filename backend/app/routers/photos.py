@@ -21,6 +21,7 @@ from app.pipeline.crop_validation import route_ready_crop_modes_to_review
 from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE
 from app.pipeline.decisions import is_reviewed_non_print
 from app.pipeline.image_ops import normalized_box_to_pixels
+from app.pipeline.manual_paper_boundary import paper_curve_review_reference
 from app.pipeline.perspective import manual_print_intersects, validate_review_quads
 from app.pipeline.presets import available_presets
 from app.pipeline.variants import (
@@ -546,6 +547,14 @@ async def update_photo_bounding_box(
         ]
     metadata.pop("review_rejected_detection", None)
     review_provenance = deepcopy(metadata.get("review_provenance") or {})
+    if before["segmentation_confidence"] is not None:
+        previous_correction = metadata.get("correction") or {}
+        print_mode = (previous_correction.get("crop_modes") or {}).get("full_print") or {}
+        if len(print_mode.get("warp_quad") or []) == 4:
+            before["print_warp_quad"] = deepcopy(print_mode["warp_quad"])
+        curve = paper_curve_review_reference(previous_correction)
+        if curve is not None:
+            review_provenance.setdefault("paper_curve_review", deepcopy(curve))
     review_provenance.setdefault("original_prediction", before)
     review_provenance.setdefault("prediction_provenance", prediction_provenance)
     revisions = list(review_provenance.get("correction_revisions") or [])

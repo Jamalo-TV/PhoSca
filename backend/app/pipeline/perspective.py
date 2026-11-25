@@ -23,7 +23,7 @@ from app.pipeline.geometry import (
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.motif_boundary import close_motif_outline, motif_outline_corners_supported, trace_motif_boundary
 from app.pipeline.manual_paper_boundary import (
-    MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION, measure_manual_paper_boundary,
+    MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION, check_manual_paper_boundary,
 )
 from app.pipeline.orientation import correct_photo_orientation, rotate_image
 from app.pipeline.page_plane import (
@@ -1334,8 +1334,8 @@ def correct_photo_crop(
         print_edge_traces = [_vertices_on_page(np.asarray(segment), width, height) for segment in curve_segments]
     checked_manual_boundary = dual_mode and manual and manual_boundary_reference is not None
     if checked_manual_boundary:
-        print_edge_traces = measure_manual_paper_boundary(page_image, manual_boundary_reference)
-        if print_edge_traces:
+        manual_boundary_hold, print_edge_traces = check_manual_paper_boundary(page_image, src_points, manual_boundary_reference)
+        if manual_boundary_hold:
             full_reasons.append(MANUAL_PAPER_BOUNDARY_REVIEW)
     blurred_boundary = not full_reasons and any(
         (edge.get("edge_width_px") or 0) >= 4.75
@@ -1464,7 +1464,7 @@ def correct_photo_crop(
         metadata.update(boundary_refinement=boundary_refinement, aspect_ratio_estimation=aspect)
         if checked_manual_boundary:
             metadata["manual_paper_boundary"] = {
-                "revision": MANUAL_PAPER_BOUNDARY_REVISION, "requires_review": bool(print_edge_traces),
+                "revision": MANUAL_PAPER_BOUNDARY_REVISION, "requires_review": manual_boundary_hold,
             }
         observed = _source_visible_outline(
             page_image, mask, inspection, visible, neighbor_polygons, neighbor_masks or [],

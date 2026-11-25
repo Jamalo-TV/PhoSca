@@ -156,6 +156,73 @@ async def test_manual_export_checks_the_server_owned_paper_outline(client, monke
     assert replay.json()["enhancement_applied"]["correction"]["manual_paper_boundary"]["requires_review"] is held
 
 
+async def test_measured_aspect_does_not_clear_curved_paper_review_on_golden_page_37(client, monkeypatch, tmp_path):
+    from app.config import Settings, get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, Page
+    from app.pipeline.enhancement import prepare_for_cutout
+    from app.pipeline.image_ops import load_image
+    from app.pipeline.manual_paper_boundary import MANUAL_PAPER_BOUNDARY_REVIEW
+    from app.pipeline.segmentation import segment_album_page
+
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    get_settings.cache_clear()
+    source = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_37.jpg"
+    image = load_image(source)
+    _, page_id, photo_id = await _seed_review_data(image)
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://", YOLO_MODEL_PATH=tmp_path / "absent.onnx")
+    proposal, = segment_album_page(prepare_for_cutout(image)[0], settings, source_image=image).detections
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        page.storage_path = str(source)
+        page.file_hash_sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.bounding_box, photo.segmentation_mask = proposal.bounding_box, proposal.mask
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    response = await client.post(f"{url}/reprocess")
+    assert response.status_code == 200, response.text
+    current = response.json()
+    full = current["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+    assert "PRINT_BOUNDARY_CURVED" in full["reason_codes"]
+    quad = full["warp_quad"]
+    for adjustment in (0, .5 / (image.shape[0] - 1)):
+        edited = [{**point, "y": point["y"] - adjustment} for point in quad]
+        saved = await client.patch(f"{url}/bounding-box", json={
+            "bounding_box": current["bounding_box"],
+            "segmentation_mask": {
+                "source": "manual_quad", "polygon": edited, "warp_quad": edited,
+                "print_size_mm": {"width": 100, "height": 140},
+            },
+        })
+        assert saved.status_code == 200, saved.text
+        correction = saved.json()["enhancement_applied"]["correction"]
+        assert correction["crop_modes"]["full_print"]["suggested_edge_traces"]
+        for name, mode in correction["crop_modes"].items():
+            assert MANUAL_PAPER_BOUNDARY_REVIEW in mode["reason_codes"]
+            assert (await client.get(f"{url}/image?variant={name}")).status_code == 404
+    # Older saves retained the extended proposal but did not keep the curved
+    # source diagnosis. Their ready flags must be rechecked before download.
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        metadata = dict(photo.enhancement_applied)
+        review = dict(metadata["review_provenance"])
+        review.pop("paper_curve_review")
+        correction = dict(metadata["correction"])
+        correction.pop("manual_paper_boundary")
+        correction["crop_modes"] = {name: {**mode, "status": "ready"} for name, mode in correction["crop_modes"].items()}
+        photo.enhancement_applied = {**metadata, "review_provenance": review, "correction": correction, "variants": {
+            name: {"path": photo.original_storage_path} for name in correction["crop_modes"]
+        }}
+        await session.commit()
+    assert (await client.get(f"{url}/image?variant=full_print")).status_code == 404
+    replay = await client.post(f"{url}/reprocess")
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["enhancement_applied"]["correction"]["manual_paper_boundary"]["requires_review"]
+
+
 async def test_legacy_photo_serves_trim_and_keeps_untrimmed_variant(client, monkeypatch) -> None:
     from app.config import get_settings
 

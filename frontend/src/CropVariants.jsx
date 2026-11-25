@@ -23,7 +23,7 @@ const printEdgeReviewHints = {
   PRINT_EXTENDED_OUTLINE_REVIEW: "Prüfe die erweiterte Kontur am Original. Setze die Ecken an den Papierrand, damit der ganze Abzug erhalten bleibt.",
   PRINT_BOUNDARY_UNSUPPORTED: "Prüfe den sichtbaren Papierrand am Original. Korrigiere die markierten Ecken, soweit die Kante erkennbar ist.",
   PRINT_BOUNDARY_CURVED: "Die Abzugskante ist gekrümmt. Prüfe am Original, ob der Abzug für eine neue Aufnahme flach aufgelegt werden kann.",
-  PRINT_CURVED_OUTLINE_REVIEW: "Gerade Zuschnittkanten können hier Bildinhalt abschneiden. Prüfe die gemessene Papierkante am Original und fotografiere den Abzug bei Bedarf flach liegend neu.",
+  PRINT_CURVED_OUTLINE_REVIEW: "Die Papierkante braucht eine weitere Prüfung. Setze die Ecken an die sichtbare Aussenkante. Bei einer Wölbung hilft eine neue Aufnahme mit flach liegendem Abzug.",
 };
 
 export function getSourceEdgeTraces(traces) {

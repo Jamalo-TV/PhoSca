@@ -12,6 +12,14 @@ PRINT_SHADOW_EDGE_REVIEW = "PRINT_SHADOW_EDGE_REVIEW"
 PRINT_FAINT_RIM_REVIEW = "PRINT_FAINT_OUTER_RIM_REVIEW"
 PRINT_OUTER_EDGE_CONFLICT_REVIEW = "PRINT_OUTER_EDGE_CONFLICT_REVIEW"
 PRINT_BOUNDARY_REVISION = 9
+_PRINT_SIDES = ("top", "right", "bottom", "left")
+
+
+def bowed_print_sides(evidence: dict) -> list[int]:
+    bows = np.array([(evidence.get(side) or {}).get("measured_bow_px") or 0 for side in _PRINT_SIDES])
+    adjacent = np.roll(bows, 1)
+    paired = (bows * adjacent > 0) & (np.minimum(np.abs(bows), np.abs(adjacent)) >= .4)
+    return np.flatnonzero((np.abs(bows) >= 1) | paired | np.roll(paired, -1)).tolist()
 
 
 def _measured_side_bow(fitted: np.ndarray, length: float) -> float | None:
@@ -850,15 +858,12 @@ def refine_print_boundary(
                     resolved_outer_rim = True
     if not reasons and not resolved_outer_rim and conflicting_outward >= 2:
         reasons.append(PRINT_OUTER_EDGE_CONFLICT_REVIEW)
-    evidence = {side: result[1] for side, result in zip(("top", "right", "bottom", "left"), fitted)}
+    evidence = {side: result[1] for side, result in zip(_PRINT_SIDES, fitted, strict=True)}
     if any(line is None for line, _ in fitted):
         reason = "PRINT_BOUNDARY_AMBIGUOUS" if any(item["ambiguous"] for item in evidence.values()) else "PRINT_BOUNDARY_UNSUPPORTED"
         reasons.append(reason)
-    elif search_radius is None:
-        bows = np.array([item.get("measured_bow_px") or 0 for item in evidence.values()])
-        adjacent = np.roll(bows, 1)
-        if np.max(np.abs(bows)) >= 1 or np.any((bows * adjacent > 0) & (np.minimum(np.abs(bows), np.abs(adjacent)) >= .4)):
-            reasons.append("PRINT_BOUNDARY_CURVED")
+    elif search_radius is None and bowed_print_sides(evidence):
+        reasons.append("PRINT_BOUNDARY_CURVED")
     for index, (line, item) in enumerate(fitted):
         if line is None or item["corner_support"] >= 0.44:
             continue

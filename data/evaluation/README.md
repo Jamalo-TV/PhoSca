@@ -1720,10 +1720,45 @@ outline with extra points remained downloadable. The faint straight-paper
 control with curved ink allowed both modes after correcting the actual
 outer corners. Deliberately generated 3–5 pixel outward curves retained
 the hold, including the 4-pixel cases with light blur and JPEG quality 75
-and 85. A denser outline and a source-supported curve are required for
-this check. The isolated trace on page 37 does not meet that requirement.
-A light printed arc can produce an automatic curvature diagnosis even
-when the paper is straight.
+and 85. This contour check requires a dense outline and source-supported
+curve. An isolated trace uses the separate check below.
+
+### Keeping a measured paper curve in review after a manual edit
+
+Before this change, entering a measured aspect on Golden page 37 with
+the original corrected corners exported a 142,367-byte whole-print
+JPEG, despite the outstanding native curve. The manual correction now
+retains the earlier server geometry and curve evidence. A measured
+aspect or subpixel change alone leaves both modes and the older motif
+alias in review. Older completed edits of an extended classical outline
+can reconstruct the curve diagnosis from the original proposal and
+source pixels. Their existing ready flags are checked before export.
+
+A corrected straight alternative must move outside the disputed edge,
+agree with four independently supported straight sides, preserve the
+association with unaffected sides, and terminate at the print corners.
+A long album rail and a straight mount around the curved print are
+counterexamples. The actual paper boundary beside a curved printed
+region passed the check with a five-level pale step. The check also
+accepted that boundary after light blur and JPEG quality 75 or 85.
+An additional native sweep accepted all 36 straight-paper alternatives
+with dense curved ink outlines from 3.5 to 5 pixels and exterior
+steps of three to five grayscale levels.
+A weak straight-edge check also has to locate the transition at a
+consistent depth along the side. In a separate sweep, all 180 tested
+outward edits on 20 verified curved controls stayed in review. The
+normal API also withheld a genuinely curved pale JPEG75 control after
+its corners moved outward by 2.25 pixels.
+
+The normal page upload and browser edit on page 37 returned 404 for
+both downloads and the older motif alias after saving the aspect.
+Desktop and mobile still show the measured segments. The frozen
+geometric run passes all 23 recoverable crop checks. The automatic
+mode-availability and accuracy metrics in Golden and in the frozen
+classical benchmark match the preceding revision.
+On page 37 the manual boundary check took a median of 0.26 ms with
+the stored curve and 87.2 ms when reconstructed from the older
+extended outline, over seven warmed calls at two OpenCV threads.
 
 The Hegan album, The Rooms VA 103, has documented independent captures of
 removed prints. The publication uses the images with permission and
