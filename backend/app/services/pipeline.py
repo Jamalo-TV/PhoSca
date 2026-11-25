@@ -20,7 +20,7 @@ from app.core.metrics import (
     SEGMENTATION_CONFIDENCE,
     SEGMENTATION_SECONDS,
 )
-from app.database import get_session_factory
+from app.database import dispose_engine, get_session_factory
 from app.models import (
     Album,
     AlbumStatus,
@@ -1286,4 +1286,12 @@ async def process_pages_serialized(page_ids: list[UUID], settings: Settings | No
 
 
 def run_async(coro):
-    return asyncio.run(coro)
+    async def run_in_worker():
+        try:
+            return await coro
+        finally:
+            # Each Celery task owns a new loop. Close pooled asyncpg
+            # connections on that loop before the next task creates one.
+            await dispose_engine()
+
+    return asyncio.run(run_in_worker())

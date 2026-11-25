@@ -12,6 +12,26 @@ For direct Docker builds behind a registry proxy, pass the trusted CA bundle
 with `--secret id=registry_ca,src=/path/to/ca-bundle.pem`. BuildKit mounts it
 during dependency installation.
 
+## Queued processing smoke test
+
+The backend dependency constraints pair Celery 5.4 and redis-py 5 with a
+Kombu release that supports that transport. The worker closes its async
+database pool before ending each task's event loop. This matters when the
+same prefork child runs several PostgreSQL jobs.
+
+The local smoke test used PostgreSQL 15, Redis 7, Celery 5.4.0, Kombu
+5.6.2, redis-py 5.3.1 and the ordinary HTTP upload and album analysis
+endpoints. It queued an analysis before starting the worker, processed
+a real Golden page and a measured control, then processed another job
+in the same worker. Both jobs completed and the automatic downloads
+remained in review. After confirming the measured control, the application
+served both JPEG variants. A different tenant could not retrieve that
+photo.
+
+Repeat at least two consecutive jobs in a single worker when verifying
+the database or queue configuration. Check both the job result and the
+page status, including the state before the worker consumes the queue.
+
 ## Backup
 
 Run `scripts/backup.sh` from the backend or a maintenance container with `pg_dump`, `rsync`, and `gpg` available.

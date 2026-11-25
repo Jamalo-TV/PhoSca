@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import Any
 import cv2
 import numpy as np
 import piexif
+import pytest
 from sqlalchemy import select
 
 
@@ -16,6 +18,29 @@ def synthetic_album_page() -> np.ndarray:
     cv2.rectangle(image, (88, 108), (302, 272), (70, 120, 180), -1)
     cv2.line(image, (180, 108), (210, 272), (255, 255, 255), 2)
     return image
+
+
+def test_worker_disposes_the_database_pool_on_each_task_loop(monkeypatch) -> None:
+    from app.services import pipeline
+
+    events = []
+
+    async def dispose():
+        events.append(("close", asyncio.get_running_loop()))
+
+    async def task(fail=False):
+        events.append(("run", asyncio.get_running_loop()))
+        if fail:
+            raise ValueError("failed task")
+        return "processed"
+
+    monkeypatch.setattr(pipeline, "dispose_engine", dispose)
+    assert pipeline.run_async(task()) == "processed"
+    with pytest.raises(ValueError, match="failed task"):
+        pipeline.run_async(task(fail=True))
+    assert [name for name, _ in events] == ["run", "close", "run", "close"]
+    assert events[0][1] is events[1][1] and events[2][1] is events[3][1]
+    assert events[0][1] is not events[2][1]
 
 
 def challenging_album_page() -> tuple[np.ndarray, list[tuple[int, int, int, int]]]:
