@@ -11,9 +11,10 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic,
 from app.pipeline.print_edges import _edge_band, _is_pale_stock, refine_print_boundary
 
 
-MULTIPANEL_PRINT_REVISION = 5
+MULTIPANEL_PRINT_REVISION = 6
 MULTIPANEL_PRINT_REVIEW = "MULTIPANEL_PRINT_REVIEW"
 RECOVERED_STOCK_SOURCE = "shared_stock_boundary"
+GRID_OUTLINE_REVIEW_SOURCE = "shared_grid_outline_review"
 _UNIT_QUAD = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
 _STOCK_DISCOVERY_PIXELS = 800_000
 
@@ -111,7 +112,9 @@ def _nested_print_cast_shadow(image: np.ndarray, start: np.ndarray, stop: np.nda
     )
 
 
-def grid_fragment_on_shared_stock(image: np.ndarray, outer_quad: np.ndarray, inner_quad: np.ndarray) -> bool:
+def grid_fragment_on_shared_stock(
+    image: np.ndarray, outer_quad: np.ndarray, inner_quad: np.ndarray, *, check_seam_edge: bool = False,
+) -> bool:
     """Check whether a proposed fragment cuts across a regular printed grid."""
     if min(np.linalg.norm(np.roll(outer_quad, -1, axis=0) - outer_quad, axis=1)) < 480:
         return False
@@ -128,7 +131,7 @@ def grid_fragment_on_shared_stock(image: np.ndarray, outer_quad: np.ndarray, inn
 
         from_unit = np.linalg.inv(transform)
         native = cv2.perspectiveTransform(inner[None], from_unit)[0]
-        if _grid_fragment_has_paper_edge(image, native):
+        if _grid_fragment_has_paper_edge(image, native, check_seam_edge=check_seam_edge):
             return False
         if any(_grid_fragment_corner_shadow(image, from_unit, corner, outward)
                for corner, outward in zip(inner[:2], (-1, 1), strict=True)):
@@ -152,10 +155,11 @@ def grid_fragment_on_shared_stock(image: np.ndarray, outer_quad: np.ndarray, inn
     return False
 
 
-def _grid_fragment_has_paper_edge(image: np.ndarray, quad: np.ndarray) -> bool:
+def _grid_fragment_has_paper_edge(image: np.ndarray, quad: np.ndarray, *, check_seam_edge: bool) -> bool:
     # A border along the proposed cut or a shadow alongside it is evidence
     # for a layered print even when both layers carry the same design.
-    seam = _edge_band(image, quad[0], quad[1], [2, 3, 4, 5, 6, 7, 8])
+    offsets = list(range(0 if check_seam_edge else 2, 9))
+    seam = _edge_band(image, quad[0], quad[1], offsets)
     if seam is None:
         return True
     pale = (seam[..., 0] >= 172) & (np.max(np.abs(seam[..., 1:] - 128), axis=2) <= 16)

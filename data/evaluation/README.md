@@ -2292,8 +2292,8 @@ IoU 0.8377 and maximum corner distance 60.4 native pixels. The suggested
 outline has IoU 0.9847 and maximum corner distance 4.9 pixels. The right-hand
 paper also receives an outline on JPEG75 and the lossless resized input.
 On all three variants, the sleeve receives no suggestion and the existing
-previews keep their pixels and homographies. The instance benchmark remains
-at zero matches and five counted proposals at IoU 0.85 for JPEG55. The
+previews keep their pixels and homographies. At the outline-hint milestone,
+JPEG55 had zero matches and five counted proposals at IoU 0.85. The
 source still lacks independently verified motif geometry and aspect.
 
 The `print_outline_suggestion` revision is recorded in both configuration
@@ -2303,3 +2303,61 @@ the frozen comparisons reproduced their existing instance and crop metrics.
 The frozen synthetic control retains 18/18 instance matches and the seeded
 geometry test retains 11/11 whole-print and 12/12 motif passes. This camera
 sample remains a development case.
+
+### Corroborate a recovered outer contour with the printed grid
+
+On the same 33%/JPEG55 input, the local stock outline encloses an existing
+weak outer contrast proposal and a lower segmentation fragment. The
+expanded outline makes both native side margins and repeated perforation
+rows measurable across the fragment's proposed cut. The check looks for
+paper and cast shadows right up to that cut. One matching pair is enough
+to record the wider visible outline for the whole print and move the
+fragment to page-level count review. The original proposal still supplies
+the crop warp. Both modes explicitly require confirmation of the paper edge.
+This behavior is recorded in multipanel revision 6.
+
+At instance IoU 0.85 this camera input improves from zero to one matched
+print, from five to three false proposals and from five to four counted
+rows. Final mask IoU against the draft reference is 0.9899, up from 0.8392.
+The original whole-print preview still has about 16.37% cutoff against the
+draft reference. The better outer contour is available as an editable
+suggestion. Neither mode can be downloaded automatically. The four
+retained preview JPEGs, crop homographies and original warps match the
+baseline byte-for-byte or coordinate-for-coordinate. The case has no
+independent motif geometry or aspect reference.
+
+The normal upload was replayed on desktop, mobile and through the API.
+The editor shows the wider outer contour, and count review shows the
+uncounted fragment separately. Saving the outer crop leaves the count
+decision available. Adding the fragment gives five rows and repeating
+that request returns the same photo. A count confirmation must acknowledge
+the deferred fragment. The unchanged native camera source and the JPEG75
+and lossless 33% variants reproduced their preceding results. The latter
+two still rely on the outer suggestion because the proposed cut lacks the
+required perforation spacing across it.
+
+One- to three-pixel separate rims remained counted before and after
+JPEG55 recompression. Spanning gaps and stronger shadows on three sides
+also prevented grouping. A seam-only dark mark and the weakest raised
+layers can still look continuous. On the actual negative sleeve the left
+margin continues through the split, while the right margin shows a native
+lightness change of about 8.5 Lab units. Accepting one continuous margin
+would also accept 16 of 33 separate-layer controls. The three sleeve
+proposals continue to require individual review.
+
+Golden, Domoritz, the stock challenge and the prior mixed frozen replay
+reproduced their previous instance and crop measurements. The frozen
+synthetic control retains 18/18 matches. Seeded geometry retains 11/11
+whole-print and 12/12 motif passes. On the positive camera example, the
+count-review stage took 100 ms median and 114 ms p95 over 20 warm runs
+with one OpenCV thread.
+
+### Verify that catalogued pairs represent independent acquisitions
+
+A leave-one-out affine fit of the 15 saved American Colony draft landmarks
+gives 0.409 native pixels at p95. Axis-aligned crop and resize gives 1.267
+pixels. A transformed derivative fits the available coordinate evidence.
+An independent exposure still needs confirmation using the native raster
+noise and pixel grids. The saved transfer inventories do not contain the
+two exact Colony file hashes. Earlier near-duplicate comparisons did not
+cover this candidate or the Russell album.

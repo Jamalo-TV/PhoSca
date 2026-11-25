@@ -22,6 +22,7 @@ from app.pipeline.geometry import (
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.motif_boundary import close_motif_outline, motif_outline_corners_supported, trace_motif_boundary
+from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.manual_paper_boundary import (
     MANUAL_CAPTURE_OUTLINE_REVIEW, MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION,
     check_manual_paper_boundary,
@@ -607,7 +608,7 @@ def _rim_like_sides(image: np.ndarray) -> set[str]:
 def _proposal_polygon(mask: dict, width: int, height: int) -> np.ndarray | None:
     # A repeat run and its neighbors must use the original proposal, regardless
     # of which instances already have a measured outline in the database.
-    if mask.get("visible_polygon_source") in _REFINED_VISIBILITY_SOURCES:
+    if mask.get("visible_polygon_source") in _REFINED_VISIBILITY_SOURCES | {GRID_OUTLINE_REVIEW_SOURCE}:
         polygon = mask.get("proposal_visible_polygon") or mask.get("polygon")
     else:
         polygon = mask.get("visible_polygon") or mask.get("polygon")
@@ -621,7 +622,7 @@ def _proposal_polygon(mask: dict, width: int, height: int) -> np.ndarray | None:
 
 def apply_refined_visibility(mask: dict | None, correction: dict) -> dict | None:
     outline = correction.get("refined_visible_polygon")
-    if mask is None:
+    if mask is None or mask.get("visible_polygon_source") == GRID_OUTLINE_REVIEW_SOURCE:
         return mask
     was_refined = mask.get("visible_polygon_source") in _REFINED_VISIBILITY_SOURCES
     if not outline and not was_refined:
@@ -1514,6 +1515,13 @@ def correct_photo_crop(
             if print_outline is not None and trim_border else None,
         )
         modes = result.metadata["crop_modes"]
+        if not manual and mask.get("visible_polygon_source") == GRID_OUTLINE_REVIEW_SOURCE:
+            modes["full_print"]["suggested_warp_quad"] = mask["visible_polygon"]
+            for mode in modes.values():
+                mode["status"] = "review_needed"
+                if PRINT_EDGE_CONFIRMATION not in mode["reason_codes"]:
+                    mode["reason_codes"].append(PRINT_EDGE_CONFIRMATION)
+            return result
         uncertain = {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_BOUNDARY_UNSUPPORTED", "PRINT_OUTER_RIM_UNCERTAIN"}
         if (enable_classical_retry and not manual and mask.get("detector_source") == "contrast_region"
                 and not mask.get("warp_quad") and not print_edge_traces and uncertain.intersection(full_reasons)

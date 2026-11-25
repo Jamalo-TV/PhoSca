@@ -6,7 +6,8 @@ import pytest
 
 from app.config import Settings
 from app.pipeline import segmentation
-from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVIEW, nested_print_on_shared_stock
+from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, nested_print_on_shared_stock
+from app.pipeline.perspective import _proposal_polygon, apply_refined_visibility, correct_photo_crop
 from app.pipeline.print_edges import PRINT_EDGE_CONFIRMATION
 
 
@@ -93,10 +94,7 @@ def test_already_held_contour_can_be_a_parent_but_not_a_fragment():
     assert retained.review_reasons == [MULTIPANEL_PRINT_REVIEW, PRINT_EDGE_CONFIRMATION]
 
 
-@pytest.mark.parametrize("layout", [
-    "continuous", "perspective_jpeg", "second_rim", "raised_print", "top_shadow", "side_shadow", "broken_cadence",
-])
-def test_partial_grid_count_requires_original_pixel_evidence(layout):
+def _partial_grid_page(layout):
     height, width = 1140, 900
     page = np.full((height, width, 3), (88, 96, 102), np.uint8)
     page[50:1090, 50:850] = (214, 217, 219)
@@ -136,6 +134,15 @@ def test_partial_grid_count_requires_original_pixel_evidence(layout):
         outer, inner = [np.column_stack((height - 1 - quad[:, 1], quad[:, 0])) for quad in (outer, inner)]
         height, width = page.shape[:2]
 
+    return page, outer, inner
+
+
+@pytest.mark.parametrize("layout", [
+    "continuous", "perspective_jpeg", "second_rim", "raised_print", "top_shadow", "side_shadow", "broken_cadence",
+])
+def test_partial_grid_count_requires_original_pixel_evidence(layout):
+    page, outer, inner = _partial_grid_page(layout)
+    height, width = page.shape[:2]
     settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
     detections = []
     for points, source, detector, score in (
@@ -159,6 +166,54 @@ def test_partial_grid_count_requires_original_pixel_evidence(layout):
         assert result.metadata["nested_print_count_suggestions"] == 1
     else:
         assert result is proposals
+
+
+@pytest.mark.parametrize("cut_edge", [False, True])
+def test_recovering_grid_outline_retains_the_crop_seed_and_checks_thin_separating_edges(cut_edge):
+    page, outer, inner = _partial_grid_page("continuous")
+    paper = np.full(page.shape[:2], 0, np.uint8)
+    cv2.fillConvexPoly(paper, outer.astype(np.int32), 1)
+    page[paper == 0] = (111, 150, 185)
+    page[1066:1090, 50:850] = (214, 217, 219)
+    if cut_edge:
+        cv2.line(page, tuple(inner[0].astype(int)), tuple(inner[2].astype(int)), (214, 217, 219), 2)
+    seed = np.float32([[85, 61], [830, 107], [832, 1084], [79, 1084]])
+    height, width = page.shape[:2]
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    detections = []
+    for points, source, detector_source, score in (
+        (seed, "classical_border_quad", "contrast_region", .56),
+        (inner, "yolo_seg_mask", "yolo_onnx", .64),
+    ):
+        item = segmentation._make_detection(
+            box={}, points=points, confidence=.88, image_width=width, image_height=height, settings=settings,
+            source=source, detector_source=detector_source,
+        )
+        item.mask["boundary_evidence"] = {"score": score}
+        detections.append(item)
+    proposals = segmentation.SegmentationResult(detections, {})
+    result = segmentation._defer_nested_print_candidates(page, proposals)
+    if cut_edge:
+        assert result is proposals
+        return
+
+    photo, = result.detections
+    assert photo.mask["visible_polygon_source"] == GRID_OUTLINE_REVIEW_SOURCE
+    assert photo.review_reasons == [MULTIPANEL_PRINT_REVIEW]
+    assert photo.mask["polygon"] == detections[0].mask["polygon"]
+    suggestion, = result.metadata["fusion"]["deferred_print_proposals"]
+    assert suggestion["reason"] == "shared_print_grid" and len(suggestion["polygon"]) == 4
+    assert np.allclose(_proposal_polygon(photo.mask, width, height), seed)
+    assert apply_refined_visibility(photo.mask, {}) == photo.mask
+    options = dict(dual_mode=True, auto_orient=False, protect_regions=False)
+    baseline = correct_photo_crop(page, photo.bounding_box, detections[0].mask, **options)
+    review = correct_photo_crop(page, photo.bounding_box, photo.mask, **options)
+    assert np.array_equal(review.rectified_untrimmed, baseline.rectified_untrimmed)
+    assert review.metadata["warp_quad"] == baseline.metadata["warp_quad"]
+    modes = review.metadata["crop_modes"]
+    assert modes["full_print"]["suggested_warp_quad"] == photo.mask["visible_polygon"]
+    assert all(mode["status"] == "review_needed" and PRINT_EDGE_CONFIRMATION in mode["reason_codes"]
+               for mode in modes.values())
 
 
 @pytest.mark.parametrize("separate_print", [False, True])

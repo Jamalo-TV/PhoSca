@@ -33,13 +33,15 @@ from app.pipeline.geometry import (
 from app.pipeline.image_ops import normalized_box_to_pixels, pixel_box_to_normalized
 from app.pipeline.mounted_prints import mounted_print_evidence
 from app.pipeline.multipanel_prints import (
-    MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE, grid_fragment_on_shared_stock, nested_print_on_shared_stock,
+    GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE, grid_fragment_on_shared_stock,
+    nested_print_on_shared_stock,
     recover_shared_stock_outline, shared_stock_outline,
 )
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.print_edges import (
     PRINT_EDGE_CONFIRMATION, _backing_color, _is_pale_stock, line_fit_omits_print_stock, refine_print_boundary,
 )
+from app.pipeline.print_outline_suggestion import suggest_outer_print_outline
 from app.pipeline.quality import evaluate_segmentation_geometry
 from app.pipeline.scalloped_prints import (
     SCALLOPED_PRINT_CONFLICT, SCALLOPED_PRINT_REVIEW, measure_scalloped_print, possible_layer_edge, suggest_scalloped_motif,
@@ -2882,7 +2884,9 @@ def _refine_source_contours(
     candidates = {}
     for index, (item, own) in enumerate(zip(result.detections, originals, strict=True)):
         if (item.mask.get("detector_source") in {CONTRAST_COMPONENT_SOURCE, RECOVERED_STOCK_SOURCE, CAPTURE_EDGE_SOURCE}
-                or item.mask.get("nested_print_suggestion") or SCALLOPED_PRINT_CONFLICT in item.review_reasons):
+                or item.mask.get("nested_print_suggestion")
+                or item.mask.get("visible_polygon_source") == GRID_OUTLINE_REVIEW_SOURCE
+                or SCALLOPED_PRINT_CONFLICT in item.review_reasons):
             continue
         measured = measure_detected_visibility(
             image, item.mask, own, [other for i, other in enumerate(originals) if i != index], regions,
@@ -3024,32 +3028,53 @@ def _suggest_adjacent_album_edge_print(image: np.ndarray, result: SegmentationRe
 
 def _grid_fragment_candidates(
     image: np.ndarray, detections: list[SegmentationDetection], quads: dict[int, np.ndarray],
-) -> Iterator[tuple[int, int, np.ndarray]]:
+) -> Iterator[tuple[int, int, np.ndarray, np.ndarray | None]]:
     height, width = image.shape[:2]
+    scale = np.float32([width - 1, height - 1])
+    outlines = [_detection_polygon(detection) for detection in detections]
+    recovered = {}
     for child, item in enumerate(detections):
+        child_score = (item.mask.get("boundary_evidence") or {}).get("score", 1)
         if (not item.geometry_valid or item.review_reasons or item.mask.get("source") != "yolo_seg_mask"
-                or (item.mask.get("boundary_evidence") or {}).get("score", 1) > .62):
+                or child_score > .66):
             continue
-        polygon = _detection_polygon(item)
+        polygon = outlines[child]
         if len(polygon) < 4:
             continue
         for parent, outer_quad in quads.items():
             anchor = detections[parent]
-            if (anchor.mask.get("detector_source") != "edge_contour" or anchor.confidence < .75
-                    or (anchor.mask.get("boundary_evidence") or {}).get("score", 0) < .75):
+            source = anchor.mask.get("detector_source")
+            score = (anchor.mask.get("boundary_evidence") or {}).get("score", 0)
+            needs_outline = (source == "contrast_region" and .45 <= score < .75 and not anchor.mask.get("warp_quad"))
+            native_outline = source == "edge_contour" and score >= .75 and child_score <= .62
+            if anchor.confidence < .75 or not (needs_outline or native_outline):
                 continue
             iou, _, _, contained = _normalized_box_overlap(anchor.bounding_box, item.bounding_box)
             if not .28 <= iou <= .65 or contained < .96:
                 continue
-            overlap = normalized_polygon_overlap(_detection_polygon(anchor), polygon)
-            if not .28 <= overlap.iou < .60 or overlap.second_containment < .99:
+            overlap = normalized_polygon_overlap(outlines[parent], polygon)
+            if not .28 <= overlap.iou < .60 or overlap.second_containment < (.96 if needs_outline else .99):
                 continue
             try:
-                inner_quad, method = quad_from_polygon(normalized_vertices_to_pixels(polygon, width, height))
-                if method != "minimum_area_rect" and grid_fragment_on_shared_stock(
-                    image, _order_points(outer_quad), inner_quad,
-                ):
-                    yield parent, child, inner_quad
+                inner_quad, method = quad_from_polygon(polygon * scale)
+                if method == "minimum_area_rect":
+                    continue
+                outer = _order_points(outer_quad)
+                alternative = None
+                if needs_outline:
+                    if np.linalg.norm(np.roll(outer, -1, axis=0) - outer, axis=1).min() < 480:
+                        continue
+                    if parent not in recovered:
+                        neighbors = [poly * scale for i, poly in enumerate(outlines) if i != parent]
+                        recovered[parent] = suggest_outer_print_outline(image, outer, outer, neighbors)
+                    alternative = recovered[parent]
+                    if alternative is None or normalized_polygon_overlap(
+                        alternative / scale, polygon,
+                    ).second_containment < .99:
+                        continue
+                    outer = alternative
+                if grid_fragment_on_shared_stock(image, outer, inner_quad, check_seam_edge=needs_outline):
+                    yield parent, child, inner_quad, alternative
             except (cv2.error, ValueError):
                 continue
 
@@ -3082,9 +3107,12 @@ def _defer_nested_print_candidates(image: np.ndarray, result: SegmentationResult
             quads[child] = inner_quad
             pairs.append((parent, child))
     suggestions = quads.copy()
-    for parent, child, inner_quad in _grid_fragment_candidates(image, detections, quads):
+    outer_suggestions = {}
+    for parent, child, inner_quad, alternative in _grid_fragment_candidates(image, detections, quads):
         suggestions[child] = inner_quad
         pairs.append((parent, child))
+        if alternative is not None:
+            outer_suggestions[parent] = _normalized_polygon(alternative, width, height)
     degree = Counter(index for pair in pairs for index in pair)
     deferred = {
         parent: child for parent, child in pairs
@@ -3093,15 +3121,34 @@ def _defer_nested_print_candidates(image: np.ndarray, result: SegmentationResult
     if not deferred:
         return result
     updated = detections.copy()
+    metadata = {**result.metadata}
+    fusion = {**(metadata.get("fusion") or {})}
+    pending = list(fusion.get("deferred_print_proposals") or [])
+    next_id = max((proposal["id"] for proposal in pending), default=-1) + 1
+    outer_reviews = 0
     for parent, child in deferred.items():
         item = updated[parent]
-        updated[parent] = replace(item, mask={
-            **item.mask, "nested_print_suggestion": _normalized_polygon(suggestions[child], width, height),
-        }, review_reasons=[MULTIPANEL_PRINT_REVIEW, *item.review_reasons])
+        outline = _normalized_polygon(suggestions[child], width, height)
+        mask = {**item.mask}
+        if parent in outer_suggestions:
+            mask.update(visible_polygon=outer_suggestions[parent], visible_polygon_source=GRID_OUTLINE_REVIEW_SOURCE)
+            if prior := item.mask.get("visible_polygon"):
+                mask["proposal_visible_polygon"] = prior
+            # Count review is a page decision and survives a separate crop edit.
+            pending.append({"id": next_id, "reason": "shared_print_grid", "polygon": outline})
+            next_id += 1
+            outer_reviews += 1
+        else:
+            mask["nested_print_suggestion"] = outline
+        updated[parent] = replace(item, mask=mask, review_reasons=[MULTIPANEL_PRINT_REVIEW, *item.review_reasons])
     uncounted = set(deferred.values())
+    metadata["nested_print_count_suggestions"] = len(uncounted) - outer_reviews
+    if outer_reviews:
+        metadata["fusion"] = {**fusion, "deferred_print_proposals": pending}
+        metadata["grid_outline_count_suggestions"] = outer_reviews
     return SegmentationResult(
         [item for index, item in enumerate(updated) if index not in uncounted],
-        {**result.metadata, "nested_print_count_suggestions": len(uncounted)},
+        metadata,
     )
 
 
