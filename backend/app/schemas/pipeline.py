@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.models import OCRTextType, PageStatus, PhotoStatus
+from app.pipeline.decisions import photo_is_reviewed_non_print
 from app.pipeline.variants import photo_image_url, variant_path_from_photo
 from app.schemas.common import BoundingBox, NormalizedPoint, PrintSizeMM, SegmentationMask, StrictSchema
 
@@ -59,6 +60,11 @@ class PhotoRead(BaseModel):
     is_duplicate_of: UUID | None
     enhancement_applied: dict
     status: PhotoStatus
+
+    @computed_field
+    @property
+    def reviewed_non_print(self) -> bool:
+        return photo_is_reviewed_non_print(self)
 
     @computed_field
     @property

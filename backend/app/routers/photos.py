@@ -21,7 +21,7 @@ from app.database import get_async_session
 from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PageStatus, PhotoStatus, ProcessingRun, StageRun
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
 from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE, reviewed_outline_covers_traces
-from app.pipeline.decisions import is_reviewed_non_print
+from app.pipeline.decisions import is_reviewed_non_print, photo_is_reviewed_non_print
 from app.pipeline.edge_trace import measure_edge_trace
 from app.pipeline.image_ops import load_image, normalized_box_to_pixels
 from app.pipeline.manual_paper_boundary import (
@@ -311,6 +311,9 @@ async def get_photo_image(
     principal: Principal | None = Depends(get_principal),
 ) -> FileResponse:
     photo = await _photo_for_principal(session, photo_id, principal)
+    rejected = photo_is_reviewed_non_print(photo)
+    if rejected and variant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
     selected_variant = variant or released_variant_from_photo(photo)
     selected_path = variant_path_from_photo(photo, selected_variant)
     if not selected_path or not Path(selected_path).exists():
@@ -324,7 +327,7 @@ async def get_photo_image(
         media_type="image/png" if preview else "image/jpeg",
         filename=filename,
         content_disposition_type="inline",
-        headers={"Cache-Control": "private, no-store"} if preview else None,
+        headers={"Cache-Control": "private, no-store"} if preview or rejected else None,
     )
 
 

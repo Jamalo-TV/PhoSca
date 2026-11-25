@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.core.metrics import RELEASE_DECISIONS
 from app.pipeline.camera_calibration import capture_calibration
 from app.pipeline.crop_validation import crop_validation_evidence
-from app.pipeline.decisions import is_reviewed_non_print
+from app.pipeline.decisions import photo_is_reviewed_non_print
 from app.pipeline.image_ops import calculate_blur_score
 from app.pipeline.manual_paper_boundary import manual_paper_download_needs_review
 from app.pipeline.quality_critic import evaluate_candidate
@@ -229,6 +229,9 @@ def variants_from_metadata(metadata: dict | None) -> dict[str, dict]:
 
 
 def variant_path_from_photo(photo: Any, variant: str) -> str | None:
+    # An explicit source-corrected view remains available to review the rejection.
+    if photo_is_reviewed_non_print(photo) and variant not in {"source_corrected", "source_corrected_untrimmed"}:
+        return None
     metadata = getattr(photo, "enhancement_applied", None) or {}
     correction = metadata.get("correction") or {}
     modes = correction.get("crop_modes") or {}
@@ -243,10 +246,6 @@ def variant_path_from_photo(photo: Any, variant: str) -> str | None:
         if not automatic and manual_paper_download_needs_review(metadata, mask.get("warp_quad") or mask.get("polygon")):
             return None
     if mode in {"full_print", "image_only"} or mode in CROP_REVIEW_PREVIEWS:
-        if is_reviewed_non_print(
-            metadata.get("review_rejected_detection"), getattr(photo, "bounding_box", None), getattr(photo, "segmentation_mask", None),
-        ):
-            return None
         if mode in CROP_REVIEW_PREVIEWS:
             path = correction.get(f"{mode}_path")
             crop_mode = modes.get(CROP_REVIEW_PREVIEWS[mode]) or {}

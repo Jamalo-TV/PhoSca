@@ -123,6 +123,72 @@ async def test_edge_trace_reads_the_exif_oriented_source_without_editing_review(
     assert oversized.json()["detail"] == "edge_trace_image_too_large"
 
 
+async def test_rejected_crop_is_hidden_from_album_browsing_and_kept_for_geometry_review(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, OCRResult
+
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    album_id, page_id, photo_id = await _seed_review_data()
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        metadata = photo.enhancement_applied
+        photo.enhancement_applied = {**metadata, "variants": {
+            **metadata["variants"], "source_corrected_trimmed": {"path": photo.original_storage_path},
+        }}
+        session.add(OCRResult(page_id=page_id, photo_id=photo_id, text_content="Searchable caption", ocr_engine="test"))
+        await session.commit()
+
+    album_url = f"/api/v1/albums/{album_id}"
+    photo_url = f"/api/v1/photos/{photo_id}"
+    assert (await client.get(f"{photo_url}/image")).status_code == 200
+    assert (await client.get(f"{album_url}/photos")).json()[0]["id"] == str(photo_id)
+    event = await client.post("/api/v1/review/events", json={
+        "task_type": "geometry", "task_id": str(photo_id), "answer": "wrong_object", "idempotency_key": uuid4().hex,
+    })
+    assert event.status_code == 201
+
+    for summary in ((await client.get(album_url)).json(), (await client.get("/api/v1/albums")).json()[0]):
+        assert summary["photos_extracted"] == 0
+        assert summary["review_needed_count"] == 1  # The page's count review stays open.
+    assert (await client.get(f"{album_url}/photos")).json() == []
+    archived, = (await client.get(f"{album_url}/photos", params={"include_rejected": True})).json()
+    assert archived["id"] == str(photo_id)
+    assert archived["reviewed_non_print"] is True
+    assert archived["enhancement_applied"]["review_rejected_detection"]
+    assert (await client.get(f"{photo_url}/image")).status_code == 404
+    for variant in ("original", "source_corrected_trimmed", "enhanced", "full_print", "image_only"):
+        assert (await client.get(f"{photo_url}/image", params={"variant": variant})).status_code == 404
+    evidence = await client.get(f"{photo_url}/image", params={"variant": "source_corrected"})
+    assert evidence.status_code == 200 and evidence.headers["cache-control"] == "private, no-store"
+    item, = (await client.get("/api/v1/review/queue", params={"album_id": str(album_id), "type": "geometry"})).json()
+    assert item["id"] == str(photo_id)
+    match, = (await client.get("/api/v1/search", params={"q": "Searchable"})).json()
+    assert match["page_id"] == str(page_id) and match["photo_id"] is None
+
+    quad = archived["segmentation_mask"]["warp_quad"]
+    restored = await client.patch(f"{photo_url}/bounding-box", json={
+        "bounding_box": archived["bounding_box"],
+        "segmentation_mask": {"source": "manual_quad", "warp_quad": quad, "polygon": quad},
+    })
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["reviewed_non_print"] is False
+    assert (await client.get(f"{album_url}/photos")).json()[0]["id"] == str(photo_id)
+    assert (await client.get(album_url)).json()["photos_extracted"] == 1
+
+    # The rejection only hides the geometry that was actually reviewed.
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.enhancement_applied = {**photo.enhancement_applied,
+            "review_rejected_detection": archived["enhancement_applied"]["review_rejected_detection"],
+        }
+        await session.commit()
+    assert (await client.get(f"{album_url}/photos")).json()[0]["reviewed_non_print"] is False
+    assert (await client.get(album_url)).json()["photos_extracted"] == 1
+
+
 @pytest.mark.parametrize("surface", ["bowed_paper", "straight_paper", "printed_arc"])
 async def test_manual_export_checks_the_server_owned_paper_outline(client, monkeypatch, surface):
     from app.config import get_settings

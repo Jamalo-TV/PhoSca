@@ -65,8 +65,9 @@ export async function listPages(albumId, signal) {
   return parseResponse(await apiFetch(`/api/v1/albums/${albumId}/pages`, { signal }));
 }
 
-export async function listPhotos(albumId) {
-  return parseResponse(await apiFetch(`/api/v1/albums/${albumId}/photos`));
+export async function listPhotos(albumId, { includeRejected = false } = {}) {
+  const query = includeRejected ? "?include_rejected=true" : "";
+  return parseResponse(await apiFetch(`/api/v1/albums/${albumId}/photos${query}`));
 }
 
 export function hasPhotoCrop(photo) {

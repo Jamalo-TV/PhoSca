@@ -1388,12 +1388,11 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(fragmentOutlineReason);
   const crossingReview = selected?.segmentation_confidence != null
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(crossingPrintReason);
-  const rejectedDetection = (overlapReview || fragmentReview || crossingReview)
-    && Boolean(selected.enhancement_applied?.review_rejected_detection);
+  const rejectedDetection = Boolean(selected?.reviewed_non_print);
   const fragmentMask = fragmentReview && !rejectedDetection ? selected.segmentation_mask : null;
   const fragmentOutline = useMemo(() => getFragmentOutline(fragmentMask), [fragmentMask]);
   const suggestedNeighbor = selected?.segmentation_mask?.adjacent_print_suggestion;
-  const alternatePolygon = selected?.segmentation_confidence != null && !selected.enhancement_applied?.review_rejected_detection
+  const alternatePolygon = selected?.segmentation_confidence != null && !rejectedDetection
     ? suggestedNeighbor || (selected.segmentation_mask?.scalloped_alternate_is_inner
       && selected.segmentation_mask?.scalloped_alternate_polygon)
     : null;
@@ -1405,7 +1404,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
     (point, index) => point.x === selectedShape.warpQuad[index].x && point.y === selectedShape.warpQuad[index].y,
   ));
   const selectedModes = selected?.crop_modes || getCropModes(selected);
-  const fullPrintMode = selected?.enhancement_applied?.review_rejected_detection ? null : selectedModes?.full_print;
+  const fullPrintMode = rejectedDetection ? null : selectedModes?.full_print;
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
   const motifReview = selectedModes?.image_only;
   const imageSuggestion = cyclicQuad(sanitizePolygon(motifReview?.suggested_warp_quad));
@@ -1894,7 +1893,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
   );
 }
 
-function ReviewView({ albumId, albumStatus, pages, photos, selectedPageId, setSelectedPageId, refresh }) {
+function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selectedPageId, setSelectedPageId, refresh }) {
   const [reviewType, setReviewType] = useState("segmentation");
   const [reviewItems, setReviewItems] = useState([]);
   const [ocrRows, setOcrRows] = useState([]);
@@ -1909,10 +1908,11 @@ function ReviewView({ albumId, albumStatus, pages, photos, selectedPageId, setSe
         if (payload?.photo_id) enriched.set(payload.photo_id, payload);
       });
     });
-    return photos
+    return (reviewType === "geometry" ? reviewPhotos : photos)
       .filter((photo) => photo.page_id === selectedPage?.id)
       .map((photo) => ({ ...photo, ...(enriched.get(photo.id) || {}) }));
-  }, [photos, reviewItems, selectedPage]);
+  }, [photos, reviewPhotos, reviewItems, reviewType, selectedPage]);
+  const currentPhotoId = pagePhotos.some((photo) => photo.id === selectedPhotoId) ? selectedPhotoId : null;
 
   useEffect(() => {
     if (selectedPage && selectedPage.id !== selectedPageId) setSelectedPageId(selectedPage.id);
@@ -1964,8 +1964,8 @@ function ReviewView({ albumId, albumStatus, pages, photos, selectedPageId, setSe
   }
 
   async function reprocessSelected() {
-    if (!selectedPhotoId) return;
-    await reprocessPhoto(selectedPhotoId);
+    if (!currentPhotoId) return;
+    await reprocessPhoto(currentPhotoId);
     await refreshCorrections();
   }
 
@@ -1989,7 +1989,7 @@ function ReviewView({ albumId, albumStatus, pages, photos, selectedPageId, setSe
         <ReviewCanvas
           page={selectedPage}
           photos={pagePhotos}
-          selectedPhotoId={selectedPhotoId}
+          selectedPhotoId={currentPhotoId}
           onSelectPhoto={setSelectedPhotoId}
           onSaveBox={saveBox}
           onAddPhoto={addPhoto}
@@ -1999,7 +1999,7 @@ function ReviewView({ albumId, albumStatus, pages, photos, selectedPageId, setSe
       <section className="side-surface">
         <div className="section-title">
           <h2>OCR Text</h2>
-          <button className="icon-button" type="button" disabled={!selectedPhotoId} onClick={reprocessSelected} title="Reprocess selected photo">
+          <button className="icon-button" type="button" disabled={!currentPhotoId} onClick={reprocessSelected} title="Reprocess selected photo">
             <RefreshCw size={16} />
           </button>
         </div>
@@ -2307,6 +2307,7 @@ export default function App({ uploadQueueScope }) {
   const [pages, setPages] = useState([]);
   const [photos, setPhotos] = useState([]);
   const [selectedPageId, setSelectedPageId] = useState(null);
+  const [reviewPhotos, setReviewPhotos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [notice, setNotice] = useState("");
@@ -2322,6 +2323,7 @@ export default function App({ uploadQueueScope }) {
       setSelectedPageId(null);
       setPages([]);
       setPhotos([]);
+      setReviewPhotos([]);
     }
     if (nextTab) setActiveTab(nextTab);
   }, []);
@@ -2340,13 +2342,17 @@ export default function App({ uploadQueueScope }) {
   const refreshAlbumData = useCallback(async () => {
     if (!selectedAlbumId) return;
     const nextAlbums = await listAlbums();
-    const [nextPages, nextPhotos] = await Promise.all([listPages(selectedAlbumId), listPhotos(selectedAlbumId)]);
+    const [nextPages, nextPhotos, history] = await Promise.all([
+      listPages(selectedAlbumId), listPhotos(selectedAlbumId),
+      activeTab === "review" ? listPhotos(selectedAlbumId, { includeRejected: true }) : null,
+    ]);
     if (selectedAlbumRef.current !== selectedAlbumId) return;
     setPages(nextPages);
     setPhotos(nextPhotos);
+    if (history) setReviewPhotos(history);
     setAlbums(nextAlbums);
     setSelectedPageId((current) => nextPages.some((page) => page.id === current) ? current : nextPages[0]?.id || null);
-  }, [selectedAlbumId]);
+  }, [activeTab, selectedAlbumId]);
 
   useEffect(() => {
     refreshAlbums().catch((error) => setNotice(error.message));
@@ -2481,6 +2487,7 @@ export default function App({ uploadQueueScope }) {
           albumStatus={selectedAlbum?.status}
           pages={pages}
           photos={photos}
+          reviewPhotos={reviewPhotos}
           selectedPageId={selectedPageId}
           setSelectedPageId={setSelectedPageId}
           refresh={refreshAlbumData}

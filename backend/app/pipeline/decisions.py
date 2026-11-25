@@ -26,6 +26,13 @@ def is_reviewed_non_print(rejection: dict | None, bounding_box: dict | None, mas
     return bool(rejection and rejection == {"bounding_box": bounding_box, "segmentation_mask": mask})
 
 
+def photo_is_reviewed_non_print(photo: object) -> bool:
+    metadata = getattr(photo, "enhancement_applied", None) or {}
+    return is_reviewed_non_print(
+        metadata.get("review_rejected_detection"), getattr(photo, "bounding_box", None), getattr(photo, "segmentation_mask", None),
+    )
+
+
 @dataclass(frozen=True)
 class ConfidenceComponents:
     detection_confidence: float | None = None

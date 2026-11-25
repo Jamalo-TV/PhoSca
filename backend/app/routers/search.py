@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_async_session
 from app.core.auth import Principal, get_principal
-from app.models import OCRResult, Page
+from app.models import ExtractedPhoto, OCRResult, Page
+from app.pipeline.decisions import photo_is_reviewed_non_print
 from app.schemas import SearchResult
 
 router = APIRouter(prefix="/api/v1/search", tags=["search"])
@@ -37,15 +38,17 @@ async def search_ocr(
         query = query.where(OCRResult.text_content.ilike(f"%{q}%")).order_by(OCRResult.created_at.desc())
     if principal is not None:
         query = query.join(Page, Page.id == OCRResult.page_id).where(Page.album.has(tenant_id=principal.tenant_id))
-    rows = (await session.scalars(query.limit(limit))).all()
+    rows = (await session.execute(query.add_columns(ExtractedPhoto).outerjoin(
+        ExtractedPhoto, OCRResult.photo_id == ExtractedPhoto.id,
+    ).limit(limit))).all()
     return [
         SearchResult(
-            photo_id=row.photo_id,
+            photo_id=row.photo_id if not photo_is_reviewed_non_print(photo) else None,
             page_id=row.page_id,
             text_content=row.text_content,
             text_type=row.text_type,
             confidence=row.confidence,
             highlight=_highlight(row.text_content, q),
         )
-        for row in rows
+        for row, photo in rows
     ]

@@ -712,6 +712,8 @@ async def get_review_queue(
             query = query.where(ExtractedPhoto.album.has(tenant_id=principal.tenant_id))
         photos = (await session.scalars(query.order_by(ExtractedPhoto.created_at.asc()).limit(limit * 4))).all()
         for photo in photos:
+            if _rejected_detection(photo):
+                continue
             payload = _photo_review_payload(photo)
             candidate_name = next(
                 (

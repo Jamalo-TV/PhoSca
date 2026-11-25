@@ -1,13 +1,14 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, null, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
 from app.core.auth import Principal, album_for_principal, get_principal, require_write_principal
 from app.database import get_async_session
 from app.models import Album, AuditLog, ExtractedPhoto, OCRResult, OCRTextType, Page, PageStatus, PhotoStatus
+from app.pipeline.decisions import is_reviewed_non_print, photo_is_reviewed_non_print
 from app.schemas import AlbumCreate, AlbumRead, AlbumStats, AnalyzeRequest, JobQueued, PageRead, PhotoRead
 from app.services.deletion import delete_album_with_assets
 from app.services.pipeline import process_pages_serialized
@@ -15,6 +16,27 @@ from app.tasks.pipeline import process_pages_task
 
 router = APIRouter(prefix="/api/v1/albums", tags=["albums"])
 ANALYZABLE_PAGE_STATUSES = (PageStatus.uploaded, PageStatus.queued, PageStatus.processing, PageStatus.review_needed)
+
+
+async def _photo_counts(session: AsyncSession, album_id: UUID) -> tuple[int, int]:
+    album_photos = ExtractedPhoto.album_id == album_id
+    rejection = ExtractedPhoto.enhancement_applied["review_rejected_detection"]
+    has_snapshot = rejection.as_string().is_not(None)
+    snapshots = select(
+        ExtractedPhoto.status, rejection, ExtractedPhoto.bounding_box, ExtractedPhoto.segmentation_mask, literal(1),
+    ).where(album_photos, has_snapshot)
+    ordinary = select(
+        ExtractedPhoto.status, null(), null(), null(), func.count(ExtractedPhoto.id),
+    ).where(album_photos, ~has_snapshot).group_by(ExtractedPhoto.status)
+    records = await session.execute(union_all(snapshots, ordinary))
+    total = review = 0
+    for photo_status, snapshot, box, mask, count in records:
+        if is_reviewed_non_print(snapshot, box, mask):
+            continue
+        total += count
+        if photo_status == PhotoStatus.review_needed:
+            review += count
+    return total, review
 
 
 @router.post("", response_model=AlbumRead, status_code=status.HTTP_201_CREATED)
@@ -50,15 +72,9 @@ async def list_albums(
     albums = (await session.scalars(query.order_by(Album.created_at.desc()))).all()
     results: list[AlbumStats] = []
     for album in albums:
-        photos_extracted = await session.scalar(select(func.count(ExtractedPhoto.id)).where(ExtractedPhoto.album_id == album.id))
+        photos_extracted, review_photos = await _photo_counts(session, album.id)
         review_pages = await session.scalar(
             select(func.count(Page.id)).where(Page.album_id == album.id, Page.status == PageStatus.review_needed)
-        )
-        review_photos = await session.scalar(
-            select(func.count(ExtractedPhoto.id)).where(
-                ExtractedPhoto.album_id == album.id,
-                ExtractedPhoto.status == PhotoStatus.review_needed,
-            )
         )
         results.append(
             AlbumStats(
@@ -139,11 +155,8 @@ async def get_album(
     principal: Principal | None = Depends(get_principal),
 ) -> AlbumStats:
     album = await album_for_principal(session, album_id, principal)
-    photos_extracted = await session.scalar(select(func.count(ExtractedPhoto.id)).where(ExtractedPhoto.album_id == album.id))
+    photos_extracted, review_photos = await _photo_counts(session, album.id)
     review_pages = await session.scalar(select(func.count(Page.id)).where(Page.album_id == album.id, Page.status == PageStatus.review_needed))
-    review_photos = await session.scalar(
-        select(func.count(ExtractedPhoto.id)).where(ExtractedPhoto.album_id == album.id, ExtractedPhoto.status == PhotoStatus.review_needed)
-    )
     return AlbumStats(
         id=album.id,
         name=album.name,
@@ -187,6 +200,7 @@ async def list_album_photos(
     status_filter: PhotoStatus | None = Query(default=None, alias="status"),
     needs_review: bool | None = None,
     has_caption: bool | None = None,
+    include_rejected: bool = False,
     session: AsyncSession = Depends(get_async_session),
     principal: Principal | None = Depends(get_principal),
 ) -> list[ExtractedPhoto]:
@@ -199,4 +213,7 @@ async def list_album_photos(
     if has_caption is not None:
         caption_exists = select(OCRResult.id).where(OCRResult.photo_id == ExtractedPhoto.id, OCRResult.text_type == OCRTextType.caption).exists()
         query = query.where(caption_exists if has_caption else ~caption_exists)
-    return (await session.scalars(query.order_by(ExtractedPhoto.created_at.asc()))).all()
+    photos = (await session.scalars(query.order_by(ExtractedPhoto.created_at.asc()))).all()
+    if include_rejected:
+        return list(photos)
+    return [photo for photo in photos if not photo_is_reviewed_non_print(photo)]
