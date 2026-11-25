@@ -1202,8 +1202,10 @@ album backing. Matching the card and extrapolating to its four corners
 leaves up to 9.31 native page pixels of disagreement. The small card on
 `7REDA.JPG` lies loose across the gutter. The 245 × 397 individual scan
 clips its stock by about 2–7 pixels per edge in that scan. The rectangular
-motif remains a candidate for independent measurement after the ink
-boundary and usage rights are verified.
+motif is visible in both captures. Separate local fits of the ink boundary
+give width-to-height ratios of 0.56782–0.56846 and agree within 1.84 native
+page pixels after registration. This motif geometry remains a draft pending
+review of the ink boundary and usage rights.
 
 | Page and SHA-256 | Print and SHA-256 |
 | --- | --- |
