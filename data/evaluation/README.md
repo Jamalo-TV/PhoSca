@@ -1223,6 +1223,14 @@ scans, metric dimensions and usage for product calibration remain open.
 [Willett archive](https://historycenter.mld.org/willett_album/) ·
 [Willett files](https://github.com/historycenter-mld/willett_album/tree/f02315fbb8ab62f491c1003ce06614daf30cf617)
 
+Museums Victoria lists two other physical albums with public-domain catalogue
+images and measured prints. The Scott album record lists a 180 × 135 mm
+print on a 280 × 360 mm page. The Hill presentation album record lists a
+291 × 234 mm print on a 440 × 360 mm page. The native media requests returned
+HTTP 403. The page coverage and separate motif dimensions remain unverified.
+[Scott record](https://collections.museumsvictoria.com.au/items/1563024) ·
+[Hill record](https://collections.museumsvictoria.com.au/items/1562410)
+
 ## Clipped prints in the NerdScan development scan
 
 NerdScan's original upload has
@@ -1534,9 +1542,8 @@ of 29 and from 16 to 15 false proposals. The recovered instance reaches
 0.995 IoU, 0.19% cutoff and 0.50% foreign source sample mass against
 the draft. A measured bow of 1.47 native pixels and the uncertain aspect
 ratio keep both modes in review. The motif still needs its own boundary.
-The adjacent print remains undetected. Normal upload and processing
-withhold both downloads. Desktop and mobile point to the extended paper
-outline for correction.
+Normal upload and processing withhold both downloads. Desktop and mobile
+point to the extended paper outline for correction.
 
 The replacement improves five of 12 page derivatives. Two derivatives
 already find a print above 0.90 IoU. Several resized, rotated and recompressed
@@ -1548,3 +1555,30 @@ proposal time was 1.28 s before and 1.39 s after in six warmed measurements
 with two OpenCV threads. The nine other Golden pages, frozen model-free
 baseline, 23 seeded crops, and the ScanCropper, ScanSplitter and blurred
 Domoritz diagnostics retain their previous results.
+
+### Review suggestion beside the album edge
+
+On Golden page 37, three sides of the adjacent print are strongly supported.
+The fourth follows the narrow strip between the print and the album edge.
+Three connected source lines seed a proposal when short segments support
+the fourth side and a staggered neighbouring print is already observed.
+Original-pixel profiles corroborate a bright band between two transitions.
+The suggestion reaches 0.988 polygon IoU against the draft for that print.
+On page 11, the missing neighbour still has insufficient evidence for this
+proposal.
+
+Generated controls with a white print border or scenes printed on shared
+paper can reproduce the same evidence. The suggestion adds an outline to
+the existing review item. It leaves the observed instance, its warp and the
+page's detected count unchanged. Desktop and mobile show the dashed contour
+against the original and ask whether it is a separate piece of paper.
+On desktop, using the suggestion starts a manual addition with four editable
+corners. The normal upload replay kept one detection until the edited corners
+were explicitly saved. The added photo still required aspect review in both
+modes and neither download was available.
+
+The proposal adds a review reason to the already-held Golden case. The
+frozen model-free and seeded benchmarks and the ScanCropper, ScanSplitter
+and blurred Domoritz checks keep their prior instance and crop metrics.
+The new search took 176 ms median on page 37 and 137 ms on page 11 over
+six warmed repetitions with two OpenCV threads.

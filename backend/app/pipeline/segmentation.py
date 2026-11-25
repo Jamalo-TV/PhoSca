@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 
 from app.config import Settings
+from app.pipeline.adjacent_prints import ADJACENT_PRINT_REVIEW, adjacent_album_edge_outlines
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves
 from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
@@ -2931,6 +2932,36 @@ def _recover_scalloped_prints(image: np.ndarray, result: SegmentationResult, *, 
                                         "scalloped_print_alternates": len(removed)})
 
 
+def _suggest_adjacent_album_edge_print(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    if not result.metadata.get("fallback_used") or len(result.detections) != 1:
+        return result
+    anchor, = result.detections
+    if (not anchor.geometry_valid or (anchor.mask.get("boundary_evidence") or {}).get("score", 0) < .75
+            or set(anchor.review_reasons) & {MULTIPANEL_PRINT_REVIEW, FRAGMENTED_PRINT_REVIEW}):
+        return result
+    height, width = image.shape[:2]
+    outline = _detection_polygon(anchor)
+    if len(outline) != 4:
+        return result
+    neighbor = order_quad_cyclic(normalized_vertices_to_pixels(outline, width, height))
+    try:
+        alternatives = adjacent_album_edge_outlines(image, neighbor)
+    except (cv2.error, ValueError):
+        return result
+    if not alternatives:
+        return result
+    # Multiple source interpretations are ambiguous, even when all have three strong edges.
+    quad = alternatives[0]
+    if any(np.max(np.linalg.norm(quad - alternative, axis=1)) > 3 for alternative in alternatives[1:]):
+        return result
+    # A narrow bright band can be album paper, a print border or shared
+    # stock. Keep the observed instance and offer the outline in review.
+    mask = {**anchor.mask, "adjacent_print_suggestion": _normalized_polygon(quad, width, height)}
+    return SegmentationResult(
+        [replace(anchor, mask=mask, review_reasons=[*anchor.review_reasons, ADJACENT_PRINT_REVIEW])], result.metadata,
+    )
+
+
 def segment_album_page(
     image: np.ndarray, settings: Settings, *, source_image: np.ndarray | None = None,
     protected_regions: list[dict] | None = None,
@@ -2949,6 +2980,7 @@ def segment_album_page(
             result = _recover_multipanel_prints(evidence_source, result, settings)
             result = _recover_capture_edge_prints(evidence_source, result, settings)
             result = _recover_scalloped_prints(evidence_source, result, trim_border=settings.enable_border_trim)
+            result = _suggest_adjacent_album_edge_print(evidence_source, result)
     model_path = settings.visible_mask_model_path
     if not settings.enable_precise_photo_crops:
         return result

@@ -45,7 +45,7 @@ import {
 import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
 import {
-  clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
+  adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   fragmentOutlineHint, fragmentOutlineReason, getFragmentOutline,
   getPrintEdgeReviewHint,
 } from "./CropVariants.jsx";
@@ -1375,10 +1375,12 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
   const rejectedDetection = (overlapReview || fragmentReview) && Boolean(selected.enhancement_applied?.review_rejected_detection);
   const fragmentMask = fragmentReview && !rejectedDetection ? selected.segmentation_mask : null;
   const fragmentOutline = useMemo(() => getFragmentOutline(fragmentMask), [fragmentMask]);
-  const alternatePolygon = selected?.segmentation_confidence != null && selected.segmentation_mask?.scalloped_alternate_is_inner
-    && !selected.enhancement_applied?.review_rejected_detection
-    ? selected.segmentation_mask?.scalloped_alternate_polygon : null;
-  const scallopedAlternate = useMemo(() => cyclicQuad(sanitizePolygon(alternatePolygon)), [alternatePolygon]);
+  const suggestedNeighbor = selected?.segmentation_mask?.adjacent_print_suggestion;
+  const alternatePolygon = selected?.segmentation_confidence != null && !selected.enhancement_applied?.review_rejected_detection
+    ? suggestedNeighbor || (selected.segmentation_mask?.scalloped_alternate_is_inner
+      && selected.segmentation_mask?.scalloped_alternate_polygon)
+    : null;
+  const alternateOutline = useMemo(() => cyclicQuad(sanitizePolygon(alternatePolygon)), [alternatePolygon]);
   const selectedShape = selected && (draftShapes[selected.id] || draftShapeFromPhoto(selected));
   const selectedModes = selected?.crop_modes || getCropModes(selected);
   const printEdgeReviewHint = getPrintEdgeReviewHint(selectedModes?.full_print);
@@ -1447,12 +1449,12 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
           context.stroke();
           context.restore();
         }
-        if (scallopedAlternate) {
+        if (alternateOutline) {
           context.save();
           context.strokeStyle = "#a21caf";
           context.setLineDash([7, 5]);
           context.beginPath();
-          scallopedAlternate.forEach(({ x, y }, index) => {
+          alternateOutline.forEach(({ x, y }, index) => {
             if (index === 0) context.moveTo(x * canvas.width, y * canvas.height);
             else context.lineTo(x * canvas.width, y * canvas.height);
           });
@@ -1522,7 +1524,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         context.fill();
       });
     }
-  }, [draftShapes, editingImage, fragmentOutline, newPrint, pageId, pageImage, photos, scallopedAlternate, selectedPhotoId, seamTraces]);
+  }, [alternateOutline, draftShapes, editingImage, fragmentOutline, newPrint, pageId, pageImage, photos, selectedPhotoId, seamTraces]);
 
   useEffect(() => {
     draw();
@@ -1547,7 +1549,15 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
     if (saveState?.saving) return;
     const point = pointToBox(event);
     if (newPrint) {
-      if (newPrint.saving || newPrint.corners.length === 4) return;
+      if (newPrint.saving) return;
+      if (newPrint.corners.length === 4) {
+        const pointIndex = newPrint.corners.findIndex((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) < 0.025);
+        if (pointIndex >= 0) {
+          dragRef.current = { addition: true, pointIndex };
+          canvasRef.current.setPointerCapture(event.pointerId);
+        }
+        return;
+      }
       const corners = [...newPrint.corners, { x: clampUnit(point.x), y: clampUnit(point.y) }];
       setAddition({ ...newPrint, corners: cyclicQuad(corners) || corners, error: null });
       return;
@@ -1576,7 +1586,16 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
   function onPointerMove(event) {
     if (!dragRef.current) return;
     const point = pointToBox(event);
-    const { photoId, pointIndex } = dragRef.current;
+    const { addition: draggingAddition, photoId, pointIndex } = dragRef.current;
+    if (draggingAddition) {
+      setAddition((current) => current && {
+        ...current,
+        corners: current.corners.map((corner, index) =>
+          index === pointIndex ? { x: clampUnit(point.x), y: clampUnit(point.y) } : corner),
+        error: null,
+      });
+      return;
+    }
     setDraftShapes((current) => {
       const photo = photos.find((candidate) => candidate.id === photoId);
       if (!photo) return current;
@@ -1682,15 +1701,17 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
       )}
       {newPrint && (
         <p className="crop-editor-hint" aria-live="polite">
-          Markiere die vier Ecken des Abzugs auf der Albumseite. {newPrint.corners.length} von 4 gesetzt.
+          {newPrint.corners.length === 4 ? "Prüfe und verschiebe die Ecken an den sichtbaren Papierrand."
+            : `Markiere die vier Ecken des Abzugs auf der Albumseite. ${newPrint.corners.length} von 4 gesetzt.`}
         </p>
       )}
-      {!newPrint && !editingImage && scallopedAlternate && (
+      {!newPrint && !editingImage && alternateOutline && (
         <>
-          <p className="crop-editor-hint">Prüfe den gestrichelten Vorschlag am Original. Ergänze ihn, falls dort ein eigener Abzug aufliegt.</p>
+          <p className="crop-editor-hint">{suggestedNeighbor ? adjacentPrintHint
+            : "Prüfe den gestrichelten Vorschlag am Original. Ergänze ihn, falls dort ein eigener Abzug aufliegt."}</p>
           <button className="text-button compact" type="button" disabled={!canAddPhoto || saveState?.saving}
-            onClick={() => startAddition(scallopedAlternate)}>
-            Gestrichelten Vorschlag als Abzug ergänzen
+            onClick={() => startAddition(alternateOutline)}>
+            {suggestedNeighbor ? "Vorschlag für eigenen Abzug bearbeiten" : "Gestrichelten Vorschlag als Abzug ergänzen"}
           </button>
         </>
       )}

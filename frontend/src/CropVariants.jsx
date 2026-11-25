@@ -12,6 +12,7 @@ export const fragmentOutlineReason = "FRAGMENT_OUTLINE_UNCERTAIN";
 export const fragmentOutlineHint = "Prüfe am Original, ob die Ausschnitte zu einem Abzug gehören. Falls ja, korrigiere einen Ausschnitt mit dem Aussenumriss und markiere die übrigen darin als «Falsches Objekt».";
 export const scallopedOutlineReviewReason = "PRINT_SCALLOPED_OUTLINE_REVIEW";
 export const scallopedOutlineReviewHint = "Die Vorschau folgt der gewellten Papierkante. Prüfe am Original, ob der ganze Abzug sichtbar ist.";
+export const adjacentPrintHint = "Prüfe am Original, ob der gestrichelte Bereich ein eigener Abzug ist und ob der helle Streifen zu seinem Papier gehört.";
 const printEdgeReviewHints = {
   PRINT_SHADOW_EDGE_REVIEW: "Prüfe die markierte Kante am Original. Achte darauf, wo der Schatten endet und der Abzug beginnt.",
   PRINT_FAINT_OUTER_RIM_REVIEW: "Prüfe am Original, ob der helle Rand zur markierten Papierkante des Abzugs gehört.",
@@ -98,6 +99,7 @@ export function CropVariants({ photo, hidden = false }) {
     && photo.enhancement_applied?.segmentation_review_reasons?.includes("FRAGMENTED_PRINT_REVIEW");
   const possibleFragmentOutline = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(fragmentOutlineReason);
+  const possibleAdjacentPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.adjacent_print_suggestion;
   const scannerBackingUncertain = photo.enhancement_applied?.segmentation_review_reasons?.includes("SCANNER_BACKING_UNCERTAIN");
   const clippedOverlapUncertain = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
@@ -121,6 +123,7 @@ export function CropVariants({ photo, hidden = false }) {
     || (possibleMultipanel && reviewMessages.MULTIPANEL_PRINT_REVIEW)
     || (possibleFragmentedPrint && reviewMessages.FRAGMENTED_PRINT_REVIEW)
     || (possibleFragmentOutline && fragmentOutlineHint)
+    || (possibleAdjacentPrint && adjacentPrintHint)
     || (scannerBackingUncertain && reviewMessages.SCANNER_BACKING_UNCERTAIN)
     || (clippedOverlapUncertain && clippedOverlapHint)
     || (scallopedOutline && scallopedOutlineReviewHint)

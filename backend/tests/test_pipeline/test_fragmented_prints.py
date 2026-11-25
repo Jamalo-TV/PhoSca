@@ -7,6 +7,8 @@ import pytest
 
 from app.config import Settings
 from app.pipeline import segmentation
+from app.pipeline.adjacent_prints import ADJACENT_PRINT_REVIEW, adjacent_album_edge_outlines
+from app.pipeline.crop_validation import automatic_crop_review_reasons
 from app.pipeline.enhancement import prepare_for_cutout
 from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW, measure_extended_print_outline,
@@ -173,16 +175,33 @@ def test_nested_classical_fragment_recovers_the_original_print_for_review(tmp_pa
     recovered, = result.detections
     assert recovered.mask["detector_source"] == "contrast_region"
     assert EXTENDED_PRINT_OUTLINE_REVIEW in recovered.review_reasons
+    assert ADJACENT_PRINT_REVIEW in recovered.review_reasons
     outline = segmentation._detection_polygon(recovered)
     matches = [normalized_polygon_overlap(outline, target) for target in truth]
     assert max(match.iou for match in matches) > .98
     assert min(match.second_containment for match in matches) < .02
+    suggestion = [(point["x"], point["y"]) for point in recovered.mask["adjacent_print_suggestion"]]
+    assert normalized_polygon_overlap(suggestion, truth[1]).iou > .98
+    assert normalized_polygon_overlap(suggestion, truth[0]).first_containment < .02
+    assert ADJACENT_PRINT_REVIEW in automatic_crop_review_reasons(
+        settings, 1., True, True, recovered.review_reasons, None,
+    )
     crop = correct_photo_crop(image, recovered.bounding_box, recovered.mask, dual_mode=True, auto_orient=False,
                               protect_regions=False, enable_classical_retry=True)
     for mode in crop.metadata["crop_modes"].values():
         assert mode["status"] == "review_needed"
         assert EXTENDED_PRINT_OUTLINE_REVIEW in mode["reason_codes"]
     assert "PRINT_BOUNDARY_CURVED" in crop.metadata["crop_modes"]["full_print"]["reason_codes"]
+
+
+def test_blank_album_leaf_at_a_dark_edge_has_no_adjacent_print_outline():
+    image = np.full((820, 1120, 3), 83, np.uint8)
+    page = np.int32([[100, 40], [975, 55], [958, 782], [100, 778]])
+    cv2.fillConvexPoly(image, page, (200, 207, 210))
+    neighbor = np.float32([[211, 168], [558, 174], [557, 668], [211, 663]])
+    cv2.fillConvexPoly(image, neighbor.astype(np.int32), (57, 109, 95))
+
+    assert adjacent_album_edge_outlines(image, neighbor) == []
 
 
 @pytest.mark.parametrize(("join", "drift"), [("none", 0), ("touching", 53), ("gutter", 97), ("overlap", 97)])
