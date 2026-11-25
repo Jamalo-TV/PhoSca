@@ -15,6 +15,7 @@ from app.pipeline.print_edges import (
 FRAGMENTED_PRINT_REVISION = 2
 FRAGMENTED_PRINT_REVIEW = "FRAGMENTED_PRINT_REVIEW"
 FRAGMENT_OUTLINE_REVIEW = "FRAGMENT_OUTLINE_UNCERTAIN"
+EXTENDED_PRINT_OUTLINE_REVIEW = "PRINT_EXTENDED_OUTLINE_REVIEW"
 _UNIT = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
 
 
@@ -101,7 +102,42 @@ def _has_own_perimeter(image: np.ndarray, fragment: np.ndarray) -> bool:
                                      for side in sides.values())
 
 
-def _has_broad_inner_edge(image: np.ndarray, quad: np.ndarray) -> bool:
+def _has_oblique_inner_edge(image: np.ndarray, rectified_lab: np.ndarray, to_source: np.ndarray) -> bool:
+    height, width = rectified_lab.shape[:2]
+    rows = np.rint(np.linspace(.08 * height, .92 * height, 96)).astype(int)
+    columns = np.arange(round(.25 * width), round(.96 * width))
+    bands = rectified_lab[rows]
+    transitions = np.square(bands[:, 4:] - bands[:, :-4]).sum(axis=2) >= 13**2
+    # Step over plausible slants with a one-pixel tolerance on each side.
+    support = cv2.dilate(transitions.astype(np.uint8), np.ones((1, 3), np.uint8))
+    row_indices = np.arange(len(rows))[:, None]
+    row_fractions = (rows - (rows[0] + rows[-1]) * .5) / (rows[-1] - rows[0])
+    limit = round(.24 * (rows[-1] - rows[0]))
+    tested = 0
+    for drift in range(-limit, limit + 1, 4):
+        shifted = columns + np.rint(drift * row_fractions[:, None]).astype(int)
+        inside = (shifted >= round(.15 * width)) & (shifted < round(.97 * width) - 4)
+        votes = (inside & support[row_indices, np.clip(shifted, 0, width - 5)].astype(bool)).mean(axis=0)
+        column = int(votes.argmax())
+        if votes[column] < .72:
+            continue
+        tested += 1
+        if tested > 12:
+            return True
+        # Confirm each rectified line on the native raster before treating
+        # the colour step as evidence of a different print or backing.
+        endpoints = np.float32([[[shifted[0, column] + 2, rows[0]], [shifted[-1, column] + 2, rows[-1]]]])
+        start, end = cv2.perspectiveTransform(endpoints, to_source)[0]
+        line, evidence = _side_line(image, start, end, 7)
+        if evidence["support"] >= .74 and (line is not None or evidence["ambiguous"]):
+            return True
+    return False
+
+
+def _has_broad_inner_edge(image: np.ndarray, quad: np.ndarray, *, oblique_side: int | None = None) -> bool:
+    if oblique_side is not None:
+        # Place the proposed extension on the right in the rectified patch.
+        quad = np.roll(quad, 1 - oblique_side, axis=0)
     lengths = np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1)
     width, height = np.clip(np.rint((lengths[:2] + lengths[2:]) * .5), 64, 1024).astype(int)
     target = _UNIT * np.float32([width - 1, height - 1])
@@ -114,7 +150,54 @@ def _has_broad_inner_edge(image: np.ndarray, quad: np.ndarray) -> bool:
             transition = np.square(core[span:] - core[:-span]).sum(axis=2) >= 13 ** 2
             if np.any(transition.mean(axis=1) >= .75):
                 return True
-    return False
+    return oblique_side is not None and _has_oblique_inner_edge(
+        image, lab, cv2.getPerspectiveTransform(target, quad),
+    )
+
+
+def measure_extended_print_outline(image: np.ndarray, inner: np.ndarray, outer: np.ndarray) -> np.ndarray | None:
+    """Check whether one false side of a nearly contained fragment cuts through the scene."""
+    length = float(np.linalg.norm(np.roll(outer, -1, axis=0) - outer, axis=1).min())
+    if length < 90:
+        return None
+    radius = int(np.clip(round(.022 * length), 4, 18))
+    fragment, inner_evidence, _ = refine_print_boundary(image, inner, search_radius=radius)
+    weak = [
+        index for index, side in enumerate(inner_evidence.values())
+        if side.get("support", 0) < .50 and not side.get("ambiguous")
+    ]
+    if fragment is None or len(weak) != 1:
+        return None
+    measured, evidence, reasons = refine_print_boundary(image, outer, search_radius=radius)
+    if measured is None or reasons or any(
+        side["support"] < .90 or (side["corner_support"] or 0) < .82 for side in evidence.values()
+    ):
+        return None
+
+    divider = weak[0]
+    for index, side in enumerate(inner_evidence.values()):
+        if index == divider:
+            continue
+        if side["support"] < .90 or "edge_width_px" not in side:
+            return None
+        end = (index + 1) % 4
+        vector = measured[end] - measured[index]
+        normal = np.float32([-vector[1], vector[0]]) / np.linalg.norm(vector)
+        distances = (fragment[[index, end]] - measured[index]) @ normal
+        if np.max(np.abs(distances)) > 2:
+            return None
+
+    start, end = inner[divider], inner[(divider + 1) % 4]
+    vector = end - start
+    length = float(np.linalg.norm(vector))
+    normal = np.float32([-vector[1], vector[0]]) * (16 / length)
+    first, last = start + .15 * vector, end - .15 * vector
+    strip = np.float32([first - normal, last - normal, last + normal, first + normal])
+    if any(cv2.pointPolygonTest(measured, tuple(point), True) < 2 for point in strip):
+        return None
+    width = int(np.clip(round(.70 * length), 64, 1024))
+    continuous = sum(_image_continues_across(image, strip, width + offset) for offset in (-2, 0, 2)) >= 2
+    return measured if continuous and not _has_broad_inner_edge(image, measured, oblique_side=divider) else None
 
 
 def measure_fragmented_print(

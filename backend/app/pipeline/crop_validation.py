@@ -64,6 +64,9 @@ def crop_validation_profile(settings: Settings) -> dict:
         "classical_line_pairs": (
             (2 if settings.enable_precise_photo_crops else 1) if settings.enable_classical_segmentation_fallback else None
         ),
+        "classical_duplicate_contours": (
+            1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+        ),
         "separated_contrast_prints": (
             1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
@@ -155,7 +158,8 @@ def detector_calibration_profile(settings: Settings, *, segmentation: dict | Non
     return {"model_sha256": model, **{key: profile[key] for key in (
         "pipeline_version", "precise_photo_crops", "model_registry_sha256", "visible_mask_refinement", "source_contour_refinement",
         "print_boundary",
-        "classical_fallback", "classical_line_pairs", "separated_contrast_prints", "empty_drawn_frame_rejection",
+        "classical_fallback", "classical_line_pairs", "classical_duplicate_contours", "separated_contrast_prints",
+        "empty_drawn_frame_rejection",
         "album_window_detection", "multipanel_print_detection", "fragmented_print_detection", "scalloped_print_outline",
         "capture_edge_outline", "dense_tile_inference",
         "deskew_inference", "proposal_threshold",

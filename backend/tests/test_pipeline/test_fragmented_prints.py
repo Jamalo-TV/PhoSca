@@ -1,4 +1,5 @@
 from dataclasses import replace
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -6,8 +7,12 @@ import pytest
 
 from app.config import Settings
 from app.pipeline import segmentation
-from app.pipeline.fragmented_prints import FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW
-from app.pipeline.geometry import normalized_polygon_overlap
+from app.pipeline.enhancement import prepare_for_cutout
+from app.pipeline.fragmented_prints import (
+    EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW, measure_extended_print_outline,
+)
+from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic
+from app.pipeline.image_ops import load_image
 from app.pipeline.perspective import correct_photo_crop
 
 
@@ -151,3 +156,58 @@ def test_weak_outer_edge_is_only_a_correction_suggestion(case):
                                     protect_regions=False, neighbor_masks=[other.mask for other in selected if other != item])
         assert all(mode["status"] == "review_needed" for mode in result.metadata["crop_modes"].values())
         assert FRAGMENT_OUTLINE_REVIEW in result.metadata["crop_modes"]["full_print"]["reason_codes"]
+
+
+def test_nested_classical_fragment_recovers_the_original_print_for_review(tmp_path):
+    fixtures = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures"
+    image = load_image(fixtures / "page_37.jpg")
+    truth = np.loadtxt(fixtures / "labels" / "page_37.txt")[:, 1:].reshape(2, 4, 2)
+    prepared, _ = prepare_for_cutout(image)
+    settings = Settings(
+        DATABASE_URL="sqlite://", REDIS_URL="redis://", YOLO_MODEL_PATH=tmp_path / "unused.onnx",
+        ENABLE_CLASSICAL_SEGMENTATION_FALLBACK=True, ENABLE_PRECISE_PHOTO_CROPS=True,
+    )
+
+    result = segmentation.segment_album_page(prepared, settings, source_image=image)
+
+    recovered, = result.detections
+    assert recovered.mask["detector_source"] == "contrast_region"
+    assert EXTENDED_PRINT_OUTLINE_REVIEW in recovered.review_reasons
+    outline = segmentation._detection_polygon(recovered)
+    matches = [normalized_polygon_overlap(outline, target) for target in truth]
+    assert max(match.iou for match in matches) > .98
+    assert min(match.second_containment for match in matches) < .02
+    crop = correct_photo_crop(image, recovered.bounding_box, recovered.mask, dual_mode=True, auto_orient=False,
+                              protect_regions=False, enable_classical_retry=True)
+    for mode in crop.metadata["crop_modes"].values():
+        assert mode["status"] == "review_needed"
+        assert EXTENDED_PRINT_OUTLINE_REVIEW in mode["reason_codes"]
+    assert "PRINT_BOUNDARY_CURVED" in crop.metadata["crop_modes"]["full_print"]["reason_codes"]
+
+
+@pytest.mark.parametrize(("join", "drift"), [("none", 0), ("touching", 53), ("gutter", 97), ("overlap", 97)])
+def test_diagonal_fragment_cannot_absorb_a_print_across_an_oblique_join(join, drift):
+    backing = (213, 220, 225)
+    image = np.full((1150, 1000, 3), backing, np.uint8)
+    image[130:1001, 125:871] = (105, 125, 149)
+    for index, y in enumerate(range(253, 944, 82)):
+        color = (35 + index % 3 * 95, 65 + index % 3 * 54, 125 + index % 2 * 75)
+        cv2.line(image, (430, y - 23), (854, y + 31), color, 5)
+        cv2.ellipse(image, (680, y), (81, 25), 20, 0, 360, (110, 63, 90), 4)
+    if join != "none":
+        boundary = np.int32([[644, 130], [870, 130], [870, 1000], [644 + drift, 1000]])
+        print_pixels = cv2.fillConvexPoly(np.zeros(image.shape[:2], np.uint8), boundary, 1).astype(bool)
+        second = np.full_like(image, (55, 111, 132))
+        for y in range(259, 940, 83):
+            cv2.line(second, (570, y + 45), (865, y - 27), (76, 182, 162), 6)
+        image[print_pixels] = second[print_pixels]
+        if join == "gutter":
+            cv2.line(image, (644, 130), (644 + drift, 1000), backing, 4)
+        elif join == "overlap":
+            cv2.line(image, (644, 130), (644 + drift, 1000), (77, 93, 102), 3)
+    inner = order_quad_cyclic(np.float32([[125, 130], [500, 130], [868, 1000], [125, 1000]]))
+    outer = order_quad_cyclic(np.float32([[119, 123], [877, 123], [877, 1008], [119, 1008]]))
+
+    measured = measure_extended_print_outline(image, inner, outer)
+
+    assert (measured is not None) == (join == "none")

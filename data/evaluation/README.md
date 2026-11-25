@@ -1175,6 +1175,38 @@ or crop references from this album enter the final manifest.
 [Print 1](https://commons.wikimedia.org/wiki/File:Hungarian_family_photo_album,_photo_1.jpg) ·
 [Print 10](https://commons.wikimedia.org/wiki/File:Hungarian_family_photo_album,_photo_10.jpg)
 
+### Paired album source intake
+
+Three Red Album captures match separate scans of the corresponding physical
+prints at the pinned commit below. The 2048 × 1536 album JPEGs record an
+Olympus capture. The print scans show card stock or printed lettering beyond
+the album windows. The registration median is 0.42–0.55 native page pixels
+across the three pairs. The windows obscure the full-print boundary in all
+three. The window also covers about 6.4% of the `REDA3.jpg` motif. The
+`REDA2.jpg` and `REDA4.jpg` oval motifs appear fully visible and would
+need masked motif references. Image reuse rights remain unverified. These
+observations remain outside calibration and the final manifest.
+[Album pages](https://rudged.github.io/home/redalbum.html) ·
+[Separate scans](https://rudged.github.io/home/redalbumis.html) ·
+[Pinned files](https://github.com/rudged/home/tree/9422452820380ca089db3e0baf0cfaf3dc6c7cdc)
+
+| Page and SHA-256 | Print and SHA-256 |
+| --- | --- |
+| `3REDA.JPG` `9439d117430e219010834292e0dacce34e2531a4000b369363fa6b279adc2c69` | `REDA2.jpg` `b0b08afb5ac28bc991468a6dec4e4dc80843a3c610d7371a5bf791782abd47de` |
+| `4REDA.JPG` `02fcf56c076ed5fd8ca6c9c0c933469c3903e5966e2d41694b55772e19d7b2a8` | `REDA3.jpg` `4443fd86e4a9bb134a739e66ca6a11d711eb0f0bf982a69448bf9926a714ce1d` |
+| `5REDA.JPG` `7250cfeb2e6343f7eeba6ff08cba60b9ccbea7ced4da3bc2415eea13e9fdeca3` | `REDA4.jpg` `356bdcd589771f8565aa73c14b3ead5e1c4887bd4a5aea43908bd1f64969e91f` |
+
+The Coble Album is a separate physical album in the same repository.
+`calbum3.JPG` matches `ca12twogirls.jpg`. The available page is 360 × 270
+pixels and the mount obscures the print edges. The Willett album archive
+provides 107 native JPEGs with inventory descriptions, photo corners,
+crowded mounts and pages without photos. Its published usage is educational and
+research use, subject to copyright restrictions. Verified paired print
+scans, metric dimensions and usage for product calibration remain open.
+[Coble Album](https://rudged.github.io/home/coblealbum.html) ·
+[Willett archive](https://historycenter.mld.org/willett_album/) ·
+[Willett files](https://github.com/historycenter-mld/willett_album/tree/f02315fbb8ab62f491c1003ce06614daf30cf617)
+
 ## Clipped prints in the NerdScan development scan
 
 NerdScan's original upload has
@@ -1469,9 +1501,34 @@ measurements at two OpenCV threads. The frozen model-free and seeded
 benchmarks and the two flatbed development sources retain their previous
 results.
 
-Golden page 37 has a separate ranking failure. A candidate at 0.950
-draft IoU passes assessment, then loses duplicate suppression to a partial
-contour at 0.796. An independent source-pixel remeasurement of the dropped
-candidate reaches 0.989 draft IoU. This analysis uses the Golden album for
-diagnosis. Both the ranking and the second missing print on page 37 still
-require work.
+### Nested classical contours on the same print
+
+On Golden page 37, a diagonal through the image produced a high-confidence
+fragment. The detector suppressed a more complete contrast contour because
+the two bounding boxes nearly coincided. A replacement now requires three
+fitted sides shared within two native pixels, four supported outer sides, and
+scene detail crossing the unsupported fragment side. A colour step found
+in rectified coordinates can veto the replacement after confirmation on
+the original raster. An observed neighbouring proposal can also veto it
+regardless of the neighbour's relative size.
+
+The model-free Golden replay improves from 13 to 14 matched prints out
+of 29 and from 16 to 15 false proposals. The recovered instance reaches
+0.994 mask IoU against the draft. Its full-print review footprint has
+0.995 IoU, 0.19% cutoff and 0.50% foreign source sample mass against
+the draft. A measured bow of 1.47 native pixels and the uncertain aspect
+ratio keep both modes in review. The motif still needs its own boundary.
+The adjacent print remains undetected. Normal upload and processing
+withhold both downloads. Desktop and mobile point to the extended paper
+outline for correction.
+
+The replacement improves five of 12 page derivatives. Two derivatives
+already find a print above 0.90 IoU. Several resized, rotated and recompressed
+cases still return the partial contour. In 120 generated touching, gapped
+and stacked controls with slanted joins, light blur, JPEG and quarter-turn
+rotations, the rule does not accept a combined contour. Eight continuous
+scene controls pass. On the affected original, the median classical
+proposal time was 1.28 s before and 1.39 s after in six warmed measurements
+with two OpenCV threads. The nine other Golden pages, frozen model-free
+baseline, 23 seeded crops, and the ScanCropper, ScanSplitter and blurred
+Domoritz diagnostics retain their previous results.

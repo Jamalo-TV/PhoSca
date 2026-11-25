@@ -15,7 +15,8 @@ from app.pipeline.edge_prints import (
     clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
 )
 from app.pipeline.fragmented_prints import (
-    FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW, measure_fragmented_print, suggest_fragmented_outline,
+    EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
+    measure_extended_print_outline, measure_fragmented_print, suggest_fragmented_outline,
 )
 from app.pipeline.geometry import (
     PolygonOverlap,
@@ -44,6 +45,7 @@ from app.pipeline.segmentation_filter import (
 )
 
 _CLASSICAL_MIN_AREA_RATIO = 0.02
+_CLASSICAL_DUPLICATE_CHECK_LIMIT = 12
 _MULTIPANEL_PAIR_LIMIT = 12
 _MULTIPANEL_GROUP_LIMIT = 12
 _MULTIPANEL_MAX_GROUP_SIZE = 6
@@ -1814,6 +1816,50 @@ def _attach_fragment_outline_suggestions(
     return selected
 
 
+def _restore_classical_outline(
+    image: np.ndarray, fragment: SegmentationDetection, outer: SegmentationDetection, neighbors: list[SegmentationDetection],
+) -> SegmentationDetection | None:
+    inner_polygon, outer_polygon = _detection_polygon(fragment), _detection_polygon(outer)
+    if len(inner_polygon) != 4 or len(outer_polygon) != 4:
+        return None
+    scope = normalized_polygon_overlap(inner_polygon, outer_polygon)
+    if scope.first_containment < .98 or not .72 <= scope.second_containment <= .95:
+        return None
+    height, width = image.shape[:2]
+    inner = order_quad_cyclic(normalized_vertices_to_pixels(inner_polygon, width, height))
+    seed = order_quad_cyclic(normalized_vertices_to_pixels(outer_polygon, width, height))
+    if not cv2.isContourConvex(inner) or not cv2.isContourConvex(seed):
+        return None
+    try:
+        measured = measure_extended_print_outline(image, inner, seed)
+    except (ValueError, cv2.error):
+        return None
+    if measured is None:
+        return None
+    outline = pixel_vertices_to_normalized(measured, width, height)
+    if normalized_polygon_overlap(outer_polygon, outline).iou < .90:
+        return None
+    for neighbor in neighbors:
+        other = _detection_polygon(neighbor)
+        for candidate in (outer_polygon, outline):
+            conflict = normalized_polygon_overlap(candidate, other)
+            if max(conflict.first_containment, conflict.second_containment) > .04:
+                return None
+    x, y, w, h = cv2.boundingRect(measured)
+    dimensions = _quadrilateral_geometry_dimensions(measured, w, h)
+    quality = evaluate_segmentation_geometry(*dimensions, min_aspect_ratio=.5, max_aspect_ratio=3.)
+    if not quality.geometry_valid:
+        return None
+    mask = {
+        **outer.mask, "polygon": _normalized_polygon(measured, width, height),
+        "corner_refinement": "native_boundary", "extended_print_outline": True,
+    }
+    return replace(
+        outer, mask=mask, bounding_box=pixel_box_to_normalized(x, y, w, h, width, height),
+        aspect_ratio=quality.aspect_ratio, review_reasons=[EXTENDED_PRINT_OUTLINE_REVIEW, *outer.review_reasons],
+    )
+
+
 def select_candidate_set(
     detections: list[SegmentationDetection], *, source_image: np.ndarray | None = None,
 ) -> tuple[list[SegmentationDetection], dict[str, int]]:
@@ -1828,14 +1874,30 @@ def select_candidate_set(
         detections, source_image=source_image, unresolved_containers=unresolved if source_image is not None else None,
     )
     selected: list[SegmentationDetection] = []
+    alternatives: dict[int, list[SegmentationDetection]] = {}
     duplicate_count = 0
     for candidate in sorted(filtered, key=lambda item: item.confidence, reverse=True):
-        if any(_normalized_box_overlap(candidate.bounding_box, kept.bounding_box)[0] > 0.82 for kept in selected):
+        collisions = [index for index, kept in enumerate(selected)
+                      if _normalized_box_overlap(candidate.bounding_box, kept.bounding_box)[0] > .82]
+        if collisions:
             duplicate_count += 1
+            if (source_image is not None and len(collisions) == 1
+                    and candidate.mask.get("detector_source") == "contrast_region"
+                    and selected[collisions[0]].mask.get("detector_source") == "edge_contour"):
+                alternatives.setdefault(collisions[0], []).append(candidate)
             continue
         selected.append(candidate)
     if duplicate_count:
         rejected["near_duplicate_after_scoring"] = duplicate_count
+    if source_image is not None and len(alternatives) <= _CLASSICAL_DUPLICATE_CHECK_LIMIT:
+        for index, rivals in alternatives.items():
+            if len(rivals) != 1:
+                continue
+            recovered = _restore_classical_outline(
+                source_image, selected[index], rivals[0], selected[:index] + selected[index + 1:],
+            )
+            if recovered is not None:
+                selected[index] = recovered
     if source_image is not None and unresolved:
         selected = _attach_fragment_outline_suggestions(source_image, unresolved, selected)
     return selected, rejected
