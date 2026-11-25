@@ -13,6 +13,7 @@ from app.config import Settings
 from app.pipeline.adjacent_prints import ADJACENT_PRINT_REVISION
 from app.pipeline.crop_sampling import OWNED_BILINEAR
 from app.pipeline.confidence import is_sha256, load_confidence_calibration
+from app.pipeline.crossing_prints import CROSSING_PRINT_REVISION
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.edge_prints import CAPTURE_EDGE_REVISION
 from app.pipeline.fragmented_prints import FRAGMENTED_PRINT_REVISION
@@ -70,6 +71,9 @@ def crop_validation_profile(settings: Settings) -> dict:
         ),
         "adjacent_print_outlines": (
             ADJACENT_PRINT_REVISION if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+        ),
+        "crossing_print_outlines": (
+            CROSSING_PRINT_REVISION if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "separated_contrast_prints": (
             1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
@@ -163,7 +167,7 @@ def detector_calibration_profile(settings: Settings, *, segmentation: dict | Non
         "pipeline_version", "precise_photo_crops", "model_registry_sha256", "visible_mask_refinement", "source_contour_refinement",
         "print_boundary",
         "classical_fallback", "classical_line_pairs", "classical_duplicate_contours", "adjacent_print_outlines",
-        "separated_contrast_prints",
+        "crossing_print_outlines", "separated_contrast_prints",
         "empty_drawn_frame_rejection",
         "album_window_detection", "multipanel_print_detection", "fragmented_print_detection", "scalloped_print_outline",
         "capture_edge_outline", "dense_tile_inference",

@@ -615,6 +615,88 @@ async def test_adjacent_save_consumes_only_the_saved_suggestion_and_keeps_exact_
         assert (await client.get(corrected.json()["crop_download_urls"][mode])).status_code == 200
 
 
+async def test_crossing_outline_requires_outer_correction_before_a_motif_edit(client, monkeypatch) -> None:
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE
+
+    album, page, anchor_id, _, inner = await _seed_adjacent_manual_addition(monkeypatch)
+    url = f"/api/v1/photos/{anchor_id}"
+    async with get_session_factory()() as session:
+        anchor = await session.get(ExtractedPhoto, anchor_id)
+        original = anchor.segmentation_mask["polygon"]
+        outer = anchor.segmentation_mask["adjacent_print_suggestion"]
+        anchor.segmentation_mask = {"polygon": original, "crossing_print_suggestion": outer}
+        old_box = anchor.bounding_box
+        await session.commit()
+
+    subpixel = [{**point, "x": point["x"] + 1 / 289} for point in original]
+    for mask in (None, {"polygon": original, "warp_quad": original[1:] + original[:1]},
+                 {"polygon": subpixel, "warp_quad": subpixel},
+                 {"polygon": outer, "warp_quad": outer, "image_quad": inner}):
+        body = {"bounding_box": old_box, "segmentation_mask": mask}
+        response = await client.patch(f"{url}/bounding-box", json=body)
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"] == "crossing_print_outline_required"
+    still_open = (await client.get(url)).json()["segmentation_mask"]
+    assert still_open == {"polygon": original, "crossing_print_suggestion": outer}
+
+    body = {
+        "bounding_box": {"x1": outer[0]["x"], "y1": outer[0]["y"], "x2": outer[2]["x"], "y2": outer[2]["y"]},
+        "segmentation_mask": {
+            "polygon": outer, "warp_quad": outer, "visible_polygon": original,
+            "print_size_mm": {"width": 109, "height": 117}, "source": "manual_quad",
+        },
+    }
+    reviewed = await client.patch(f"{url}/bounding-box", json=body)
+    assert reviewed.status_code == 200, reviewed.text
+    photo = reviewed.json()
+    assert photo["id"] == str(anchor_id)
+    assert photo["segmentation_mask"]["visible_polygon"] == outer
+    assert "crossing_print_suggestion" not in photo["segmentation_mask"]
+    assert len((await client.get(f"/api/v1/albums/{album}/photos")).json()) == 1
+    assert (await client.get(photo["crop_download_urls"]["full_print"])).status_code == 200
+
+    body["segmentation_mask"] = {**body["segmentation_mask"], "visible_polygon": outer, "image_quad": inner}
+    motif = await client.patch(f"{url}/bounding-box", json=body)
+    assert motif.status_code == 200, motif.text
+    assert motif.json()["segmentation_mask"][REVIEWED_CROSSING_OUTLINE] is True
+    for mode in ("full_print", "image_only"):
+        assert (await client.get(motif.json()["crop_download_urls"][mode])).status_code == 200
+
+    # A later ordinary review edit can overlap the corrected print. Both
+    # records must return to review, including the existing full and motif JPEG.
+    neighbor = await client.post(f"/api/v1/pages/{page}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": original, "print_size_mm": {"width": 109, "height": 110},
+    })
+    assert neighbor.status_code == 201, neighbor.text
+    neighbor_id = neighbor.json()["id"]
+    async with get_session_factory()() as session:
+        record = await session.get(ExtractedPhoto, UUID(neighbor_id))
+        record.segmentation_mask = {key: value for key, value in record.segmentation_mask.items() if key != "manual_added"}
+        await session.commit()
+    crossing = [{"x": x / 289, "y": y / 169} for x, y in [(80, 42), (162, 42), (162, 120), (80, 120)]]
+    overlap = await client.patch(f"/api/v1/photos/{neighbor_id}/bounding-box", json={
+        "bounding_box": {"x1": crossing[0]["x"], "y1": crossing[0]["y"], "x2": crossing[2]["x"], "y2": crossing[2]["y"]},
+        "segmentation_mask": {
+            "polygon": crossing, "warp_quad": crossing, "visible_polygon": crossing,
+            "print_size_mm": {"width": 82, "height": 78}, "source": "manual_quad",
+        },
+    })
+    assert overlap.status_code == 200, overlap.text
+    for photo_url in (url, f"/api/v1/photos/{neighbor_id}"):
+        for mode in ("full_print", "image_only"):
+            assert (await client.get(f"{photo_url}/image?variant={mode}")).status_code == 404
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "false")
+    get_settings.cache_clear()
+    replay = await client.post(f"{url}/reprocess")
+    assert replay.status_code == 200, replay.text
+    modes = replay.json()["enhancement_applied"]["correction"]["crop_modes"]
+    assert all(mode["status"] == "review_needed" for mode in modes.values())
+    assert "PRINT_POSSIBLY_OCCLUDED" in modes["full_print"]["reason_codes"]
+
+
 async def test_manual_save_of_matching_outline_retires_the_open_suggestion(client, monkeypatch) -> None:
     from app.database import get_session_factory
     from app.models import ExtractedPhoto

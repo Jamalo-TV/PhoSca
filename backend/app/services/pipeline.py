@@ -45,6 +45,7 @@ from app.pipeline.crop_validation import (
     route_ready_crop_modes_to_review,
     segmentation_matches_crop_profile,
 )
+from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE
 from app.pipeline.decisions import ReviewReason, component_review_reasons, confidence_components, is_reviewed_non_print
 from app.pipeline.dedup import compute_phash, hamming_distance
 from app.pipeline.degradation import analyze_degradation
@@ -393,7 +394,9 @@ async def perspective_correction_task_logic(
             }
     stage = await start_stage(session, run, "perspective_correction", input_path=Path(photo.page.storage_path))
 
-    precise_crops = settings.enable_precise_photo_crops or (photo.segmentation_mask or {}).get("manual_added") is True
+    mask = photo.segmentation_mask or {}
+    precise_crops = (settings.enable_precise_photo_crops or mask.get("manual_added") is True
+                     or mask.get(REVIEWED_CROSSING_OUTLINE) is True or bool(mask.get("crossing_print_suggestion")))
     loads_source = page_image is None
     if page_image is None:
         page_image, page_camera = await asyncio.to_thread(

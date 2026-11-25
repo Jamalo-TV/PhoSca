@@ -13,6 +13,9 @@ export const fragmentOutlineHint = "Prüfe am Original, ob die Ausschnitte zu ei
 export const scallopedOutlineReviewReason = "PRINT_SCALLOPED_OUTLINE_REVIEW";
 export const scallopedOutlineReviewHint = "Die Vorschau folgt der gewellten Papierkante. Prüfe am Original, ob der ganze Abzug sichtbar ist.";
 export const adjacentPrintHint = "Prüfe am Original, ob der gestrichelte Bereich ein eigener Abzug ist und ob der helle Streifen zu seinem Papier gehört.";
+export const crossingPrintReason = "CROSSING_PRINT_OUTLINE_REVIEW";
+export const crossingPrintHint = "Prüfe am Original, ob die gestrichelte Kontur einen eigenen Abzug zeigt. Falls die durchgezogene Markierung falsch ist, lade die gestrichelte Kontur und setze die Ecken an den Papierrand.";
+export const crossingPrintSaveHint = "Korrigiere und speichere zuerst die vier Ecken unter «Ganzer Abzug».";
 const printEdgeReviewHints = {
   PRINT_SHADOW_EDGE_REVIEW: "Prüfe die markierte Kante am Original. Achte darauf, wo der Schatten endet und der Abzug beginnt.",
   PRINT_FAINT_OUTER_RIM_REVIEW: "Prüfe am Original, ob der helle Rand zur markierten Papierkante des Abzugs gehört.",
@@ -62,6 +65,7 @@ const reviewMessages = {
   MULTIPANEL_PRINT_REVIEW: "Prüfe die Papierkanten am Original. Auf einem Abzug muss der Motivzuschnitt alle Bilder enthalten. Sind es getrennte Abzüge, korrigierst du die Ecken für den ersten und ergänzt die übrigen im Editor.",
   FRAGMENTED_PRINT_REVIEW: "Prüfe die durchgehende Papierkante am Original. Liegen zwei einzelne Abzüge vor, korrigiere die Ecken des ersten und ergänze den zweiten im Editor.",
   [fragmentOutlineReason]: fragmentOutlineHint,
+  [crossingPrintReason]: crossingPrintHint,
   SCANNER_BACKING_UNCERTAIN: "Prüfe am Original, ob im markierten Bereich ein weiterer Abzug liegt. Ziehe die Ecken an seine Papierkante, wenn du sie erkennen kannst.",
   CROP_VALIDATION_UNAVAILABLE: "Prüfe und speichere den Zuschnitt, um den Download freizugeben.",
   CAMERA_ASPECT_REVIEW: "Die Vorschau nutzt die Kamerakalibrierung. Prüfe und bestätige die Fotoecken.",
@@ -100,6 +104,7 @@ export function CropVariants({ photo, hidden = false }) {
   const possibleFragmentOutline = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(fragmentOutlineReason);
   const possibleAdjacentPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.adjacent_print_suggestion;
+  const possibleCrossingPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.crossing_print_suggestion;
   const scannerBackingUncertain = photo.enhancement_applied?.segmentation_review_reasons?.includes("SCANNER_BACKING_UNCERTAIN");
   const clippedOverlapUncertain = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
@@ -124,6 +129,7 @@ export function CropVariants({ photo, hidden = false }) {
     || (possibleFragmentedPrint && reviewMessages.FRAGMENTED_PRINT_REVIEW)
     || (possibleFragmentOutline && fragmentOutlineHint)
     || (possibleAdjacentPrint && adjacentPrintHint)
+    || (possibleCrossingPrint && crossingPrintHint)
     || (scannerBackingUncertain && reviewMessages.SCANNER_BACKING_UNCERTAIN)
     || (clippedOverlapUncertain && clippedOverlapHint)
     || (scallopedOutline && scallopedOutlineReviewHint)

@@ -10,6 +10,7 @@ from app.pipeline.album_windows import (
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
 from app.pipeline.edge_prints import CAPTURE_EDGE_HOLD
+from app.pipeline.crossing_prints import CROSSING_PRINT_REVIEW, REVIEWED_CROSSING_OUTLINE
 from app.pipeline.fragmented_prints import EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW
 from app.pipeline.geometry import (
     normalized_polygon_overlap,
@@ -1140,7 +1141,7 @@ def _inspect_print(
                 quad = refined
                 metrics = _validate_quad(quad, width, height)
     if dual_mode:
-        manual_addition = mask.get("manual_added") is True
+        manual_outline = mask.get("manual_added") is True or mask.get(REVIEWED_CROSSING_OUTLINE) is True
         scalloped = not manual and mask.get("scalloped_print") is True and visible is not None
         if scalloped:
             reasons.append(SCALLOPED_PRINT_REVIEW)
@@ -1150,11 +1151,13 @@ def _inspect_print(
             reasons.append(EXTENDED_PRINT_OUTLINE_REVIEW)
         if not manual and mask.get("fragment_outline_suggestion"):
             reasons.append(FRAGMENT_OUTLINE_REVIEW)
+        if not manual and mask.get("crossing_print_suggestion"):
+            reasons.append(CROSSING_PRINT_REVIEW)
         if mask.get("album_window_occluded") is True:
             reasons.append(ALBUM_WINDOW_OCCLUDED)
         elif mask.get("source") == ALBUM_WINDOW_SOURCE:
             reasons.append(ALBUM_WINDOW_STOCK_UNCERTAIN)
-        elif manual_addition:
+        elif manual_outline:
             outline = pixel_vertices_to_normalized(quad, width, height)
             for leaf in album_window_leaves(page):
                 if (leaf.print_outline is not None
@@ -1162,7 +1165,7 @@ def _inspect_print(
                     reasons.append(ALBUM_WINDOW_OCCLUDED if leaf.aperture_quad is not None else ALBUM_WINDOW_STOCK_UNCERTAIN)
                     break
         if mask.get("capture_edge_clipped") is True or (
-            (not manual or manual_addition) and np.any((quad < 0.5) | (quad > np.array([width, height]) - 1.5))
+            (not manual or manual_outline) and np.any((quad < 0.5) | (quad > np.array([width, height]) - 1.5))
         ):
             reasons.append(CAPTURE_EDGE_HOLD)
         sides = [boundary.get(side, {}) for side in ("top", "right", "bottom", "left")]
@@ -1175,7 +1178,7 @@ def _inspect_print(
             and "observed_rim_lab" in evidence and index not in inferred
         }
         occluded = _neighbor_occlusion(
-            page, quad, None if manual_addition else visible, neighbors,
+            page, quad, None if manual_outline else visible, neighbors,
             inferred_sides=inferred, observed_sides=observed,
         )
         if not occluded and manual_neighbors:
@@ -1308,8 +1311,11 @@ def correct_photo_crop(
         page_image, src_points, mask, visible, neighbor_polygons, regions,
         dual_mode=dual_mode, manual=manual, allow_page_face_overlap=allow_page_face_overlap,
         protect_regions=protect_regions, enable_classical_retry=enable_classical_retry,
-        manual_neighbors=[neighbor["warp_quad"] for neighbor in neighbor_masks or []
-                          if neighbor.get("manual_added") is True and neighbor.get("warp_quad")],
+        manual_neighbors=[
+            neighbor["warp_quad"] for neighbor in neighbor_masks or []
+            if (neighbor.get("manual_added") is True or neighbor.get(REVIEWED_CROSSING_OUTLINE) is True)
+            and neighbor.get("warp_quad")
+        ],
     )
     src_points, quad_metrics = inspection.quad, inspection.metrics
     boundary_refinement, full_reasons = inspection.boundary, inspection.reasons.copy()

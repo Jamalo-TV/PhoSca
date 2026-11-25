@@ -1612,3 +1612,49 @@ Golden page 37. Their saves returned 201 and 409, the exact replay returned
 the missing metric evidence for this real page. A separate controlled API
 fixture supplied measured dimensions, saved the motif boundary and verified
 both downloads, including protection against stale and conflicting requests.
+
+### Crossing contours on a pale album leaf
+
+On Golden page 04, a weak edge proposal crosses the middle of a separate
+print and extends over neighbouring prints. A pale-page search models the
+lighting on smooth backing, opens narrow gaps between foreground regions,
+and checks four sides at the original resolution. The original also shows
+pale backing on opposite sides and a distributed shadow outside one edge.
+The resulting editable contour reaches 0.994 IoU against the Golden outline.
+Its largest corner error is 2.75 native pixels. A diagnostic whole-print
+render has 0.997 footprint IoU, 0.087% source cutoff and 0.327% foreign
+source sample mass. No cutoff exceeds one pixel from the reference edge.
+The source has no independent metric aspect or motif landmark measurements.
+
+A printed gradient on shared stock can imitate a real shadow. Two adjacent
+prints with flush edges can also appear to be one piece, and a pale cover can
+hide part of a print behind an apparently complete boundary. The proposal
+is a dashed correction in review. It does not replace a detected mask or
+add an instance. A reviewer can load and adjust the corners, or reject the
+existing detection. Submitting only motif corners, submitting a box, or
+moving the old outline by at most two native pixels leaves review open.
+Material overlap after a correction holds the edited crop and any already
+released overlapping crop for review.
+
+Normal upload and processing showed the same outline on desktop and mobile.
+Saving the whole-print outline kept the existing photo ID and count. Both
+download endpoints still returned 404 without a measured aspect. A
+controlled API fixture supplied measured dimensions, then saved the
+motif, downloaded both JPEGs, and verified that a later overlapping edit
+withheld both exports. The frozen geometry remains 18/18 instances and
+23/23 recoverable crops. The frozen classical, Golden, ScanCropper, blurred
+Domoritz and mounted ScanSplitter replays retain their instance and crop
+metrics. Golden still matches 14 of 29 prints with 15 false proposals.
+These replays had zero newly held usable crops. The native search on the
+affected original took about 350 ms median over six warmed runs with two
+OpenCV threads.
+
+Two additional Rijksmuseum album records identify different physical
+groups. The Roelofs album lists 89 prints, including an 80 × 110 mm print.
+The second album lists 81 photos, including a 51 × 83 mm portrait of
+Wilhelmina. The catalogue marks the albums and example photos public
+domain. The official Linked Art and IIIF image requests returned HTTP 403
+in this environment. Separate capture and motif geometry are still
+unverified, so neither group contributes to the release split.
+[Roelofs album](https://id.rijksmuseum.nl/200322643) ·
+[Dutch album](https://id.rijksmuseum.nl/200322353)

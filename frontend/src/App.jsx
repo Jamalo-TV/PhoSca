@@ -46,7 +46,7 @@ import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
 import {
   adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
-  fragmentOutlineHint, fragmentOutlineReason, getFragmentOutline,
+  crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getFragmentOutline,
   getPrintEdgeReviewHint,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -1378,7 +1378,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
   const fragmentReview = selected?.segmentation_confidence != null
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(fragmentOutlineReason);
-  const rejectedDetection = (overlapReview || fragmentReview) && Boolean(selected.enhancement_applied?.review_rejected_detection);
+  const crossingReview = selected?.segmentation_confidence != null
+    && selected.enhancement_applied?.segmentation_review_reasons?.includes(crossingPrintReason);
+  const rejectedDetection = (overlapReview || fragmentReview || crossingReview)
+    && Boolean(selected.enhancement_applied?.review_rejected_detection);
   const fragmentMask = fragmentReview && !rejectedDetection ? selected.segmentation_mask : null;
   const fragmentOutline = useMemo(() => getFragmentOutline(fragmentMask), [fragmentMask]);
   const suggestedNeighbor = selected?.segmentation_mask?.adjacent_print_suggestion;
@@ -1387,7 +1390,12 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
       && selected.segmentation_mask?.scalloped_alternate_polygon)
     : null;
   const alternateOutline = useMemo(() => cyclicQuad(sanitizePolygon(alternatePolygon)), [alternatePolygon]);
+  const crossingPolygon = crossingReview && !rejectedDetection ? selected.segmentation_mask?.crossing_print_suggestion : null;
+  const crossingOutline = useMemo(() => cyclicQuad(sanitizePolygon(crossingPolygon)), [crossingPolygon]);
   const selectedShape = selected && (draftShapes[selected.id] || draftShapeFromPhoto(selected));
+  const crossingNeedsCorrection = crossingReview && (editingImage || draftShapeFromPhoto(selected).warpQuad.every(
+    (point, index) => point.x === selectedShape.warpQuad[index].x && point.y === selectedShape.warpQuad[index].y,
+  ));
   const selectedModes = selected?.crop_modes || getCropModes(selected);
   const printEdgeReviewHint = getPrintEdgeReviewHint(selectedModes?.full_print);
   const motifReview = selectedModes?.image_only;
@@ -1455,12 +1463,13 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
           context.stroke();
           context.restore();
         }
-        if (alternateOutline) {
+        const dashedOutline = shape.usingOutlineSuggestion ? null : crossingOutline || alternateOutline;
+        if (dashedOutline) {
           context.save();
           context.strokeStyle = "#a21caf";
           context.setLineDash([7, 5]);
           context.beginPath();
-          alternateOutline.forEach(({ x, y }, index) => {
+          dashedOutline.forEach(({ x, y }, index) => {
             if (index === 0) context.moveTo(x * canvas.width, y * canvas.height);
             else context.lineTo(x * canvas.width, y * canvas.height);
           });
@@ -1532,7 +1541,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         context.fillText(String(index + 1), x + 9, y - 7);
       });
     }
-  }, [alternateOutline, draftShapes, editingImage, fragmentOutline, newPrint, pageId, pageImage, photos, selectedPhotoId, seamTraces]);
+  }, [alternateOutline, crossingOutline, draftShapes, editingImage, fragmentOutline, newPrint, pageId, pageImage, photos, selectedPhotoId, seamTraces]);
 
   useEffect(() => {
     draw();
@@ -1631,7 +1640,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
   }
 
   async function saveSelected() {
-    if (!selected || sizeError || needsMotifSelection) return;
+    if (!selected || sizeError || needsMotifSelection || crossingNeedsCorrection) return;
     const saved = draftShapeFromPhoto(selected);
     const box = editingImage ? selected.bounding_box : selectedShape.boundingBox;
     const mask = editingImage
@@ -1651,7 +1660,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
       const url = result.urls?.[editMode] || (!getCropModes(result) && !editingImage ? result.urls?.original : null);
       setSaveState({ photoId: selected.id, mode: editMode, url });
     } catch (error) {
-      setSaveState({ photoId: selected.id, mode: editMode, error: error.message });
+      const message = error.message === "crossing_print_outline_required" ? crossingPrintSaveHint : error.message;
+      setSaveState({ photoId: selected.id, mode: editMode, error: message });
     }
   }
 
@@ -1698,7 +1708,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
     <div className="canvas-wrap">
       <div className="variant-tabs crop-mode-tabs" role="group" aria-label="Zu bearbeitenden Ausschnitt wählen">
         {Object.entries(cropModeLabels).map(([mode, label]) => (
-          <button key={mode} type="button" aria-pressed={editMode === mode} onClick={() => setEditMode(mode)} disabled={saveState?.saving || Boolean(newPrint)}>
+          <button key={mode} type="button" aria-pressed={editMode === mode} onClick={() => setEditMode(mode)}
+            disabled={saveState?.saving || Boolean(newPrint) || (crossingReview && mode === "image_only")}>
             {label}
           </button>
         ))}
@@ -1725,14 +1736,15 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         </>
       )}
       {!newPrint && !editingImage && printEdgeReviewHint && <p className="crop-editor-hint">{printEdgeReviewHint}</p>}
-      {editingImage && selected && (
+      {editingImage && crossingReview && <p className="crop-editor-hint">{crossingPrintSaveHint}</p>}
+      {editingImage && selected && !crossingReview && (
         <p className="crop-editor-hint">
           {seamTraces?.length
             ? "Die gestrichelten Linien zeigen den geschätzten Verlauf der Motivkante. Die vier blauen Punkte definieren den geraden Zuschnitt."
             : "Setze die vier blauen Eckpunkte an die Grenze des Bildmotivs."}
         </p>
       )}
-      {editingImage && imageSuggestion && (
+      {editingImage && imageSuggestion && !crossingReview && (
         <button className="text-button compact" type="button" disabled={saveState?.saving} onClick={() => {
           setDraftShapes((current) => ({ ...current, [selected.id]: { ...selectedShape, imageQuad: imageSuggestion } }));
           setSaveState(null);
@@ -1740,10 +1752,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
           Motivvorschlag in den Editor laden
         </button>
       )}
-      {!newPrint && !editingImage && fragmentOutline && (
+      {!newPrint && !editingImage && (fragmentOutline || crossingOutline) && (
         <>
           <button className="text-button compact" type="button" disabled={saveState?.saving} onClick={() => {
-            const quad = cyclicQuad(fragmentOutline.quad);
+            const quad = crossingOutline || cyclicQuad(fragmentOutline.quad);
             if (!quad) return;
             setDraftShapes((current) => ({ ...current, [selected.id]: {
               ...selectedShape, warpQuad: quad, visiblePolygon: quad, visibleFollowsWarp: true,
@@ -1753,7 +1765,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
           }}>
             Aussenumriss in den Editor laden
           </button>
-          {selectedShape.usingOutlineSuggestion && <p className="crop-editor-hint">Prüfe besonders die gestrichelte Papierkante.</p>}
+          {fragmentOutline && selectedShape.usingOutlineSuggestion
+            && <p className="crop-editor-hint">Prüfe besonders die gestrichelte Papierkante.</p>}
         </>
       )}
       <canvas
@@ -1765,9 +1778,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         className={newPrint ? "mark-print-corners" : undefined}
         aria-label="Albumseite mit markierten Abzügen"
       />
-      {!newPrint && (overlapReview || fragmentReview) && !rejectedDetection && (
+      {!newPrint && (overlapReview || fragmentReview || crossingReview) && !rejectedDetection && (
         <div className="manual-print-actions">
-          <p className="crop-editor-hint">{overlapReview ? clippedOverlapHint : fragmentOutlineHint}</p>
+          <p className="crop-editor-hint">{crossingReview ? crossingPrintHint : overlapReview ? clippedOverlapHint : fragmentOutlineHint}</p>
           <button className="text-button compact" type="button" onClick={rejectSelected} disabled={saveState?.saving}>
             {currentSave?.rejecting ? "Vorschlag wird geprüft …" : "Falsches Objekt"}
           </button>
@@ -1812,7 +1825,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
           setSaveState(null);
         }} />
       )}
-      {!newPrint && <button className="primary-button compact" type="button" disabled={!selected || saveState?.saving || Boolean(sizeError) || needsMotifSelection} onClick={saveSelected}>
+      {!newPrint && <button className="primary-button compact" type="button"
+        disabled={!selected || saveState?.saving || Boolean(sizeError) || needsMotifSelection || crossingNeedsCorrection}
+        onClick={saveSelected}>
         <Save size={16} />
         {currentSave?.saving && !currentSave.rejecting ? "Ausschnitt wird berechnet …" : "Zuschnitt speichern"}
       </button>}

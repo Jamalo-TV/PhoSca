@@ -11,6 +11,7 @@ import numpy as np
 from app.config import Settings
 from app.pipeline.adjacent_prints import ADJACENT_PRINT_REVIEW, adjacent_album_edge_outlines
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves
+from app.pipeline.crossing_prints import CROSSING_PRINT_REVIEW, crossing_print_outlines
 from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
     clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
@@ -2962,6 +2963,51 @@ def _suggest_adjacent_album_edge_print(image: np.ndarray, result: SegmentationRe
     )
 
 
+def _suggest_crossing_print_outline(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    rejections = result.metadata.get("rejected_candidates") or {}
+    if (not result.metadata.get("fallback_used") or not rejections.get("frame_touching_container_candidate")
+            or not 2 <= len(result.detections) <= 4):
+        return result
+    # This search is for a weak contour that crosses a paper edge. Keeping a
+    # well-supported or explicitly ambiguous print intact is more important.
+    weak = {index for index, item in enumerate(result.detections)
+            if item.geometry_valid and not item.review_reasons and not item.mask.get("warp_quad")
+            and item.mask.get("detector_source") == "edge_contour"
+            and (item.mask.get("boundary_evidence") or {}).get("score", 1) < .65
+            and _score_value(item, "exterior_background_sides") <= 2}
+    if not weak:
+        return result
+    try:
+        outlines = crossing_print_outlines(image, _quadrilateral_from_contour)
+    except (cv2.error, ValueError, np.linalg.LinAlgError):
+        return result
+    if len(outlines) != 1:
+        return result
+    height, width = image.shape[:2]
+    quad = outlines[0]
+    outline = pixel_vertices_to_normalized(quad, width, height)
+    overlaps = [normalized_polygon_overlap(_detection_polygon(item), outline) for item in result.detections]
+    competing = [index for index, match in enumerate(overlaps)
+                 if max(match.first_containment, match.second_containment) >= .06]
+    if len(competing) != 1:
+        return result
+    index, = competing
+    match = overlaps[index]
+    if (index not in weak or not .10 <= match.first_containment <= .45
+            or not .20 <= match.second_containment <= .55):
+        return result
+    item = result.detections[index]
+    # Dark content, bright stock and shadows can also be printed together.
+    # The alternative is visible in review and never participates in instance
+    # counts, mask ownership, warp selection or automatic exports.
+    detections = result.detections.copy()
+    detections[index] = replace(
+        item, mask={**item.mask, "crossing_print_suggestion": _normalized_polygon(quad, width, height)},
+        review_reasons=[CROSSING_PRINT_REVIEW],
+    )
+    return SegmentationResult(detections, result.metadata)
+
+
 def segment_album_page(
     image: np.ndarray, settings: Settings, *, source_image: np.ndarray | None = None,
     protected_regions: list[dict] | None = None,
@@ -2981,6 +3027,7 @@ def segment_album_page(
             result = _recover_capture_edge_prints(evidence_source, result, settings)
             result = _recover_scalloped_prints(evidence_source, result, trim_border=settings.enable_border_trim)
             result = _suggest_adjacent_album_edge_print(evidence_source, result)
+            result = _suggest_crossing_print_outline(evidence_source, result)
     model_path = settings.visible_mask_model_path
     if not settings.enable_precise_photo_crops:
         return result

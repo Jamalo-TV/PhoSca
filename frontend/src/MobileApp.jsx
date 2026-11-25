@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createAlbum, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
 import { resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import {
-  adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, fragmentOutlineHint,
-  fragmentOutlineReason, getCropModes, getFragmentOutline,
+  adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, crossingPrintHint,
+  crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getCropModes, getFragmentOutline,
   getPrintEdgeReviewHint,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -108,6 +108,10 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   const storedOrientation = item.payload?.segmentation_mask?.orientation_degrees ?? null;
   const fragmentReview = item.payload?.confidence != null && item.payload?.review_reasons?.includes(fragmentOutlineReason);
   const fragmentOutline = fragmentReview && getFragmentOutline(item.payload?.segmentation_mask);
+  const crossingOutline = item.payload?.confidence != null
+    && item.payload?.review_reasons?.includes(crossingPrintReason)
+    && !item.payload?.review_reasons?.includes("GEOMETRY_REVIEW_WRONG_OBJECT")
+    && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.crossing_print_suggestion));
   const printEdgeReviewHint = getPrintEdgeReviewHint(item.payload?.crop_modes?.full_print);
   const adjacentOutline = item.payload?.confidence != null
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.adjacent_print_suggestion));
@@ -141,6 +145,9 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   }, [item.id]);
   const box = quadToBox(quad);
   const validQuad = isValidQuad(quad);
+  const crossingNeedsCorrection = crossingOutline && initialOuter()?.every(
+    (point, index) => point.x === quad?.[index]?.x && point.y === quad?.[index]?.y,
+  );
   const { size, error: sizeError } = parsePrintSize(measurementFields);
   function moveCorner(event, cornerIndex) {
     if (!editable || !quad) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId);
@@ -159,7 +166,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
     addEventListener("pointermove", move); addEventListener("pointerup", up, { once: true });
   }
   async function save() {
-    if (!validQuad || sizeError) return; setSaving(true); setSaveError("");
+    if (!validQuad || sizeError || crossingNeedsCorrection) return; setSaving(true); setSaveError("");
     try {
       const saved = await patchBoundingBox(item.payload.photo_id, box, {
         polygon: quad,
@@ -174,7 +181,10 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
       setSavedOrientation(savedDegrees);
       const nextUrl=`/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`;
       setSavedCropUrl(nextUrl); await onSaved?.({ bounding_box: box, polygon: quad });
-    } catch (error) { setSaveError(error.message || "Ausschnitt konnte nicht gespeichert werden."); }
+    } catch (error) {
+      setSaveError(error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
+        : error.message || "Ausschnitt konnte nicht gespeichert werden.");
+    }
     finally { setSaving(false); }
   }
   const shown = box ? [{ bounding_box: box, photo_id: item.payload?.photo_id }] : detections;
@@ -186,7 +196,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
     <polyline points={fragmentOutline.weakEdge.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="6" strokeDasharray="16 9" />
   );
-  const alternateOutline = adjacentOutline || scallopedAlternate;
+  const alternateOutline = adjacentOutline || scallopedAlternate || (!usingOutlineSuggestion && crossingOutline);
   const alternateOverlay = alternateOutline && (
     <polygon points={alternateOutline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="6" strokeDasharray="16 9" />
@@ -197,12 +207,13 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
         <p className="quad-hint">{clippedOverlapHint}</p>
       )}
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
+      {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
       {printEdgeReviewHint && <p className="quad-hint">{printEdgeReviewHint}</p>}
       {adjacentOutline && <p className="quad-hint">{adjacentPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
       {scallopedAlternate && <p className="quad-hint">Prüfe den gestrichelten Vorschlag am Original. Wähle «Prints zusammen», falls dort ein eigener Abzug aufliegt.</p>}
-      {fragmentOutline && (
+      {(fragmentOutline || crossingOutline) && (
         <button className="magnifier-toggle" type="button" disabled={saving} onClick={() => {
-          const suggestion = cyclicReviewQuad(fragmentOutline.quad);
+          const suggestion = crossingOutline || cyclicReviewQuad(fragmentOutline.quad);
           if (!suggestion) return;
           setQuad(suggestion);
           setUsingOutlineSuggestion(true);
@@ -231,7 +242,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
         setSavedCropUrl("");
         setSaveError("");
       }} />
-      <button className="save-crop" onClick={save} disabled={saving || !validQuad || Boolean(sizeError)}>
+      <button className="save-crop" onClick={save} disabled={saving || !validQuad || Boolean(sizeError) || crossingNeedsCorrection}>
         <Save size={18}/>{saving ? "Richtet das Bild …" : "Viereck speichern & geraderichten"}
       </button>
       {saveError && <p className="crop-save-error">{saveError}</p>}

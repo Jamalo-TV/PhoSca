@@ -1,6 +1,7 @@
 import asyncio
 from copy import deepcopy
 from datetime import datetime, timezone
+from math import hypot
 from pathlib import Path
 import shutil
 from uuid import UUID, uuid4, uuid5
@@ -17,6 +18,7 @@ from app.core.auth import Principal, get_principal, require_write_principal
 from app.database import get_async_session
 from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PageStatus, PhotoStatus, ProcessingRun, StageRun
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
+from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE
 from app.pipeline.decisions import is_reviewed_non_print
 from app.pipeline.image_ops import normalized_box_to_pixels
 from app.pipeline.perspective import manual_print_intersects, validate_review_quads
@@ -190,7 +192,8 @@ async def _render_photo_edit(
 async def _review_overlapping_exports(
     session: AsyncSession, photo: ExtractedPhoto, width: int, height: int,
 ) -> None:
-    quad = (photo.segmentation_mask or {}).get("warp_quad")
+    mask = photo.segmentation_mask or {}
+    quad = mask.get("warp_quad")
     if quad is None:
         return
     neighbors = await session.scalars(
@@ -200,6 +203,9 @@ async def _review_overlapping_exports(
         .execution_options(populate_existing=True)
     )
     for neighbor in neighbors:
+        if (mask.get("manual_added") is not True and mask.get(REVIEWED_CROSSING_OUTLINE) is not True
+                and (neighbor.segmentation_mask or {}).get(REVIEWED_CROSSING_OUTLINE) is not True):
+            continue
         metadata = deepcopy(neighbor.enhancement_applied or {})
         modes = (metadata.get("correction") or {}).get("crop_modes") or {}
         if is_reviewed_non_print(metadata.get("review_rejected_detection"), neighbor.bounding_box, neighbor.segmentation_mask):
@@ -235,8 +241,22 @@ def _replay_manual_photo(
     return photo
 
 
-def _same_visible_outline(points: object, quad: list[dict]) -> bool:
-    return any(points == cycle[index:] + cycle[:index] for cycle in (quad, quad[::-1]) for index in range(4))
+def _same_visible_outline(
+    points: object, quad: list[dict], *, native_size: tuple[int, int] | None = None,
+) -> bool:
+    if not isinstance(points, list) or len(points) != 4:
+        return False
+    for cycle in (quad, quad[::-1]):
+        for index in range(4):
+            ordered = cycle[index:] + cycle[:index]
+            if points == ordered:
+                return True
+            if native_size is not None and all(
+                hypot((p["x"] - q["x"]) * (native_size[0] - 1), (p["y"] - q["y"]) * (native_size[1] - 1)) <= 2
+                for p, q in zip(points, ordered, strict=True)
+            ):
+                return True
+    return False
 
 
 @router.get("/presets")
@@ -462,7 +482,22 @@ async def update_photo_bounding_box(
         segmentation_mask = (
             payload.segmentation_mask.as_dict() if payload.segmentation_mask else _rect_mask_from_box(box, width, height)
         )
-        for flag in ("album_window_occluded", "manual_added", "capture_edge_clipped"):
+        original_mask = photo.segmentation_mask or {}
+        if original_mask.get("crossing_print_suggestion"):
+            if payload.segmentation_mask is None or payload.segmentation_mask.warp_quad is None:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="crossing_print_outline_required")
+            outer = segmentation_mask.get("warp_quad")
+            correction = (photo.enhancement_applied or {}).get("correction") or {}
+            full_print = (correction.get("crop_modes") or {}).get("full_print") or {}
+            if (segmentation_mask.get("image_quad") is not None
+                    or _same_visible_outline(original_mask.get("polygon"), outer, native_size=(width, height))
+                    or _same_visible_outline(full_print.get("warp_quad"), outer, native_size=(width, height))):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="crossing_print_outline_required")
+            # A new outer cannot inherit visible pixels from the crossing proposal.
+            segmentation_mask["polygon"] = deepcopy(outer)
+            segmentation_mask["visible_polygon"] = deepcopy(outer)
+            segmentation_mask[REVIEWED_CROSSING_OUTLINE] = True
+        for flag in ("album_window_occluded", "manual_added", "capture_edge_clipped", REVIEWED_CROSSING_OUTLINE):
             if (photo.segmentation_mask or {}).get(flag) is True:
                 segmentation_mask[flag] = True
         if "visible_polygon" not in segmentation_mask:
@@ -548,7 +583,11 @@ async def update_photo_bounding_box(
         )
     )
     await session.flush()
-    if segmentation_mask.get("manual_added") is True:
+    prior_mask = before["segmentation_mask"] or {}
+    prior_crop_modes = (metadata.get("correction") or {}).get("crop_modes") or {}
+    prior_outer = prior_mask.get("warp_quad") or (prior_crop_modes.get("full_print") or {}).get("warp_quad")
+    outer = segmentation_mask.get("warp_quad")
+    if segmentation_mask.get("manual_added") is True or (outer and not _same_visible_outline(prior_outer, outer)):
         await _review_overlapping_exports(session, photo, width, height)
     return await _render_photo_edit(session, photo.id, settings)
 
