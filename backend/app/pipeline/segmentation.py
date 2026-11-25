@@ -1,3 +1,4 @@
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import lru_cache
@@ -2262,11 +2263,20 @@ def _make_detection(
     detector_source: str,
     scores: dict[str, float] | None = None,
 ) -> SegmentationDetection | None:
+    if len(points) < 3 or not np.isfinite(points).all():
+        return None
     points = _clamp_points(points, image_width, image_height)
     x, y, w, h = cv2.boundingRect(points.astype(np.int32))
-    if w <= 0 or h <= 0:
+    area = cv2.contourArea(points)
+    if w < 2 or h < 2 or area <= 0:
         return None
-    contour_width, contour_height = _quadrilateral_geometry_dimensions(points, w, h)
+    polygon_reasons = []
+    try:
+        contour_width, contour_height = _quadrilateral_geometry_dimensions(points, w, h)
+    except ValueError:
+        # A visible mask can have positive area without four usable perspective corners.
+        contour_width, contour_height = w, h
+        polygon_reasons.append("PRINT_CORNERS_UNCERTAIN")
     quality = evaluate_segmentation_geometry(
         contour_width,
         contour_height,
@@ -2276,9 +2286,7 @@ def _make_detection(
     normalized_box = pixel_box_to_normalized(x, y, w, h, image_width, image_height)
     clipped_box = _clip_normalized_box(normalized_box) or box
     mask_scores = dict(scores or {})
-    mask_scores.setdefault(
-        "area_ratio", round(float(cv2.contourArea(points.reshape(-1, 1, 2)) / max(1, image_width * image_height)), 4)
-    )
+    mask_scores.setdefault("area_ratio", round(area / max(1, image_width * image_height), 4))
     return SegmentationDetection(
         bounding_box=clipped_box,
         mask={
@@ -2289,8 +2297,8 @@ def _make_detection(
         },
         confidence=round(float(confidence), 3),
         aspect_ratio=quality.aspect_ratio,
-        geometry_valid=quality.geometry_valid,
-        review_reasons=quality.review_reasons,
+        geometry_valid=quality.geometry_valid and not polygon_reasons,
+        review_reasons=quality.review_reasons + polygon_reasons,
     )
 
 
@@ -2324,6 +2332,7 @@ def _parse_simple_box_outputs(
     *,
     input_width: int | None = None,
     input_height: int | None = None,
+    rejected: Counter[str] | None = None,
 ) -> list[SegmentationDetection]:
     input_width = input_width or width
     input_height = input_height or height
@@ -2344,6 +2353,10 @@ def _parse_simple_box_outputs(
         normalize = _normalize_cxcywh if uses_centers else _normalize_xyxy
         for index in np.flatnonzero(confidences >= proposal_threshold):
             row = array[index]
+            if not np.isfinite(row[:4]).all() or not np.isfinite(confidences[index]):
+                if rejected is not None:
+                    rejected["nonfinite_prediction"] += 1
+                continue
             normalized_boxes = normalize(*map(float, row[:4]), transform=transform, native=native)
             if normalized_boxes is None:
                 continue
@@ -2351,10 +2364,15 @@ def _parse_simple_box_outputs(
             source = "yolo_box"
             points = None
             if has_masks:
+                coefficients = row[score_end:]
+                if not np.isfinite(coefficients).all():
+                    if rejected is not None:
+                        rejected["nonfinite_mask_coefficients"] += 1
+                    continue
                 source = "yolo_seg_mask"
                 points = _polygon_from_proto_mask(
                     proto,
-                    row[score_end:],
+                    coefficients,
                     input_box,
                     transform=transform,
                     source_box=source_box,
@@ -2377,6 +2395,8 @@ def _parse_simple_box_outputs(
             )
             if detection is not None:
                 detections.append(detection)
+            elif rejected is not None:
+                rejected["collapsed_source_polygon"] += 1
     return _nms_detections(detections)
 
 
@@ -3121,6 +3141,7 @@ def _segment_album_page(image: np.ndarray, settings: Settings, source: np.ndarra
             target_width = int(
                 input_shape[3] if isinstance(input_shape[3], int) else registered_input.get("width", 640)
             )
+            rejected_proposals: Counter[str] = Counter()
 
             def infer(frame: np.ndarray):
                 letterboxed, transform = _letterbox_image(frame, target_width, target_height)
@@ -3128,8 +3149,10 @@ def _segment_album_page(image: np.ndarray, settings: Settings, source: np.ndarra
                 outputs = session.run(None, {input_meta.name: tensor[np.newaxis, ...]})
                 detections = _parse_simple_box_outputs(
                     outputs, frame.shape[1], frame.shape[0], settings,
-                    input_width=target_width, input_height=target_height,
+                    input_width=target_width, input_height=target_height, rejected=rejected_proposals,
                 )
+                if rejected_proposals:
+                    metadata["rejected_model_proposals"] = dict(rejected_proposals)
                 return detections, transform, outputs
 
             detections, transform, outputs = infer(image)

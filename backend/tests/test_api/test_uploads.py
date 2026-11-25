@@ -1,7 +1,10 @@
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID
 
+import numpy as np
 from httpx import AsyncClient
 from PIL import Image, ImageDraw
 from sqlalchemy import select
@@ -121,6 +124,78 @@ async def test_uploaded_page_is_cropped_automatically_even_if_ocr_fails(
     with Image.open(BytesIO(crop.content)) as image:
         assert 180 < image.width < 260
         assert 140 < image.height < 210
+
+
+async def test_upload_keeps_both_crop_modes_when_model_also_returns_a_collapsed_box(client, monkeypatch, tmp_path) -> None:
+    from app.config import get_settings
+    from app.pipeline import segmentation
+    from app.services import pipeline
+
+    model = tmp_path / "test.onnx"
+    model.touch()
+    for name, value in {
+        "AUTO_ANALYZE_UPLOADS": "true", "MAX_UPLOAD_SIZE": "65536", "MAX_REQUEST_SIZE": "131072",
+        "YOLO_MODEL_PATH": str(model), "REQUIRE_REGISTERED_MODELS": "false", "YOLO_PROPOSAL_THRESHOLD": "0.025",
+        "ENABLE_CLASSICAL_SEGMENTATION_FALLBACK": "false", "ENABLE_PRECISE_PHOTO_CROPS": "true",
+        "ENABLE_PHOTO_ORIENTATION_CORRECTION": "false", "ENABLE_PROTECTED_REGION_GUARD": "false",
+    }.items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+
+    prediction = np.zeros((2, 37), dtype=np.float32)
+    prediction[0, :5] = [385.15134, 29.117088, 253.19464, 58.15648, 0.04268247]
+    prediction[1, :5] = [229, 256.4, 305.5, 244.4, 0.88]
+    prediction[1, 5] = 1
+    proto = np.ones((1, 32, 128, 128), dtype=np.float32)
+    session = SimpleNamespace(
+        get_inputs=lambda: [SimpleNamespace(name="input", shape=[1, 3, 512, 512])],
+        get_providers=lambda: ["CPUExecutionProvider"],
+        run=lambda *_: [prediction, proto],
+    )
+
+    @lru_cache
+    def load_session(*_):
+        return session
+
+    monkeypatch.setattr(segmentation, "_cached_onnx_session", load_session)
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: None)
+    album_id = await create_album(client)
+    page = Image.new("RGB", (672, 520), (232, 232, 232))
+    draw = ImageDraw.Draw(page)
+    draw.rectangle((100, 100, 500, 420), fill=(246, 246, 246))
+    draw.rectangle((124, 124, 476, 396), fill=(175, 116, 82))
+    buffer = BytesIO()
+    page.save(buffer, format="PNG")
+    upload = await client.post(
+        f"/api/v1/albums/{album_id}/pages/upload",
+        files=[("files", ("album-page.png", buffer.getvalue(), "image/png"))],
+    )
+    assert upload.status_code == 201 and upload.json()["analysis_queued"], upload.text
+    processed, = (await client.get(f"/api/v1/albums/{album_id}/pages")).json()
+    metadata = processed["processing_metadata"]["steps"]["segmentation"]
+    assert metadata["rejected_model_proposals"] == {"collapsed_source_polygon": 1}
+    assert not metadata["fallback_used"] and "onnx_error" not in metadata
+    photo, = (await client.get(f"/api/v1/albums/{album_id}/photos")).json()
+    assert photo["crop_download_urls"] == {"full_print": None, "image_only": None}
+
+    def vertices(left, top, right, bottom):
+        return [{"x": x / 671, "y": y / 519} for x, y in [(left, top), (right, top), (right, bottom), (left, bottom)]]
+
+    stock, motif = vertices(100, 100, 500, 420), vertices(124, 124, 476, 396)
+    url = f"/api/v1/photos/{photo['id']}"
+    saved = await client.patch(f"{url}/bounding-box", json={
+        "bounding_box": {"x1": 100 / 671, "y1": 100 / 519, "x2": 500 / 671, "y2": 420 / 519},
+        "segmentation_mask": {
+            "source": "manual_quad", "polygon": stock, "warp_quad": stock, "image_quad": motif,
+            "print_size_mm": {"width": 400, "height": 320},
+        },
+    })
+    assert saved.status_code == 200, saved.text
+    for mode, expected_size in (("full_print", (401, 321)), ("image_only", (353, 273))):
+        download = await client.get(saved.json()["crop_download_urls"][mode])
+        assert download.status_code == 200, download.text
+        with Image.open(BytesIO(download.content)) as crop:
+            assert crop.size == expected_size
 
 
 async def test_upload_rejects_invalid_magic_mime(client: AsyncClient) -> None:

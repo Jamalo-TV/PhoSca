@@ -1920,3 +1920,20 @@ experiment ONNX digest and its 512 × 512 NCHW input to
 `labels/challenge` for the stock cases and `--synthetic locked` for the
 frozen comparison. Run the model with and without
 `--include-classical-fallback` and compare with `--classical-only`.
+
+### Isolate invalid model proposals at the image boundary
+
+An exported stock model reproduced a whole-page parse failure on challenge
+seed `931260` at proposal threshold `0.025`. Prediction row `5134` extended
+only 0.195 input pixels past the top letterbox padding. Undoing the padding
+collapsed the proposal to a line of native pixels. Its corner-ordering
+exception also discarded the valid proposals from the same inference.
+
+The parser now omits collapsed proposals and reports their count in
+`rejected_model_proposals`. A positive-area visible mask with unusable
+perspective corners retains its contour for review. The upload regression uses
+the reproduced prediction, verifies that the surviving proposal reaches both
+crop modes, and exports both at their expected dimensions after confirmation.
+The pipeline revision is `2026-11-precise-crops-v37` so validation applies to
+the corrected behavior. Automatic crop release still requires verified
+configuration-specific evidence.

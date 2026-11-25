@@ -275,6 +275,52 @@ def test_yolo_box_parser_undoes_letterbox_padding() -> None:
     assert 0.74 < box["y2"] < 0.76
 
 
+def test_yolo_segmentation_skips_a_clipped_line_without_losing_valid_proposals() -> None:
+    from collections import Counter
+
+    from app.config import Settings
+    from app.pipeline.segmentation import _parse_simple_box_outputs
+
+    prediction = np.zeros((4, 37), dtype=np.float32)
+    # The original model row ends 0.195 input pixels below the top letterbox padding.
+    prediction[0, :5] = [385.15134, 29.117088, 253.19464, 58.15648, 0.04268247]
+    prediction[1, :5] = [260, 235, 180, 160, 0.88]
+    prediction[2, :5] = [np.nan, 235, 180, 160, 0.95]
+    prediction[3, :5] = [260, 235, 180, 160, 0.96]
+    prediction[3, 5] = np.inf
+    proto = np.zeros((1, 32, 128, 128), dtype=np.float32)
+    rejected: Counter[str] = Counter()
+
+    detections = _parse_simple_box_outputs(
+        [prediction, proto], 672, 520,
+        Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://", YOLO_PROPOSAL_THRESHOLD=0.025),
+        input_width=512, input_height=512, rejected=rejected,
+    )
+
+    assert len(detections) == 1
+    assert detections[0].confidence == 0.88
+    assert detections[0].geometry_valid
+    assert rejected == {"collapsed_source_polygon": 1, "nonfinite_prediction": 1, "nonfinite_mask_coefficients": 1}
+
+
+def test_yolo_detection_keeps_a_concave_visible_mask_for_review() -> None:
+    from app.config import Settings
+    from app.pipeline.segmentation import _make_detection
+
+    points = np.float32([[10, 10], [80, 10], [45, 38], [10, 80]])
+    detection = _make_detection(
+        box={"x1": 0.1, "y1": 0.1, "x2": 0.81, "y2": 0.81}, points=points, confidence=0.9,
+        image_width=100, image_height=100, settings=Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://"),
+        source="yolo_seg_mask", detector_source="yolo_onnx",
+    )
+
+    assert detection is not None
+    assert len(detection.mask["polygon"]) == 4
+    np.testing.assert_allclose(detection.mask["polygon"][2]["x"], 45 / 99, atol=1e-6)
+    assert not detection.geometry_valid
+    assert detection.review_reasons == ["PRINT_CORNERS_UNCERTAIN"]
+
+
 def test_native_onnx_mask_matches_torch_letterbox_coordinates() -> None:
     import pytest
 
