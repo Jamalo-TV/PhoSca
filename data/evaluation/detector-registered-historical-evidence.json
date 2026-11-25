@@ -1,0 +1,469 @@
+{
+  "status": "partial_historical_evidence_not_release_inventory",
+  "base_model_sha256": "e4168ae335a04c480c21048fa0b1f7b569bb1cc942c7e68bc4886e19d0e07242",
+  "archived_golden_evaluation": {
+    "path": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/onnx_golden_segmentation_report.json",
+    "fixture_model_sha256_values": [
+      "e4168ae335a04c480c21048fa0b1f7b569bb1cc942c7e68bc4886e19d0e07242"
+    ],
+    "page_count": 10,
+    "page_perfect": 9,
+    "true_positive": 28,
+    "false_positive": 1,
+    "false_negative": 1,
+    "mean_iou": 0.9729937386963216
+  },
+  "warm_model_sha256": "4d8235880ea1868a0ce6c77fd313522ae979329eed1441385cb2c256e2cf960f",
+  "warm_model_summary": {
+    "path": "4fcfec2cecb0c0f3ddd7b8c580674d5e6b0f6047:models/yolov8-seg-album.training.json",
+    "base_model": "PhoSca YOLO11n v1 checkpoint",
+    "best_checkpoint": "runs/segmentation-review-2026-11-22/finetune/jobs/warm_finetune/weights/best.pt",
+    "training_samples": {
+      "legacy_manual": 25,
+      "visually_screened_approximate": 50
+    },
+    "validation_samples": {
+      "legacy_manual": 5,
+      "new_outlined": 11
+    },
+    "heldout_samples": 34,
+    "heldout_report": "runs/segmentation-review-2026-11-22/heldout_scores.json",
+    "legacy_regression": {
+      "page_count": 10,
+      "true_positive": 29,
+      "false_positive": 0,
+      "false_negative": 0,
+      "mean_iou": 0.9783587006603668
+    }
+  },
+  "legacy_split_summary": {
+    "train": {
+      "labels": 25,
+      "archived_images": 5
+    },
+    "val": {
+      "labels": 5,
+      "archived_images": 2
+    },
+    "golden": {
+      "labels": 10,
+      "archived_images": 10
+    }
+  },
+  "legacy_rows": [
+    {
+      "stem": "page_01",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_01.txt",
+      "label_sha256": "9b0d118c4f8ac412dc35fd5781539d0ecc8aad730d00c0aeb2227596a9a458f4",
+      "label_instance_count": 3,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_02",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_02.txt",
+      "label_sha256": "e0f8c3685284ff36f98315d37f19a72827bb9817ee7332359b92a753e291b921",
+      "label_instance_count": 3,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_03",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_03.txt",
+      "label_sha256": "5189d8f0183e90e940805325f8bf5104e00008ba94fb1a2872a6f6fa997c02ed",
+      "label_instance_count": 2,
+      "archived_image_reference": "99847d97be19d729ea5234a03673449488cd6b95:data/golden_fixtures/page_03.jpg",
+      "archived_image_sha256": "000cccc2583df9c015652e044727a154de1fc8fa3a4e67e3b9f666e5bac2306d",
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_06",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_06.txt",
+      "label_sha256": "28e64b820ba696fd35ba18ce468294eec5ed85a30e88795bf5a0346e9a4becfc",
+      "label_instance_count": 3,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_07",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_07.txt",
+      "label_sha256": "1936a5142828a4af8047ed1eca61e85552509c2c74d5977f2c18265540684003",
+      "label_instance_count": 3,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_08",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_08.txt",
+      "label_sha256": "73805ea57a29115fdf79ef05069b7b6f0dd7cbd15de626ed8f91c159dc85efbf",
+      "label_instance_count": 4,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_09",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_09.txt",
+      "label_sha256": "3f288389de0c9a7a69d87f1c472558756971d238df626552c8fb32f2db90dbec",
+      "label_instance_count": 3,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_14",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_14.txt",
+      "label_sha256": "ff09da239ab0023da7e852dfdf5cdce76259def12a18804121a513a07133d701",
+      "label_instance_count": 3,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_15",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_15.txt",
+      "label_sha256": "4a3d6001754c65b1becb0c32509ecaf780c1ba6ea0e42d903bf03b2d2339bad7",
+      "label_instance_count": 4,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_16",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_16.txt",
+      "label_sha256": "73208df4e7f5fbe36e2f7a15daf6cc37717d5b08f3b4f955c745be8f83e9bfb3",
+      "label_instance_count": 3,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_17",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_17.txt",
+      "label_sha256": "b9d526f77c454f350730fe7c1f84e2985e0393ce9f73091d9b8d1d789dc75c64",
+      "label_instance_count": 3,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_18",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_18.txt",
+      "label_sha256": "a61efed02134f13954391403436812853dccd87b9c56c0f264ef69bc94a9fa65",
+      "label_instance_count": 2,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_20",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_20.txt",
+      "label_sha256": "a63b81196cccd5fd0699294ca03764399630c25079214d11678a068a3481d198",
+      "label_instance_count": 3,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_21",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_21.txt",
+      "label_sha256": "1eef93045f8bfe471a384923d7cb26e61bbac8b1a2b253a18bccec7efda18e06",
+      "label_instance_count": 2,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_23",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_23.txt",
+      "label_sha256": "b8eb7d9a174bb1e7fea8c0173111b35fff5168dbbe6982b8c71f28065ad05ba1",
+      "label_instance_count": 3,
+      "archived_image_reference": "99847d97be19d729ea5234a03673449488cd6b95:data/golden_fixtures/page_23.jpg",
+      "archived_image_sha256": "9b173b356e92fcba185dd0468809f38eae0144aff1c5e8c84b131d04b83603d4",
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_27",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_27.txt",
+      "label_sha256": "d2902fb593683afb47c9ac090344c3b92a7d2791825b8f410ad44f75d4d48f21",
+      "label_instance_count": 3,
+      "archived_image_reference": "99847d97be19d729ea5234a03673449488cd6b95:data/golden_fixtures/page_27.jpg",
+      "archived_image_sha256": "209226d281e99525e6b1589883ad68e2e2398e730ba3f53a2476c986a2daf77a",
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_28",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_28.txt",
+      "label_sha256": "833686bf3da44952d631239b418d0e13bf0a3beaa9c33aaf08877bbaff389a82",
+      "label_instance_count": 6,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_30",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_30.txt",
+      "label_sha256": "fa3e761dfc36f98ec845d7c4241f1996a9b7c9259320e21a1c6230ff55f93de2",
+      "label_instance_count": 2,
+      "archived_image_reference": "99847d97be19d729ea5234a03673449488cd6b95:data/golden_fixtures/page_30.jpg",
+      "archived_image_sha256": "391ed165be00e60e555d3e35a992b2eb0ce468b511b9424dfcbc6605f1f99892",
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_32",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_32.txt",
+      "label_sha256": "17d629970d3fa8703b7238ec1b981b820a88f7f19d43a4edb41142a6633be9b5",
+      "label_instance_count": 1,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_34",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_34.txt",
+      "label_sha256": "2fc853178e998fb6566001ebe1a7bd16b21bd4f25c3332813ddfae0a76282b6d",
+      "label_instance_count": 2,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_35",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_35.txt",
+      "label_sha256": "00c73f46a1d8f463bf84d21a1b1e7bd7cd00eb00a085e54af754a97730ba7c57",
+      "label_instance_count": 3,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_36",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_36.txt",
+      "label_sha256": "31a843e3dfe543aed9b6b758889205f54d1322d2120bf826a7b61eab15eb5d4e",
+      "label_instance_count": 3,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_38",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_38.txt",
+      "label_sha256": "65f8839ce77650d682754645eac1bcd0341b201e5a81985cad08f5322455bcba",
+      "label_instance_count": 3,
+      "archived_image_reference": "99847d97be19d729ea5234a03673449488cd6b95:data/golden_fixtures/page_38.jpg",
+      "archived_image_sha256": "3eb236526b0b7a80a1b72cbffa5f40540d4a564d4e9b453a39636eda2d49adfe",
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_39",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_39.txt",
+      "label_sha256": "d496dff3d81cf97965b7542830c5dccdf1734e92ef23c8eacebfa844f7f9d51f",
+      "label_instance_count": 5,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_40",
+      "archived_split": "train",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/train/page_40.txt",
+      "label_sha256": "2e1b653f2f8bfaddc376a4afe4dfadc494dfec1b3fb73f6a738911b09c256fc7",
+      "label_instance_count": 4,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_13",
+      "archived_split": "val",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/val/page_13.txt",
+      "label_sha256": "6320f829f23b8876da51455ceb0f6ea6ef2affa94f87b0d76429447924709c4f",
+      "label_instance_count": 4,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_19",
+      "archived_split": "val",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/val/page_19.txt",
+      "label_sha256": "f674976cf2c8069b384c1f987c0cb10cc076e00541bdc57ca0dcaa3c8f7deccb",
+      "label_instance_count": 2,
+      "archived_image_reference": "99847d97be19d729ea5234a03673449488cd6b95:data/golden_fixtures/page_19.jpg",
+      "archived_image_sha256": "2b67543695c95edb14069d68bde5e426214bb634a6c788ef2349e895e248f2e9",
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_22",
+      "archived_split": "val",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/val/page_22.txt",
+      "label_sha256": "2a52c6f07294491a37d24fc155a76cb7817cb2216235d975e069b18bf927c07b",
+      "label_instance_count": 3,
+      "archived_image_reference": "99847d97be19d729ea5234a03673449488cd6b95:data/golden_fixtures/page_22.jpg",
+      "archived_image_sha256": "ff74038ee4e6ccc3af4cb3fd13bf48aed6e9326efe5445e6bb24d10a3407b4d7",
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_24",
+      "archived_split": "val",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/val/page_24.txt",
+      "label_sha256": "23850ce2de3c13be400a070ac88f770ff7d202ff0f004e751320b41cd32ff095",
+      "label_instance_count": 2,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_29",
+      "archived_split": "val",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/yolo_dataset/labels/val/page_29.txt",
+      "label_sha256": "358aae70fb65dcb591fc2ee75269672a875693acf3d173db92dbead059a37fec",
+      "label_instance_count": 4,
+      "archived_image_reference": null,
+      "archived_image_sha256": null,
+      "documented_source_group": null
+    },
+    {
+      "stem": "page_04",
+      "archived_split": "golden",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/labels/page_04.txt",
+      "label_sha256": "caa8a2114106400b70bcb79a9b1170c63047298cc2fc2c804804869c506d5e7d",
+      "label_instance_count": 3,
+      "archived_image_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/page_04.jpg",
+      "archived_image_sha256": "7666f3ff91d8283dfbfc1b0a675b9b25997ade0b156f88c65232d28ed727196d",
+      "documented_source_group": "legacy_album_context_01"
+    },
+    {
+      "stem": "page_05",
+      "archived_split": "golden",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/labels/page_05.txt",
+      "label_sha256": "fbb2f0ff477a452a97a2800258459d1b22f0e9310a75dda7b406f358d8461323",
+      "label_instance_count": 4,
+      "archived_image_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/page_05.jpg",
+      "archived_image_sha256": "199b1994796f32781585d2a7fb01f00f0e9fe18f3b90a90d40961984625fabdb",
+      "documented_source_group": "legacy_album_context_01"
+    },
+    {
+      "stem": "page_10",
+      "archived_split": "golden",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/labels/page_10.txt",
+      "label_sha256": "36dcc88be2fe87380338fcd7c65788c6094a1b59f363d20f66914c8db38527fe",
+      "label_instance_count": 5,
+      "archived_image_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/page_10.jpg",
+      "archived_image_sha256": "02466bf77cf62be45ed4d4b6d3d3c2827b783c7448daba85842dc66998755206",
+      "documented_source_group": "legacy_album_context_01"
+    },
+    {
+      "stem": "page_11",
+      "archived_split": "golden",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/labels/page_11.txt",
+      "label_sha256": "ad00db485b1c5a006f73ee1b614a478112af94f848403d49c6c75304ab9c1242",
+      "label_instance_count": 2,
+      "archived_image_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/page_11.jpg",
+      "archived_image_sha256": "11f9bc1542c9af1bb7a1498d3684026ab6f096c7b31b621fe7b63545c7706b28",
+      "documented_source_group": "legacy_album_context_01"
+    },
+    {
+      "stem": "page_12",
+      "archived_split": "golden",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/labels/page_12.txt",
+      "label_sha256": "7926a3767f1033bdb43ace9769f1395d03fbda53c512199d046c0d8bd785cc69",
+      "label_instance_count": 2,
+      "archived_image_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/page_12.jpg",
+      "archived_image_sha256": "748f89b5039db4d1f0fcee82bfb0abe35a8ab1c4f44dad7879f7a15c0430e67d",
+      "documented_source_group": "legacy_album_context_01"
+    },
+    {
+      "stem": "page_25",
+      "archived_split": "golden",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/labels/page_25.txt",
+      "label_sha256": "8d5d5d03eede5524258168f1cf88f1cd5792764e6ce38fb410bbe53a8290b303",
+      "label_instance_count": 3,
+      "archived_image_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/page_25.jpg",
+      "archived_image_sha256": "be920de478e47dc7cb9ed62c785cd385af18cb9667f178f8ad9cb7953c76ed85",
+      "documented_source_group": "legacy_album_context_01"
+    },
+    {
+      "stem": "page_26",
+      "archived_split": "golden",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/labels/page_26.txt",
+      "label_sha256": "29c9758ea5fdbf38e6ffc1898dc4f9107f08e8ffcf776731a982104bf8d055ca",
+      "label_instance_count": 4,
+      "archived_image_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/page_26.jpg",
+      "archived_image_sha256": "133a327cefccdab318574d5e9e00ef1ebaba72cb03ab12b51c97a1f75fe1b17f",
+      "documented_source_group": "legacy_album_context_01"
+    },
+    {
+      "stem": "page_31",
+      "archived_split": "golden",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/labels/page_31.txt",
+      "label_sha256": "e09f491705eaa2700a7b938268484980be7856b833c78c94f1188a799ac28b8e",
+      "label_instance_count": 2,
+      "archived_image_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/page_31.jpg",
+      "archived_image_sha256": "25aab848cbcfc4eee8ebbeb65f89ac567f141dfb0c2b3c1bdc4b0496a2a12062",
+      "documented_source_group": "legacy_album_context_01"
+    },
+    {
+      "stem": "page_33",
+      "archived_split": "golden",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/labels/page_33.txt",
+      "label_sha256": "f063f5f4a07c3463bbbad86b31fab91842b6a872886550f9b2c0989094b2cba9",
+      "label_instance_count": 2,
+      "archived_image_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/page_33.jpg",
+      "archived_image_sha256": "c62d15a7df0c5babcccafcc43bc8b1ba634363e16290f479364485c3112fa55c",
+      "documented_source_group": "legacy_album_context_01"
+    },
+    {
+      "stem": "page_37",
+      "archived_split": "golden",
+      "label_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/labels/page_37.txt",
+      "label_sha256": "46da3439203003c32e9e549a01a7b51a498c8043325c9c2e194353e2fab54366",
+      "label_instance_count": 2,
+      "archived_image_reference": "46e94be8a33c6e4d84a0b4879f9c460524157c27:data/golden_fixtures/page_37.jpg",
+      "archived_image_sha256": "6c3c63d3b6c997975b13d81d4fc6cd9556327dcc837b3df525448d83842be1ef",
+      "documented_source_group": "legacy_album_context_01"
+    }
+  ],
+  "limitations": [
+    "Archive image hashes identify Git copies by matching stems. No training artifact manifest establishes the exact training-input bytes.",
+    "Only the Golden split carries a documented legacy source context. Canonical physical album IDs for the training/validation rows are unresolved.",
+    "The 50 screened training drafts, 11 new validation outlines and 34 evaluation pages have aggregate counts only. No per-image source linkage was recovered."
+  ],
+  "artifact_search": {
+    "local_git_blobs_checked": 1112,
+    "local_named_model_files_checked": 1608,
+    "registered_bytes_found": false,
+    "tracked_git_lfs_models_found": false,
+    "remote_tags_advertised": 0,
+    "available_release_metadata": false,
+    "available_artifacts_for_historical_runs": false
+  }
+}

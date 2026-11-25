@@ -1968,3 +1968,79 @@ python scripts/evaluate_onnx_segmentation.py --classical-only \
   --dataset-manifest data/evaluation/contact-sheet-camera-development.json \
   --visuals --output runs/crop-quality/contact-sheet-camera-development.json
 ```
+
+### Recover detector provenance from the Git archive
+
+The 28/29 Golden result in `46e94be:data/onnx_golden_segmentation_report.json`
+records `e4168ae…` in every fixture. The 29/29 summary in
+`4fcfec2:models/yolov8-seg-album.training.json` pins the later `4d823588…`
+artifact. The warm model's original per-page report and registered bytes remain
+unavailable in the inspected archive. Neither result counts as a current
+independent crop benchmark. The [historical inventory](detector-registered-historical-evidence.json)
+records 40 historical label hashes and 17 linked archived images. Physical
+album IDs for the legacy training and validation pages remain unresolved.
+The later model summary provides only aggregate counts for its additional
+50 training, 11 validation and 34 held-out views.
+
+### Compare real camera pages against a paired synthetic control
+
+Git yielded five labelled camera originals from the old training split and
+two from the validation split. Treat them as one legacy source group with
+Golden until distinct physical album IDs can be verified. The mixed experiment
+replaces 40 of 96 synthetic training images with rotated and gamma-adjusted
+derivatives of the five training pages. Both arms share the same 24 synthetic
+and two native validation pages. The stock challenge, frozen synthetic cases
+and external draft scenes stay outside the training and checkpoint-selection
+splits. The [source inventory](detector-transfer-experiment-sources.json) pins
+the original file and label bytes, each derived image and label, and the
+precise cohort memberships. Two independent rebuilds yielded identical
+source inventories. Both datasets passed label and image validation.
+
+```bash
+PYTHONPATH=backend python scripts/prepare_detector_transfer_experiment.py \
+  /tmp/phosca-stock-data /tmp/phosca-transfer-data
+for cohort in synthetic-control mixed-legacy; do
+  python scripts/train_segmentation_model.py \
+    --data "/tmp/phosca-transfer-data/$cohort/data.yaml" \
+    --base-model /tmp/phosca-stock-run/stock-512/weights/best.pt \
+    --project /tmp/phosca-transfer-run --name "$cohort" \
+    --device cpu --imgsz 512 --batch 8 --epochs 6 \
+    --export "/tmp/phosca-transfer-run/$cohort.onnx"
+done
+```
+
+All inference comparisons use a 512 × 512 input, proposal threshold 0.25,
+acceptance threshold 0.70, and instance IoU threshold 0.85. Counts below
+give matched prints followed by the number of false proposals.
+The [comparison receipt](detector-transfer-experiment.json) records model
+hashes, mask and crop measurements, review counts, and run times.
+
+| Development or regression input | Synthetic model only | Mixed model only | Synthetic hybrid | Mixed hybrid |
+| --- | ---: | ---: | ---: | ---: |
+| Legacy Golden cameras | 2/29 + 6 | 28/29 + 1 | 14/29 + 20 | 29/29 + 2 |
+| Frozen synthetic | 18/18 + 0 | 17/18 + 2 | 18/18 + 0 | 17/18 + 4 |
+| Targeted stock challenge | 46/46 + 2 | 44/46 + 1 | 45/46 + 10 | 43/46 + 17 |
+| Native legacy validation | 0/5 + 3 | 5/5 + 0 | 3/5 + 4 | 5/5 + 1 |
+| Domoritz draft flatbed | 0/4 + 0 | 4/4 + 0 | 4/4 + 0 | 4/4 + 0 |
+| Camera contact sheet | 0/1 + 0 | 0/1 + 4 | 1/1 + 1 | 1/1 + 4 |
+
+The mixed model retains all 12 shared-stock cases in model-only inference.
+It misses two separate neighboring prints and proposes one extra instance.
+On Golden page 04 it detects all three prints. The hybrid adds two classical
+false proposals on that page and recovers the rotated print on page 31.
+The Golden whole-print footprints are draft measurements. The available
+Golden annotations provide no verified motif geometry or aspect calibration.
+
+On the frozen reference crops, the mixed hybrid passes 9/11 whole prints and
+10/12 motifs. Both modes incorrectly report ready geometry for one obstructed
+print with similar paper on both sides of a shared edge. The synthetic
+control hybrid passes 6/11 and 7/12. The seeded geometry control continues
+to pass all 23. The mixed model's improvement on the independent flatbed
+applies to model-only detection. The classical fallback already matches
+all four prints, with a better boundary score and fewer foreign samples
+than the mixed hybrid. On the independent camera contact sheet, the mixed
+hybrid adds three false proposals relative to the classical fallback.
+
+Both trained candidates remain development artifacts. Automatic release
+still requires a separately calibrated production configuration and verified
+crop references in two independent physical album groups.
