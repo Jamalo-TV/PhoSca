@@ -2665,6 +2665,27 @@ The added review stage took 114 ms median for JPEG75 and 182 ms for the
 lossless copy in 25 warm runs with one OpenCV thread and concurrent test
 load. Both crop-mode metrics reproduced across the regression sets.
 
+### Keep manual exports held while paper proposals overlap
+
+Saving a measured outer rectangle now checks the other active members of
+its paper review against their current source outlines. The comparison
+uses their native footprints, including the six-vertex JPEG75 fragment.
+The original review records link the proposals across edits. Both crop
+modes keep their own geometry reasons and receive the overlap reason
+while the source claims intersect. A count confirmation keeps the holds
+until the conflicting geometry or active proposals change.
+
+On the normal JPEG75 upload, the measured edit saves the wider rectangle
+and leaves the fragment counted. Both downloads and the trimmed alias
+return 404. After an explicit fragment rejection and reprocessing the
+saved rectangle, the whole print becomes downloadable. The motif keeps
+its own boundary review. Restoring the six-vertex fragment without an
+explicit warp immediately holds the existing whole-print export and
+reopens even an approved geometry task. The synthetic lifecycle test moves
+the restored fragment outside the parent's footprint and checks release
+after reprocessing. Older manual records with paper-grid evidence need a
+current overlap check before their named downloads are available.
+
 ### Verify that catalogued pairs represent independent acquisitions
 
 A leave-one-out affine fit of the 15 saved American Colony draft landmarks

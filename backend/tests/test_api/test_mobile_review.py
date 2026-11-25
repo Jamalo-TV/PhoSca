@@ -1346,6 +1346,110 @@ async def test_new_overlapping_print_reopens_existing_downloads_for_review(clien
     assert reprocessed.status_code == 200 and not reprocessed.json()["crop_download_urls"]["full_print"]
 
 
+async def test_measured_grid_crop_stays_held_while_a_linked_proposal_overlaps(client, monkeypatch) -> None:
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, PhotoStatus
+    from app.pipeline.manual_paper_boundary import PAPER_GRID_OVERLAP_REVIEW
+
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    get_settings.cache_clear()
+    source = np.full((190, 260, 3), 35, dtype=np.uint8)
+    source[20:160, 25:166] = (67, 111, 144)
+    source[40:132, 190:244] = (82, 150, 203)
+    album_id, page_id, parent_id = await _seed_review_data(source)
+
+    def vertices(points):
+        return [{"x": x / 259, "y": y / 189} for x, y in points]
+
+    def bounds(points):
+        return {f"{axis}{suffix}": limit(point[axis] for point in points)
+                for axis in ("x", "y") for suffix, limit in (("1", min), ("2", max))}
+
+    outer = vertices([(25, 20), (165, 20), (165, 159), (25, 159)])
+    child_quad = vertices([(37, 84), (153, 84), (153, 147), (37, 147)])
+    child_polygon = vertices([(37, 84), (96, 84), (153, 84), (153, 147), (96, 147), (37, 147)])
+    async with get_session_factory()() as session:
+        parent = await session.get(ExtractedPhoto, parent_id)
+        parent.segmentation_mask = {"source": "classical_border_quad", "polygon": outer, "paper_grid_review": {"outline": outer}}
+        parent.bounding_box = bounds(outer)
+        child = ExtractedPhoto(
+            page_id=page_id, album_id=album_id, storage_path=parent.storage_path,
+            original_storage_path=parent.original_storage_path, bounding_box=bounds(child_polygon),
+            segmentation_mask={"source": "yolo_seg_mask", "polygon": child_polygon,
+                               "paper_grid_review": {"outline": outer, "cut": child_quad[:2]}},
+            segmentation_confidence=.66, geometry_valid=True, status=PhotoStatus.review_needed,
+        )
+        session.add(child)
+        await session.commit()
+        child_id = child.id
+
+    parent_url = f"/api/v1/photos/{parent_id}"
+    child_url = f"/api/v1/photos/{child_id}"
+
+    async def save(url, quad):
+        return await client.patch(f"{url}/bounding-box", json={"bounding_box": bounds(quad), "segmentation_mask": {
+            "polygon": quad, "warp_quad": quad, "print_size_mm": {"width": 140, "height": 139},
+        }})
+
+    async def held_downloads():
+        for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+            assert (await client.get(f"{parent_url}/image", params={"variant": variant})).status_code == 404
+
+    result = await save(parent_url, outer)
+    assert result.status_code == 200, result.text
+    modes = result.json()["enhancement_applied"]["correction"]["crop_modes"]
+    assert all(mode["status"] == "review_needed" and PAPER_GRID_OVERLAP_REVIEW in mode["reason_codes"] for mode in modes.values())
+    await held_downloads()
+    count_item, = (await client.get("/api/v1/review/queue", params={"type": "segmentation", "album_id": str(album_id)})).json()
+    confirmed = await client.post("/api/v1/review/events", json={
+        "task_type": "segmentation", "task_id": str(page_id), "answer": "correct", "idempotency_key": uuid4().hex,
+        "metadata": {"photo_count_revision": count_item["payload"]["photo_count_revision"]},
+    })
+    assert confirmed.status_code == 201, confirmed.text
+    await held_downloads()
+
+    rejected = await client.post("/api/v1/review/events", json={
+        "task_type": "geometry", "task_id": str(child_id), "answer": "wrong_object", "idempotency_key": uuid4().hex,
+    })
+    assert rejected.status_code == 201, rejected.text
+    reprocessed = await client.post(f"{parent_url}/reprocess")
+    assert reprocessed.status_code == 200, reprocessed.text
+    assert reprocessed.json()["crop_download_urls"]["full_print"]
+    assert (await client.get(f"{parent_url}/image?variant=full_print")).status_code == 200
+    async with get_session_factory()() as session:
+        parent = await session.get(ExtractedPhoto, parent_id)
+        metadata = dict(parent.enhancement_applied)
+        correction = dict(metadata["correction"])
+        correction.pop("paper_grid_overlap_revision")
+        parent.enhancement_applied = {**metadata, "correction": correction}
+        await session.commit()
+    await held_downloads()
+    reprocessed = await client.post(f"{parent_url}/reprocess")
+    assert reprocessed.status_code == 200 and reprocessed.json()["crop_download_urls"]["full_print"], reprocessed.text
+    approved = await client.post("/api/v1/review/events", json={
+        "task_type": "geometry", "task_id": str(parent_id), "answer": "correct", "idempotency_key": uuid4().hex,
+    })
+    assert approved.status_code == 201, approved.text
+    geometry_queue = {"type": "geometry", "album_id": str(album_id), "include_rejected": "false"}
+    before_restore = (await client.get("/api/v1/review/queue", params=geometry_queue)).json()
+    assert str(parent_id) not in {row["id"] for row in before_restore}
+
+    restored = await client.patch(f"{child_url}/bounding-box", json={"bounding_box": bounds(child_polygon),
+                                   "segmentation_mask": {"polygon": child_polygon}})
+    assert restored.status_code == 200 and not restored.json()["reviewed_non_print"], restored.text
+    assert "warp_quad" not in restored.json()["segmentation_mask"]
+    await held_downloads()
+    after_restore = (await client.get("/api/v1/review/queue", params=geometry_queue)).json()
+    assert str(parent_id) in {row["id"] for row in after_restore}
+    disjoint = vertices([(190, 40), (243, 40), (243, 131), (190, 131)])
+    moved = await save(child_url, disjoint)
+    assert moved.status_code == 200, moved.text
+    reprocessed = await client.post(f"{parent_url}/reprocess")
+    assert reprocessed.status_code == 200 and reprocessed.json()["crop_download_urls"]["full_print"], reprocessed.text
+
+
 async def test_failed_manual_addition_rolls_back_before_an_identical_retry(client, monkeypatch) -> None:
     from app.config import get_settings
     from app.database import get_session_factory

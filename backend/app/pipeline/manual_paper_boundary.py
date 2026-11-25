@@ -13,6 +13,52 @@ from app.pipeline.print_edges import (
 MANUAL_PAPER_BOUNDARY_REVISION = 2
 MANUAL_PAPER_BOUNDARY_REVIEW = "PRINT_CURVED_OUTLINE_REVIEW"
 MANUAL_CAPTURE_OUTLINE_REVIEW = "PRINT_CAPTURE_OUTLINE_REVIEW"
+PAPER_GRID_OVERLAP_REVIEW = "PAPER_GRID_OVERLAP_REVIEW"
+PAPER_GRID_OVERLAP_REVISION = 1
+
+
+def paper_grid_record(mask: dict | None, original_mask: dict | None = None) -> dict:
+    return (mask or {}).get("paper_grid_review") or (original_mask or {}).get("paper_grid_review") or {}
+
+
+def original_prediction_mask(metadata: dict) -> dict | None:
+    return ((metadata.get("review_provenance") or {}).get("original_prediction") or {}).get("segmentation_mask")
+
+
+def paper_grid_needs_overlap_check(mask: dict, metadata: dict) -> bool:
+    return (bool(paper_grid_record(mask, original_prediction_mask(metadata)))
+            and (metadata.get("correction") or {}).get("paper_grid_overlap_revision") != PAPER_GRID_OVERLAP_REVISION)
+
+
+def paper_grid_claims_overlap(
+    mask: dict, group: dict, neighbor: dict, neighbor_group: dict, width: int, height: int,
+) -> bool:
+    if not group.get("outline") or group["outline"] != neighbor_group.get("outline"):
+        return False
+    polygons = []
+    for candidate in (mask, neighbor):
+        vertices = candidate.get("warp_quad") or candidate.get("visible_polygon") or candidate.get("polygon") or []
+        if len(vertices) < 3:
+            return True
+        try:
+            points = np.float32([(point["x"], point["y"]) for point in vertices])
+            if not np.isfinite(points).all() or ((points < 0) | (points > 1)).any():
+                return True
+            polygons.append(cv2.convexHull(normalized_vertices_to_pixels(points, width, height)))
+        except (KeyError, TypeError, ValueError, cv2.error):
+            return True
+    first, second = polygons
+    shared, _ = cv2.intersectConvexConvex(first, second)
+    return shared >= max(6.0, .002 * min(cv2.contourArea(first), cv2.contourArea(second)))
+
+
+def hold_overlapping_paper_grid_modes(modes: dict) -> None:
+    for mode in modes.values():
+        if mode.get("status") == "ready":
+            mode["geometry_status"] = "ready"
+        mode["status"] = "review_needed"
+        reasons = mode.get("reason_codes") or []
+        mode["reason_codes"] = list(dict.fromkeys([PAPER_GRID_OVERLAP_REVIEW, *reasons]))
 
 
 def capture_outline_review_required(print_mode: dict) -> bool:

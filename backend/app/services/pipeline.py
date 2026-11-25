@@ -55,7 +55,9 @@ from app.pipeline.exif import write_caption_exif
 from app.pipeline.geometry import normalized_vertices_to_pixels
 from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, save_png, sha256_file
 from app.pipeline.manual_paper_boundary import (
-    MANUAL_PAPER_BOUNDARY_REVISION, manual_paper_download_needs_review, manual_paper_reference,
+    MANUAL_PAPER_BOUNDARY_REVISION, PAPER_GRID_OVERLAP_REVISION, hold_overlapping_paper_grid_modes,
+    manual_paper_download_needs_review, manual_paper_reference, original_prediction_mask,
+    paper_grid_claims_overlap, paper_grid_needs_overlap_check, paper_grid_record,
 )
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
 from app.pipeline.page_plane import MeasuredPrintReference, PrintPagePlane
@@ -386,6 +388,7 @@ async def perspective_correction_task_logic(
     automatic_detection = photo.segmentation_confidence is not None
     metadata = photo.enhancement_applied or {}
     mask = photo.segmentation_mask or {}
+    paper_grid = {} if automatic_detection else paper_grid_record(mask, original_prediction_mask(metadata))
     current_quad = mask.get("warp_quad") or mask.get("polygon")
     manual_boundary = None if automatic_detection else manual_paper_reference(metadata, current_quad)
     boundary_needs_review = manual_boundary is not None and manual_paper_download_needs_review(metadata, current_quad)
@@ -396,7 +399,9 @@ async def perspective_correction_task_logic(
         boundary_check.get("revision") != MANUAL_PAPER_BOUNDARY_REVISION
         or any(mode.get("status") == "ready" for mode in modes.values())
     )
-    if skip_if_exists and not boundary_recheck and photo.original_storage_path and Path(photo.original_storage_path).exists():
+    paper_grid_recheck = not automatic_detection and paper_grid_needs_overlap_check(mask, metadata)
+    if (skip_if_exists and not boundary_recheck and not paper_grid_recheck
+            and photo.original_storage_path and Path(photo.original_storage_path).exists()):
         full_mode = modes.get("full_print") or {}
         image_mode = modes.get("image_only") or {}
         trimmed_path = previous.get("trimmed_path")
@@ -432,6 +437,7 @@ async def perspective_correction_task_logic(
     protected_regions = protection_evidence.get("regions") if protection_evidence.get("enabled", True) else None
     neighbor_masks = []
     measured_references = []
+    paper_grid_overlap = False
     if precise_crops:
         rows = await session.execute(
             select(
@@ -441,17 +447,22 @@ async def perspective_correction_task_logic(
                 ExtractedPhoto.enhancement_applied["review_rejected_detection"],
                 ExtractedPhoto.segmentation_confidence,
                 ExtractedPhoto.enhancement_applied["correction"],
+                ExtractedPhoto.enhancement_applied["review_provenance"]["original_prediction"]["segmentation_mask"],
             ).where(
                 ExtractedPhoto.page_id == photo.page_id,
                 ExtractedPhoto.id != photo.id,
                 ExtractedPhoto.segmentation_mask.is_not(None),
             )
         )
-        for other_id, mask, box, rejection, confidence, correction in rows:
-            if not mask or is_reviewed_non_print(rejection, box, mask):
+        width, height = page_image.shape[1::-1]
+        for other_id, other_mask, box, rejection, confidence, correction, original_mask in rows:
+            if not other_mask or is_reviewed_non_print(rejection, box, other_mask):
                 continue
-            neighbor_masks.append(mask)
-            reference = _measured_print_reference(other_id, mask, confidence, correction, *page_image.shape[1::-1])
+            neighbor_masks.append(other_mask)
+            if paper_grid and not paper_grid_overlap:
+                neighbor_group = paper_grid_record(other_mask, original_mask)
+                paper_grid_overlap = paper_grid_claims_overlap(mask, paper_grid, other_mask, neighbor_group, width, height)
+            reference = _measured_print_reference(other_id, other_mask, confidence, correction, width, height)
             if reference is not None:
                 measured_references.append(reference)
     try:
@@ -536,6 +547,10 @@ async def perspective_correction_task_logic(
     )
     if camera_aspect:
         correction_metadata["camera_calibration"] = page_camera.provenance()
+    if crop_modes and paper_grid_overlap:
+        hold_overlapping_paper_grid_modes(crop_modes)
+    if crop_modes and paper_grid:
+        correction_metadata["paper_grid_overlap_revision"] = PAPER_GRID_OVERLAP_REVISION
     if crop_modes and automatic_detection:
         prediction = photo.enhancement_applied or {}
         calibration = prediction.get("segmentation_confidence") or {}

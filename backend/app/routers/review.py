@@ -24,6 +24,7 @@ from app.models import (
     StageRun,
 )
 from app.pipeline.decisions import is_reviewed_non_print
+from app.pipeline.manual_paper_boundary import PAPER_GRID_OVERLAP_REVIEW, paper_grid_needs_overlap_check
 from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import ReviewItem
 from app.services.pipeline import page_fusion_evidence
@@ -520,6 +521,12 @@ def _completed_review_exists(task_type: str, task_id_column):
 
 
 async def _geometry_review_is_current(session: AsyncSession, photo: ExtractedPhoto) -> bool:
+    metadata = photo.enhancement_applied or {}
+    full_mode = ((metadata.get("correction") or {}).get("crop_modes") or {}).get("full_print") or {}
+    if PAPER_GRID_OVERLAP_REVIEW in (full_mode.get("reason_codes") or []):
+        return False
+    if photo.segmentation_confidence is None and paper_grid_needs_overlap_check(photo.segmentation_mask or {}, metadata):
+        return False
     event = await session.scalar(
         select(ReviewEvent)
         .where(
@@ -535,7 +542,7 @@ async def _geometry_review_is_current(session: AsyncSession, photo: ExtractedPho
     if not snapshot_photos:
         # Legacy accepted events had no revision snapshot. Preserve their
         # completion semantics until the geometry is edited again.
-        return not (photo.enhancement_applied or {}).get("review_provenance", {}).get("correction_revisions")
+        return not metadata.get("review_provenance", {}).get("correction_revisions")
     snap = next((item for item in snapshot_photos if item.get("photo_id") == str(photo.id)), snapshot_photos[0])
     geometry = snap.get("current_geometry") or {}
     return (
