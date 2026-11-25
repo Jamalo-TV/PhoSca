@@ -9,6 +9,7 @@ from app.pipeline.album_windows import (
 )
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
+from app.pipeline.decisions import MOTIF_MARGIN_MARKS_REVIEW
 from app.pipeline.edge_prints import CAPTURE_EDGE_HOLD
 from app.pipeline.crossing_prints import CROSSING_PRINT_REVIEW, REVIEWED_CROSSING_OUTLINE
 from app.pipeline.fragmented_prints import EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW
@@ -22,6 +23,7 @@ from app.pipeline.geometry import (
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.motif_boundary import close_motif_outline, motif_outline_corners_supported, trace_motif_boundary
+from app.pipeline.motif_margin import motif_margin_marks
 from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.manual_paper_boundary import (
     MANUAL_CAPTURE_OUTLINE_REVIEW, MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION,
@@ -923,6 +925,7 @@ def _dual_crop_result(
         wide_rim = diagnostics["method"] == "wide_paper_rim"
         suggested_quad = None
         seam_traces = []
+        margin_regions = None
         outline = None
         needs_native_line_support = False
         all_edges = diagnostics.get("edges", {})
@@ -995,7 +998,9 @@ def _dual_crop_result(
                     image_reasons.append("IMAGE_RECTANGLE_INCONSISTENT")
                 if protect_regions and not validate_protected_regions(source, page_regions, width=page_width, height=page_height)["passed"]:
                     image_reasons.append("BORDER_PROTECTED_CONTENT_VETO")
-                if not image_reasons and wide_rim:
+                if not image_reasons and inner is None and (not full_reasons or independent):
+                    margin_regions = motif_margin_marks(page, full_image, quad, np.linalg.inv(matrix))
+                if not image_reasons and not margin_regions and wide_rim:
                     rectified_regions = _rectified_protected_regions(
                         page_regions, page_width=page_width, page_height=page_height, matrix=matrix,
                         target_width=width, target_height=height,
@@ -1006,7 +1011,7 @@ def _dual_crop_result(
                         image_reasons.append("WIDE_MOTIF_CONFIRMATION_REQUIRED")
                     else:
                         image_reasons.append("BORDER_PROTECTED_CONTENT_VETO")
-                if not image_reasons:
+                if not image_reasons and not margin_regions:
                     top, right, bottom, left = np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1)
                     inner_width = round(float((top + bottom) / 2)) + 1
                     inner_height = round(float((left + right) / 2)) + 1
@@ -1027,14 +1032,24 @@ def _dual_crop_result(
                         image_reasons.append("IMAGE_BOUNDARY_SAMPLING_UNCERTAIN")
             except (ValueError, cv2.error, np.linalg.LinAlgError):
                 image_reasons.append("IMAGE_QUAD_UNSTABLE")
+        if (image_reasons and margin_regions is None and seam_seed is not None and inner is None
+                and (not full_reasons or independent)):
+            margin_regions = motif_margin_marks(page, full_image, seam_seed, np.linalg.inv(matrix))
+        if margin_regions:
+            image_reasons.insert(0, MOTIF_MARGIN_MARKS_REVIEW)
         if image_reasons:
             diagnostics["applied"] = False
             image_mode = {"status": "review_needed", "reason_codes": list(dict.fromkeys(image_reasons))}
+            if margin_regions:
+                image_mode["margin_mark_regions"] = [_vertices_on_page(region, page_width, page_height)
+                                                     for region in margin_regions]
             if suggested_quad is not None:
                 image_mode["suggested_warp_quad"] = suggested_quad
             if seam_traces:
                 image_mode["suggested_seam_traces"] = seam_traces
-            if outline is not None and all(cv2.pointPolygonTest(source_quad, tuple(point), True) >= -1e-4 for point in outline):
+            if outline is not None and not margin_regions and all(
+                cv2.pointPolygonTest(source_quad, tuple(point), True) >= -1e-4 for point in outline
+            ):
                 outline_hull = cv2.convexHull(outline)
                 overlaps = any(cv2.intersectConvexConvex(outline_hull, cv2.convexHull(neighbor))[0] > 1.0
                                for neighbor in neighbors)

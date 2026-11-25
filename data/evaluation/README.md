@@ -2748,6 +2748,37 @@ verified JPEGs byte for byte. A fresh mobile approval then completed the
 task. A focused test also keeps the task open when reprocessing resolves
 the motif on the same paper mask without a fresh approval.
 
+### Review visible markings outside the proposed motif
+
+A straight join between light stock and image pixels can be real even
+when dates or captions are printed on the stock. The motif check examines
+only the proposed discard strips inside the rectified paper. It confirms
+visible contrast using the original source pixels before asking for
+review. The same check runs on an otherwise exportable motif under a
+photo corner. It keeps the whole-print geometry and render available
+according to their own checks, and leaves a deliberate reviewer-supplied
+motif outline to the existing manual geometry and sampling checks.
+
+The 33% JPEG55, JPEG75 and lossless contact-sheet derivatives all retain
+their curved-edge reason and now mark an actual fragment of the printed
+heading. Desktop and mobile show that region on the page. The prompt asks
+the reviewer to inspect the entire rim. On the normal JPEG75 upload,
+the motif and trimmed downloads returned 404 until the desktop edit.
+After the edit, both Gallery downloads succeeded and the motif retained
+all 315 anchors across 35 panels and all 1,938 sampled heading pixels.
+The isolated added check took 9–11 ms median on the three derivatives
+in 45 warm runs per variant with one OpenCV thread under concurrent test load.
+
+The paired 162-case development comparison leaves the whole-print status,
+shape and pixels identical. It sends 25 of the 54 previously ready motifs
+that cut known markings to review. All 36 previously ready negative
+controls and six ready cases with labels inside the motif stay ready.
+Controls include rotation, perspective, blank rims, small specks, shadows,
+and dates printed on the album surface. Low-contrast pencil, isolated
+characters and fully connected handwriting remain open cases. The
+validation fingerprint includes the margin check for precise crops with
+border analysis enabled.
+
 ### Verify that catalogued pairs represent independent acquisitions
 
 A leave-one-out affine fit of the 15 saved American Colony draft landmarks

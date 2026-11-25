@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from app.pipeline.crop_sampling import OWNED_BILINEAR
+from app.pipeline.decisions import MOTIF_MARGIN_MARKS_REVIEW
 from app.pipeline.geometry import normalized_vertices_to_pixels
 from app.pipeline.perspective import correct_photo_crop, validate_review_quads
 
@@ -307,6 +308,53 @@ def test_native_white_on_white_boundary_preserves_the_original_print_rim() -> No
     )
     assert np.max(np.linalg.norm(motif - _rect(57, 52, 272, 179), axis=1)) < 0.3
     assert np.mean(np.abs(result.image_only[1:-1, 1:-1].astype(int) - page[53:179, 58:272])) < 0.15
+
+
+@pytest.mark.parametrize("scale,quarter_turn", [(1, False), (2, True), (3, False)])
+def test_visible_margin_date_requires_review_without_changing_the_whole_print(scale, quarter_turn) -> None:
+    page = np.full((230 * scale, 340 * scale, 3), 236, np.uint8)
+    page[40*scale:192*scale, 45*scale:285*scale] = 249
+    yy, xx = np.indices((128 * scale, 216 * scale))
+    page[52*scale:180*scale, 57*scale:273*scale] = np.stack(
+        [85 + xx % 40, 45 + yy % 46, 126 + (xx + yy) % 49], axis=2,
+    )
+    seed = np.float32([[42, 38], [287, 37], [286, 194], [43, 193]]) * scale
+    # Put the same date on the print and on the album in separate cases.
+    lettered = page.copy()
+    backing = page.copy()
+    for source, y in ((lettered, 49), (backing, 34)):
+        cv2.putText(source, "AUGUST 1954", (86 * scale, y * scale), cv2.FONT_HERSHEY_SIMPLEX,
+                    .26 * scale, (62, 61, 60), scale, cv2.LINE_AA)
+    speckled = page.copy()
+    for x, y in ((74, 46), (82, 44), (100, 44), (120, 46), (132, 45), (151, 45)):
+        cv2.circle(speckled, (x * scale, y * scale), max(1, scale // 2), (70, 70, 70), -1)
+    if quarter_turn:
+        seed = np.column_stack((page.shape[0] - 1 - seed[:, 1], seed[:, 0]))
+        page, lettered, backing, speckled = (
+            cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE) for image in (page, lettered, backing, speckled)
+        )
+    proposal = {"polygon": _vertices(seed, page)}
+    clear = _crop(page, {}, proposal, dual_mode=True)
+    for control in (backing, speckled):
+        result = _crop(control, {}, proposal, dual_mode=True)
+        assert result.metadata["crop_modes"]["image_only"]["status"] == "ready"
+        assert result.image_only.shape == clear.image_only.shape
+
+    held = _crop(lettered, {}, proposal, dual_mode=True)
+    full, motif = (held.metadata["crop_modes"][mode] for mode in ("full_print", "image_only"))
+    assert full == clear.metadata["crop_modes"]["full_print"]
+    assert motif["reason_codes"] == [MOTIF_MARGIN_MARKS_REVIEW]
+    assert held.image_only is None and held.image_only_preview is None
+    region, = motif["margin_mark_regions"]
+    native = normalized_vertices_to_pixels([(p["x"], p["y"]) for p in region], *page.shape[1::-1])
+    ys, xs = np.where(lettered[:, :, 0] < page[:, :, 0])
+    assert (xs.min() <= native[:, 0].mean() <= xs.max() and ys.min() <= native[:, 1].mean() <= ys.max())
+
+    reviewed = _crop(lettered, {}, {
+        "source": "manual_quad", "warp_quad": full["warp_quad"], "image_quad": full["warp_quad"],
+    }, dual_mode=True)
+    assert reviewed.metadata["crop_modes"]["image_only"]["status"] == "ready"
+    np.testing.assert_array_equal(reviewed.image_only, reviewed.image)
 
 
 @pytest.mark.parametrize("sigma", [0, 1.4, 2.4])
@@ -881,6 +929,16 @@ def test_pale_corner_holder_with_colored_outline_requires_review_only_where_it_c
         sampling=mode["sampling"],
     )
     assert measured["foreign_source_samples"] == measured["cutoff_beyond_1px"] == 0
+
+    if reach == 20:
+        x, y = map(int, outer.corners[0])
+        cv2.putText(page, "SEP 1954", (x + 85, y + 7), cv2.FONT_HERSHEY_SIMPLEX,
+                    .24, (40, 40, 42), 1, cv2.LINE_AA)
+        marked = _crop(page, {}, mask, dual_mode=True, enable_classical_retry=True)
+        full, image = (marked.metadata["crop_modes"][name] for name in ("full_print", "image_only"))
+        assert full == modes["full_print"]
+        assert image["reason_codes"] == [MOTIF_MARGIN_MARKS_REVIEW]
+        assert len(image["margin_mark_regions"]) == 1 and marked.image_only is None
 
 
 def test_learned_visibility_keeps_source_verified_rim_on_a_mounted_print() -> None:

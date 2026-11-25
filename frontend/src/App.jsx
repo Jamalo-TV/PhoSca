@@ -49,7 +49,8 @@ import {
   adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   deferredPrintHint, filmGridCountHint, filmGridHint, filmGridReason, getDeferredPrintProposals, getSourceEdgeTraces,
-  getMotifBoundaryReviewHint, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
+  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
+  nestedPrintHint, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
 import {
@@ -1438,6 +1439,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const needsPrintReview = editingImage && Boolean(printSuggestion);
   const motifReview = selectedModes?.image_only;
   const motifBoundaryReviewHint = getMotifBoundaryReviewHint(motifReview);
+  const motifMarginMarks = useMemo(() => getMotifMarginMarks(motifReview), [motifReview]);
   const imageSuggestion = cyclicQuad(sanitizePolygon(motifReview?.suggested_warp_quad));
   const seamTraces = motifReview?.suggested_seam_traces;
   const traces = editingImage ? seamTraces : fullPrintMode?.suggested_edge_traces;
@@ -1551,6 +1553,19 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           trace.slice(1).forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
           context.stroke();
         });
+        context.restore();
+      }
+      if (editingImage && photo.id === selectedPhotoId && motifMarginMarks.length) {
+        context.save();
+        context.strokeStyle = "#b45309";
+        context.lineWidth = 2;
+        for (const [first, ...region] of motifMarginMarks) {
+          context.beginPath();
+          context.moveTo(first.x * canvas.width, first.y * canvas.height);
+          region.forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
+          context.closePath();
+          context.stroke();
+        }
         context.restore();
       }
       context.fillStyle = "#ffffff";
@@ -1678,7 +1693,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   }, [alternateOutline, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups,
     printSuggestion,
-    missingTraces, motifCorners, newPrint, pageId, pageImage, photos, selectedPhotoId, showMissingEdges]);
+    missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, selectedPhotoId, showMissingEdges]);
 
   useEffect(() => {
     draw();
@@ -1955,6 +1970,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {editingImage && selected && !crossingReview && !needsPrintReview && (
         <>
           {motifBoundaryReviewHint && <p className="crop-editor-hint">{motifBoundaryReviewHint}</p>}
+          {motifMarginMarks.length > 0 && <p className="crop-editor-hint" id="motif-margin-marks-hint">
+            Die orange Markierung zeigt eine Stelle, die der vorgeschlagene Zuschnitt auslassen würde.
+          </p>}
           <p className="crop-editor-hint">
             {edgeTraces.length > 0 && "Die gestrichelten Linien zeigen Abschnitte der gemessenen Motivkante. "}
             {!savedShape.imageQuad && "Die blauen Ecken starten am Papierrand. "}
@@ -1999,6 +2017,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         aria-describedby={[
           countOutlines.length && "fragment-count-review-hint", filmGridGroups.length && "film-grid-count-hint",
           paperGridGroups.length && "paper-grid-count-hint",
+          editingImage && motifMarginMarks.length && !crossingReview && !needsPrintReview && "motif-margin-marks-hint",
         ].filter(Boolean).join(" ") || undefined}
       />
       {!newPrint && detectionReviewHint && !rejectedDetection && (

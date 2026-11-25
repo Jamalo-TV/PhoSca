@@ -8,7 +8,8 @@ import {
   crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridReason, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
-  getMotifBoundaryReviewHint, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
+  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
+  nestedPrintHint, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
 import {
@@ -142,6 +143,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroup
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
   const motifReviewPending = !reviewedNonPrint && item.payload?.motif_review_pending;
   const motifBoundaryReviewHint = getMotifBoundaryReviewHint(item.payload?.crop_modes?.image_only);
+  const motifMarginMarks = motifReviewPending ? getMotifMarginMarks(item.payload?.crop_modes?.image_only) : [];
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
   const printEdgeTraces = getSourceEdgeTraces(fullPrintMode?.suggested_edge_traces);
@@ -301,6 +303,10 @@ function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroup
           <text x={box.x1 * 1000 + 12} y={box.y1 * 1000 + 38}>{index + 1}</text>
         </g>)}
         {nestedOverlay}{deferredOverlay}{fragmentCountOverlay}{filmGridOverlay}{paperGridOverlay}
+        {editable && motifMarginMarks.map((region, index) => (
+          <polygon key={index} aria-label="Mögliche Beschriftung am Papierrand" fill="none" stroke="#b45309" strokeWidth="5"
+            pointerEvents="none" points={region.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
+        ))}
         {Boolean(visibleTraces?.length) && <MeasuredEdgeOverlay traces={visibleTraces} />}
       </svg>
       {magnifier.visible && <div className="crop-magnifier" style={{

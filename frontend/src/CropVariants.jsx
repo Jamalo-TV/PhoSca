@@ -34,6 +34,8 @@ export const captureOutlineReviewReason = "PRINT_CAPTURE_OUTLINE_REVIEW";
 export const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
 const curvedMotifReviewReason = "IMAGE_BOUNDARY_CURVED";
 const curvedMotifReviewHint = "Die Motivkante verläuft unregelmässig. Prüfe am Original, welche Bildfelder und Beschriftungen zum Motiv gehören.";
+const markedMotifMarginReason = "IMAGE_MARGIN_MARKS_REVIEW";
+const markedMotifMarginHint = "Am Papierrand sind mögliche Beschriftungen sichtbar. Prüfe den ganzen Rand am Original und nimm alle zum Bild gehörenden Beschriftungen in den Zuschnitt auf.";
 const printEdgeReviewHints = {
   PRINT_SHADOW_EDGE_REVIEW: "Prüfe die markierte Kante am Original. Achte darauf, wo der Schatten endet und der Abzug beginnt.",
   PRINT_FAINT_OUTER_RIM_REVIEW: "Prüfe am Original, ob der helle Rand zur markierten Papierkante des Abzugs gehört.",
@@ -71,8 +73,15 @@ export function getPrintEdgeReviewHint(fullPrint) {
 }
 
 export function getMotifBoundaryReviewHint(motif) {
+  if (motif?.status === "review_needed" && motif.reason_codes?.includes(markedMotifMarginReason)) {
+    return markedMotifMarginHint;
+  }
   return motif?.status === "review_needed" && motif.reason_codes?.includes(curvedMotifReviewReason)
     ? curvedMotifReviewHint : null;
+}
+
+export function getMotifMarginMarks(motif) {
+  return getSourceEdgeTraces(motif?.margin_mark_regions).filter((region) => region.length === 4);
 }
 
 export function getPrintOutlinePreviewHint(fullPrint) {
@@ -133,6 +142,7 @@ const reviewMessages = {
   IMAGE_BOUNDARY_SAMPLING_UNCERTAIN: "An einer Motivecke fehlen eindeutig zuordenbare Bildpixel.",
   IMAGE_BOUNDARY_UNCERTAIN: "Die Grenze zwischen Rahmen und Bildmotiv muss geprüft werden.",
   [curvedMotifReviewReason]: curvedMotifReviewHint,
+  [markedMotifMarginReason]: markedMotifMarginHint,
   WIDE_MOTIF_CONFIRMATION_REQUIRED: "Prüfe den Motivvorschlag im Desktop-Editor und speichere die Motivecken.",
   IMAGE_VISIBILITY_UNCERTAIN: "Das vollständige Bildmotiv konnte nicht bestätigt werden.",
   IMAGE_BORDER_CLASSIFICATION_DISABLED: "Die automatische Bestimmung der Motivgrenze ist deaktiviert.",
@@ -170,7 +180,7 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
   const motifPreview = photo.urls?.image_only_preview;
   const preview = mode === "image_only"
     ? motifPreview || ((possibleMultipanel || possibleFragmentedPrint || possibleFragmentOutline || scannerBackingUncertain || clippedOverlapUncertain || possibleFilmGrid
-        || paperGrid || captureEdgeClipped || pendingPaperEdge) && fullPreview)
+        || paperGrid || captureEdgeClipped || pendingPaperEdge || result?.reason_codes?.includes(markedMotifMarginReason)) && fullPreview)
     : fullPreview;
   const previewAlt = mode === "image_only" && motifPreview
     ? "Konturgetreue Motivvorschau zur Prüfung"
