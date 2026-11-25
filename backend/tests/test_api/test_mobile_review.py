@@ -1338,6 +1338,101 @@ async def test_curved_motif_preview_is_an_inline_png_and_remains_a_review_asset(
     assert (await client.get(repaired)).status_code == 404
 
 
+async def test_full_print_outline_preview_stays_out_of_exports_and_respects_review(client, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import Asset, ExtractedPhoto
+    from app.services import pipeline
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_BORDER_TRIM", "false")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    get_settings.cache_clear()
+    image = np.full((240, 320, 3), 55, np.uint8)
+    image[25:215, 30:290] = (224, 232, 240)
+    image[39:200, 45:275] = (70, 100, 150)
+    album_id, _, photo_id = await _seed_review_data(image)
+    quad = [{"x": x / 319, "y": y / 239} for x, y in [(30, 25), (289, 25), (289, 214), (30, 214)]]
+    mask = {"source": "manual_quad", "polygon": quad, "warp_quad": quad}
+    box = {"x1": 30 / 319, "y1": 25 / 239, "x2": 289 / 319, "y2": 214 / 239}
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_confidence = None
+        photo.segmentation_mask = mask
+        photo.bounding_box = box
+        await session.commit()
+
+    pixels = np.zeros((19, 26, 4), np.uint8)
+    pixels[2:17, 2:24] = (53, 102, 201, 255)
+    preview_enabled = True
+    render_crop = pipeline.correct_photo_crop
+
+    def render_with_preview(*args, **kwargs):
+        crop = render_crop(*args, **kwargs)
+        if preview_enabled:
+            full_mode = crop.metadata["crop_modes"]["full_print"]
+            full_mode.update(
+                status="review_needed",
+                reason_codes=["PRINT_SCALLOPED_OUTLINE_REVIEW"],
+                outline_preview={"shape": {"height": pixels.shape[0], "width": pixels.shape[1]}},
+            )
+        return SimpleNamespace(
+            rectified_untrimmed=crop.rectified_untrimmed, image=crop.image, metadata=crop.metadata,
+            image_only=crop.image_only, image_only_preview=crop.image_only_preview,
+            full_print_preview=pixels if preview_enabled else None,
+        )
+
+    monkeypatch.setattr(pipeline, "correct_photo_crop", render_with_preview)
+    url = f"/api/v1/photos/{photo_id}"
+    result = await client.post(f"{url}/reprocess")
+    assert result.status_code == 200, result.text
+    photo = (await client.get(url)).json()
+    correction = photo["enhancement_applied"]["correction"]
+    assert photo["urls"]["full_print"] is None
+    assert photo["crop_download_urls"]["full_print"] is None
+    assert (await client.get(f"{url}/image?variant=full_print")).status_code == 404
+    assert (await client.get(photo["urls"]["source_corrected_untrimmed"])).headers["content-type"] == "image/jpeg"
+    preview_url = photo["urls"]["full_print_preview"]
+    preview = await client.get(preview_url)
+    assert preview.status_code == 200 and preview.headers["content-type"] == "image/png"
+    assert preview.headers["content-disposition"].startswith("inline")
+    assert preview.headers["cache-control"] == "private, no-store"
+    decoded = cv2.imdecode(np.frombuffer(preview.content, np.uint8), cv2.IMREAD_UNCHANGED)
+    assert np.array_equal(decoded, pixels)
+    variants = (await client.get(f"{url}/variants")).json()
+    assert "full_print_preview" not in variants["variants"]
+    assert variants["selected_variant"] != "full_print_preview"
+    queue = (await client.get(f"/api/v1/review/queue?type=geometry&album_id={album_id}")).json()
+    assert queue[0]["payload"]["variant_urls"]["full_print_preview"] == preview_url
+
+    async with get_session_factory()() as session:
+        asset = await session.get(Asset, UUID(correction["full_print_preview_asset_id"]))
+        assert asset.role == "full_print_review_preview" and asset.media_type == "image/png"
+        replay = await pipeline.perspective_correction_task_logic(session, photo_id, get_settings(), skip_if_exists=True)
+        assert replay["idempotent_replay"]
+        Path(asset.storage_path).unlink()
+        assert (await client.get(preview_url)).status_code == 404
+        repair = await pipeline.perspective_correction_task_logic(session, photo_id, get_settings(), skip_if_exists=True)
+        assert not repair.get("idempotent_replay")
+    repaired = (await client.get(url)).json()["urls"]["full_print_preview"]
+    assert repaired != preview_url and (await client.get(repaired)).content == preview.content
+    rejected = await client.post("/api/v1/review/events", json={
+        "task_type": "geometry", "task_id": str(photo_id), "answer": "wrong_object", "idempotency_key": str(uuid4()),
+    })
+    assert rejected.status_code == 201, rejected.text
+    assert (await client.get(repaired)).status_code == 404
+
+    preview_enabled = False
+    edit = await client.patch(f"{url}/bounding-box", json={"bounding_box": box, "segmentation_mask": mask})
+    assert edit.status_code == 200, edit.text
+    photo = (await client.get(url)).json()
+    assert photo["urls"]["full_print_preview"] is None
+    assert (await client.get(photo["crop_download_urls"]["full_print"])).headers["content-type"] == "image/jpeg"
+
+
 async def test_invalid_neighbor_mask_can_still_show_an_occlusion(client, monkeypatch) -> None:
     from app.config import get_settings
     from app.database import get_session_factory

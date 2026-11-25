@@ -92,6 +92,8 @@ function EmptyState({ label }) {
 }
 
 function variantLabel(name) {
+  if (name === "full_print_preview") return "Abzugsvorschau zur Prüfung";
+  if (name === "image_only_preview") return "Motivvorschau zur Prüfung";
   return cropModeLabels[name] || name.replaceAll("_", " ");
 }
 
@@ -1372,11 +1374,16 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
   const rejectedDetection = (overlapReview || fragmentReview) && Boolean(selected.enhancement_applied?.review_rejected_detection);
   const fragmentMask = fragmentReview && !rejectedDetection ? selected.segmentation_mask : null;
   const fragmentOutline = useMemo(() => getFragmentOutline(fragmentMask), [fragmentMask]);
+  const alternatePolygon = selected?.segmentation_confidence != null && selected.segmentation_mask?.scalloped_alternate_is_inner
+    && !selected.enhancement_applied?.review_rejected_detection
+    ? selected.segmentation_mask?.scalloped_alternate_polygon : null;
+  const scallopedAlternate = useMemo(() => cyclicQuad(sanitizePolygon(alternatePolygon)), [alternatePolygon]);
   const selectedShape = selected && (draftShapes[selected.id] || draftShapeFromPhoto(selected));
   const motifReview = (selected?.crop_modes || getCropModes(selected))?.image_only;
   const imageSuggestion = cyclicQuad(sanitizePolygon(motifReview?.suggested_warp_quad));
   const seamTraces = motifReview?.suggested_seam_traces;
   const motifPreview = selected?.variant_urls?.image_only_preview || selected?.urls?.image_only_preview;
+  const fullPrintPreview = selected?.variant_urls?.full_print_preview || selected?.urls?.full_print_preview;
   const needsMotifSelection = editingImage && Boolean(imageSuggestion) && !selectedShape?.imageQuad;
   const measurement = selectedShape && parsePrintSize(selectedShape.printSizeFields);
   const sizeError = editingImage ? "" : measurement?.error;
@@ -1434,6 +1441,19 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
           context.beginPath();
           context.moveTo(start.x * canvas.width, start.y * canvas.height);
           context.lineTo(end.x * canvas.width, end.y * canvas.height);
+          context.stroke();
+          context.restore();
+        }
+        if (scallopedAlternate) {
+          context.save();
+          context.strokeStyle = "#a21caf";
+          context.setLineDash([7, 5]);
+          context.beginPath();
+          scallopedAlternate.forEach(({ x, y }, index) => {
+            if (index === 0) context.moveTo(x * canvas.width, y * canvas.height);
+            else context.lineTo(x * canvas.width, y * canvas.height);
+          });
+          context.closePath();
           context.stroke();
           context.restore();
         }
@@ -1499,7 +1519,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         context.fill();
       });
     }
-  }, [draftShapes, editingImage, fragmentOutline, newPrint, pageId, pageImage, photos, selectedPhotoId, seamTraces]);
+  }, [draftShapes, editingImage, fragmentOutline, newPrint, pageId, pageImage, photos, scallopedAlternate, selectedPhotoId, seamTraces]);
 
   useEffect(() => {
     draw();
@@ -1616,11 +1636,11 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
     }
   }
 
-  function startAddition() {
+  function startAddition(corners = []) {
     setEditMode("full_print");
     onSelectPhoto(null);
     setSaveState(null);
-    setAddition({ pageId, requestId: crypto.randomUUID(), corners: [] });
+    setAddition({ pageId, requestId: crypto.randomUUID(), corners });
   }
 
   async function saveNewPrint() {
@@ -1633,7 +1653,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
       onSelectPhoto(photo.id);
       setSaveState({ photoId: photo.id, mode: "full_print", url: photo.urls?.full_print });
     } catch (error) {
-      if (activePage.current === pageId) setAddition({ ...newPrint, error: error.message });
+      const message = error.message === "protected_region_cut"
+        ? "Der Ausschnitt schneidet einen geschützten Bildbereich ab. Verschiebe die Ecken, bis der Bereich vollständig sichtbar ist."
+        : error.message;
+      if (activePage.current === pageId) setAddition({ ...newPrint, error: message });
     }
   }
 
@@ -1650,7 +1673,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         ))}
       </div>
       {!newPrint && canAddPhoto && (
-        <button className="text-button compact" type="button" onClick={startAddition} disabled={saveState?.saving}>
+        <button className="text-button compact" type="button" onClick={() => startAddition()} disabled={saveState?.saving}>
           Fehlenden Abzug ergänzen
         </button>
       )}
@@ -1658,6 +1681,15 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         <p className="crop-editor-hint" aria-live="polite">
           Markiere die vier Ecken des Abzugs auf der Albumseite. {newPrint.corners.length} von 4 gesetzt.
         </p>
+      )}
+      {!newPrint && !editingImage && scallopedAlternate && (
+        <>
+          <p className="crop-editor-hint">Prüfe den gestrichelten Vorschlag am Original. Ergänze ihn, falls dort ein eigener Abzug aufliegt.</p>
+          <button className="text-button compact" type="button" disabled={!canAddPhoto || saveState?.saving}
+            onClick={() => startAddition(scallopedAlternate)}>
+            Gestrichelten Vorschlag als Abzug ergänzen
+          </button>
+        </>
       )}
       {editingImage && selected && (
         <p className="crop-editor-hint">
@@ -1713,7 +1745,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
             disabled={newPrint.saving || newPrint.corners.length !== 4}>
             {newPrint.saving ? "Abzug wird berechnet …" : "Abzug speichern"}
           </button>
-          <button className="text-button compact" type="button" onClick={startAddition}
+          <button className="text-button compact" type="button" onClick={() => startAddition()}
             disabled={newPrint.saving || newPrint.corners.length === 0}>
             Ecken zurücksetzen
           </button>
@@ -1749,6 +1781,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
       {currentSave?.url && <img className="review-crop-preview" src={currentSave.url} alt={cropModeLabels[editMode]} />}
       {editingImage && motifPreview && !currentSave?.url && (
         <img className="review-crop-preview" src={motifPreview} alt="Konturgetreue Motivvorschau zur Prüfung" />
+      )}
+      {!editingImage && !newPrint && fullPrintPreview && !currentSave?.url && (
+        <img className="review-crop-preview" src={fullPrintPreview} alt="Konturgetreue Abzugsvorschau zur Prüfung" />
       )}
       {currentSave && !currentSave.saving && !currentSave.error && !currentSave.url && !currentSave.rejected && (
         <p role="status">Der gespeicherte Ausschnitt muss geprüft werden.</p>

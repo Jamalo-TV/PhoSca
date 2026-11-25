@@ -541,7 +541,7 @@ def _legacy_mode(vertices, image, source_shape, rotation):
             "page_to_output": cv2.getPerspectiveTransform(source, destination).tolist()}
 
 
-def _render_crops(image, proposals, settings, temporary, *, protected=None):
+def _render_crops(image, proposals, settings, temporary, *, protected=None, include_previews=False):
     from app.pipeline.image_ops import save_jpeg
     from app.pipeline.perspective import correct_photo_crop, page_plane_from_prints
     from app.pipeline.protected_regions import detect_protected_regions
@@ -572,11 +572,16 @@ def _render_crops(image, proposals, settings, temporary, *, protected=None):
         except (ValueError, cv2.error) as error:
             rendered.append({"reason": str(error), "modes": {}, "images": {}})
             continue
+        previews = {}
         if settings.enable_precise_photo_crops:
             modes = result.metadata["crop_modes"]
             images = {"full_print": result.image}
             if result.image_only is not None:
                 images["image_only"] = result.image_only
+            if include_previews:
+                for mode, preview in (("full_print", result.full_print_preview), ("image_only", result.image_only_preview)):
+                    if preview is not None:
+                        previews[mode] = preview
         else:
             rotation = (result.metadata.get("orientation") or {}).get("rotation_degrees", 0)
             images = {"full_print": result.rectified_untrimmed}
@@ -589,7 +594,7 @@ def _render_crops(image, proposals, settings, temporary, *, protected=None):
         save_jpeg(temporary / f"{index}-full.jpg", images["full_print"])
         if "image_only" in images and images["image_only"] is not images["full_print"]:
             save_jpeg(temporary / f"{index}-motif.jpg", images["image_only"])
-        rendered.append({"images": images, "modes": modes, "metadata": result.metadata})
+        rendered.append({"images": images, "previews": previews, "modes": modes, "metadata": result.metadata})
     return rendered
 
 
@@ -774,6 +779,10 @@ def _contact_sheet(directory, image, expected, native_truth_masks, detected, ren
             corners = np.hstack((crop[:edge, :edge], crop[:edge, -edge:], crop[-edge:, :edge], crop[-edge:, -edge:]))
             items.append(figure(cv2.resize(corners, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST),
                                 f"{slug}-corners", "Corners ×2"))
+        for mode, preview in item.get("previews", {}).items():
+            path = f"{index:03d}-crop-{prediction_index}-{mode}-review.png"
+            if cv2.imwrite(str(directory / path), preview):
+                items.append(f'<figure><img src="{path}" alt=""><figcaption>{mode} · outline review preview</figcaption></figure>')
     return f"<section><h2>{escape(name)}</h2><div>{''.join(items)}</div></section>"
 
 
@@ -989,7 +998,8 @@ def main() -> None:
                 proposals = [(item.bounding_box, item.mask, item.geometry_valid) for item in result.detections]
                 detected = [_detected_polygon(item) for item in result.detections]
 
-            rendered = _render_crops(image, proposals, settings, Path(temporary), protected=protected)
+            rendered = _render_crops(image, proposals, settings, Path(temporary), protected=protected,
+                                     include_previews=visuals is not None)
             if ownership_unresolved:
                 for item in rendered:
                     route_ready_crop_modes_to_review(item["modes"], [CROP_VALIDATION_UNAVAILABLE])
@@ -1149,7 +1159,8 @@ def main() -> None:
                 "page_perfect": metrics.false_positive == metrics.false_negative == metrics.serious_failures == 0,
                 "perspective": {
                     "stable": stable, "attempted": len(rendered),
-                    "evidence": [{key: value for key, value in item.items() if key != "images"} for item in rendered],
+                    "evidence": [{key: value for key, value in item.items() if key not in {"images", "previews"}}
+                                 for item in rendered],
                 },
                 "crop_modes": rows,
                 "acceptance": acceptance_evidence,

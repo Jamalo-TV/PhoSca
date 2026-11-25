@@ -60,7 +60,10 @@ from app.pipeline.presets import get_enhancement_config
 from app.pipeline.protected_regions import detect_protected_regions
 from app.pipeline.quality import segmentation_review_reasons
 from app.pipeline.segmentation import segment_album_page
-from app.pipeline.variants import build_variant_bundle
+from app.pipeline.variants import (
+    CROP_REVIEW_PREVIEWS, FULL_PRINT_REVIEW_PREVIEW, MOTIF_REVIEW_PREVIEW,
+    build_variant_bundle,
+)
 from app.schemas.common import PrintSizeMM
 from app.services.dlq import quarantine_page_failure
 from app.services.provenance import (
@@ -373,11 +376,13 @@ async def perspective_correction_task_logic(
         full_mode = modes.get("full_print") or {}
         image_mode = modes.get("image_only") or {}
         trimmed_path = previous.get("trimmed_path")
-        preview_path = previous.get("image_only_preview_path")
         separate_motif = image_mode.get("status") == "ready" and (trimmed_path or image_mode.get("independent_of_full_print"))
         has_motif = not separate_motif or (trimmed_path and Path(trimmed_path).is_file())
-        has_preview = not image_mode.get("outline_preview") or (preview_path and Path(preview_path).is_file())
-        if has_motif and has_preview:
+        expected_previews = [
+            previous.get(f"{variant}_path") for variant, name in CROP_REVIEW_PREVIEWS.items()
+            if (modes.get(name) or {}).get("status") == "review_needed" and modes[name].get("outline_preview")
+        ]
+        if has_motif and all(path and Path(path).is_file() for path in expected_previews):
             return {
                 "photo_id": str(photo.id),
                 "storage_path": photo.original_storage_path,
@@ -545,16 +550,6 @@ async def perspective_correction_task_logic(
         if trimmed_path is not None:
             trimmed_path.unlink(missing_ok=True)
         raise
-    preview_path = None
-    if crop_result.image_only_preview is not None and image_mode.get("status") == "review_needed":
-        candidate_path = output_dir / f"{photo.id}_image_only_preview.png"
-        try:
-            await asyncio.to_thread(save_png, candidate_path, crop_result.image_only_preview)
-        except (OSError, ValueError, cv2.error) as exc:
-            candidate_path.unlink(missing_ok=True)
-            logger.warning("motif_preview_write_failed", photo_id=str(photo.id), error=str(exc))
-        else:
-            preview_path = candidate_path
     source_path = untrimmed_path if crop_modes else trimmed_path or untrimmed_path
     photo.original_storage_path = str(source_path)
     photo.storage_path = str(source_path)
@@ -585,13 +580,26 @@ async def perspective_correction_task_logic(
             parent_asset=parent_asset if crop_modes else untrimmed_asset,
             metadata=image_mode if crop_modes else correction_metadata.get("border_trim") or {},
         )
-    if preview_path is not None:
+    for variant, preview_image, role in (
+        (FULL_PRINT_REVIEW_PREVIEW, crop_result.full_print_preview, "full_print_review_preview"),
+        (MOTIF_REVIEW_PREVIEW, crop_result.image_only_preview, "motif_review_preview"),
+    ):
+        crop_mode = crop_modes.get(CROP_REVIEW_PREVIEWS[variant]) or {}
+        if preview_image is None or crop_mode.get("status") != "review_needed" or not crop_mode.get("outline_preview"):
+            continue
+        preview_path = output_dir / f"{photo.id}_{variant}.png"
+        try:
+            await asyncio.to_thread(save_png, preview_path, preview_image)
+        except (OSError, ValueError, cv2.error) as exc:
+            preview_path.unlink(missing_ok=True)
+            logger.warning("crop_preview_write_failed", photo_id=str(photo.id), variant=variant, error=str(exc))
+            continue
         preview_asset = await record_asset(
-            session, run, path=preview_path, role="motif_review_preview", stage=stage,
-            parent_asset=parent_asset, metadata=image_mode,
+            session, run, path=preview_path, role=role, stage=stage,
+            parent_asset=parent_asset, metadata=crop_mode,
         )
-        correction_metadata["image_only_preview_path"] = str(preview_path)
-        correction_metadata["image_only_preview_asset_id"] = str(preview_asset.id)
+        correction_metadata[f"{variant}_path"] = str(preview_path)
+        correction_metadata[f"{variant}_asset_id"] = str(preview_asset.id)
     correction_metadata = correction_metadata | {
         "asset_id": str((untrimmed_asset if crop_modes else trimmed_asset or untrimmed_asset).id),
         "untrimmed_asset_id": str(untrimmed_asset.id),

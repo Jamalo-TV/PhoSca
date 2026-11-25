@@ -16,7 +16,12 @@ from app.pipeline.image_ops import calculate_blur_score
 from app.pipeline.quality_critic import evaluate_candidate
 from app.pipeline.release import select_released_variant
 
+FULL_PRINT_REVIEW_PREVIEW = "full_print_preview"
 MOTIF_REVIEW_PREVIEW = "image_only_preview"
+CROP_REVIEW_PREVIEWS = {
+    FULL_PRINT_REVIEW_PREVIEW: "full_print",
+    MOTIF_REVIEW_PREVIEW: "image_only",
+}
 
 VARIANT_ORDER = (
     "full_print",
@@ -229,15 +234,15 @@ def variant_path_from_photo(photo: Any, variant: str) -> str | None:
     variants = variants_from_metadata(metadata)
     precise_crop = bool(modes or "image_only" in variants)
     mode = "image_only" if precise_crop and variant == "source_corrected_trimmed" else variant
-    if mode in {"full_print", "image_only", MOTIF_REVIEW_PREVIEW}:
+    if mode in {"full_print", "image_only"} or mode in CROP_REVIEW_PREVIEWS:
         if is_reviewed_non_print(
             metadata.get("review_rejected_detection"), getattr(photo, "bounding_box", None), getattr(photo, "segmentation_mask", None),
         ):
             return None
-        if mode == MOTIF_REVIEW_PREVIEW:
-            path = correction.get("image_only_preview_path")
-            image_mode = modes.get("image_only") or {}
-            if (image_mode.get("status") == "review_needed" and image_mode.get("outline_preview")
+        if mode in CROP_REVIEW_PREVIEWS:
+            path = correction.get(f"{mode}_path")
+            crop_mode = modes.get(CROP_REVIEW_PREVIEWS[mode]) or {}
+            if (crop_mode.get("status") == "review_needed" and crop_mode.get("outline_preview")
                     and isinstance(path, str) and Path(path).is_file()):
                 return path
             return None
@@ -293,7 +298,7 @@ def photo_image_url(photo: Any, variant: str | None = None) -> str:
 
 
 def variant_urls(photo: Any) -> dict[str, str | None]:
-    names = [*VARIANT_ORDER, MOTIF_REVIEW_PREVIEW]
+    names = [*VARIANT_ORDER, *CROP_REVIEW_PREVIEWS]
     for name in variants_from_metadata(getattr(photo, "enhancement_applied", None)):
         if name not in names:
             names.append(name)

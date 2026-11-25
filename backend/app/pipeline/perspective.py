@@ -43,6 +43,7 @@ from app.pipeline.print_edges import (
 )
 from app.pipeline.print_stock import find_outer_stock_candidate
 from app.pipeline.protected_regions import detect_protected_regions, merge_protected_regions, validate_protected_regions
+from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVIEW
 from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE, refine_visible_paper_rim
 
 _PRINT_BOUNDARY_SOURCE = "physical_print_boundary"
@@ -50,7 +51,8 @@ _PAPER_RIM_SOURCE = "visible_paper_rim"
 _REFINED_VISIBILITY_SOURCES = {_PRINT_BOUNDARY_SOURCE, _PAPER_RIM_SOURCE}
 _LOCALIZED_OCCLUSION_REASONS = {"PRINT_CORNERS_UNCERTAIN", "PRINT_POSSIBLY_OCCLUDED"}
 _PRINT_EDGE_CONFIRMATION = "PRINT_EDGE_CONFIRMATION_REQUIRED"
-_CROP_PREVIEW_REASONS = {_PRINT_EDGE_CONFIRMATION, PRINT_ASPECT_REFERENCE_REVIEW, FRAGMENTED_PRINT_REVIEW}
+_CROP_PREVIEW_REASONS = {_PRINT_EDGE_CONFIRMATION, PRINT_ASPECT_REFERENCE_REVIEW, FRAGMENTED_PRINT_REVIEW,
+                         SCALLOPED_PRINT_REVIEW}
 
 
 def _pale_backing_review_fit(boundary: dict) -> bool:
@@ -66,6 +68,7 @@ class CropResult:
     metadata: dict
     image_only: np.ndarray | None = None
     image_only_preview: np.ndarray | None = None
+    full_print_preview: np.ndarray | None = None
 
 
 def _explicit_quad(
@@ -802,12 +805,22 @@ def _independent_motif_visible(page: np.ndarray, source: np.ndarray, neighbors: 
     return continuous_motif_rim(page, source)
 
 
+def _render_outline_preview(page: np.ndarray, outline: np.ndarray, matrix: np.ndarray) -> tuple[np.ndarray, dict]:
+    preview, preview_matrix = warp_owned_outline(page, outline, matrix)
+    return preview, {
+        "source_outline": _vertices_on_page(outline, *page.shape[1::-1]),
+        "page_to_output": preview_matrix.tolist(),
+        "shape": {"height": preview.shape[0], "width": preview.shape[1]},
+    }
+
+
 def _dual_crop_result(
     page: np.ndarray, full_image: np.ndarray, source_quad: np.ndarray, matrix: np.ndarray, metadata: dict,
     inner: np.ndarray | None, full_reasons: list[str], *, trim_border: bool, auto_orient: bool,
     orientation_model_path: Path | None, manual_rotation: int | None, page_regions: list[dict],
     protect_regions: bool, owned_sampling: bool,
-    neighbors: list[np.ndarray], corner_mount_detected: bool,
+    neighbors: list[np.ndarray], corner_mount_detected: bool, print_outline: np.ndarray | None,
+    motif_suggestion: np.ndarray | None,
 ) -> CropResult:
     page_height, page_width = page.shape[:2]
     height, width = full_image.shape[:2]
@@ -822,10 +835,30 @@ def _dual_crop_result(
     full_mode = _geometry_for_mode(source_quad, matrix, full_image, page_width, page_height, rotation, full_reasons)
     if owned_sampling:
         full_mode["sampling"] = OWNED_BILINEAR
+    full_print_preview = None
+    preview_projection = np.asarray(full_mode["page_to_output"])
+    if print_outline is not None:
+        try:
+            full_print_preview, full_mode["outline_preview"] = _render_outline_preview(page, print_outline, preview_projection)
+        except (ValueError, cv2.error):
+            pass  # The source page remains available for review.
 
     independent = corner_mount_detected and set(full_reasons) <= _LOCALIZED_OCCLUSION_REASONS
     preview_only = bool(full_reasons) and set(full_reasons) <= _CROP_PREVIEW_REASONS
-    if not full_reasons or independent or preview_only:
+    if motif_suggestion is not None:
+        diagnostics = {"method": "native_scalloped_print_motif", "applied": False}
+        if protect_regions and not validate_protected_regions(motif_suggestion, page_regions, width=page_width,
+                                                              height=page_height)["passed"]:
+            image_mode["reason_codes"].append("BORDER_PROTECTED_CONTENT_VETO")
+        else:
+            image_mode["suggested_warp_quad"] = _vertices_on_page(motif_suggestion, page_width, page_height)
+            try:
+                image_only_preview, image_mode["outline_preview"] = _render_outline_preview(page, motif_suggestion, preview_projection)
+            except (ValueError, cv2.error):
+                pass  # Preserve the measured editing suggestion if rendering is unresolved.
+    elif print_outline is not None:
+        image_mode["reason_codes"].insert(0, "IMAGE_BOUNDARY_UNCERTAIN")
+    elif not full_reasons or independent or preview_only:
         quad, diagnostics, image_reasons = _inner_crop_plan(
             full_image, matrix, inner, trim_border=trim_border, page_width=page_width, page_height=page_height,
             page_regions=page_regions, protect_regions=protect_regions, allow_wide_search=not independent,
@@ -953,17 +986,11 @@ def _dual_crop_result(
                 )["passed"]
                 if not overlaps and protects_content and motif_outline_corners_supported(page, outline, traces, all_edges):
                     try:
-                        image_only_preview, preview_matrix = warp_owned_outline(
-                            page, outline, np.asarray(full_mode["page_to_output"]),
+                        image_only_preview, image_mode["outline_preview"] = _render_outline_preview(
+                            page, outline, preview_projection,
                         )
                     except (ValueError, cv2.error):
                         pass  # Incomplete preview geometry leaves the measured lines available for review.
-                    else:
-                        image_mode["outline_preview"] = {
-                            "source_outline": _vertices_on_page(outline, page_width, page_height),
-                            "page_to_output": preview_matrix.tolist(),
-                            "shape": {"height": image_only_preview.shape[0], "width": image_only_preview.shape[1]},
-                        }
 
     metadata.update(
         crop_modes={"full_print": full_mode, "image_only": image_mode},
@@ -975,7 +1002,7 @@ def _dual_crop_result(
         border_trim_confidence=diagnostics.get("confidence") if diagnostics.get("applied") else None,
     )
     return CropResult(rectified_untrimmed=adjusted, image=adjusted, metadata=metadata,
-                      image_only=image_only, image_only_preview=image_only_preview)
+                      image_only=image_only, image_only_preview=image_only_preview, full_print_preview=full_print_preview)
 
 
 def crop_and_correct_photo(
@@ -1111,6 +1138,9 @@ def _inspect_print(
                 metrics = _validate_quad(quad, width, height)
     if dual_mode:
         manual_addition = mask.get("manual_added") is True
+        scalloped = not manual and mask.get("scalloped_print") is True and visible is not None
+        if scalloped:
+            reasons.append(SCALLOPED_PRINT_REVIEW)
         if not manual and mask.get("fragmented_print") is True:
             reasons.append(FRAGMENTED_PRINT_REVIEW)
         if not manual and mask.get("fragment_outline_suggestion"):
@@ -1146,7 +1176,7 @@ def _inspect_print(
         if not occluded and manual_neighbors:
             target = _vertices_on_page(quad, width, height)
             occluded = any(manual_print_intersects(target, mark, width, height) for mark in manual_neighbors)
-        if _clipped_visible_corner(quad, visible) or occluded:
+        if (not scalloped and _clipped_visible_corner(quad, visible)) or occluded:
             reasons.append("PRINT_POSSIBLY_OCCLUDED")
         if not reasons and missing_corner_material(page, quad):
             reasons.append("PRINT_CORNERS_UNCERTAIN")
@@ -1410,12 +1440,18 @@ def correct_photo_crop(
             outline, source = observed
             metadata["refined_visible_polygon"] = _vertices_on_page(outline, width, height)
             metadata["refined_visibility_source"] = source
+        print_outline = visible if SCALLOPED_PRINT_REVIEW in full_reasons and protection["passed"] and not (
+            {"PRINT_POSSIBLY_OCCLUDED", "POSSIBLE_CONTENT_CUTOFF"} & set(full_reasons)
+        ) else None
         return _dual_crop_result(
             page_image, corrected, src_points, matrix, metadata, _explicit_quad(mask, "image_quad", width, height),
             full_reasons, trim_border=trim_border, auto_orient=auto_orient, orientation_model_path=orientation_model_path,
             manual_rotation=manual_rotation, page_regions=regions, protect_regions=protect_regions,
             owned_sampling=owned_sampling,
             neighbors=neighbor_polygons, corner_mount_detected=corner_mount_detected,
+            print_outline=print_outline,
+            motif_suggestion=_explicit_quad(mask, "scalloped_motif_suggestion", width, height)
+            if print_outline is not None and trim_border else None,
         )
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:

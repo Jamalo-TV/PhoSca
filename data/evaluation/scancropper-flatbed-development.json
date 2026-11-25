@@ -1,0 +1,40 @@
+{
+  "split_policy": {
+    "role": "development",
+    "album_independent": false
+  },
+  "pages": [
+    {
+      "id": "scancropper-earlier-loose-flatbed",
+      "source_group": "scancropper-loose-prints-physical-album-unconfirmed",
+      "annotation_provenance": "development_draft",
+      "page_category": "real_flatbed",
+      "difficulty_tags": ["scalloped_paper", "white_on_white", "nested_proposals", "flatbed_scan"],
+      "image": "../../runs/crop-quality/scancropper-development/earlier.png",
+      "image_sha256": "245b167fdbc261f22931b6048949d19fe3ec788c8a720b32a1de91cc5d364226",
+      "source_image_url": "https://github.com/murniox/ScanCropper/blob/5020a66c05795940657160c12ab033e24bceb42e/example.png",
+      "source_raster_pixels": [4816, 6871],
+      "rights": "The repository publishes the scan. Print rights and physical albums are unverified. Keep the source and derivatives local.",
+      "annotations": "scancropper-earlier-draft-labels.txt",
+      "annotations_sha256": "58a64f21e3997fd52496644d43e3f7f73cb70d6095e22319f8074521c303f3d4",
+      "expected_count": 2
+    },
+    {
+      "id": "scancropper-embedded-original-loose-flatbed",
+      "source_group": "scancropper-loose-prints-physical-album-unconfirmed",
+      "annotation_provenance": "development_draft",
+      "page_category": "real_flatbed",
+      "difficulty_tags": ["scalloped_paper", "white_on_white", "rotated_prints", "flatbed_scan"],
+      "image": "../../runs/crop-quality/scancropper-development/embedded-000.jpg",
+      "image_sha256": "ad17e20dbb3338ae7fd9eefa4f5385757953751c497db63f428c709ef7c23b49",
+      "source_image_url": "https://github.com/murniox/ScanCropper/blob/9b6cfe39b172c350900c563b043fd37972c010b3/scans/example.PDF",
+      "source_pdf_sha256": "075c4b4d1f5dd01884567903ee926a125dc9ada57ab8234f55fd6b69af0c9582",
+      "source_raster_pixels": [4816, 6870],
+      "preparation": "Extract the embedded full-resolution JPEG from the pinned PDF with pdfimages -j",
+      "rights": "The repository publishes the scan. Print rights and physical albums are unverified. Keep the source and derivatives local.",
+      "annotations": "scancropper-embedded-draft-labels.txt",
+      "annotations_sha256": "c59211da5944b43859d9c9586c859ee159bb4d9a6ac7e546593d3b498d2f7f6d",
+      "expected_count": 3
+    }
+  ]
+}

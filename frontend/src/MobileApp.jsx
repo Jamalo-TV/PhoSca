@@ -107,6 +107,8 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   const storedOrientation = item.payload?.segmentation_mask?.orientation_degrees ?? null;
   const fragmentReview = item.payload?.confidence != null && item.payload?.review_reasons?.includes(fragmentOutlineReason);
   const fragmentOutline = fragmentReview && getFragmentOutline(item.payload?.segmentation_mask);
+  const scallopedAlternate = item.payload?.confidence != null && item.payload?.segmentation_mask?.scalloped_alternate_is_inner
+    && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.scalloped_alternate_polygon));
   const savedQuad = sanitizeReviewPolygon(item.payload?.segmentation_mask?.warp_quad);
   const measuredQuad = storedMeasurement && (savedQuad || sanitizeReviewPolygon(item.payload?.warp_quad));
   const initialOuter = () => isValidQuad(measuredQuad) ? measuredQuad : initialQuad(
@@ -116,6 +118,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   );
   const [quad, setQuad] = useState(initialOuter); const [saving, setSaving] = useState(false);
   const [usingOutlineSuggestion, setUsingOutlineSuggestion] = useState(false);
+  const [editingPreview, setEditingPreview] = useState(false);
   const [measurementFields, setMeasurementFields] = useState(() => printSizeInputs(storedMeasurement));
   const [orientation, setOrientation] = useState(storedOrientation);
   const [savedOrientation, setSavedOrientation] = useState(storedOrientation);
@@ -125,6 +128,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   useEffect(() => {
     setQuad(initialOuter());
     setUsingOutlineSuggestion(false);
+    setEditingPreview(false);
     setMeasurementFields(printSizeInputs(storedMeasurement));
     setOrientation(storedOrientation);
     setSavedOrientation(storedOrientation);
@@ -141,6 +145,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
       e.preventDefault();
       const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)); const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
       setMagnifier({ visible: magnifierEnabled, x, y });
+      setEditingPreview(true);
       setSavedCropUrl(""); setSaveError("");
       setQuad(current => current.map((point,index) => index === cornerIndex ? { x, y } : point));
     };
@@ -177,18 +182,24 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
     <polyline points={fragmentOutline.weakEdge.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="6" strokeDasharray="16 9" />
   );
-  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g>{visiblePolygon && <polygon points={visiblePolygon.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9"/>}<polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{uncertainLine}{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>
+  const alternateOverlay = scallopedAlternate && (
+    <polygon points={scallopedAlternate.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
+      fill="none" stroke="#a21caf" strokeWidth="6" strokeDasharray="16 9" />
+  );
+  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g>{visiblePolygon && <polygon points={visiblePolygon.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9"/>}<polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{uncertainLine}{alternateOverlay}{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>
     {editable && <>
       {item.payload?.confidence != null && item.payload?.review_reasons?.includes(clippedOverlapReason) && (
         <p className="quad-hint">{clippedOverlapHint}</p>
       )}
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
+      {scallopedAlternate && <p className="quad-hint">Prüfe den gestrichelten Vorschlag am Original. Wähle «Prints zusammen», falls dort ein eigener Abzug aufliegt.</p>}
       {fragmentOutline && (
         <button className="magnifier-toggle" type="button" disabled={saving} onClick={() => {
           const suggestion = cyclicReviewQuad(fragmentOutline.quad);
           if (!suggestion) return;
           setQuad(suggestion);
           setUsingOutlineSuggestion(true);
+          setEditingPreview(true);
           setSavedCropUrl("");
           setSaveError("");
         }}>Aussenumriss in den Editor laden</button>
@@ -200,6 +211,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
         value={measurementFields}
         onChange={(fields) => {
           setMeasurementFields(fields);
+          setEditingPreview(true);
           setSavedCropUrl("");
           setSaveError("");
         }}
@@ -208,6 +220,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
       />
       <CropOrientationField value={orientation} disabled={saving} onChange={(value) => {
         setOrientation(value);
+        setEditingPreview(true);
         setSavedCropUrl("");
         setSaveError("");
       }} />
@@ -216,6 +229,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
       </button>
       {saveError && <p className="crop-save-error">{saveError}</p>}
       {quad && <LiveCropPreview src={item.preview_url} quad={quad} savedCropUrl={savedCropUrl}
+        outlinePreviewUrl={editingPreview ? null : item.payload?.variant_urls?.full_print_preview}
         measuredAspect={size ? size.width / size.height : null} orientation={orientation} />}
     </>}
   </>;
@@ -309,9 +323,10 @@ function drawQuadPreview(canvas, { image, pixels }, quad, measuredAspect, orient
   canvas.getContext("2d", { alpha: false }).putImageData(new ImageData(result.data, result.width, result.height), 0, 0);
 }
 
-function LiveCropPreview({ src, quad, savedCropUrl, measuredAspect, orientation }) {
+function LiveCropPreview({ src, quad, savedCropUrl, outlinePreviewUrl, measuredAspect, orientation }) {
   const canvasRef = useRef(null);
   const [sample, setSample] = useState(null);
+  const previewUrl = savedCropUrl || outlinePreviewUrl;
   useEffect(() => {
     if (!src) return;
     const image = new Image();
@@ -320,13 +335,19 @@ function LiveCropPreview({ src, quad, savedCropUrl, measuredAspect, orientation 
     return () => { image.onload = null; };
   }, [src]);
   useEffect(() => {
-    if (savedCropUrl || !sample || sample.src !== src || !isValidQuad(quad)) return;
+    if (previewUrl || !sample || sample.src !== src || !isValidQuad(quad)) return;
     const frame = requestAnimationFrame(() => {
       if (canvasRef.current) drawQuadPreview(canvasRef.current, sample, quad, measuredAspect, orientation);
     });
     return () => cancelAnimationFrame(frame);
-  }, [sample, src, quad, measuredAspect, orientation, savedCropUrl]);
-  return <section className={`live-crop-preview ${savedCropUrl ? "rectified" : ""}`}><header><ZoomIn size={17}/><div><strong>{savedCropUrl ? "Gerichteter Ausschnitt" : "Live-Ausschnitt"}</strong><span>{savedCropUrl ? "Perspektive wurde aus den vier Ecken korrigiert" : "Vorschau folgt allen vier Ecken live"}</span></div></header>{savedCropUrl ? <img src={savedCropUrl} alt="Perspektivisch gerichteter Ausschnitt"/> : <canvas ref={canvasRef}/>}</section>;
+  }, [sample, src, quad, measuredAspect, orientation, previewUrl]);
+  const title = savedCropUrl ? "Gerichteter Ausschnitt" : outlinePreviewUrl ? "Abzugsvorschau zur Prüfung" : "Live-Ausschnitt";
+  const detail = savedCropUrl ? "Perspektive wurde aus den vier Ecken korrigiert" : outlinePreviewUrl
+    ? "Vorschau folgt der gezackten Papierkante" : "Vorschau folgt allen vier Ecken live";
+  return <section className={`live-crop-preview ${savedCropUrl ? "rectified" : ""}`}>
+    <header><ZoomIn size={17}/><div><strong>{title}</strong><span>{detail}</span></div></header>
+    {previewUrl ? <img src={previewUrl} alt={title} /> : <canvas ref={canvasRef}/>}
+  </section>;
 }
 
 function CropReview({ albumId, goHome }) {

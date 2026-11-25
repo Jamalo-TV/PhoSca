@@ -1323,6 +1323,48 @@ geometry. No newly held crops were counted in the two uploads. The desktop
 and mobile editors can load the outline on demand and highlight its uncertain
 edge. Both downloads still require review.
 
+### Scalloped paper on white scanner backing
+
+The ScanCropper development fixture pins two original rasters with five loose
+prints. The earlier scan is a PNG. The later PDF embeds one 4816 × 6870 JPEG.
+The published cropped images derive from those same scans. Album membership,
+individual print rights and physical dimensions need independent review.
+The fixture records a single development source group. The label polygons
+trace the connected paper against locally sampled scanner white at a separate
+16 Lab threshold. Approximation to one native pixel keeps the labels compact.
+
+```bash
+git clone https://github.com/murniox/ScanCropper.git /tmp/phosca-scancropper-source
+mkdir -p runs/crop-quality/scancropper-development
+git -C /tmp/phosca-scancropper-source show 5020a66c05795940657160c12ab033e24bceb42e:example.png > runs/crop-quality/scancropper-development/earlier.png
+git -C /tmp/phosca-scancropper-source show 9b6cfe39b172c350900c563b043fd37972c010b3:scans/example.PDF > runs/crop-quality/scancropper-development/original.PDF
+pdfimages -j runs/crop-quality/scancropper-development/original.PDF runs/crop-quality/scancropper-development/embedded
+python scripts/evaluate_onnx_segmentation.py --classical-only --dataset-manifest data/evaluation/scancropper-flatbed-development.json --visuals --output runs/crop-quality/scancropper-development-report.json
+```
+
+The earlier scan produced two candidates for one print. The inner candidate
+left out 15.18% of the visible paper and 0.41% of the motif. The outer candidate
+enclosed the paper with 6.73% scanner backing in its footprint. The lower
+print's geometrically ready full-print crop lost 11.13% of the paper.
+The new native measurements leave five matched instances and no false or
+missing suggestions at IoU 0.85. The four scalloped PNG review outlines reach
+0.9977–0.9986 IoU against the draft physical contours, with up to 0.072% source
+paper loss and 0.162% measured foreign interpolation mass. The lower print in
+the earlier scan also has a straight motif preview with 0.9988 draft IoU and
+zero measured foreign interpolation mass. The remaining three scalloped
+motifs still require boundary review.
+
+PhoSca measures the repeated cuts in the source contour and confirms a
+continuous pale stock band against the surrounding scanner backing. Distinct
+stock and an observed layer shadow hold competing crops with their original
+outlines. A single-pixel layer shadow is covered by a regression test. The
+diagnostic contact sheet includes the actual transparent PNG review assets.
+The upper print in the older scan retains the inner proposal as editable review
+evidence. The desktop and mobile upload replay verified its marked contour,
+the transparent full-print preview and the withheld downloads. A rectangle
+around these four prints would contain 2.78–5.03% scanner backing against
+the draft silhouettes.
+
 An independent stress test accepted no false joins in 1,116 transformed
 controls with narrow gutters, touching equal stock and overlapping
 prints. The real development case recovered at blur sigma 0.8 and 1.

@@ -10,6 +10,8 @@ export const clippedOverlapReason = "CLIPPED_PRINT_OVERLAP_UNCERTAIN";
 export const clippedOverlapHint = "Prüfe am Original, ob hier ein weiterer Papierabzug aufliegt. Ziehe die Ecken an seine Papierkante oder markiere den Vorschlag als «Falsches Objekt».";
 export const fragmentOutlineReason = "FRAGMENT_OUTLINE_UNCERTAIN";
 export const fragmentOutlineHint = "Prüfe am Original, ob die Ausschnitte zu einem Abzug gehören. Falls ja, korrigiere einen Ausschnitt mit dem Aussenumriss und markiere die übrigen darin als «Falsches Objekt».";
+export const scallopedOutlineReviewReason = "PRINT_SCALLOPED_OUTLINE_REVIEW";
+export const scallopedOutlineReviewHint = "Die Vorschau folgt der gewellten Papierkante. Prüfe am Original, ob der ganze Abzug sichtbar ist.";
 
 export function getFragmentOutline(mask) {
   const { quad, uncertain_edge: edge } = mask?.fragment_outline_suggestion || {};
@@ -54,6 +56,8 @@ const reviewMessages = {
   PRINT_AT_CAPTURE_EDGE: "Der Abzug reicht bis an den Aufnahmerand. Prüfe, ob er vollständig zu sehen ist.",
   PRINT_POSSIBLY_OCCLUDED: "Ein Teil des Abzugs könnte verdeckt sein.",
   PRINT_BOUNDARY_CURVED: "Die Abzugskante ist gekrümmt. Prüfe den Zuschnitt am Original.",
+  [scallopedOutlineReviewReason]: scallopedOutlineReviewHint,
+  PRINT_SCALLOPED_OWNERSHIP_UNCERTAIN: "Prüfe am Original, ob ein zweiter Abzug auf dem gezackten Papier aufliegt. Passe bei getrennten Abzügen beide Zuschnitte einzeln an.",
   PRINT_BOUNDARY_BLURRED: "Die Abzugskante ist unscharf. Prüfe den Zuschnitt am Original.",
   ALBUM_WINDOW_OCCLUDED: "Der Abzug steckt in einem Albumfenster. Prüfe, welche Teile sichtbar sind.",
   ALBUM_WINDOW_STOCK_UNCERTAIN: "Prüfe, ob der helle Rand zum Abzug oder zum Albumkarton gehört.",
@@ -87,12 +91,19 @@ export function CropVariants({ photo, hidden = false }) {
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
   const captureEdgeClipped = photo.segmentation_mask?.capture_edge_clipped === true;
   const pendingPaperEdge = getCropModes(photo)?.full_print?.reason_codes?.includes("PRINT_EDGE_CONFIRMATION_REQUIRED");
-  const fullPreview = photo.urls?.source_corrected_untrimmed || photo.urls?.original;
+  const scallopedOutline = mode === "full_print" && result?.reason_codes?.includes(scallopedOutlineReviewReason);
+  const printOutline = photo.urls?.full_print_preview;
+  const fullPreview = printOutline || photo.urls?.source_corrected_untrimmed || photo.urls?.original;
   const motifPreview = photo.urls?.image_only_preview;
   const preview = mode === "image_only"
     ? motifPreview || ((possibleMultipanel || possibleFragmentedPrint || possibleFragmentOutline || scannerBackingUncertain || clippedOverlapUncertain
         || captureEdgeClipped || pendingPaperEdge) && fullPreview)
     : fullPreview;
+  const previewAlt = mode === "image_only" && motifPreview
+    ? "Konturgetreue Motivvorschau zur Prüfung"
+    : preview && preview === printOutline
+      ? "Vorschau der Papierkontur zur Prüfung"
+      : "Vorschau zur Prüfung";
   const reviewMessage = (captureEdgeClipped
     && "Der vorgeschlagene Abzug reicht bis an den Aufnahmerand. Lade für den Zuschnitt eine Aufnahme hoch, die ihn ganz zeigt.")
     || (possibleMultipanel && reviewMessages.MULTIPANEL_PRINT_REVIEW)
@@ -100,6 +111,7 @@ export function CropVariants({ photo, hidden = false }) {
     || (possibleFragmentOutline && fragmentOutlineHint)
     || (scannerBackingUncertain && reviewMessages.SCANNER_BACKING_UNCERTAIN)
     || (clippedOverlapUncertain && clippedOverlapHint)
+    || (scallopedOutline && scallopedOutlineReviewHint)
     || result?.reason_codes?.map((code) => reviewMessages[code]).find(Boolean)
     || (result?.status === "ready" && !url && reviewMessages.CROP_VALIDATION_UNAVAILABLE)
     || (mode === "image_only" ? reviewMessages.IMAGE_BOUNDARY_UNCERTAIN : "Die Aussenkante des Abzugs muss geprüft werden.");
@@ -125,9 +137,7 @@ export function CropVariants({ photo, hidden = false }) {
       ) : (
         <>
           <p className="crop-mode-status" role="status">{reviewMessage}</p>
-          {preview && <img className="crop-variant-image" src={preview}
-            alt={mode === "image_only" && motifPreview
-              ? "Konturgetreue Motivvorschau zur Prüfung" : "Vorschau zur Prüfung"} />}
+          {preview && <img className="crop-variant-image" src={preview} alt={previewAlt} />}
         </>
       )}
     </section>

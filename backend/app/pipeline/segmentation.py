@@ -31,8 +31,11 @@ from app.pipeline.multipanel_prints import (
     MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE, recover_shared_stock_outline, shared_stock_outline,
 )
 from app.pipeline.page_deskew import album_rotation, deskewed_view
-from app.pipeline.print_edges import _is_pale_stock, refine_print_boundary
+from app.pipeline.print_edges import _backing_color, _is_pale_stock, refine_print_boundary
 from app.pipeline.quality import evaluate_segmentation_geometry
+from app.pipeline.scalloped_prints import (
+    SCALLOPED_PRINT_CONFLICT, SCALLOPED_PRINT_REVIEW, measure_scalloped_print, possible_layer_edge, suggest_scalloped_motif,
+)
 from app.pipeline.segmentation_filter import (
     CONTRAST_COMPONENT_SOURCE,
     SOURCE_CONTOUR_REVISION,
@@ -2746,7 +2749,8 @@ def _refine_source_contours(
     originals = [normalized_vertices_to_pixels(_detection_polygon(item), width, height) for item in result.detections]
     candidates = {}
     for index, (item, own) in enumerate(zip(result.detections, originals, strict=True)):
-        if item.mask.get("detector_source") in {CONTRAST_COMPONENT_SOURCE, RECOVERED_STOCK_SOURCE, CAPTURE_EDGE_SOURCE}:
+        if (item.mask.get("detector_source") in {CONTRAST_COMPONENT_SOURCE, RECOVERED_STOCK_SOURCE, CAPTURE_EDGE_SOURCE}
+                or SCALLOPED_PRINT_CONFLICT in item.review_reasons):
             continue
         measured = measure_detected_visibility(
             image, item.mask, own, [other for i, other in enumerate(originals) if i != index], regions,
@@ -2777,6 +2781,85 @@ def _refine_source_contours(
     }})
 
 
+def _recover_scalloped_prints(image: np.ndarray, result: SegmentationResult, *, trim_border: bool = True) -> SegmentationResult:
+    backing = _backing_color(image)
+    if backing[0] < 245 or np.linalg.norm(backing[1:] - 128) > 5:
+        return result
+    height, width = image.shape[:2]
+    detections = result.detections
+    polygons = [_detection_polygon(item) for item in detections]
+    measures = {}
+    for index, item in enumerate(detections):
+        if item.review_reasons or item.mask.get("warp_quad") or not item.geometry_valid:
+            continue
+        try:
+            seed, _ = quad_from_polygon(normalized_vertices_to_pixels(polygons[index], width, height))
+            measured = measure_scalloped_print(image, seed, backing)
+        except (cv2.error, ValueError):
+            continue
+        if measured is not None:
+            measures[index] = measured
+    if not measures:
+        return result
+
+    outlines = {index: pixel_vertices_to_normalized(item.outline, width, height) for index, item in measures.items()}
+    alternatives = {}
+    removed = set()
+    for index in measures:
+        if index in removed:
+            continue
+        competing = [other for other in measures if other != index and other not in removed
+                     and _normalized_box_overlap(detections[index].bounding_box, detections[other].bounding_box)[0] >= .60
+                     and normalized_polygon_overlap(outlines[index], outlines[other]).iou >= .985]
+        if len(competing) != 1:
+            continue
+        other = competing[0]
+        overlap = normalized_polygon_overlap(polygons[index], polygons[other])
+        if max(overlap.first_containment, overlap.second_containment) < .96 or not .65 <= overlap.iou <= .94:
+            continue
+        if any(j not in (index, other) and normalized_polygon_overlap(outlines[index], polygon).second_containment >= .08
+               for j, polygon in enumerate(polygons)):
+            continue
+        inner = index if overlap.first_containment > overlap.second_containment else other
+        try:
+            inner_quad, _ = quad_from_polygon(normalized_vertices_to_pixels(polygons[inner], width, height))
+            if possible_layer_edge(image, inner_quad):
+                continue
+        except (cv2.error, ValueError):
+            continue
+        winner, alternate = sorted((index, other), key=lambda j: normalized_polygon_overlap(outlines[j], polygons[j]).iou,
+                                   reverse=True)
+        alternatives[winner] = (detections[alternate].mask["polygon"], alternate == inner)
+        removed.add(alternate)
+
+    updated = []
+    for index, item in enumerate(detections):
+        if index in removed:
+            continue
+        measured = measures.get(index)
+        if measured is not None:
+            claimed = any(j != index and j not in removed
+                          and normalized_polygon_overlap(outlines[index], polygon).second_containment >= .08
+                          for j, polygon in enumerate(polygons))
+            if claimed:
+                updated.append(replace(item, review_reasons=[SCALLOPED_PRINT_CONFLICT, *item.review_reasons]))
+                continue
+            mask = {**item.mask, "scalloped_print": True,
+                    "visible_polygon": _normalized_polygon(measured.outline, width, height),
+                    "warp_quad": _normalized_polygon(measured.quad, width, height)}
+            if trim_border:
+                motif = suggest_scalloped_motif(image, measured.quad, measured.outline, measured.stock_colors)
+                if motif is not None:
+                    mask["scalloped_motif_suggestion"] = _normalized_polygon(motif, width, height)
+            if index in alternatives:
+                mask["scalloped_alternate_polygon"], mask["scalloped_alternate_is_inner"] = alternatives[index]
+            item = replace(item, mask=mask, review_reasons=[SCALLOPED_PRINT_REVIEW, *item.review_reasons])
+        updated.append(item)
+    return SegmentationResult(updated, {**result.metadata, "scalloped_print_outlines": sum(
+        item.mask.get("scalloped_print") is True for item in updated),
+                                        "scalloped_print_alternates": len(removed)})
+
+
 def segment_album_page(
     image: np.ndarray, settings: Settings, *, source_image: np.ndarray | None = None,
     protected_regions: list[dict] | None = None,
@@ -2794,6 +2877,7 @@ def segment_album_page(
             result = _refine_album_windows(evidence_source, result)
             result = _recover_multipanel_prints(evidence_source, result, settings)
             result = _recover_capture_edge_prints(evidence_source, result, settings)
+            result = _recover_scalloped_prints(evidence_source, result, trim_border=settings.enable_border_trim)
     model_path = settings.visible_mask_model_path
     if not settings.enable_precise_photo_crops:
         return result
@@ -2806,7 +2890,9 @@ def segment_album_page(
                      if detection.mask.get("source") == ALBUM_WINDOW_SOURCE
                      or detection.mask.get("detector_source") in {CONTRAST_COMPONENT_SOURCE, CAPTURE_EDGE_SOURCE}
                      or MULTIPANEL_PRINT_REVIEW in detection.review_reasons
-                     or FRAGMENTED_PRINT_REVIEW in detection.review_reasons}
+                     or FRAGMENTED_PRINT_REVIEW in detection.review_reasons
+                     or SCALLOPED_PRINT_REVIEW in detection.review_reasons
+                     or SCALLOPED_PRINT_CONFLICT in detection.review_reasons}
     refinable = [index for index in range(len(result.detections)) if index not in fixed_indices]
     originals = [_detection_polygon(result.detections[index]) for index in refinable]
     fixed = [_detection_polygon(result.detections[index]) for index in sorted(fixed_indices)]

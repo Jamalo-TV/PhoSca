@@ -22,7 +22,7 @@ from app.pipeline.image_ops import normalized_box_to_pixels
 from app.pipeline.perspective import manual_print_intersects, validate_review_quads
 from app.pipeline.presets import available_presets
 from app.pipeline.variants import (
-    MOTIF_REVIEW_PREVIEW,
+    CROP_REVIEW_PREVIEWS,
     released_variant_from_photo,
     variant_path_from_photo,
     variant_urls,
@@ -260,7 +260,7 @@ async def get_photo_image(
     selected_path = variant_path_from_photo(photo, selected_variant)
     if not selected_path or not Path(selected_path).exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
-    preview = selected_variant == MOTIF_REVIEW_PREVIEW
+    preview = selected_variant in CROP_REVIEW_PREVIEWS
     filename = Path(selected_path).name
     if selected_variant in {"full_print", "image_only"}:
         filename = f"photo-{photo.id}-{selected_variant}.jpg"
