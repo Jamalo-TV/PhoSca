@@ -1365,6 +1365,27 @@ the transparent full-print preview and the withheld downloads. A rectangle
 around these four prints would contain 2.78–5.03% scanner backing against
 the draft silhouettes.
 
+### Cast shadows outside a straight paper edge
+
+The straight-rim regressions generate measured paper and motif footprints
+with neutral or warm cast shadows. The earlier outward search could extend
+a print by roughly 10 native pixels by treating the dark part of a smooth
+shadow as paper. The source profile now checks for a gradual fall across the
+outer candidate and an independent rise near the inner edge. A repeated
+profile keeps the inner fit as a review suggestion. Both modes expose the
+shadow reason. The dark neutral paper rim around a bright motif still
+recovers when its outer transition is sharp.
+
+In a separate 60-case replay with exact source masks, the neutral, warm and
+cold shadow tests include displaced seeds, blur and nearby stock. Nine
+cases with measured background in the previous footprint now have zero
+foreign pixels. Two previously ready full-print cases keep their measured
+geometry and move to review. The neutral case with stronger blur remains
+ambiguous and shows up to 0.12% cutoff against its synthetic truth. Median
+time per case for image generation, geometry and both crops was about
+0.40 s before and after the change. The paired tests check native corners
+and interpolation ownership in both modes.
+
 An independent stress test accepted no false joins in 1,116 transformed
 controls with narrow gutters, touching equal stock and overlapping
 prints. The real development case recovered at blur sigma 0.8 and 1.

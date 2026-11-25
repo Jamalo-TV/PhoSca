@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import cv2
 import numpy as np
+
+
+PRINT_SHADOW_EDGE_REVIEW = "PRINT_SHADOW_EDGE_REVIEW"
+PRINT_BOUNDARY_REVISION = 8
 
 
 def _measured_side_bow(fitted: np.ndarray, length: float) -> float | None:
@@ -161,9 +167,35 @@ def _side_line(
     return line / np.linalg.norm(line[:2]), evidence
 
 
+@dataclass(frozen=True)
+class _RimObservation:
+    color: np.ndarray
+    depth: float
+    shadow_shoulder_support: float
+
+
+def _shadow_shoulder_support(
+    image: np.ndarray, positions: np.ndarray, inward: np.ndarray, outer_depth: np.ndarray, rim_luminance: np.ndarray,
+) -> float:
+    # A penumbra falls gradually on both sides of the outside gradient peak.
+    # Its dark strip ends in a separate rise at the supported inside line.
+    offsets = np.column_stack((outer_depth[:, None] + [-12, -10, -4, -3, -2, -1, 0, 1, 2, 3],
+                               np.broadcast_to([3, 6], (len(positions), 2))))
+    points = positions[:, None] + offsets[..., None] * inward
+    valid = ((points >= 0) & (points <= np.array(image.shape[1::-1]) - 1)).all(axis=(1, 2))
+    levels = _sample_lab(image, points.reshape(-1, 2))[:, 0].reshape(offsets.shape)
+    far = levels[:, :2].mean(axis=1)
+    shoulder = levels[:, 2:4].mean(axis=1)
+    fall = far - levels[:, 8:10].mean(axis=1)
+    largest_step = np.abs(np.diff(levels[:, 2:10], axis=1)).max(axis=1)
+    rebound = levels[:, 10:].mean(axis=1) - rim_luminance.min(axis=1)
+    support = valid & (far - shoulder >= 9) & (fall >= 20) & (largest_step <= .33 * fall) & (rebound >= 13)
+    return float(np.mean(support)) if min(np.mean(part) for part in np.array_split(support, 4)) >= .50 else 0.0
+
+
 def _observe_print_rim(
     image: np.ndarray, start: np.ndarray, end: np.ndarray, line: np.ndarray, *, minimum_transition: float,
-) -> tuple[np.ndarray, float] | None:
+) -> _RimObservation | None:
     """Require material between an expanded line and the original proposal."""
     tangent = end - start
     inward = np.array([-tangent[1], tangent[0]], np.float32) / np.linalg.norm(tangent)
@@ -185,7 +217,10 @@ def _observe_print_rim(
         return None
     uniform = np.linalg.norm(inside - rim, axis=2) <= 13
     transition = np.linalg.norm(lab[:, 0] - inside[:, 0], axis=1)
-    return (rim, depth) if np.mean(uniform) >= 0.78 and np.mean(transition > minimum_transition) >= 0.75 else None
+    if np.mean(uniform) < .78 or np.mean(transition > minimum_transition) < .75:
+        return None
+    shadow_support = _shadow_shoulder_support(image, positions, inward, projected, inside[:, :, 0])
+    return _RimObservation(rim, depth, shadow_support)
 
 
 def _line_endpoints(start: np.ndarray, end: np.ndarray, line: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -661,6 +696,7 @@ def refine_print_boundary(
     maximum_excursion = radius
     fitted = []
     rings = {}
+    rejected_shadow = False
     for index, (start, end) in enumerate(zip(proposal, np.roll(proposal, -1, axis=0))):
         line, result = _side_line(image, start, end, radius, rim_color=rim_color)
         if search_radius is None and rim_color is None and not result["ambiguous"] and wider >= radius + 4:
@@ -670,9 +706,13 @@ def refine_print_boundary(
                 observation = None if alternate is None else _observe_print_rim(
                     image, first, last, alternate, minimum_transition=8 if line is None else 5,
                 )
+                if observation is not None and observation.shadow_shoulder_support >= .70:
+                    retry["shadow_shoulder_support"] = round(observation.shadow_shoulder_support, 4)
+                    rejected_shadow = True
+                    observation = None
                 result["outward_search"] = {**retry, "print_rim_supported": observation is not None}
                 if observation is not None:
-                    color, depth = observation
+                    color, depth = observation.color, observation.depth
                     retry.update(observed_rim_lab=color.tolist(), observed_rim_depth_px=depth)
                     rings[index] = alternate, retry, color, line is not None
                     if line is None:
@@ -680,7 +720,7 @@ def refine_print_boundary(
                         maximum_excursion = wider
                         line = alternate
         fitted.append((line, result))
-    reasons = []
+    reasons = [PRINT_SHADOW_EDGE_REVIEW] if rejected_shadow else []
     if any(replaces_supported for _, _, _, replaces_supported in rings.values()):
         # A strong near line can bound the image ink. Move past it when a common
         # physical rim continues on more than one side. An incomplete rim is review evidence.

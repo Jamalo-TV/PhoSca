@@ -17,6 +17,7 @@ from app.pipeline.edge_prints import CAPTURE_EDGE_REVISION
 from app.pipeline.fragmented_prints import FRAGMENTED_PRINT_REVISION
 from app.pipeline.model_registry import sha256
 from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVISION
+from app.pipeline.print_edges import PRINT_BOUNDARY_REVISION
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
 from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
 from app.pipeline.training_provenance import (
@@ -49,7 +50,7 @@ def crop_validation_profile(settings: Settings) -> dict:
         "precise_photo_crops": settings.enable_precise_photo_crops,
         "crop_sampling": OWNED_BILINEAR if settings.enable_precise_photo_crops else None,
         "page_plane_preview": 2 if settings.enable_precise_photo_crops else None,
-        "print_boundary": 7 if settings.enable_precise_photo_crops else None,
+        "print_boundary": PRINT_BOUNDARY_REVISION if settings.enable_precise_photo_crops else None,
         "registered_model_required": settings.require_registered_models,
         "model_registry_sha256": _optional_hash(settings.model_manifest_path) if settings.require_registered_models else None,
         "source_contour_refinement": SOURCE_CONTOUR_REVISION if settings.enable_precise_photo_crops and visible_model is None else None,
