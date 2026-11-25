@@ -14,6 +14,7 @@ export const scallopedOutlineReviewReason = "PRINT_SCALLOPED_OUTLINE_REVIEW";
 export const scallopedOutlineReviewHint = "Die Vorschau folgt der gewellten Papierkante. Prüfe am Original, ob der ganze Abzug sichtbar ist.";
 export const adjacentPrintHint = "Prüfe am Original, ob der gestrichelte Bereich ein eigener Abzug ist und ob der helle Streifen zu seinem Papier gehört.";
 export const nestedPrintHint = "Prüfe am Original, ob der gestrichelte Bereich zum selben Papierabzug gehört. Bei einem Abzug bleiben alle Bilder im Motiv. Ergänze den Bereich, wenn dort ein eigener Abzug aufliegt.";
+export const deferredPrintHint = "Prüfe die violett gestrichelten Konturen am Original. Bestätige die Anzahl, wenn alle Abzüge bereits erfasst sind.";
 export const crossingPrintReason = "CROSSING_PRINT_OUTLINE_REVIEW";
 export const crossingPrintHint = "Prüfe am Original, ob die gestrichelte Kontur einen eigenen Abzug zeigt. Falls die durchgezogene Markierung falsch ist, lade die gestrichelte Kontur und setze die Ecken an den Papierrand.";
 export const crossingPrintSaveHint = "Korrigiere und speichere zuerst die vier Ecken unter «Ganzer Abzug».";
@@ -34,6 +35,11 @@ const printEdgeReviewHints = {
 export function getSourceEdgeTraces(traces) {
   return Array.isArray(traces) ? traces.filter((trace) => Array.isArray(trace) && trace.length >= 2
     && trace.every((point) => [point?.x, point?.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1))) : [];
+}
+
+export function getDeferredPrintProposals(proposals) {
+  return Array.isArray(proposals) ? proposals.filter((proposal) => Number.isInteger(proposal?.id) && proposal.id >= 0
+    && proposal.polygon?.length === 4 && getSourceEdgeTraces([proposal.polygon]).length === 1) : [];
 }
 
 export function getPrintEdgeReviewHint(fullPrint) {

@@ -2083,3 +2083,56 @@ review in both crop modes. The synthetic seeded, classical frozen and
 classical Golden measurements remain unchanged. At native resolution the
 shared-rim check took 0.53 ms median and 0.66 ms p95 over 100 warm samples
 for the positive case. Print-boundary revision 10 records the changed gate.
+
+### Review unsupported fallback outlines before counting a print
+
+On Golden page 04 the mixed development model proposes all three physical
+prints. The classical fallback adds an outline from inside the right-hand
+print to the frame and a second outline spanning all three prints. Existing
+cross-source matching leaves both separate because each extends well beyond
+the corresponding model masks.
+
+The precise hybrid path checks the original pixels where a classical-only
+outline largely overlaps source-supported model masks. It looks for an
+unsupported side where pale material continues across the proposed edge.
+A frame-corner proposal needs its sole supported edge to follow the modeled
+print's edge. A proposal spanning multiple prints also needs to lack its own
+image structure in the exposed area. Competing measured edges or independent
+content keep the usual candidate path. Possible extra prints remain dashed
+outlines in count review. A reviewer can add an outline with corrected
+corners or confirm the current count after checking the outlines.
+
+With the same registered mixed development checkpoint and fixed thresholds,
+Golden retains 29/29 matches and moves both false proposals to uncounted
+review. All three page 04 detections retain their crop footprints and both
+modes remain in review. On the draft full-print outlines, the footprint IoU
+ranges from 0.966 to 0.990, content cutoff from 0.51% to 1.22%, and retained
+foreign fraction from 0.60% to 2.53%. The native check takes about 0.25 s
+for both extra outlines together on the development CPU. The mixed hybrid
+retains its existing instance and crop results on frozen synthetic (17/18,
+four false proposals), the targeted stock challenge (43/46, 17), Domoritz
+(4/4, zero) and the camera contact sheet (1/1, four). The old checkpoint
+comparison remains a development result.
+
+Thirty nearby, overlapping, clipped and multipanel controls remained counted
+across native, projective JPEG78 and resized JPEG78 views. Six further
+controls use the exact false-positive coordinates with actual additional
+print boundaries rendered into the source. All six remain counted. The
+native page 04 case works at all four quarter turns. The ownership check
+abstains at 75% and 50% in the JPEG75 replay with the original proposals
+transformed into those views. A separate end-to-end 75% JPEG78 replay finds
+the three prints and never invokes the fallback. Both export modes remain
+held in the normal upload replay with the current validation configuration.
+
+### Recover historical album scans for intake
+
+The Romanov costume ball souvenir edition provides four full physical leaf
+scans from its public Git history. Three pair with later 600 dpi colour
+scans with held-out landmark p95 errors of 3.16–3.58 native pixels. The
+leaf and scan hashes, accession context and source URLs are recorded in
+the [intake receipt](romanov-album-intake.json).
+
+Keep these leaves in one tentative physical group. The reproduction field
+may be printed on the page, and the rights for the full native scans and
+individual crop boundaries still need confirmation. Intake records stay
+outside training, calibration and release evaluation.

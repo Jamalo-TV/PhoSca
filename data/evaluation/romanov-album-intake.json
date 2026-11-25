@@ -1,0 +1,290 @@
+{
+  "purpose": "Paired-source intake and reproducible registration only. No detector was run on the acquired leaves.",
+  "current_split": "intake_only",
+  "proposed_album_group": "uiuc-iasl-romanov-costume-ball-souvenir-album-1904",
+  "grouping": "All surviving copy images in the edition remain one group pending more specific physical volume provenance, as the orphan leaves are no longer bound.",
+  "edition_methodology": "https://selinacochran.github.io/romanovball/#about-this-edition",
+  "repository": "https://github.com/selinacochran/romanovball",
+  "pinned_full_leaf_commit": "4b33aa423ab506e1446a7354720f32827c839ac3",
+  "pinned_cropped_edition_commit": "9ba5a62ba6415890575592e8ac46cf8be5db6704",
+  "physical_album_evidence": "The edition documents loose physical leaves from the International and Area Studies Library at the University of Illinois at Urbana-Champaign, 19×13.5 inches. The underlying photographs were collected from 1903 and published as phototypes/heliogravures in the period souvenir album.",
+  "image_reuse_scope": "Two matched named portrait catalog entries say Public Domain. The colour crop of plate 4 (Baron Freedericksz) has no item-level rights record in the current edition. The historic KIC file listing lacks item-specific rights and hardware metadata. Original dimensions and grayscale files are consistent with a separate flat capture, while the methodology specifically documents separate Epson V850 colour scans for individual portraits. Further confirmation is required before product-use licensing or publication of historic page scans.",
+  "registration": "SIFT, descriptor ratio 0.72, cv2.USAC_MAGSAC with 1.4 px estimation after resizing; five-part held-out refit on inliers; errors are upright native page pixels. Registration validates paired artwork and spatial alignment, not corner accuracy, paper ownership, or physical album independence.",
+  "reference_caveats": [
+    "Outer pale rectangles may be printed collotype reproduction fields. A pigment transition alone does not certify where separately mounted print stock ends.",
+    "Some edition crops omit visible grey stock or extend into source margins. Their projected corners are image corners, and cannot be used as verified photograph corners.",
+    "Held-out feature p95 is 3.16 to 3.67 native source px depending on the pair. That is larger than the two source-pixel release tolerance and cannot be read as a corner validation.",
+    "Full originals are approximately 94–95 MP. A product upload under its default 40 MP cap needs a documented smaller source acquisition or a separate pinned derivative, with reference markings transformed appropriately.",
+    "The uncropped p155 leaf has no matching paired reference among the edition files tested.",
+    "Complete reuse evidence, human source-only review, independent measured motif/full-print dimensions and model-provenance overlap checks remain required. None of these pages are assigned to training, calibration, or release."
+  ],
+  "leaves": {
+    "0002": {
+      "caption": "Madame Vonlarlarsky, née Nabokow",
+      "plate": "155",
+      "source_raster_size": [
+        11632,
+        8178
+      ],
+      "size_px": 95126496,
+      "source_dpi": [
+        600,
+        600
+      ],
+      "source_image_sha256": "9346f6b376b1e458e5c67e01999918e12ef358129ed79488e5ecddcb1c427375",
+      "source_url": "https://raw.githubusercontent.com/selinacochran/romanovball/4b33aa423ab506e1446a7354720f32827c839ac3/assets/KIC%20Image%200002.jpg",
+      "available_locally": true,
+      "transform_to_upright": "rotate 90 degrees clockwise (EXIF is unset)",
+      "observed_reference_candidates": []
+    },
+    "0003": {
+      "caption": "La Princesse Kotchoubey, née Princesse Bélosselsky-Bélozersky",
+      "plate": "67",
+      "source_raster_size": [
+        11460,
+        8229
+      ],
+      "size_px": 94304340,
+      "source_dpi": [
+        600,
+        600
+      ],
+      "source_image_sha256": "b10b1e971455ec62f046571ce2ea2463a5bf257e3297db028f239856f9be0663",
+      "source_url": "https://raw.githubusercontent.com/selinacochran/romanovball/4b33aa423ab506e1446a7354720f32827c839ac3/assets/KIC%20Image%200003.jpg",
+      "available_locally": true,
+      "transform_to_upright": "rotate 90 degrees clockwise (EXIF is unset)",
+      "observed_reference_candidates": [
+        {
+          "page": "KIC-0003.jpg",
+          "page_sha256": "b10b1e971455ec62f046571ce2ea2463a5bf257e3297db028f239856f9be0663",
+          "page_upright_size": [
+            8229,
+            11460
+          ],
+          "crop": "img002.jpg",
+          "crop_sha256": "61cb9eaaff1f49615895164ece54ceb54d26791a32a009d872f1a5620bc0c29b",
+          "crop_size": [
+            1141,
+            2057
+          ],
+          "inliers": 1906,
+          "heldout_error_px_native": [
+            1.902540496050197,
+            3.674655651404425
+          ],
+          "upright_page_projected_image_corners_px": [
+            [
+              2997.0384273565946,
+              2934.726735432943
+            ],
+            [
+              5292.405104664077,
+              2916.5552724202475
+            ],
+            [
+              5352.151886871751,
+              7075.5699747721355
+            ],
+            [
+              3048.9616379049808,
+              7104.293806966146
+            ]
+          ],
+          "crop_url": "https://raw.githubusercontent.com/selinacochran/romanovball/9ba5a62ba6415890575592e8ac46cf8be5db6704/assets/img/img002.jpg"
+        },
+        {
+          "page": "KIC-0003.jpg",
+          "page_sha256": "b10b1e971455ec62f046571ce2ea2463a5bf257e3297db028f239856f9be0663",
+          "page_upright_size": [
+            8229,
+            11460
+          ],
+          "crop": "Nope_3.jpg",
+          "crop_sha256": "70ca611184a5f0dc1538d074f0eaa4aecedb315a74847461ab5465065b222a24",
+          "crop_size": [
+            2759,
+            5088
+          ],
+          "inliers": 3309,
+          "heldout_error_px_native": [
+            1.5179016163798231,
+            3.15597486000949
+          ],
+          "upright_page_projected_image_corners_px": [
+            [
+              2764.0725692188253,
+              2747.5524088541665
+            ],
+            [
+              5509.5003776860185,
+              2708.9984029134116
+            ],
+            [
+              5556.280540953291,
+              7821.9435099283855
+            ],
+            [
+              2832.6824131860494,
+              7874.038728841146
+            ]
+          ],
+          "crop_url": "https://raw.githubusercontent.com/selinacochran/romanovball/9ba5a62ba6415890575592e8ac46cf8be5db6704/assets/img/Nope_3.jpg"
+        }
+      ],
+      "public_domain_item_metadata_url": "https://github.com/selinacochran/romanovball/blob/9ba5a62ba6415890575592e8ac46cf8be5db6704/_mindoc_media/Image3.md"
+    },
+    "0004": {
+      "caption": "Chakrabongse Bhuvanath",
+      "plate": "XXI",
+      "source_raster_size": [
+        11433,
+        8223
+      ],
+      "size_px": 94013559,
+      "source_dpi": [
+        600,
+        600
+      ],
+      "source_image_sha256": "eaa265b2dfbad576a17ecbc8319bedb30b2c58e6e9570ceb7a13d1fd20cdbbb6",
+      "source_url": "https://raw.githubusercontent.com/selinacochran/romanovball/4b33aa423ab506e1446a7354720f32827c839ac3/assets/KIC%20Image%200004.jpg",
+      "available_locally": true,
+      "transform_to_upright": "rotate 90 degrees clockwise (EXIF is unset)",
+      "observed_reference_candidates": [
+        {
+          "page": "KIC-0004.jpg",
+          "page_sha256": "eaa265b2dfbad576a17ecbc8319bedb30b2c58e6e9570ceb7a13d1fd20cdbbb6",
+          "page_upright_size": [
+            8223,
+            11433
+          ],
+          "crop": "img004.jpg",
+          "crop_sha256": "47fd477ccf2cafe07c365bedfa7b9f2787291196b6a0be4bcca90f24c902e0eb",
+          "crop_size": [
+            1332,
+            2574
+          ],
+          "inliers": 1910,
+          "heldout_error_px_native": [
+            1.3668229319458332,
+            3.252172851381596
+          ],
+          "upright_page_projected_image_corners_px": [
+            [
+              2783.5010906409557,
+              2860.6696733093263
+            ],
+            [
+              5467.915229169685,
+              2889.6873384602864
+            ],
+            [
+              5442.918715599652,
+              8090.5191544596355
+            ],
+            [
+              2754.7618074383963,
+              8080.479923502604
+            ]
+          ],
+          "crop_url": "https://raw.githubusercontent.com/selinacochran/romanovball/9ba5a62ba6415890575592e8ac46cf8be5db6704/assets/img/img004.jpg"
+        },
+        {
+          "page": "KIC-0004.jpg",
+          "page_sha256": "eaa265b2dfbad576a17ecbc8319bedb30b2c58e6e9570ceb7a13d1fd20cdbbb6",
+          "page_upright_size": [
+            8223,
+            11433
+          ],
+          "crop": "OfficialNope.jpg",
+          "crop_sha256": "2664c066c3da309ab91ecf0b9e6ad754cc4a3f7ef3e64bd8e2f6cb2adb693e0a",
+          "crop_size": [
+            2610,
+            4754
+          ],
+          "inliers": 1808,
+          "heldout_error_px_native": [
+            1.7894038717459515,
+            3.5838620716828924
+          ],
+          "upright_page_projected_image_corners_px": [
+            [
+              2529.7815539734665,
+              2529.423511098226
+            ],
+            [
+              5776.165370477033,
+              2567.3602203877767
+            ],
+            [
+              5690.428476556842,
+              8521.93858988444
+            ],
+            [
+              2467.8437277218145,
+              8511.93269897461
+            ]
+          ],
+          "crop_url": "https://raw.githubusercontent.com/selinacochran/romanovball/9ba5a62ba6415890575592e8ac46cf8be5db6704/assets/img/OfficialNope.jpg"
+        }
+      ],
+      "public_domain_item_metadata_url": "https://github.com/selinacochran/romanovball/blob/9ba5a62ba6415890575592e8ac46cf8be5db6704/_mindoc_media/Image4.md"
+    },
+    "0005": {
+      "caption": "Le Baron Freedericksz",
+      "plate": "4",
+      "source_raster_size": [
+        11478,
+        8220
+      ],
+      "size_px": 94349160,
+      "source_dpi": [
+        600,
+        600
+      ],
+      "source_image_sha256": "1eefbf09c143e76c29828ad80cce994a227c9c00cb8f628c9a3f904a2e2c0ac5",
+      "source_url": "https://raw.githubusercontent.com/selinacochran/romanovball/4b33aa423ab506e1446a7354720f32827c839ac3/assets/KIC%20Image%200005.jpg",
+      "available_locally": true,
+      "transform_to_upright": "rotate 90 degrees clockwise (EXIF is unset)",
+      "observed_reference_candidates": [
+        {
+          "page": "KIC-0005.jpg",
+          "page_sha256": "1eefbf09c143e76c29828ad80cce994a227c9c00cb8f628c9a3f904a2e2c0ac5",
+          "page_upright_size": [
+            8220,
+            11478
+          ],
+          "crop": "Nope.jpg",
+          "crop_sha256": "69e217c35eeba5f926a2475a6936bf898dd47edf24d01d0f797c6a4895e7530a",
+          "crop_size": [
+            2786,
+            5085
+          ],
+          "inliers": 2632,
+          "heldout_error_px_native": [
+            1.7095012950670228,
+            3.3117979157995663
+          ],
+          "upright_page_projected_image_corners_px": [
+            [
+              2818.298647623824,
+              2708.5749854532874
+            ],
+            [
+              5589.170032675826,
+              2728.207443745931
+            ],
+            [
+              5540.986509004982,
+              7832.046646728515
+            ],
+            [
+              2789.4367582026703,
+              7833.749011230469
+            ]
+          ],
+          "crop_url": "https://raw.githubusercontent.com/selinacochran/romanovball/9ba5a62ba6415890575592e8ac46cf8be5db6704/assets/img/Nope.jpg"
+        }
+      ]
+    }
+  }
+}

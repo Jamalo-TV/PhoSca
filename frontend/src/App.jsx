@@ -48,7 +48,7 @@ import EdgeMeasurement from "./EdgeMeasurement.jsx";
 import {
   adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getFragmentOutline,
-  getSourceEdgeTraces,
+  deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getPrintEdgeReviewHint, missingPrintEdgeHint, nestedPrintHint,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -1356,12 +1356,14 @@ function TrainingAnnotationView() {
   );
 }
 
-const adjacentAdditionErrors = {
+const printAdditionErrors = {
   adjacent_print_suggestion_saved: "Dieser Abzug wurde bereits gespeichert. Öffne ihn in der aktualisierten Ansicht, wenn du seine Ecken ändern möchtest.",
   adjacent_print_suggestion_stale: "Der Vorschlag wurde geändert. Prüfe die Albumseite in der aktualisierten Ansicht erneut.",
+  deferred_print_proposal_saved: "Dieser Abzug wurde bereits ergänzt. Du kannst seine Ecken in der aktualisierten Ansicht ändern.",
+  deferred_print_proposal_stale: "Dieser Vorschlag wurde bereits geprüft. Die Ansicht wurde aktualisiert.",
 };
 
-function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, selectedPhotoId, onSelectPhoto }) {
+function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onConfirmCount, selectedPhotoId, onSelectPhoto }) {
   const canvasRef = useRef(null);
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
@@ -1371,14 +1373,18 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
   const [editMode, setEditMode] = useState("full_print");
   const [saveState, setSaveState] = useState(null);
   const [addition, setAddition] = useState(null);
+  const [countReview, setCountReview] = useState(null);
   const dragRef = useRef(null);
   const editingImage = editMode === "image_only";
   const pageId = page?.id;
   const measuredTraces = measuredEdge?.pageId === pageId ? measuredEdge?.traces : null;
   const pendingMissingTraces = page?.processing_metadata?.steps?.segmentation?.missing_print_edge_traces;
   const missingTraces = useMemo(() => getSourceEdgeTraces(pendingMissingTraces), [pendingMissingTraces]);
+  const pendingProposals = page?.processing_metadata?.steps?.segmentation?.fusion?.deferred_print_proposals;
+  const deferredProposals = useMemo(() => getDeferredPrintProposals(pendingProposals), [pendingProposals]);
   const activePage = useRef(pageId);
   const newPrint = addition?.pageId === pageId ? addition : null;
+  const currentCountReview = countReview?.pageId === pageId ? countReview : null;
   const additionSize = newPrint && parsePrintSize(newPrint.printSizeFields);
   const canAddPhoto = pageImage?.pageId === pageId && ["completed", "review_needed"].includes(page?.status);
   const selected = photos.find((photo) => photo.id === selectedPhotoId);
@@ -1556,6 +1562,24 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
       }
       context.restore();
     }
+    if (!newPrint && !editingImage && deferredProposals.length > 0) {
+      context.save();
+      context.strokeStyle = "#7e22ce";
+      context.fillStyle = "#7e22ce";
+      context.lineWidth = 3;
+      context.font = "bold 14px sans-serif";
+      context.setLineDash([9, 5]);
+      deferredProposals.forEach(({ polygon }, index) => {
+        const [[left, top], ...corners] = polygon.map(({ x, y }) => [x * canvas.width, y * canvas.height]);
+        context.beginPath();
+        context.moveTo(left, top);
+        corners.forEach(([x, y]) => context.lineTo(x, y));
+        context.closePath();
+        context.stroke();
+        context.fillText(`?${index + 1}`, Math.min(left + 6, canvas.width - 28), Math.max(top - 6, 16));
+      });
+      context.restore();
+    }
     if (newPrint?.corners.length) {
       const points = newPrint.corners.map(({ x, y }) => [x * canvas.width, y * canvas.height]);
       context.strokeStyle = "#2563eb";
@@ -1574,7 +1598,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         context.fillText(String(index + 1), x + 9, y - 7);
       });
     }
-  }, [alternateOutline, crossingOutline, draftShapes, edgeTraces, editingImage, fragmentOutline, measuredTraces,
+  }, [alternateOutline, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, fragmentOutline, measuredTraces,
     missingTraces, newPrint, pageId, pageImage, photos, selectedPhotoId, showMissingEdges]);
 
   useEffect(() => {
@@ -1710,24 +1734,36 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
     }
   }
 
-  function startAddition(corners = [], adjacentSuggestion = null) {
+  function startAddition(corners = [], adjacentSuggestion = null, deferredProposal = null) {
     setEditMode("full_print");
     onSelectPhoto(null);
     setSaveState(null);
-    setAddition({ pageId, requestId: crypto.randomUUID(), corners, adjacentSuggestion, printSizeFields: printSizeInputs(null) });
+    setAddition({ pageId, requestId: crypto.randomUUID(), corners, adjacentSuggestion, deferredProposal,
+      printSizeFields: printSizeInputs(null) });
+  }
+
+  async function confirmCount() {
+    setCountReview({ pageId, saving: true });
+    try {
+      await onConfirmCount(page, deferredProposals.map(({ id }) => id));
+      if (activePage.current === pageId) setCountReview(null);
+    } catch (error) {
+      if (activePage.current === pageId) setCountReview({ pageId, error: error.message });
+    }
   }
 
   async function saveNewPrint() {
     if (!newPrint || newPrint.saving || newPrint.invalidated || newPrint.corners.length !== 4 || additionSize.error) return;
     setAddition({ ...newPrint, saving: true, error: null });
     try {
-      const photo = await onAddPhoto(pageId, newPrint.requestId, newPrint.corners, additionSize.size, newPrint.adjacentSuggestion);
+      const photo = await onAddPhoto(pageId, newPrint.requestId, newPrint.corners, additionSize.size,
+        newPrint.adjacentSuggestion, newPrint.deferredProposal);
       if (activePage.current !== pageId) return;
       setAddition(null);
       onSelectPhoto(photo.id);
       setSaveState({ photoId: photo.id, mode: "full_print", url: photo.urls?.full_print });
     } catch (error) {
-      const stale = adjacentAdditionErrors[error.message];
+      const stale = printAdditionErrors[error.message];
       const message = stale || (error.message === "protected_region_cut"
         ? "Der Ausschnitt schneidet einen geschützten Bildbereich ab. Verschiebe die Ecken, bis der Bereich vollständig sichtbar ist."
         : error.message);
@@ -1769,6 +1805,26 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
       {!editingImage && showMissingEdges && missingTraces.length > 0 && (
         <p className="crop-editor-hint">{missingPrintEdgeHint}</p>
       )}
+      {!newPrint && !editingImage && deferredProposals.length > 0 && (
+        <div className="manual-print-actions">
+          <p className="crop-editor-hint">
+            {photos.filter((photo) => !photo.reviewed_non_print).length} erfasste Abzüge, {deferredProposals.length === 1
+              ? "1 unklarer Vorschlag" : `${deferredProposals.length} unklare Vorschläge`}. {deferredPrintHint}
+          </p>
+          {deferredProposals.map(({ id, polygon }, index) => (
+            <button className="text-button compact" key={id} type="button"
+              onClick={() => startAddition(polygon, null, { id, revision: page.processing_metadata?.photo_count_revision })}
+              disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving}>
+              {`Vorschlag ${index + 1} als Abzug ergänzen`}
+            </button>
+          ))}
+          <button className="text-button compact" type="button" onClick={confirmCount}
+            disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving}>
+            {currentCountReview?.saving ? "Anzahl wird gespeichert …" : "Anzahl bestätigen"}
+          </button>
+        </div>
+      )}
+      {currentCountReview?.error && <p role="alert">{currentCountReview.error}</p>}
       {!newPrint && !editingImage && !selected && pendingNested > 0 && (
         <p className="crop-editor-hint" role="status">
           {pendingNested === 1 ? "1 unklarer Vorschlag" : `${pendingNested} unklare Vorschläge`}. Wähle einen Abzug mit gestrichelter Innenkontur.
@@ -1855,7 +1911,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
             disabled={newPrint.saving || newPrint.invalidated || newPrint.corners.length !== 4 || Boolean(additionSize.error)}>
             {newPrint.saving ? "Abzug wird berechnet …" : "Abzug speichern"}
           </button>
-          <button className="text-button compact" type="button" onClick={() => startAddition([], newPrint.adjacentSuggestion)}
+          <button className="text-button compact" type="button" onClick={() => startAddition([], newPrint.adjacentSuggestion, newPrint.deferredProposal)}
             disabled={newPrint.saving || newPrint.invalidated || newPrint.corners.length === 0}>
             Ecken zurücksetzen
           </button>
@@ -1954,12 +2010,12 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
     return detail;
   }
 
-  async function addPhoto(pageId, requestId, corners, printSize, adjacentSuggestion) {
+  async function addPhoto(pageId, requestId, corners, printSize, adjacentSuggestion, deferredProposal) {
     let photo;
     try {
-      photo = await addManualPhoto(pageId, requestId, corners, printSize, adjacentSuggestion);
+      photo = await addManualPhoto(pageId, requestId, corners, printSize, adjacentSuggestion, deferredProposal);
     } catch (error) {
-      if (adjacentAdditionErrors[error.message]) await refreshCorrections().catch(() => {});
+      if (printAdditionErrors[error.message]) await refreshCorrections().catch(() => {});
       throw error;
     }
     const [detail] = await Promise.all([getPhoto(photo.id), refreshCorrections()]);
@@ -1972,6 +2028,18 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
       idempotency_key: crypto.randomUUID(), metadata: { ui: "desktop" },
     });
     await refreshCorrections();
+  }
+
+  async function confirmCount(page, deferredProposalIds) {
+    try {
+      await submitReviewEvent({
+        task_type: "segmentation", task_id: page.id, answer: "correct", idempotency_key: crypto.randomUUID(),
+        metadata: { ui: "desktop", photo_count_revision: page.processing_metadata?.photo_count_revision,
+          deferred_proposal_ids: deferredProposalIds },
+      });
+    } finally {
+      await refreshCorrections().catch(() => {});
+    }
   }
 
   async function reprocessSelected() {
@@ -2005,6 +2073,7 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
           onSaveBox={saveBox}
           onAddPhoto={addPhoto}
           onRejectPhoto={rejectPhoto}
+          onConfirmCount={confirmCount}
         />
       </section>
       <section className="side-surface">

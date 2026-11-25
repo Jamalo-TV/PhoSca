@@ -21,6 +21,7 @@ from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
     measure_extended_print_outline, measure_fragmented_print, suggest_fragmented_outline,
 )
+from app.pipeline.fusion_ownership import unsupported_fallback_ownership
 from app.pipeline.geometry import (
     PolygonOverlap,
     normalized_polygon_overlap,
@@ -1252,6 +1253,7 @@ def fuse_candidate_evidence(
     classical_detections: list[SegmentationDetection],
     *,
     model_evidence: dict[int, dict[str, float]] | None = None,
+    ownership_source: np.ndarray | None = None,
 ) -> tuple[list[SegmentationDetection], dict]:
     """Fuse proposal sources after assessment, preserving real overlapping instances."""
     records: list[dict] = []
@@ -1301,8 +1303,17 @@ def fuse_candidate_evidence(
             if matched_details is not None:
                 cluster_matches[matched_cluster].append(matched_details)
 
+    model_outlines = [
+        _detection_polygon(item["detection"]) for item in records
+        if ownership_source is not None and item["family"] == "model"
+        and item["detection"].mask.get("source") == "yolo_seg_mask"
+        and item["detection"].geometry_valid and not item["detection"].review_reasons
+        and item["detection"].confidence >= .70 and item["boundary"]["score"] >= .65
+        and item["boundary"].get("border_contrast", 0) >= .70
+    ]
     selected: list[SegmentationDetection] = []
     cluster_metadata: list[dict] = []
+    deferred = []
     replacements = 0
     for cluster_index, cluster in enumerate(clusters):
         ranked = sorted(
@@ -1333,6 +1344,20 @@ def fuse_candidate_evidence(
             "proposal_families": sorted({item["family"] for item in cluster}),
         }
         winner_detection = winner["detection"]
+        if (ownership_source is not None and model_outlines and len(cluster) == 1
+                and winner["family"] == "classical" and not winner_detection.review_reasons
+                and winner_detection.mask.get("detector_source") in {"edge_contour", "contrast_region"}):
+            proposal = _detection_polygon(winner_detection)
+            try:
+                conflict = unsupported_fallback_ownership(ownership_source, proposal, model_outlines)
+            except (cv2.error, ValueError):
+                conflict = None
+            if conflict:
+                deferred.append({"id": cluster_index, "reason": conflict, "polygon": [
+                    {"x": float(x), "y": float(y)} for x, y in order_quad_cyclic(proposal)
+                ]})
+                cluster_metadata.append({**provenance, "decision": "deferred_for_count_review", "selection_reason": conflict})
+                continue
         shared_stock = next((item["detection"] for item in ranked
                              if MULTIPANEL_PRINT_REVIEW in item["detection"].review_reasons
                              and item["detection"].mask.get("visible_polygon")), None)
@@ -1377,6 +1402,7 @@ def fuse_candidate_evidence(
         "selected_instances": len(selected),
         "model_hypotheses_replaced": replacements,
         "clusters": cluster_metadata,
+        **({"deferred_print_proposals": deferred} if deferred else {}),
     }
 
 
@@ -3284,7 +3310,8 @@ def _segment_album_page(image: np.ndarray, settings: Settings, source: np.ndarra
                         image, max_line_refinement_pixels=line_budget, multipanel_source=multipanel_source,
                     )
                     merged, fusion = fuse_candidate_evidence(
-                        image, detections, fallback.detections, model_evidence=model_evidence
+                        image, detections, fallback.detections, model_evidence=model_evidence,
+                        ownership_source=(image if source is None else source) if settings.enable_precise_photo_crops else None,
                     )
                     metadata.update(
                         {

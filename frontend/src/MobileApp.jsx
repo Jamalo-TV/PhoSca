@@ -6,7 +6,7 @@ import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import {
   adjacentPrintHint, captureOutlineReviewReason, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, crossingPrintHint,
   crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getCropModes, getFragmentOutline,
-  getSourceEdgeTraces,
+  deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getPrintEdgeReviewHint, missingPrintEdgeHint, nestedPrintHint,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -134,6 +134,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   const nestedOutlines = (sourceBox ? [item.payload] : detections)
     .map(record => cyclicReviewQuad(sanitizeReviewPolygon(record.segmentation_mask?.nested_print_suggestion)))
     .filter(Boolean);
+  const deferredProposals = getDeferredPrintProposals(item.payload?.deferred_print_proposals);
   const scallopedAlternate = item.payload?.confidence != null && item.payload?.segmentation_mask?.scalloped_alternate_is_inner
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.scalloped_alternate_polygon));
   const savedQuad = sanitizeReviewPolygon(item.payload?.segmentation_mask?.warp_quad);
@@ -210,7 +211,8 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   }
   const shown = box ? [{ bounding_box: box, photo_id: item.payload?.photo_id }] : detections;
   const count = item.payload?.detection_count;
-  const uncertainCount = nestedOutlines.length ? ` · ${nestedOutlines.length} unklar` : "";
+  const uncertain = nestedOutlines.length + deferredProposals.length;
+  const uncertainCount = uncertain ? ` · ${uncertain} unklar` : "";
   const overlayLabel = count == null ? "1 Crop" : `${count} ${count === 1 ? "Print" : "Prints"}${uncertainCount}`;
   const lensPosition = value => ((0.5 - 3.6 * value) / (1 - 3.6)) * 100;
   const lensX=Math.max(20,Math.min(80,magnifier.x*100+(magnifier.x>0.5?-24:24)));
@@ -228,11 +230,15 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
     <polygon key={index} points={outline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="6" strokeDasharray="16 9" pointerEvents="none" />
   ));
+  const deferredOverlay = deferredProposals.map(({ id, polygon }) => (
+    <polygon key={id} points={polygon.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
+      fill="none" stroke="#7e22ce" strokeWidth="6" strokeDasharray="18 10" pointerEvents="none" />
+  ));
   const paperTraceOverlay = printEdgeTraces.map((trace, index) => (
     <polyline key={index} points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />
   ));
-  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g>{visiblePolygon && <polygon points={visiblePolygon.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9"/>}<polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{uncertainLine}{alternateOverlay}{paperTraceOverlay}{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}{nestedOverlay}{Boolean(visibleTraces?.length) && <MeasuredEdgeOverlay traces={visibleTraces} />}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>
+  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g>{visiblePolygon && <polygon points={visiblePolygon.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9"/>}<polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{uncertainLine}{alternateOverlay}{paperTraceOverlay}{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}{nestedOverlay}{deferredOverlay}{Boolean(visibleTraces?.length) && <MeasuredEdgeOverlay traces={visibleTraces} />}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>
     {item.page_id && (
       <div className="edge-measurement-controls">
         <button className="magnifier-toggle" type="button" onClick={() => setMeasurementPage(item.page_id)}>
@@ -248,6 +254,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
     )}
     {showMissingEdges && missingTraces.length > 0 && <p className="quad-hint">{missingPrintEdgeHint}</p>}
     {nestedOutlines.length > 0 && <p className="quad-hint">{nestedPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
+    {deferredProposals.length > 0 && <p className="quad-hint">{deferredPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
     {measurementPage && measurementPage === item.page_id && <EdgeMeasurement key={item.page_id} pageId={item.page_id}
       onClose={() => setMeasurementPage(null)} onMeasured={(traces) => setMeasuredEdge({ pageId: item.page_id, traces })} />}
     {editable && <>
@@ -425,6 +432,7 @@ function CropReview({ albumId, goHome }) {
   useEffect(() => { load().catch(e => setMessage(e.message)); }, [load]); const item = items[index];
   const captureReviewPending = type === "geometry"
     && item?.payload?.crop_modes?.full_print?.reason_codes?.includes(captureOutlineReviewReason);
+  const deferredProposals = getDeferredPrintProposals(item?.payload?.deferred_print_proposals);
   useEffect(()=>{ goHomeRef.current=goHome; },[goHome]);
   useEffect(() => {
     if(!history.state?.phoscaCropGuard){
@@ -454,7 +462,12 @@ function CropReview({ albumId, goHome }) {
     setSubmitting(true);
     setAnswerError("");
     const metadata = { page_id: item.page_id, ui: "mobile-v2" };
-    if (type === "segmentation") metadata.photo_count_revision = item.payload.photo_count_revision;
+    if (type === "segmentation") {
+      metadata.photo_count_revision = item.payload.photo_count_revision;
+      if (deferredProposals.length && value === "correct") {
+        metadata.deferred_proposal_ids = deferredProposals.map(({ id }) => id);
+      }
+    }
     try {
       await submitReviewEvent({
         task_type: type, task_id: item.id, answer: value,
@@ -478,7 +491,9 @@ function CropReview({ albumId, goHome }) {
       <section className="answer-grid">
         {cropAnswers[type].map(([value,label]) => (
           <button key={value} className={value === "correct" ? "good" : ""}
-            disabled={submitting || (value === "correct" && captureReviewPending)} onClick={() => record(value)}>{label}</button>
+            disabled={submitting || (value === "correct" && captureReviewPending)} onClick={() => record(value)}>
+            {value === "correct" && deferredProposals.length ? "Anzahl bestätigen" : label}
+          </button>
         ))}
       </section>
     </> : <section className="review-done"><Check size={48}/><h2>{message || "Keine Aufgaben offen"}</h2><p>Neue Aufgaben erscheinen nach der Bildanalyse automatisch.</p><button onClick={load}><RefreshCw/> Neu laden</button></section>}{item && <button className="skip-task" disabled={submitting} onClick={() => setIndex(i => i + 1)}>Überspringen</button>}

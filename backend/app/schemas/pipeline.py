@@ -1,7 +1,7 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.models import OCRTextType, PageStatus, PhotoStatus
 from app.pipeline.decisions import photo_is_reviewed_non_print
@@ -123,6 +123,14 @@ class ManualPhotoCreate(StrictSchema):
     warp_quad: list[NormalizedPoint] = Field(min_length=4, max_length=4)
     print_size_mm: PrintSizeMM | None = None
     adjacent_suggestion: AdjacentPrintSuggestion | None = None
+    deferred_proposal_id: int | None = Field(default=None, ge=0)
+    photo_count_revision: str | None = Field(default=None, min_length=1, max_length=64)
+
+    @model_validator(mode="after")
+    def check_suggestion(self) -> "ManualPhotoCreate":
+        if self.adjacent_suggestion is not None and self.deferred_proposal_id is not None:
+            raise ValueError("Choose one print suggestion.")
+        return self
 
 
 class OCRUpdate(StrictSchema):

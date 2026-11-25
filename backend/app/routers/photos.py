@@ -42,6 +42,7 @@ from app.schemas.pipeline import ManualPhotoCreate
 from app.services.pipeline import (
     deduplication_task_logic,
     enhancement_task_logic,
+    page_fusion_evidence,
     persistence_task_logic,
     perspective_correction_task_logic,
 )
@@ -259,6 +260,8 @@ def _replay_manual_photo(
     if photo.page_id != page_id or any(creation.get(key) != value for key, value in creation_request.items()):
         if creation_request["adjacent_suggestion"] is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="adjacent_print_suggestion_saved")
+        if creation_request["deferred_proposal_id"] is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="deferred_print_proposal_saved")
         if creation.get("print_size_mm") != creation_request["print_size_mm"]:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This request already saved different measurements.")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This request already saved different corners.")
@@ -429,15 +432,22 @@ async def create_manual_photo(
     quad = [point.model_dump() for point in payload.warp_quad]
     size = payload.print_size_mm
     suggestion = payload.adjacent_suggestion
+    deferred_id = payload.deferred_proposal_id
     creation_request = {
         "request_id": str(payload.request_id),
         "warp_quad": quad,
         "print_size_mm": size.model_dump() if size else None,
         "adjacent_suggestion": suggestion.model_dump(mode="json", exclude_none=True) if suggestion else None,
+        "deferred_proposal_id": deferred_id,
+        "photo_count_revision": payload.photo_count_revision,
     }
     # Two sessions can edit the same outline with different request UUIDs.
     # Its source and displayed coordinates identify a single addition.
-    identity = f"adjacent-print:{suggestion.model_dump_json(exclude_none=True)}" if suggestion else str(payload.request_id)
+    identity = str(payload.request_id)
+    if suggestion is not None:
+        identity = f"adjacent-print:{suggestion.model_dump_json(exclude_none=True)}"
+    elif deferred_id is not None:
+        identity = f"deferred-print:{payload.photo_count_revision}:{deferred_id}"
     photo_id = uuid5(page.id, identity)
     existing = await session.get(ExtractedPhoto, photo_id)
     if existing is None:
@@ -451,6 +461,15 @@ async def create_manual_photo(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Wait for page analysis before adding a print.")
     if not settings.enable_precise_photo_crops:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Manual additions require precise crop modes.")
+    deferred = None
+    if deferred_id is not None:
+        page_metadata = page.processing_metadata or {}
+        if payload.photo_count_revision is None or payload.photo_count_revision != page_metadata.get("photo_count_revision"):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="deferred_print_proposal_stale")
+        pending = page_fusion_evidence(page_metadata).get("deferred_print_proposals") or []
+        deferred = next((candidate for candidate in pending if candidate["id"] == deferred_id), None)
+        if deferred is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="deferred_print_proposal_stale")
     width, height = _source_size(page)
     mask = {"source": "manual_added", "manual_added": True, "polygon": quad, "visible_polygon": quad, "warp_quad": quad}
     if size:
@@ -469,12 +488,13 @@ async def create_manual_photo(
         )
     ]
     suggestion_key = "nested_print_suggestion" if suggestion and suggestion.kind == "nested" else "adjacent_print_suggestion"
+    anchor = None
     if suggestion:
         anchor = next((photo for photo in active if photo.id == suggestion.photo_id), None)
         if (anchor is None or (anchor.segmentation_mask or {}).get(suggestion_key)
                 != creation_request["adjacent_suggestion"]["polygon"]):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="adjacent_print_suggestion_stale")
-    else:
+    elif deferred is None:
         # A manually marked outline can exactly match an open suggestion.
         matches = [
             (photo, key) for photo in active for key in ("adjacent_print_suggestion", "nested_print_suggestion")
@@ -513,6 +533,12 @@ async def create_manual_photo(
         "manual_creation": creation,
         "prediction_provenance": await _prediction_provenance(session, photo),
     }
+    if deferred is not None:
+        review_provenance["deferred_print_proposal"] = deepcopy(deferred)
+        metadata = deepcopy(page.processing_metadata)
+        fusion = page_fusion_evidence(metadata)
+        fusion["deferred_print_proposals"] = [candidate for candidate in pending if candidate["id"] != deferred_id]
+        page.processing_metadata = metadata
     _claim_missing_print_trace(page, review_provenance, quad, width, height)
     photo.enhancement_applied = {"review_provenance": review_provenance}
     page.processing_metadata = {**(page.processing_metadata or {}), "photo_count_revision": str(photo_id)}

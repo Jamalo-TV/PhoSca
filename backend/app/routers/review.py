@@ -10,6 +10,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.auth import Principal, get_principal, require_write_principal
 from app.database import get_async_session
 from app.models import (
@@ -25,6 +26,7 @@ from app.models import (
 from app.pipeline.decisions import is_reviewed_non_print
 from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import ReviewItem
+from app.services.pipeline import page_fusion_evidence
 
 router = APIRouter(prefix="/api/v1/review", tags=["review"])
 
@@ -340,11 +342,20 @@ def _apply_review_decision(event: ReviewEvent, payload: MobileReviewAnswer, cont
         state = (
             "accepted" if payload.answer == "correct" else ("uncertain" if payload.answer == "unsure" else "rejected")
         )
-        page.processing_metadata = _store_entity_decision(
+        metadata = _store_entity_decision(
             page.processing_metadata or {},
             "segmentation",
             _decision_record(event.id, payload, state=state),
         )
+        fusion = page_fusion_evidence(metadata)
+        if payload.answer == "correct" and "deferred_print_proposals" in fusion:
+            fusion.pop("deferred_print_proposals")
+            photos = context["photos"]
+            if (page.status == PageStatus.review_needed and not page.error_message
+                    and page.blur_score is not None and page.blur_score >= get_settings().blur_threshold
+                    and photos and all(photo.status == PhotoStatus.completed for photo in photos)):
+                page.status = PageStatus.completed
+        page.processing_metadata = metadata
         return
 
     if payload.task_type == "enhancement":
@@ -412,11 +423,19 @@ async def add_review_event(
         return {"id": existing.id, "saved": True, "duplicate": True}
 
     if payload.task_type == "segmentation":
-        page_revision = (context["page"].processing_metadata or {}).get("photo_count_revision")
+        metadata = context["page"].processing_metadata or {}
+        page_revision = metadata.get("photo_count_revision")
         if payload.metadata.get("photo_count_revision") != page_revision:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Die Abzüge auf dieser Seite haben sich geändert. Prüfe die aktuelle Anzahl.",
+            )
+        pending = page_fusion_evidence(metadata).get("deferred_print_proposals") or []
+        if (payload.answer == "correct" and pending
+                and payload.metadata.get("deferred_proposal_ids") != [candidate["id"] for candidate in pending]):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Prüfe die gestrichelten Konturen, bevor du die Anzahl bestätigst.",
             )
 
     if payload.task_type == "geometry" and payload.answer == "correct":
@@ -636,6 +655,7 @@ async def get_review_queue(
                         "detection_count": len(detections), "detections": detections,
                         "photo_count_revision": (page.processing_metadata or {}).get("photo_count_revision"),
                         "missing_print_edge_traces": segmentation.get("missing_print_edge_traces", []),
+                        "deferred_print_proposals": page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals", []),
                     },
                 )
             )

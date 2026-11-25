@@ -83,6 +83,11 @@ logger = structlog.get_logger(__name__)
 _local_pipeline_lock = asyncio.Lock()
 
 
+def page_fusion_evidence(metadata: dict | None) -> dict:
+    segmentation = ((metadata or {}).get("steps") or {}).get("segmentation") or {}
+    return segmentation.get("fusion") or {}
+
+
 def _append_metadata(entity: Page | ExtractedPhoto, step: str, payload: dict) -> None:
     if isinstance(entity, Page):
         metadata = deepcopy(entity.processing_metadata or {})
@@ -239,6 +244,9 @@ async def segmentation_task_logic(
         "detections": len(result.detections),
         "validation_profile": crop_validation_profile(settings),
     })
+    deferred = bool(page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals"))
+    if deferred:
+        page.processing_metadata = {**page.processing_metadata, "photo_count_revision": str(uuid4())}
 
     created_photo_ids: list[str] = []
     review_reasons_by_photo: dict[str, list[str]] = {}
@@ -296,6 +304,7 @@ async def segmentation_task_logic(
 
     needs_review = (
         not result.detections
+        or deferred
         or prior_review_required
         or (page.blur_score is not None and page.blur_score < settings.blur_threshold)
     )
@@ -1223,7 +1232,8 @@ async def process_page_pipeline(page_id: UUID, settings: Settings | None = None)
         review_photos = [result for result in photo_results if result["status"] == PhotoStatus.review_needed.value]
         if failed_photos:
             page.status = PageStatus.failed
-        elif review_photos or not photo_results or ingestion["blur_score"] < settings.blur_threshold:
+        elif (review_photos or not photo_results or ingestion["blur_score"] < settings.blur_threshold
+              or page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals")):
             page.status = PageStatus.review_needed
         else:
             page.status = PageStatus.completed
