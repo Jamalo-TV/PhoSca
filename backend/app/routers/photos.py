@@ -24,7 +24,7 @@ from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE
 from app.pipeline.decisions import is_reviewed_non_print
 from app.pipeline.edge_trace import measure_edge_trace
 from app.pipeline.image_ops import load_image, normalized_box_to_pixels
-from app.pipeline.manual_paper_boundary import paper_curve_review_reference
+from app.pipeline.manual_paper_boundary import capture_outline_review_required, paper_curve_review_reference
 from app.pipeline.perspective import manual_print_intersects, validate_review_quads
 from app.pipeline.presets import available_presets
 from app.pipeline.variants import (
@@ -596,6 +596,8 @@ async def update_photo_bounding_box(
         print_mode = (previous_correction.get("crop_modes") or {}).get("full_print") or {}
         if len(print_mode.get("warp_quad") or []) == 4:
             before["print_warp_quad"] = deepcopy(print_mode["warp_quad"])
+        if print_mode:
+            before["capture_outline_unverified"] = capture_outline_review_required(print_mode)
         curve = paper_curve_review_reference(previous_correction)
         if curve is not None:
             review_provenance.setdefault("paper_curve_review", deepcopy(curve))

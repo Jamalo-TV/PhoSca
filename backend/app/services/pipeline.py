@@ -410,7 +410,8 @@ async def perspective_correction_task_logic(
 
     precise_crops = (settings.enable_precise_photo_crops or mask.get("manual_added") is True
                      or mask.get(REVIEWED_CROSSING_OUTLINE) is True or bool(mask.get("crossing_print_suggestion"))
-                     or boundary_needs_review)
+                     or mask.get("capture_edge_clipped") is True or boundary_needs_review
+                     or (manual_boundary or {}).get("capture_outline") is True)
     loads_source = page_image is None
     if page_image is None:
         page_image, page_camera = await asyncio.to_thread(

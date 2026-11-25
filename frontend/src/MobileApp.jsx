@@ -4,7 +4,7 @@ import { createAlbum, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop,
 import { resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import {
-  adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, crossingPrintHint,
+  adjacentPrintHint, captureOutlineReviewReason, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, crossingPrintHint,
   crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getCropModes, getFragmentOutline,
   getSourceEdgeTraces,
   getPrintEdgeReviewHint,
@@ -191,8 +191,10 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
       const savedDegrees = saved.segmentation_mask?.orientation_degrees ?? null;
       setOrientation(savedDegrees);
       setSavedOrientation(savedDegrees);
-      const nextUrl=`/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`;
-      setSavedCropUrl(nextUrl); await onSaved?.({ bounding_box: box, polygon: quad });
+      const cropModes = getCropModes(saved);
+      const held = cropModes?.full_print?.reason_codes?.includes(captureOutlineReviewReason);
+      setSavedCropUrl(held ? "" : `/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`);
+      onSaved?.(cropModes);
     } catch (error) {
       setSaveError(error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message || "Ausschnitt konnte nicht gespeichert werden.");
@@ -402,6 +404,8 @@ function CropReview({ albumId, goHome }) {
   const leavingRef=useRef(false); const goHomeRef=useRef(goHome);
   const load = useCallback(async () => { setItems(await getReviewQueue(albumId || undefined, type)); setIndex(0); }, [albumId, type]);
   useEffect(() => { load().catch(e => setMessage(e.message)); }, [load]); const item = items[index];
+  const captureReviewPending = type === "geometry"
+    && item?.payload?.crop_modes?.full_print?.reason_codes?.includes(captureOutlineReviewReason);
   useEffect(()=>{ goHomeRef.current=goHome; },[goHome]);
   useEffect(() => {
     if(!history.state?.phoscaCropGuard){
@@ -416,6 +420,16 @@ function CropReview({ albumId, goHome }) {
     return ()=>removeEventListener("popstate",keepReviewOpen);
   },[]);
   function leaveReview(){ leavingRef.current=true; history.back(); }
+  function updateSavedCropModes(cropModes) {
+    if (cropModes) {
+      setItems(current => current.map(task => task.id === item.id
+        ? { ...task, payload: { ...task.payload, crop_modes: cropModes } }
+        : task));
+    }
+    setMessage(cropModes?.full_print?.reason_codes?.includes(captureOutlineReviewReason)
+      ? "Vier Ecken gespeichert. Die Papierkante bleibt in Prüfung."
+      : "Vier Ecken gespeichert und Perspektive korrigiert");
+  }
   async function record(value) {
     if (!item || submitting) return;
     setSubmitting(true);
@@ -440,7 +454,15 @@ function CropReview({ albumId, goHome }) {
   return <div className="mobile-shell crop-review-shell"><MobileHeader title="Cropping prüfen" onBack={leaveReview}/><main className="mobile-content"><div className="review-top"><div><span>Kurze Sitzung</span><strong>{Math.min(index + 1, items.length || 5)} / {Math.min(items.length, 5) || 5}</strong></div><div className="review-progress"><i style={{width:`${Math.min(100, index / Math.max(1, Math.min(items.length,5)) * 100)}%`}}/></div></div>
     <div className="task-switch"><button className={type === "segmentation" ? "active" : ""} onClick={() => setType("segmentation")} disabled={submitting}>Printanzahl</button><button className={type === "geometry" ? "active" : ""} onClick={() => setType("geometry")} disabled={submitting}>Crop-Qualität</button></div>
     {answerError && <p role="alert">{answerError}</p>}
-    {item ? <><DetectionOverlay item={item} editable={type === "geometry"} onSaved={() => setMessage("Vier Ecken gespeichert und Perspektive korrigiert")}/><section className="answer-grid">{cropAnswers[type].map(([value,label]) => <button key={value} className={value === "correct" ? "good" : ""} disabled={submitting} onClick={() => record(value)}>{label}</button>)}</section></> : <section className="review-done"><Check size={48}/><h2>{message || "Keine Aufgaben offen"}</h2><p>Neue Aufgaben erscheinen nach der Bildanalyse automatisch.</p><button onClick={load}><RefreshCw/> Neu laden</button></section>}{item && <button className="skip-task" disabled={submitting} onClick={() => setIndex(i => i + 1)}>Überspringen</button>}
+    {item ? <>
+      <DetectionOverlay item={item} editable={type === "geometry"} onSaved={updateSavedCropModes} />
+      <section className="answer-grid">
+        {cropAnswers[type].map(([value,label]) => (
+          <button key={value} className={value === "correct" ? "good" : ""}
+            disabled={submitting || (value === "correct" && captureReviewPending)} onClick={() => record(value)}>{label}</button>
+        ))}
+      </section>
+    </> : <section className="review-done"><Check size={48}/><h2>{message || "Keine Aufgaben offen"}</h2><p>Neue Aufgaben erscheinen nach der Bildanalyse automatisch.</p><button onClick={load}><RefreshCw/> Neu laden</button></section>}{item && <button className="skip-task" disabled={submitting} onClick={() => setIndex(i => i + 1)}>Überspringen</button>}
   </main></div>;
 }
 

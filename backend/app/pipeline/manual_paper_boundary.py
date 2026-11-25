@@ -1,14 +1,22 @@
-"""Keep a manual rectangle from replacing a measured, non-straight paper edge."""
+"""Verify source paper boundaries that a manual rectangle may cut or overrun."""
 
 import cv2
 import numpy as np
 
+from app.pipeline.edge_prints import CAPTURE_EDGE_HOLD
 from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels, order_quad_cyclic
-from app.pipeline.print_edges import _edge_band, _side_line, bowed_print_sides, refine_print_boundary
+from app.pipeline.print_edges import (
+    _backing_color, _edge_band, _side_line, _stock_ring, bowed_print_sides, refine_print_boundary,
+)
 
 
 MANUAL_PAPER_BOUNDARY_REVISION = 2
 MANUAL_PAPER_BOUNDARY_REVIEW = "PRINT_CURVED_OUTLINE_REVIEW"
+MANUAL_CAPTURE_OUTLINE_REVIEW = "PRINT_CAPTURE_OUTLINE_REVIEW"
+
+
+def capture_outline_review_required(print_mode: dict) -> bool:
+    return CAPTURE_EDGE_HOLD in (print_mode.get("reason_codes") or [])
 
 
 def paper_curve_review_reference(correction: dict) -> dict | None:
@@ -23,14 +31,26 @@ def paper_curve_review_reference(correction: dict) -> dict | None:
 def manual_paper_reference(metadata: dict, crop_quad: list[dict] | None) -> dict | None:
     review = metadata.get("review_provenance") or {}
     original = review.get("original_prediction") or {}
-    if len(crop_quad or []) != 4 or original.get("segmentation_confidence") is None:
+    if original.get("segmentation_confidence") is None:
         return None
     mask = original.get("segmentation_mask") or {}
+    previous_print = original.get("print_warp_quad") or []
+    capture_outline = original.get("capture_outline_unverified")
+    if capture_outline is None:
+        # Older edits saved the rendered outline but not its reasons. Only the
+        # outline itself, not an expanded detection box, shows frame contact.
+        capture_outline = original.get("status") == "review_needed" and any(
+            point.get(axis) in (0., 1.) for point in previous_print for axis in ("x", "y")
+        )
     curve = review.get("paper_curve_review")
     outline = mask.get("visible_polygon") or mask.get("polygon") or []
     seed = mask.get("warp_quad") or mask.get("polygon") or []
+    if capture_outline:
+        return {"capture_outline": True, "warp_quad": previous_print or seed, "outline": outline, "curve": curve}
+    if len(crop_quad or []) != 4:
+        return None
     if len(seed) != 4:
-        seed = original.get("print_warp_quad") or (curve or {}).get("warp_quad") or []
+        seed = previous_print or (curve or {}).get("warp_quad") or []
     legacy_extended = curve is None and mask.get("extended_print_outline") is True
     if len(seed) != 4 or (not curve and not legacy_extended and len(outline) < 8):
         return None
@@ -47,6 +67,12 @@ def manual_paper_download_needs_review(metadata: dict, crop_quad: list[dict] | N
     if reference is None:
         return False
     check = (metadata.get("correction") or {}).get("manual_paper_boundary") or {}
+    if reference.get("capture_outline"):
+        return (
+            check.get("revision") != MANUAL_PAPER_BOUNDARY_REVISION
+            or check.get("capture_outline_verified") is not True
+            or check.get("requires_review") is not False
+        )
     curve_recheck = bool(reference["curve"] or reference["legacy_extended"])
     if check.get("revision") == MANUAL_PAPER_BOUNDARY_REVISION or (not curve_recheck and check.get("revision") == 1):
         return check.get("requires_review") is not False
@@ -260,7 +286,143 @@ def _confirmed_straight_outline(image: np.ndarray, previous: np.ndarray, current
                for start, end in zip(current, np.roll(current, -1, axis=0), strict=True))
 
 
+def _competing_inner_stock(image: np.ndarray, quad: np.ndarray, radius: int) -> bool:
+    # A mount and the print inside it can each form a pale rectangle.
+    # A regular darker motif inside the selected stock does not satisfy this test.
+    sides = list(zip(quad, np.roll(quad, -1, axis=0), strict=True))
+    rim = [_edge_band(image, start, end, [2, 4, 6]) for start, end in sides]
+    if any(samples is None for samples in rim):
+        return False
+    outer_stock = np.median(np.asarray(rim), axis=(0, 1, 2))
+    offsets = np.arange(5, radius, .5, dtype=np.float32)
+    fractions = np.linspace(.13, .87, 80, dtype=np.float32)
+    layers = []
+    for start, end in sides:
+        band = _edge_band(image, start, end, offsets, fractions=fractions)
+        if band is None:
+            return False
+        stations = np.arange(len(offsets) - 26)[:, None]
+        outside = band[:, stations + [0, 1, 2]].mean(axis=2)
+        inside = band[:, stations + [9, 10, 11, 12]].mean(axis=2)
+        interior = band[:, stations + [16, 18, 20, 22, 24, 26]]
+        before = np.linalg.norm(outside - outer_stock, axis=2)
+        after = np.linalg.norm(inside - outer_stock, axis=2)
+        change = after - before
+        votes = (before <= 7) & (after >= 12) & (change >= 9)
+        votes &= (inside[..., 0] >= 185) & (np.max(np.abs(inside[..., 1:] - 128), axis=2) <= 21)
+        # A dark motif can have pale antialiasing at its edge. Look well
+        # beyond that transition for the same distinct, pale material.
+        votes &= (interior[..., 0] >= 185).all(axis=2)
+        votes &= (np.linalg.norm(interior - inside[:, :, None], axis=3) <= 8).all(axis=2)
+        quarters = np.stack([part.mean(axis=0) for part in np.array_split(votes, 4)])
+        supported = (votes.mean(axis=0) >= .88) & (quarters.min(axis=0) >= .77)
+        if not supported.any():
+            return False
+        best = np.argmax(np.where(supported, np.where(votes, change, 0).mean(axis=0), 0))
+        layers.append(np.median(inside[votes[:, best], best], axis=0))
+    return bool((np.linalg.norm(layers - np.median(layers, axis=0), axis=1) <= 10).all())
+
+
+def _unexplained_capture_material(
+    image: np.ndarray, quad: np.ndarray, previous: np.ndarray, backing: np.ndarray,
+) -> bool:
+    # Check the old footprint beyond the near-paper collars. Thin album ink
+    # such as a rail is different from a broad patch that may still be photo.
+    size = 128
+    unit_range = np.linspace(0, 1, size, dtype=np.float32)
+    x_unit, y_unit = np.meshgrid(unit_range, unit_range)
+    features = np.stack((np.ones_like(x_unit), x_unit, y_unit), axis=-1)
+    low, high = previous.min(axis=0), previous.max(axis=0)
+    for axis in (0, 1):
+        for before in (True, False):
+            first, last = low.copy(), high.copy()
+            if before:
+                last[axis] = min(last[axis], quad[:, axis].min() - 36)
+            else:
+                first[axis] = max(first[axis], quad[:, axis].max() + 36)
+            extent = last - first
+            if extent.min() < 10:
+                continue
+            xs, ys = first[0] + x_unit * extent[0], first[1] + y_unit * extent[1]
+            pixels = cv2.remap(image, xs, ys, cv2.INTER_LINEAR)
+            lab = cv2.cvtColor(pixels, cv2.COLOR_BGR2LAB).astype(np.float32)
+            mask = np.zeros((size, size), np.uint8)
+            previous_in_grid = np.rint((previous - first) * (size - 1) / extent).astype(np.int32)
+            cv2.fillConvexPoly(mask, previous_in_grid, 1)
+            active = mask > 0
+            if np.count_nonzero(active) < 256:
+                continue
+            distance = np.linalg.norm(lab - backing, axis=2)
+            plane = np.linalg.lstsq(features[active], lab[active], rcond=None)[0]
+            residual = np.linalg.norm(lab - features @ plane, axis=2)
+            near = active & (features[..., axis + 1] >= .88 if before else features[..., axis + 1] <= .12)
+            # An independently backed near edge can lead into gradual
+            # lighting drift. Test for local non-backing material even then.
+            if near.any() and np.mean(distance[near] <= 9) >= .8 and np.percentile(residual[active], 90) <= 3.5:
+                foreground = active & (residual > 7)
+            else:
+                foreground = active & ((distance > 20) | ((distance > 10) & (residual > 4.5)))
+            kernel_size = np.maximum(3, np.round(10 * (size - 1) / extent).astype(int) | 1)
+            opened = cv2.morphologyEx(
+                foreground.astype(np.uint8), cv2.MORPH_OPEN,
+                cv2.getStructuringElement(cv2.MORPH_ELLIPSE, tuple(kernel_size)),
+            )
+            _, _, stats, _ = cv2.connectedComponentsWithStats(opened)
+            if np.any(stats[1:, cv2.CC_STAT_AREA] >= max(65, .045 * np.count_nonzero(mask))):
+                return True
+    return False
+
+
+def _confirmed_capture_outline(image: np.ndarray, quad: np.ndarray, previous: np.ndarray) -> bool:
+    # A sharp line can be printed ink and a straight album rail can extend
+    # past a print. Require backing, a coherent contrasting stock ring,
+    # independent corner terminations and a check for wider exterior edges.
+    # A pale rectangular mat can still pass those tests. Keep a corroborated
+    # side of the original proposal attached to the same physical print.
+    previous = min((np.roll(previous, i, axis=0) for i in range(4)),
+                   key=lambda corners: np.linalg.norm(corners - quad))
+    retained = np.linalg.norm(previous - quad, axis=1) <= 2.
+    if not any(retained[i] and retained[(i + 1) % 4] and _straight_paper_side(
+        image, previous[i], previous[(i + 1) % 4]
+    ) for i in range(4)):
+        return False
+    backing = _backing_color(image)
+    if not _stock_ring(image, quad, backing):
+        return False
+    sides = np.roll(quad, -1, axis=0) - quad
+    radius = min(130, max(36, round(float(np.linalg.norm(sides, axis=1).min()) * .112)))
+    for index, (start, end) in enumerate(zip(quad, np.roll(quad, -1, axis=0), strict=True)):
+        outside = _edge_band(image, start, end, [-6, -12, -22, -36])
+        if outside is None or not (np.mean(np.linalg.norm(outside - backing, axis=2) <= 10, axis=0) >= .80).all():
+            return False
+        if not _straight_paper_side(image, start, end) or not _edge_ends_at_print_corners(image, quad, index):
+            return False
+        # A printed frame inside confirmed stock is expected. Only a broader
+        # transition toward the album can compete with the outer edge.
+        dx, dy = end - start
+        outset = 4 * np.float32([dy, -dx]) / np.hypot(dx, dy)
+        _, exterior = _side_line(image, start + outset, end + outset, radius, outward_only=True)
+        if exterior["support"] >= .75:
+            return False
+    return not (_competing_inner_stock(image, quad, radius) or _unexplained_capture_material(image, quad, previous, backing))
+
+
 def check_manual_paper_boundary(image: np.ndarray, current: np.ndarray, reference: dict) -> tuple[bool, list]:
+    if reference.get("capture_outline"):
+        current = order_quad_cyclic(current)
+        curve = reference.get("curve")
+        seed = reference["warp_quad"]
+        if len(seed) != 4:
+            return True, (curve or {}).get("traces", [])
+        previous = order_quad_cyclic(normalized_vertices_to_pixels(
+            [(point["x"], point["y"]) for point in seed], *image.shape[1::-1],
+        ))
+        if not _confirmed_capture_outline(image, current, previous):
+            return True, (curve or {}).get("traces", [])
+        if not curve:
+            return False, []
+        # If prior curved-paper evidence also exists, preserve its own
+        # verification below after confirming the replacement paper edge.
     traces, dense_sides = _dense_curve_traces(image, reference) if len(reference["outline"]) >= 8 else ([], set())
     curve = reference["curve"]
     if traces and curve is None:

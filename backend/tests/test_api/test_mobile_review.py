@@ -206,6 +206,128 @@ async def test_manual_export_checks_the_server_owned_paper_outline(client, monke
     assert replay.json()["enhancement_applied"]["correction"]["manual_paper_boundary"]["requires_review"] is held
 
 
+async def test_capture_outline_hold_survives_manual_edit_and_legacy_exports(client, monkeypatch, tmp_path):
+    from copy import deepcopy
+
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.manual_paper_boundary import MANUAL_CAPTURE_OUTLINE_REVIEW
+    from app.services import pipeline
+
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("MAX_UPLOAD_SIZE", "2000000")
+    monkeypatch.setenv("MAX_REQUEST_SIZE", "2100000")
+    monkeypatch.setenv("YOLO_MODEL_PATH", str(tmp_path / "absent.onnx"))
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    get_settings.cache_clear()
+    source = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_04.jpg"
+    album = await client.post("/api/v1/albums", json={"name": "Original capture outline"})
+    upload = await client.post(
+        f"/api/v1/albums/{album.json()['id']}/pages/upload",
+        files={"files": (source.name, source.read_bytes(), "image/jpeg")},
+    )
+    assert upload.status_code == 201, upload.text
+    photos = (await client.get(f"/api/v1/albums/{album.json()['id']}/photos")).json()
+    assert len(photos) == 2
+    right, = [photo for photo in photos if photo["bounding_box"]["x2"] == 1]
+    original = right["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+    assert {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_AT_CAPTURE_EDGE"} <= set(original["reason_codes"])
+    url = f"/api/v1/photos/{right['id']}"
+    quad = [{"x": x / 2559, "y": y / 1919} for x, y in [(1617, 728), (2350, 736), (2298, 1798), (1596, 1814)]]
+    edit = {
+        "bounding_box": {"x1": 1596 / 2559, "y1": 728 / 1919, "x2": 2350 / 2559, "y2": 1814 / 1919},
+        "segmentation_mask": {
+            "source": "manual_quad", "polygon": quad, "warp_quad": quad,
+            "print_size_mm": {"width": 68, "height": 100},
+        },
+    }
+
+    async def assert_downloads_held():
+        for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+            result = await client.get(f"{url}/image", params={"variant": variant})
+            assert result.status_code == 404, variant
+
+    for _ in range(2):
+        saved = await client.patch(f"{url}/bounding-box", json=edit)
+        assert saved.status_code == 200, saved.text
+        metadata = saved.json()["enhancement_applied"]
+        assert metadata["review_provenance"]["original_prediction"]["capture_outline_unverified"] is True
+        correction = metadata["correction"]
+        assert correction["manual_paper_boundary"]["capture_outline_verified"] is False
+        assert all(MANUAL_CAPTURE_OUTLINE_REVIEW in mode["reason_codes"] for mode in correction["crop_modes"].values())
+        await assert_downloads_held()
+
+    # Restore the shape of a pre-fix ready row, including a live file in each
+    # variant. Older reviews only persisted the original rendered quad.
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, UUID(right["id"]))
+        metadata = deepcopy(photo.enhancement_applied)
+        metadata["review_provenance"]["original_prediction"].pop("capture_outline_unverified")
+        metadata["correction"].pop("manual_paper_boundary")
+        for mode in metadata["correction"]["crop_modes"].values():
+            mode.update(status="ready", reason_codes=[])
+        metadata["variants"] = {name: {"path": str(source)} for name in ("full_print", "image_only", "source_corrected_trimmed")}
+        photo.enhancement_applied = metadata
+        await session.commit()
+    await assert_downloads_held()
+
+    replay = await client.post(f"{url}/reprocess")
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["enhancement_applied"]["correction"]["manual_paper_boundary"]["requires_review"] is True
+    await assert_downloads_held()
+
+
+async def test_verified_recovery_of_inset_straight_print_exports_both_modes(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    get_settings.cache_clear()
+    page = np.full((560, 720, 3), 231, dtype=np.uint8)
+    page[93:475, 103:605] = 202
+    page[123:445, 133:575] = [120, 151, 193]
+    page[92:475, 668:675] = 105
+    _, _, photo_id = await _seed_review_data(page)
+
+    def vertices(left, top, right, bottom):
+        return [{"x": x / 719, "y": y / 559} for x, y in [(left, top), (right, top), (right, bottom), (left, bottom)]]
+
+    def box(points):
+        return {"x1": points[0]["x"], "y1": points[0]["y"], "x2": points[2]["x"], "y2": points[2]["y"]}
+
+    proposal = vertices(103, 93, 719, 474)
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.bounding_box = box(proposal)
+        photo.segmentation_mask = {"polygon": proposal, "source": "classical_border_quad"}
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    original = await client.post(f"{url}/reprocess")
+    assert original.status_code == 200, original.text
+    assert "PRINT_AT_CAPTURE_EDGE" in original.json()["enhancement_applied"]["correction"]["crop_modes"]["full_print"]["reason_codes"]
+    outer, motif = vertices(103, 93, 604, 474), vertices(133, 123, 574, 444)
+    saved = await client.patch(f"{url}/bounding-box", json={
+        "bounding_box": box(outer),
+        "segmentation_mask": {
+            "source": "manual_quad", "polygon": outer, "warp_quad": outer, "image_quad": motif,
+            "print_size_mm": {"width": 501, "height": 381},
+        },
+    })
+    assert saved.status_code == 200, saved.text
+    correction = saved.json()["enhancement_applied"]["correction"]
+    assert correction["manual_paper_boundary"]["capture_outline_verified"] is True, correction
+    for variant, expected in (("full_print", (382, 502)), ("image_only", (322, 442)), ("source_corrected_trimmed", (322, 442))):
+        download = await client.get(f"{url}/image", params={"variant": variant})
+        assert download.status_code == 200, variant
+        image = cv2.imdecode(np.frombuffer(download.content, dtype=np.uint8), cv2.IMREAD_COLOR)
+        assert image.shape[:2] == expected
+
+
 async def test_measured_aspect_does_not_clear_curved_paper_review_on_golden_page_37(client, monkeypatch, tmp_path):
     from app.config import Settings, get_settings
     from app.database import get_session_factory

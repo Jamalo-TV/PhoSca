@@ -1798,3 +1798,47 @@ No matched whole-page rasters were located for those prints. Neither
 album contributes verified reference cases at this stage.
 [Hegan conservation study](https://digitalcommons.uri.edu/jfs/vol18/iss18/5/) ·
 [Grenfell archive record](https://collections.mun.ca/digital/collection/m_grenfell/id/1023/)
+
+### Manual correction after an uncertain capture edge
+
+Golden page 04 reproduced an export error through the ordinary upload,
+manual correction and reprocessing APIs. The right proposal extended to the
+frame with unsupported paper edges. After entering 68 × 100 mm and saving
+four plausible corners, the previous worker downloaded the unverified
+rectangular whole print. The motif and the old motif alias were withheld.
+
+The original capture-edge finding now survives geometry edits. The corrected
+outline needs a source-verified side shared with the prior proposal, four
+straight sides that end at the paper corners, and a coherent stock edge
+against the surrounding backing. A nested pale paper layer or substantial
+unexplained material in the old footprint holds the result for review.
+Measured dimensions alone still establish only the aspect. A source with
+indistinguishable stock, insufficient backing or curved paper can require a
+new capture. For pre-fix rows with no saved reasons, explicit original-frame
+contact in the saved rendered quad also requires this check.
+
+Both modes and the legacy motif alias return 404 on page 04 after repeat
+edits and reprocessing. Desktop and mobile show the outline guidance.
+Mobile keeps the approval action disabled when the saved edit is held.
+The old ready-row shape is checked at download time.
+A controlled straight inset paper print with a nearby thin album rail
+produces both JPEGs at the expected dimensions through the normal save and
+download APIs. Further controls cover JPEG and perspective variation,
+inboard ink, dark rails, lighter and darker mats, smooth backing gradients,
+and faint extra photo content beyond the immediate paper edge. The frozen
+seeded 18/18 instance checks and 23/23 recoverable crop checks pass. The
+model-free Golden and frozen detection metrics for both modes are unchanged.
+The native check took a median of 24 ms on the verified straight control and
+under 0.1 ms on the rejected page-04 candidate over twelve warmed runs, with
+two OpenCV threads, excluding source decoding.
+
+The Phelps album at Missouri State Archives, RG 998.506, documents in-situ
+scans and separately scanned rectos and versos for 68 removed prints. The
+finding aid lists no access or publication restrictions and locates the
+scans on archive media. No downloadable same-stock pair was recovered.
+The public-domain Crowe album has documented 300 ppi capture and TIFF
+masters, but the online requests returned 403 and the separately scanned
+loose prints lack an unambiguous mounted match. These are provenance leads.
+Neither contributes to the independent release groups.
+[Phelps finding aid](https://www.sos.mo.gov/CMSImages/Archives/manuscripts/RG998_MS506.pdf) ·
+[Crowe capture and rights](https://da.mdah.ms.gov/series/crowe/gentech)

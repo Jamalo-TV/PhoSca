@@ -23,7 +23,8 @@ from app.pipeline.geometry import (
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.motif_boundary import close_motif_outline, motif_outline_corners_supported, trace_motif_boundary
 from app.pipeline.manual_paper_boundary import (
-    MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION, check_manual_paper_boundary,
+    MANUAL_CAPTURE_OUTLINE_REVIEW, MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION,
+    check_manual_paper_boundary,
 )
 from app.pipeline.orientation import correct_photo_orientation, rotate_image
 from app.pipeline.page_plane import (
@@ -1333,10 +1334,11 @@ def correct_photo_crop(
             and set(full_reasons) <= {"PRINT_BOUNDARY_CURVED", EXTENDED_PRINT_OUTLINE_REVIEW}):
         print_edge_traces = [_vertices_on_page(np.asarray(segment), width, height) for segment in curve_segments]
     checked_manual_boundary = dual_mode and manual and manual_boundary_reference is not None
+    capture_outline = checked_manual_boundary and manual_boundary_reference.get("capture_outline")
     if checked_manual_boundary:
         manual_boundary_hold, print_edge_traces = check_manual_paper_boundary(page_image, src_points, manual_boundary_reference)
         if manual_boundary_hold:
-            full_reasons.append(MANUAL_PAPER_BOUNDARY_REVIEW)
+            full_reasons.append(MANUAL_CAPTURE_OUTLINE_REVIEW if capture_outline else MANUAL_PAPER_BOUNDARY_REVIEW)
     blurred_boundary = not full_reasons and any(
         (edge.get("edge_width_px") or 0) >= 4.75
         for edge in boundary_refinement.values() if isinstance(edge, dict)
@@ -1466,6 +1468,8 @@ def correct_photo_crop(
             metadata["manual_paper_boundary"] = {
                 "revision": MANUAL_PAPER_BOUNDARY_REVISION, "requires_review": manual_boundary_hold,
             }
+            if capture_outline:
+                metadata["manual_paper_boundary"]["capture_outline_verified"] = not manual_boundary_hold
         observed = _source_visible_outline(
             page_image, mask, inspection, visible, neighbor_polygons, neighbor_masks or [],
         )

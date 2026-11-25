@@ -235,6 +235,13 @@ def variant_path_from_photo(photo: Any, variant: str) -> str | None:
     variants = variants_from_metadata(metadata)
     precise_crop = bool(modes or "image_only" in variants)
     mode = "image_only" if precise_crop and variant == "source_corrected_trimmed" else variant
+    automatic = getattr(photo, "segmentation_confidence", None) is not None
+    mask = getattr(photo, "segmentation_mask", None) or {}
+    if variant in {"full_print", "image_only", "source_corrected_trimmed"}:
+        if mask.get("capture_edge_clipped") is True:
+            return None
+        if not automatic and manual_paper_download_needs_review(metadata, mask.get("warp_quad") or mask.get("polygon")):
+            return None
     if mode in {"full_print", "image_only"} or mode in CROP_REVIEW_PREVIEWS:
         if is_reviewed_non_print(
             metadata.get("review_rejected_detection"), getattr(photo, "bounding_box", None), getattr(photo, "segmentation_mask", None),
@@ -247,13 +254,7 @@ def variant_path_from_photo(photo: Any, variant: str) -> str | None:
                     and isinstance(path, str) and Path(path).is_file()):
                 return path
             return None
-        if (getattr(photo, "segmentation_mask", None) or {}).get("capture_edge_clipped") is True:
-            return None
         if (modes.get(mode) or {}).get("status") != "ready":
-            return None
-        automatic = getattr(photo, "segmentation_confidence", None) is not None
-        mask = getattr(photo, "segmentation_mask", None) or {}
-        if not automatic and manual_paper_download_needs_review(metadata, mask.get("warp_quad") or mask.get("polygon")):
             return None
         if (correction.get("aspect_ratio_estimation") or {}).get("method") == "calibrated_camera":
             if automatic:
