@@ -8,6 +8,17 @@ export const cropModeLabels = {
 
 export const clippedOverlapReason = "CLIPPED_PRINT_OVERLAP_UNCERTAIN";
 export const clippedOverlapHint = "Prüfe am Original, ob hier ein weiterer Papierabzug aufliegt. Ziehe die Ecken an seine Papierkante oder markiere den Vorschlag als «Falsches Objekt».";
+export const fragmentOutlineReason = "FRAGMENT_OUTLINE_UNCERTAIN";
+export const fragmentOutlineHint = "Prüfe am Original, ob die Ausschnitte zu einem Abzug gehören. Falls ja, korrigiere einen Ausschnitt mit dem Aussenumriss und markiere die übrigen darin als «Falsches Objekt».";
+
+export function getFragmentOutline(mask) {
+  const { quad, uncertain_edge: edge } = mask?.fragment_outline_suggestion || {};
+  if (!Array.isArray(quad) || quad.length !== 4 || !Number.isInteger(edge) || edge < 0 || edge > 3
+      || !quad.every((point) => [point?.x, point?.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1))) {
+    return null;
+  }
+  return { quad, weakEdge: [quad[edge], quad[(edge + 1) % 4]] };
+}
 
 export function getCropModes(photo) {
   return photo?.enhancement_applied?.correction?.crop_modes || null;
@@ -36,6 +47,7 @@ const reviewMessages = {
   SEGMENTATION_CONFIDENCE_UNCALIBRATED: "Prüfe und speichere die Abzugsecken, um den Download freizugeben.",
   MULTIPANEL_PRINT_REVIEW: "Prüfe die Papierkanten am Original. Auf einem Abzug muss der Motivzuschnitt alle Bilder enthalten. Sind es getrennte Abzüge, korrigierst du die Ecken für den ersten und ergänzt die übrigen im Editor.",
   FRAGMENTED_PRINT_REVIEW: "Prüfe die durchgehende Papierkante am Original. Liegen zwei einzelne Abzüge vor, korrigiere die Ecken des ersten und ergänze den zweiten im Editor.",
+  [fragmentOutlineReason]: fragmentOutlineHint,
   SCANNER_BACKING_UNCERTAIN: "Prüfe am Original, ob im markierten Bereich ein weiterer Abzug liegt. Ziehe die Ecken an seine Papierkante, wenn du sie erkennen kannst.",
   CROP_VALIDATION_UNAVAILABLE: "Prüfe und speichere den Zuschnitt, um den Download freizugeben.",
   CAMERA_ASPECT_REVIEW: "Die Vorschau nutzt die Kamerakalibrierung. Prüfe und bestätige die Fotoecken.",
@@ -68,6 +80,8 @@ export function CropVariants({ photo, hidden = false }) {
   const possibleMultipanel = photo.enhancement_applied?.segmentation_review_reasons?.includes("MULTIPANEL_PRINT_REVIEW");
   const possibleFragmentedPrint = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes("FRAGMENTED_PRINT_REVIEW");
+  const possibleFragmentOutline = photo.segmentation_confidence != null
+    && photo.enhancement_applied?.segmentation_review_reasons?.includes(fragmentOutlineReason);
   const scannerBackingUncertain = photo.enhancement_applied?.segmentation_review_reasons?.includes("SCANNER_BACKING_UNCERTAIN");
   const clippedOverlapUncertain = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
@@ -76,13 +90,14 @@ export function CropVariants({ photo, hidden = false }) {
   const fullPreview = photo.urls?.source_corrected_untrimmed || photo.urls?.original;
   const motifPreview = photo.urls?.image_only_preview;
   const preview = mode === "image_only"
-    ? motifPreview || ((possibleMultipanel || possibleFragmentedPrint || scannerBackingUncertain || clippedOverlapUncertain
+    ? motifPreview || ((possibleMultipanel || possibleFragmentedPrint || possibleFragmentOutline || scannerBackingUncertain || clippedOverlapUncertain
         || captureEdgeClipped || pendingPaperEdge) && fullPreview)
     : fullPreview;
   const reviewMessage = (captureEdgeClipped
     && "Der vorgeschlagene Abzug reicht bis an den Aufnahmerand. Lade für den Zuschnitt eine Aufnahme hoch, die ihn ganz zeigt.")
     || (possibleMultipanel && reviewMessages.MULTIPANEL_PRINT_REVIEW)
     || (possibleFragmentedPrint && reviewMessages.FRAGMENTED_PRINT_REVIEW)
+    || (possibleFragmentOutline && fragmentOutlineHint)
     || (scannerBackingUncertain && reviewMessages.SCANNER_BACKING_UNCERTAIN)
     || (clippedOverlapUncertain && clippedOverlapHint)
     || result?.reason_codes?.map((code) => reviewMessages[code]).find(Boolean)

@@ -47,6 +47,7 @@ import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
 import {
   clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
+  fragmentOutlineHint, fragmentOutlineReason, getFragmentOutline,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
@@ -1367,7 +1368,11 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
   const selected = photos.find((photo) => photo.id === selectedPhotoId);
   const overlapReview = selected?.segmentation_confidence != null
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
-  const rejectedDetection = overlapReview && Boolean(selected.enhancement_applied?.review_rejected_detection);
+  const fragmentReview = selected?.segmentation_confidence != null
+    && selected.enhancement_applied?.segmentation_review_reasons?.includes(fragmentOutlineReason);
+  const rejectedDetection = (overlapReview || fragmentReview) && Boolean(selected.enhancement_applied?.review_rejected_detection);
+  const fragmentMask = fragmentReview && !rejectedDetection ? selected.segmentation_mask : null;
+  const fragmentOutline = useMemo(() => getFragmentOutline(fragmentMask), [fragmentMask]);
   const selectedShape = selected && (draftShapes[selected.id] || draftShapeFromPhoto(selected));
   const motifReview = (selected?.crop_modes || getCropModes(selected))?.image_only;
   const imageSuggestion = cyclicQuad(sanitizePolygon(motifReview?.suggested_warp_quad));
@@ -1422,6 +1427,17 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
       if (photo.id === selectedPhotoId && !editingImage) {
         context.fillStyle = "rgba(15, 118, 110, 0.1)";
         context.fill();
+        if (fragmentOutline && shape.usingOutlineSuggestion) {
+          const [start, end] = fragmentOutline.weakEdge;
+          context.save();
+          context.strokeStyle = "#a21caf";
+          context.setLineDash([7, 5]);
+          context.beginPath();
+          context.moveTo(start.x * canvas.width, start.y * canvas.height);
+          context.lineTo(end.x * canvas.width, end.y * canvas.height);
+          context.stroke();
+          context.restore();
+        }
       }
       if (editingImage && photo.id !== selectedPhotoId) return;
       const handles = editingImage
@@ -1484,7 +1500,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         context.fill();
       });
     }
-  }, [draftShapes, editingImage, newPrint, pageId, pageImage, photos, selectedPhotoId, seamTraces]);
+  }, [draftShapes, editingImage, fragmentOutline, newPrint, pageId, pageImage, photos, selectedPhotoId, seamTraces]);
 
   useEffect(() => {
     draw();
@@ -1659,6 +1675,22 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
           Motivvorschlag in den Editor laden
         </button>
       )}
+      {!newPrint && !editingImage && fragmentOutline && (
+        <>
+          <button className="text-button compact" type="button" disabled={saveState?.saving} onClick={() => {
+            const quad = cyclicQuad(fragmentOutline.quad);
+            if (!quad) return;
+            setDraftShapes((current) => ({ ...current, [selected.id]: {
+              ...selectedShape, warpQuad: quad, visiblePolygon: quad, visibleFollowsWarp: true,
+              boundingBox: boundingBoxFromPolygon(quad), imageQuad: null, usingOutlineSuggestion: true,
+            } }));
+            setSaveState(null);
+          }}>
+            Aussenumriss in den Editor laden
+          </button>
+          {selectedShape.usingOutlineSuggestion && <p className="crop-editor-hint">Prüfe besonders die gestrichelte Papierkante.</p>}
+        </>
+      )}
       <canvas
         ref={canvasRef}
         onPointerDown={onPointerDown}
@@ -1668,9 +1700,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         className={newPrint ? "mark-print-corners" : undefined}
         aria-label="Albumseite mit markierten Abzügen"
       />
-      {!newPrint && overlapReview && !rejectedDetection && (
+      {!newPrint && (overlapReview || fragmentReview) && !rejectedDetection && (
         <div className="manual-print-actions">
-          <p className="crop-editor-hint">{clippedOverlapHint}</p>
+          <p className="crop-editor-hint">{overlapReview ? clippedOverlapHint : fragmentOutlineHint}</p>
           <button className="text-button compact" type="button" onClick={rejectSelected} disabled={saveState?.saving}>
             {currentSave?.rejecting ? "Vorschlag wird geprüft …" : "Falsches Objekt"}
           </button>

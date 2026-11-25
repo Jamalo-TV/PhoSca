@@ -14,7 +14,9 @@ from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
     clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
 )
-from app.pipeline.fragmented_prints import FRAGMENTED_PRINT_REVIEW, measure_fragmented_print
+from app.pipeline.fragmented_prints import (
+    FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW, measure_fragmented_print, suggest_fragmented_outline,
+)
 from app.pipeline.geometry import (
     PolygonOverlap,
     normalized_polygon_overlap,
@@ -1692,6 +1694,7 @@ def _verified_fragment_parent(
 
 def _filter_nested_classical_detections(
     detections: list[SegmentationDetection], *, source_image: np.ndarray | None = None,
+    unresolved_containers: list[SegmentationDetection] | None = None,
 ) -> tuple[list[SegmentationDetection], dict[str, int]]:
     if len(detections) < 2:
         return detections, {}
@@ -1711,6 +1714,8 @@ def _filter_nested_classical_detections(
                   if source_image is not None else None)
         if parent is None:
             rejected[index] = "container_detection_with_multiple_photo_regions"
+            if unresolved_containers is not None:
+                unresolved_containers.append(detections[index])
         else:
             verified[index] = parent
 
@@ -1744,6 +1749,67 @@ def _filter_nested_classical_detections(
     return [verified.get(index, detection) for index, detection in enumerate(detections) if index not in rejected], rejection_counts
 
 
+def _attach_fragment_outline_suggestions(
+    image: np.ndarray, unresolved: list[SegmentationDetection], selected: list[SegmentationDetection],
+) -> list[SegmentationDetection]:
+    height, width = image.shape[:2]
+    polygons = [_detection_polygon(item) for item in selected]
+    suggestions = {}
+    conflicts = set()
+    for outer in sorted(unresolved, key=lambda item: item.confidence, reverse=True):
+        outline = _detection_polygon(outer)
+        if (len(outline) != 4 or outer.mask.get("detector_source") != "edge_contour"
+                or _score_value(outer, "rectangularity") < .92
+                or _score_value(outer, "exterior_background_sides") != 4):
+            continue
+        overlapping = [index for index, item in enumerate(selected)
+                       if _normalized_box_overlap(outer.bounding_box, item.bounding_box)[0] > 0]
+        overlaps = {index: normalized_polygon_overlap(polygons[index], outline) for index in overlapping}
+        children = [index for index, match in overlaps.items()
+                    if len(polygons[index]) == 4 and .12 <= match.second_containment <= .65
+                    and match.first_containment >= .94
+                    and selected[index].mask.get("detector_source") in {"contrast_region", "edge_contour"}]
+        if (not 2 <= len(children) <= 4 or any(
+            match.second_containment > .04 and index not in children for index, match in overlaps.items()
+        )):
+            continue
+        pairs = [(first, second) for first, second in combinations(range(len(children)), 2)
+                 if .55 <= sum(overlaps[children[index]].second_containment for index in (first, second)) <= 1.02
+                 and normalized_polygon_overlap(polygons[children[first]], polygons[children[second]]).iou <= .10]
+        if not pairs:
+            continue
+        try:
+            hypothesis = suggest_fragmented_outline(
+                image, normalized_vertices_to_pixels(outline, width, height),
+                [normalized_vertices_to_pixels(polygons[index], width, height) for index in children], pairs,
+            )
+        except (cv2.error, ValueError):
+            continue
+        if hypothesis is None:
+            continue
+        quad, uncertain = hypothesis
+        normalized = pixel_vertices_to_normalized(quad, width, height)
+        if (normalized_polygon_overlap(outline, normalized).iou < .96 or any(
+            normalized_polygon_overlap(polygons[index], normalized).first_containment < .93 for index in children
+        )):
+            continue
+        for index in children:
+            previous = suggestions.get(index)
+            if previous is None:
+                suggestions[index] = normalized, uncertain
+            elif previous[1] != uncertain or normalized_polygon_overlap(previous[0], normalized).iou < .96:
+                conflicts.add(index)
+    for index, (outline, uncertain) in suggestions.items():
+        item = selected[index]
+        hint = {
+            "quad": [{"x": float(x), "y": float(y)} for x, y in outline],
+            "uncertain_edge": uncertain,
+        }
+        mask = item.mask if index in conflicts else {**item.mask, "fragment_outline_suggestion": hint}
+        selected[index] = replace(item, mask=mask, review_reasons=[FRAGMENT_OUTLINE_REVIEW, *item.review_reasons])
+    return selected
+
+
 def select_candidate_set(
     detections: list[SegmentationDetection], *, source_image: np.ndarray | None = None,
 ) -> tuple[list[SegmentationDetection], dict[str, int]]:
@@ -1753,7 +1819,10 @@ def select_candidate_set(
     a large page/container can no longer suppress a smaller valid print before
     it has a chance to fail the geometry and boundary gates.
     """
-    filtered, rejected = _filter_nested_classical_detections(detections, source_image=source_image)
+    unresolved: list[SegmentationDetection] = []
+    filtered, rejected = _filter_nested_classical_detections(
+        detections, source_image=source_image, unresolved_containers=unresolved if source_image is not None else None,
+    )
     selected: list[SegmentationDetection] = []
     duplicate_count = 0
     for candidate in sorted(filtered, key=lambda item: item.confidence, reverse=True):
@@ -1763,6 +1832,8 @@ def select_candidate_set(
         selected.append(candidate)
     if duplicate_count:
         rejected["near_duplicate_after_scoring"] = duplicate_count
+    if source_image is not None and unresolved:
+        selected = _attach_fragment_outline_suggestions(source_image, unresolved, selected)
     return selected, rejected
 
 
@@ -1877,6 +1948,7 @@ def detect_photos_classical(
             "candidate_sources": source_counts,
             "rejected_candidates": rejected_counts,
             "fragmented_prints_recovered": sum(FRAGMENTED_PRINT_REVIEW in item.review_reasons for item in detections),
+            "fragment_outline_reviews": sum(FRAGMENT_OUTLINE_REVIEW in item.review_reasons for item in detections),
             "line_refinement_skipped": unrefined_candidates,
         },
     )

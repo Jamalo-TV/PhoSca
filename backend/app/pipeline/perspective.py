@@ -10,7 +10,7 @@ from app.pipeline.album_windows import (
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
 from app.pipeline.edge_prints import CAPTURE_EDGE_HOLD
-from app.pipeline.fragmented_prints import FRAGMENTED_PRINT_REVIEW
+from app.pipeline.fragmented_prints import FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW
 from app.pipeline.geometry import (
     normalized_polygon_overlap,
     normalized_vertices_to_pixels,
@@ -1113,6 +1113,8 @@ def _inspect_print(
         manual_addition = mask.get("manual_added") is True
         if not manual and mask.get("fragmented_print") is True:
             reasons.append(FRAGMENTED_PRINT_REVIEW)
+        if not manual and mask.get("fragment_outline_suggestion"):
+            reasons.append(FRAGMENT_OUTLINE_REVIEW)
         if mask.get("album_window_occluded") is True:
             reasons.append(ALBUM_WINDOW_OCCLUDED)
         elif mask.get("source") == ALBUM_WINDOW_SOURCE:

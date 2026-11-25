@@ -6,7 +6,8 @@ import pytest
 
 from app.config import Settings
 from app.pipeline import segmentation
-from app.pipeline.fragmented_prints import FRAGMENTED_PRINT_REVIEW
+from app.pipeline.fragmented_prints import FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW
+from app.pipeline.geometry import normalized_polygon_overlap
 from app.pipeline.perspective import correct_photo_crop
 
 
@@ -101,3 +102,52 @@ def test_supported_independent_candidate_vetoes_fragment_replacement():
                         ]})
     selected, _ = segmentation.select_candidate_set([parent, upper, lower, competing], source_image=page)
     assert all(FRAGMENTED_PRINT_REVIEW not in item.review_reasons for item in selected)
+
+
+@pytest.mark.parametrize("case", [
+    "continuous", "narrow_gutter", "touching", "overlapping", "unconnected_third", "fragment_crosses_gutter",
+])
+def test_weak_outer_edge_is_only_a_correction_suggestion(case):
+    page, quads = _scene(case)
+    for y in range(56, 503):
+        # One bowed edge retains both corner arms but cannot support one line.
+        depth = round(2 * np.sin(np.pi * (y - 55) / (503 - 55)) ** 2)
+        page[y, 353:353 + depth] = page[y, 352]
+    parent, upper, lower, neighbor = _proposals(page, quads)
+    proposals = [parent, replace(upper, mask={**upper.mask, "detector_source": "edge_contour"}), lower, neighbor]
+    if case in ("unconnected_third", "fragment_crosses_gutter"):
+        # Two upper fragments genuinely share a scene. A third lies beyond a
+        # strip of backing and only has a partial contour. An inaccurate upper
+        # outline can also cross the visible gutter and overlap the third.
+        start, gap, bottom = (390, 7, 389) if case == "unconnected_third" else (330, 2, 431)
+        page[start:start + gap, 58:355] = (228, 232, 235)
+        for y in range(start + gap, 504):
+            depth = round(2 * np.sin(np.pi * (y - 55) / (503 - 55)) ** 2)
+            page[y, 58:353 + depth] = (25, 170, 69)
+        cv2.line(page, (99, start + gap + 10), (132, 499), (81, 178, 144), 8)
+        cv2.line(page, (210, start + gap + 20), (240, 495), (123, 49, 112), 9)
+        lower_outline = quads[2].copy()
+        lower_outline[2:, 1] = bottom
+        proposals[2] = _proposals(page, [*quads[:2], lower_outline, quads[3]])[2]
+        third_outline = np.float32([[85, start + gap + 5], [348, start + gap + 13], [328, 501], [62, 500]])
+        _, _, third, _ = _proposals(page, [*quads[:2], third_outline, quads[3]])
+        proposals.append(replace(third, confidence=.76))
+    baseline, _ = segmentation.select_candidate_set(proposals)
+    selected, _ = segmentation.select_candidate_set(proposals, source_image=page)
+    assert [item.bounding_box for item in selected] == [item.bounding_box for item in baseline]
+    if case != "continuous":
+        assert selected == baseline
+        return
+    for item, original in zip(selected, baseline, strict=True):
+        if item == neighbor:
+            continue
+        assert FRAGMENT_OUTLINE_REVIEW in item.review_reasons
+        assert item.mask["polygon"] == original.mask["polygon"]
+        hint = item.mask["fragment_outline_suggestion"]
+        points = np.float32([(point["x"], point["y"]) for point in hint["quad"]])
+        assert hint["uncertain_edge"] == 1
+        assert normalized_polygon_overlap(points, segmentation._detection_polygon(parent)).iou > .98
+        result = correct_photo_crop(page, item.bounding_box, item.mask, dual_mode=True, auto_orient=False,
+                                    protect_regions=False, neighbor_masks=[other.mask for other in selected if other != item])
+        assert all(mode["status"] == "review_needed" for mode in result.metadata["crop_modes"].values())
+        assert FRAGMENT_OUTLINE_REVIEW in result.metadata["crop_modes"]["full_print"]["reason_codes"]

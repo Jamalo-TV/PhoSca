@@ -1,7 +1,10 @@
 import { Camera, Check, ChevronLeft, CircleHelp, CloudOff, Images, ListChecks, RefreshCw, Save, Upload, WandSparkles, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createAlbum, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
-import { clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, getCropModes } from "./CropVariants.jsx";
+import {
+  clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, fragmentOutlineHint,
+  fragmentOutlineReason, getCropModes, getFragmentOutline,
+} from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
 
@@ -101,6 +104,8 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   const visiblePolygon = sanitizeReviewPolygon(item.payload?.visible_polygon || item.payload?.polygon);
   const storedMeasurement = item.payload?.print_size_mm ?? item.payload?.segmentation_mask?.print_size_mm;
   const storedOrientation = item.payload?.segmentation_mask?.orientation_degrees ?? null;
+  const fragmentReview = item.payload?.confidence != null && item.payload?.review_reasons?.includes(fragmentOutlineReason);
+  const fragmentOutline = fragmentReview && getFragmentOutline(item.payload?.segmentation_mask);
   const savedQuad = sanitizeReviewPolygon(item.payload?.segmentation_mask?.warp_quad);
   const measuredQuad = storedMeasurement && (savedQuad || sanitizeReviewPolygon(item.payload?.warp_quad));
   const initialOuter = () => isValidQuad(measuredQuad) ? measuredQuad : initialQuad(
@@ -109,6 +114,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
     sourceBox,
   );
   const [quad, setQuad] = useState(initialOuter); const [saving, setSaving] = useState(false);
+  const [usingOutlineSuggestion, setUsingOutlineSuggestion] = useState(false);
   const [measurementFields, setMeasurementFields] = useState(() => printSizeInputs(storedMeasurement));
   const [orientation, setOrientation] = useState(storedOrientation);
   const [savedOrientation, setSavedOrientation] = useState(storedOrientation);
@@ -117,6 +123,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   const [magnifier, setMagnifier] = useState({ visible: false, x: 0, y: 0 });
   useEffect(() => {
     setQuad(initialOuter());
+    setUsingOutlineSuggestion(false);
     setMeasurementFields(printSizeInputs(storedMeasurement));
     setOrientation(storedOrientation);
     setSavedOrientation(storedOrientation);
@@ -146,7 +153,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
     try {
       const saved = await patchBoundingBox(item.payload.photo_id, box, {
         polygon: quad,
-        visible_polygon: visiblePolygon || quad,
+        visible_polygon: usingOutlineSuggestion ? quad : (visiblePolygon || quad),
         warp_quad: quad,
         print_size_mm: size,
         ...(orientation !== savedOrientation ? { orientation_degrees: orientation } : {}),
@@ -165,11 +172,27 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   const lensPosition = value => ((0.5 - 3.6 * value) / (1 - 3.6)) * 100;
   const lensX=Math.max(20,Math.min(80,magnifier.x*100+(magnifier.x>0.5?-24:24)));
   const lensY=Math.max(20,Math.min(80,magnifier.y*100+(magnifier.y<0.3?25:-25)));
-  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g>{visiblePolygon && <polygon points={visiblePolygon.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9"/>}<polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>
+  const uncertainLine = usingOutlineSuggestion && fragmentOutline && (
+    <polyline points={fragmentOutline.weakEdge.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
+      fill="none" stroke="#a21caf" strokeWidth="6" strokeDasharray="16 9" />
+  );
+  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g>{visiblePolygon && <polygon points={visiblePolygon.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9"/>}<polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{uncertainLine}{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>
     {editable && <>
       {item.payload?.confidence != null && item.payload?.review_reasons?.includes(clippedOverlapReason) && (
         <p className="quad-hint">{clippedOverlapHint}</p>
       )}
+      {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
+      {fragmentOutline && (
+        <button className="magnifier-toggle" type="button" disabled={saving} onClick={() => {
+          const suggestion = cyclicReviewQuad(fragmentOutline.quad);
+          if (!suggestion) return;
+          setQuad(suggestion);
+          setUsingOutlineSuggestion(true);
+          setSavedCropUrl("");
+          setSaveError("");
+        }}>Aussenumriss in den Editor laden</button>
+      )}
+      {uncertainLine && <p className="quad-hint">Prüfe besonders die gestrichelte Papierkante.</p>}
       <div className="quad-hint">Vier nummerierte Ecken frei verschieben · danach wird das Foto geradegerichtet</div>
       <button className={`magnifier-toggle ${magnifierEnabled ? "active" : ""}`} onClick={()=>setMagnifierEnabled(value=>!value)}><ZoomIn size={18}/>{magnifierEnabled ? "Lupe beim Ziehen aktiv" : "Lupe einschalten"}</button>
       <PrintSizeFields

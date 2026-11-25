@@ -1274,16 +1274,26 @@ all 23 recoverable crops.
 
 ### Split print under mild blur
 
-The pinned blur derivative is based on the same 600 × 851 JPEG and the
+The three pinned blur derivatives use the same 600 × 851 JPEG and the
 same draft outlines. From the repository root, use OpenCV 4.10.0 and the
-normal PhoSca decoder to create the local fixture.
+normal PhoSca decoder to create the local fixtures.
 
 ```bash
-PYTHONPATH=backend python -c 'import cv2; from app.pipeline.image_ops import load_image; p="runs/crop-quality/domoritz-flatbed-"; cv2.imwrite(p+"blur-development.png", cv2.GaussianBlur(load_image(p+"development.jpg"), (0, 0), 1))'
+PYTHONPATH=backend python - <<'PY'
+import cv2
+from app.pipeline.image_ops import load_image
+
+prefix = "runs/crop-quality/domoritz-flatbed-"
+source = load_image(prefix + "development.jpg")
+blurred = cv2.GaussianBlur(source, (0, 0), 1)
+cv2.imwrite(prefix + "blur-development.png", blurred)
+cv2.imwrite(prefix + "blur-sigma1-2-development.png", cv2.GaussianBlur(source, (0, 0), 1.2))
+cv2.imwrite(prefix + "blur-jpeg75-development.jpg", blurred, [cv2.IMWRITE_JPEG_QUALITY, 75])
+PY
 python scripts/evaluate_onnx_segmentation.py --classical-only --dataset-manifest data/evaluation/domoritz-flatbed-blur-development.json --visuals --output runs/crop-quality/domoritz-fragments-blurred.json
 ```
 
-The original ranking rejected the upper-left print as a container,
+At sigma 1 the original ranking rejected the upper-left print as a container,
 although the classical detector had proposed its complete outline.
 Two partial contrast proposals survived instead. At IoU 0.85 the
 development replay moves from three of four matched prints and two
@@ -1300,6 +1310,18 @@ The recovered preview for the upper-left print improved from 0.590 to
 against the draft. The source has no independent motif reference.
 Both variants remain in review. The upload and browser replay showed
 the review reason and verified that neither download was available.
+
+With sigma 1.2 or sigma 1 followed by JPEG75, the lower-right print has a weak
+outer edge. Three exterior transitions and both corner arms support one
+candidate outline. Connected scene features and substantial overlap among
+competing fragments support offering it in the editor. A broad inner edge or
+a separate print perimeter vetoes the suggestion. This includes a narrow
+gutter that a bad fragment mask crosses. The suggested outlines reach 0.997
+and 0.995 IoU against the full-print draft, respectively. These values score
+the editing outlines. Detection and the rendered crops retain their previous
+geometry. No newly held crops were counted in the two uploads. The desktop
+and mobile editors can load the outline on demand and highlight its uncertain
+edge. Both downloads still require review.
 
 An independent stress test accepted no false joins in 1,116 transformed
 controls with narrow gutters, touching equal stock and overlapping
