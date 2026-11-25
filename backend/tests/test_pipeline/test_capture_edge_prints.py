@@ -237,6 +237,29 @@ def test_scanner_backing_requires_native_evidence_without_an_independent_photo(c
         assert (SCANNER_BACKING_REVIEW in result.detections[-1].review_reasons) == (case in {"dark_detail", "dark_tone"})
 
 
+@pytest.mark.parametrize("ambiguity", ["multiple_proposals", "multiple_outlines"])
+def test_ambiguous_match_keeps_its_proposals_but_allows_separate_recovery(ambiguity, monkeypatch):
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    page, original = scan_with_backing_rails(settings, "scanner")
+    if ambiguity == "multiple_proposals":
+        lower = original.detections[2]
+        original.detections.append(replace(lower, confidence=.82))
+    else:
+        outlines = segmentation.clipped_print_outlines(page)
+        assert len(outlines) == 3
+        lower = max(outlines, key=lambda outline: outline[:, 1].mean())
+        monkeypatch.setattr(segmentation, "clipped_print_outlines", lambda _: [*outlines, lower.copy()])
+
+    result = segmentation._recover_capture_edge_prints(page, original, settings)
+
+    assert result.metadata["capture_edge_outlines_recovered"] == 2
+    assert "scanner_backing_outlines_rejected" not in result.metadata
+    assert all(item.mask.get("capture_edge_clipped") and CAPTURE_EDGE_HOLD in item.review_reasons
+               for item in result.detections[:2])
+    assert len(result.detections) == len(original.detections)
+    assert all(item is prior for item, prior in zip(result.detections[2:], original.detections[2:], strict=True))
+
+
 def test_capture_edge_hold_applies_to_stale_download_metadata():
     modes = ("full_print", "image_only", "source_corrected_trimmed")
     photo = SimpleNamespace(

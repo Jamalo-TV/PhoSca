@@ -1623,14 +1623,22 @@ def _recover_capture_edge_prints(
                      for quad in clipped_print_outlines(np.rot90(image, turns))]
         except (cv2.error, ValueError):
             continue
-        replacements = {}
+        outline_owners = []
         for quad in quads:
             outline = pixel_vertices_to_normalized(quad, width, height)
             comparisons = {index: normalized_polygon_overlap(polygons[index], outline) for index in edge}
             matches = [index for index, overlap in comparisons.items()
                        if overlap.first_containment >= .88 and overlap.second_containment >= .42]
-            if len(matches) != 1 or matches[0] in replacements:
-                break
+            outline_owners.append((quad, matches))
+        degree = Counter(index for _, matches in outline_owners for index in matches)
+        ambiguous = {index for _, matches in outline_owners for index in matches
+                     if len(matches) != 1 or degree[index] != 1}
+        replacements = {}
+        for quad, matches in outline_owners:
+            # An ambiguous match leaves its contenders intact. It cannot
+            # invalidate a disjoint outline with a unique owner.
+            if len(matches) != 1 or matches[0] in ambiguous:
+                continue
             index = matches[0]
             item = _make_detection(
                 box={}, points=quad, confidence=detections[index].confidence,
@@ -1638,17 +1646,17 @@ def _recover_capture_edge_prints(
                 source=CAPTURE_EDGE_SOURCE, detector_source=CAPTURE_EDGE_SOURCE,
             )
             if item is None:
-                break
+                ambiguous.add(index)
+                continue
             mask = {**item.mask, "warp_quad": item.mask["polygon"], "capture_edge_clipped": True}
             replacements[index] = replace(item, mask=mask, review_reasons=[CAPTURE_EDGE_HOLD, *item.review_reasons])
-        else:
-            if len(replacements) >= 2:
-                proposals.append(replacements)
+        if len(replacements) >= 2:
+            proposals.append((replacements, ambiguous))
     # A corner can produce two distinct edge interpretations. Keep the
     # original suggestions in this case.
     if len(proposals) != 1:
         return result
-    replacements = proposals[0]
+    replacements, ambiguous = proposals[0]
     updated = [replacements.get(index, item) for index, item in enumerate(detections)]
     metadata = {**result.metadata, "capture_edge_outlines_recovered": len(replacements)}
     recovered = [_detection_polygon(item) for item in replacements.values()]
@@ -1656,7 +1664,7 @@ def _recover_capture_edge_prints(
     rejected = set()
     overlap_reviews = 0
     for index, item in enumerate(detections):
-        if (index in replacements or item.mask.get("detector_source") != "edge_contour"
+        if (index in replacements or index in ambiguous or item.mask.get("detector_source") != "edge_contour"
                 or "model" in (item.mask.get("fusion") or {}).get("proposal_families", [])
                 or MULTIPANEL_PRINT_REVIEW in item.review_reasons):
             continue

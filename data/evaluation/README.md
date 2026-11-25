@@ -1315,6 +1315,47 @@ The frozen geometry still passes 11 full prints and 12 motifs. The
 model-free Golden and frozen synthetic comparisons retain their prior
 instance counts and crop measurements.
 
+### Recover clipped prints with a unique match on the same capture edge
+
+On the pinned NerdScan source the mixed detector retains both a near-full
+model mask and a classical fragment for the lower clipped print. Both
+matched the same native outline. The earlier assignment cancelled the
+entire edge recovery while resolving that pair, including the unrelated
+upper and middle prints.
+
+Capture-edge revision 4 matches each native outline to at most one
+proposal and each proposal to at most one outline. All matches count when
+checking uniqueness, including the contenders for a disputed outline.
+At least two separate matches on the same capture side must qualify.
+The competing lower proposals keep their masks and crops. Scanner
+backing checks use only the recovered outlines.
+
+With the mixed candidate the pinned scan moves from 2/3 to 3/3 matches
+at instance IoU 0.85. The remaining two false proposals are still in
+review. For the upper print, against the visible draft footprint, mask
+IoU moves from 0.6475 to 0.9990, the rendered footprint IoU from 0.6463
+to 0.9987 and area cut off from 35.37% to 0.104%. The new crop has 555
+outputs with some foreign interpolation contribution, all within one
+native source pixel of the draft boundary. The photo extends outside
+the capture. Verified print aspect and motif landmarks are unavailable.
+Maximum corner error against the visible draft falls from 347.52 to
+1.85 native pixels for the upper print. It changes from 2.01 to 2.09
+pixels for the middle print.
+
+The real upload reproduced all five review entries and withheld both
+named downloads and the legacy trimmed alias. Geometry confirmation was
+refused for the recovered upper print and the two ambiguous lower entries.
+Reprocessing kept those holds. Rotating the source and its existing
+proposals together preserved the two matches through all four quarter
+turns. Two independent qualifying capture sides leave the page in review.
+The classical run on the pinned image remains 3/3 with no false proposals.
+Over 40 paired warm runs, the recovery stage took 81.98 ms then 80.85 ms
+at the median and 117.83 ms then 130.30 ms at p95, on one OpenCV thread
+with prepared proposals and source pixels already available.
+The mixed seven-view development comparison now reaches 24/24 matches
+and two false proposals. Other real development views and the frozen
+synthetic detection and crop metrics reproduce the previous results.
+
 ## Four neighboring loose prints on a flatbed
 
 The published 600 × 851 JPEG shows four separate prints that the author
@@ -1459,10 +1500,11 @@ remain visible and count separately on that input.
 #### Replay the available real-image development views
 
 The original nine-view Cloud report and its exact inputs remain unavailable
-in the checked Git history, local artefacts and GitHub workflow runs. Four
-tracked manifests pin seven locally reproducible views as a separate
-development comparison. The three Domoritz derivatives share the original
-scan and its draft labels. They count as stress variants of the same source.
+in the checked Git history, local artefacts and GitHub workflow runs.
+The `8fd221c` replay uses four tracked manifests with seven locally
+reproducible views as a separate development comparison. The three Domoritz
+derivatives share the original scan and its draft labels. They count as
+stress variants of the same source.
 
 | Development views at instance IoU 0.85 | Classical matches | Classical false proposals | Mixed matches | Mixed false proposals |
 | --- | ---: | ---: | ---: | ---: |
@@ -2505,3 +2547,18 @@ of images from one of the albums. The family archive restricts reuse of
 its website material. Downloadable paired masters and permission for this
 evaluation remain unconfirmed. [Conservation report](https://resources.culturalheritage.org/pmgtopics/2013-volume-fifteen/46-T15_Adamopoulou.pdf) ·
 [Family archive terms](https://www.aol.org.gr/ioannis/)
+
+The Denver Camp Nizhoni album in collection ARL39 cross-references mounted
+pages and individual scans. Page ARL-168 lists prints ARL-164 through 167,
+and the print records reciprocate. The catalogue marks copyright as
+unevaluated. The documented reproduction route requires licensing and the
+native pixels have not been checked for acquisition independence.
+[Mounted page](https://digital.denverlibrary.org/nodes/view/1105398) ·
+[Individual print](https://digital.denverlibrary.org/nodes/view/1105300) ·
+[Reproduction terms](https://history.denverlibrary.org/about/conditions-and-image-permissions)
+
+The Bancroft Red Album study documents a mounted, measured print on
+page 8 and a 1999 State Library of Queensland copy negative showing the
+same paper edges. The public article contains a page figure. A native
+full-page file and reuse terms for the pair remain unconfirmed.
+[Acquisition study](https://doi.org/10.1080/23257962.2023.2190085)

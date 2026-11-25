@@ -9,7 +9,7 @@ from app.pipeline.geometry import order_quad_cyclic
 from app.pipeline.print_edges import _side_line
 
 
-CAPTURE_EDGE_REVISION = 3
+CAPTURE_EDGE_REVISION = 4
 CAPTURE_EDGE_SOURCE = "capture_edge_boundary"
 CAPTURE_EDGE_HOLD = "PRINT_AT_CAPTURE_EDGE"
 SCANNER_BACKING_REVIEW = "SCANNER_BACKING_UNCERTAIN"
