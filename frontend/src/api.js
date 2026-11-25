@@ -101,9 +101,10 @@ export async function getPageOcr(pageId) {
   return parseResponse(await apiFetch(`/api/v1/pages/${pageId}/ocr`));
 }
 
-export async function getReviewQueue(albumId, type) {
+export async function getReviewQueue(albumId, type, { includeRejected = true } = {}) {
   const params = new URLSearchParams({ type });
   if (albumId) params.set("album_id", albumId);
+  if (type === "geometry" && !includeRejected) params.set("include_rejected", "false");
   return parseResponse(await apiFetch(`/api/v1/review/queue?${params}`));
 }
 

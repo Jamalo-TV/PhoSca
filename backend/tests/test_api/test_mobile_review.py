@@ -163,8 +163,12 @@ async def test_rejected_crop_is_hidden_from_album_browsing_and_kept_for_geometry
         assert (await client.get(f"{photo_url}/image", params={"variant": variant})).status_code == 404
     evidence = await client.get(f"{photo_url}/image", params={"variant": "source_corrected"})
     assert evidence.status_code == 200 and evidence.headers["cache-control"] == "private, no-store"
-    item, = (await client.get("/api/v1/review/queue", params={"album_id": str(album_id), "type": "geometry"})).json()
+    review_params = {"album_id": str(album_id), "type": "geometry"}
+    item, = (await client.get("/api/v1/review/queue", params=review_params)).json()
     assert item["id"] == str(photo_id)
+    active_params = {**review_params, "include_rejected": False, "limit": 1}
+    active = await client.get("/api/v1/review/queue", params=active_params)
+    assert active.status_code == 200 and active.json() == []
     match, = (await client.get("/api/v1/search", params={"q": "Searchable"})).json()
     assert match["page_id"] == str(page_id) and match["photo_id"] is None
 
@@ -177,6 +181,8 @@ async def test_rejected_crop_is_hidden_from_album_browsing_and_kept_for_geometry
     assert restored.json()["reviewed_non_print"] is False
     assert (await client.get(f"{album_url}/photos")).json()[0]["id"] == str(photo_id)
     assert (await client.get(album_url)).json()["photos_extracted"] == 1
+    restored_task, = (await client.get("/api/v1/review/queue", params=active_params)).json()
+    assert restored_task["id"] == str(photo_id)
 
     # The rejection only hides the geometry that was actually reviewed.
     async with get_session_factory()() as session:

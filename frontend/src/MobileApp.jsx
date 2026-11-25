@@ -470,7 +470,10 @@ function CropReview({ albumId, goHome }) {
   const [answerError, setAnswerError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const leavingRef=useRef(false); const goHomeRef=useRef(goHome);
-  const load = useCallback(async () => { setItems(await getReviewQueue(albumId || undefined, type)); setIndex(0); }, [albumId, type]);
+  const load = useCallback(async () => {
+    setItems(await getReviewQueue(albumId || undefined, type, { includeRejected: false }));
+    setIndex(0);
+  }, [albumId, type]);
   useEffect(() => { load().catch(e => setMessage(e.message)); }, [load]); const item = items[index];
   const captureReviewPending = type === "geometry"
     && item?.payload?.crop_modes?.full_print?.reason_codes?.includes(captureOutlineReviewReason);

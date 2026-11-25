@@ -1379,7 +1379,9 @@ In the normal upload flow, desktop and mobile explain both disputed rows
 and offer **Falsches Objekt**. After two explicit rejections, the three
 underlying prints remain in the current album and print-count task with
 their previous corners and preview JPEGs. Both crop exports and the old
-trimmed alias stayed blocked. The same mixed upload with a 165 × 150 px
+trimmed alias stayed blocked. Reopening mobile geometry review shows only
+the three current tasks. The desktop can still open previous rejections
+and correct their geometry. The same mixed upload with a 165 × 150 px
 low-contrast insert crossing the lower footprint kept the broad candidate
 in review. A smaller edge-margin insert can still escape the older
 scanner suppression in the model-free arm. The dark-material tests stay

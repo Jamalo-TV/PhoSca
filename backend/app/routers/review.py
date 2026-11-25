@@ -614,6 +614,7 @@ async def get_review_queue(
     album_id: UUID | None = None,
     review_type: str = Query(default="segmentation", alias="type", pattern="^(segmentation|ocr|geometry|enhancement)$"),
     limit: int = Query(default=25, ge=1, le=100),
+    include_rejected: bool = True,
     session: AsyncSession = Depends(get_async_session),
     principal: Principal | None = Depends(get_principal),
 ) -> list[ReviewItem]:
@@ -678,6 +679,8 @@ async def get_review_queue(
             )
         ).all()
         for photo in candidate_photos:
+            if not include_rejected and _rejected_detection(photo):
+                continue
             if await _geometry_review_is_current(session, photo):
                 continue
             payload = _photo_review_payload(photo)
