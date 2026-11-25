@@ -1383,9 +1383,7 @@ trimmed alias stayed blocked. Reopening mobile geometry review shows only
 the three current tasks. The desktop can still open previous rejections
 and correct their geometry. The same mixed upload with a 165 × 150 px
 low-contrast insert crossing the lower footprint kept the broad candidate
-in review. A smaller edge-margin insert can still escape the older
-scanner suppression in the model-free arm. The dark-material tests stay
-outside release evidence.
+in review. The dark-material tests stay outside release evidence.
 
 The pinned mixed result remains 3/3 with two extra proposals before review.
 The full measured regressions for Golden, Domoritz, the contact print, the
@@ -1394,6 +1392,42 @@ instance and crop metrics. On the pinned five-proposal scan, the added
 source checks took the recovery step from 94.76 to 200.96 ms median and
 from 216.90 to 312.65 ms p95 over 40 paired warm calls with one OpenCV
 thread. Image preparation, ONNX inference and rendering were excluded.
+
+### Keep small dark regions for scanner review
+
+The classical detector previously discarded the broad candidate on the
+pinned scan even after dark photographic material was added near the lower
+print. Revision 6 checks the exposed source pixels for local tonal corners
+before that discard. It compares four complete windows of Lab lightness and
+excludes any window touching a measured neighboring print. The test can
+hold a candidate for review when part of a dark print may be visible.
+Review uses the existing candidate outline. The rail check with the
+disputed third footprint feeds review directly.
+
+Two example inserts use rectangles `(870, 2185, 168, 150)` and
+`(950, 2490, 88, 90)` in native `x, y, width, height` units on the pinned
+evaluation raster. To reproduce them, resize the upper source patch
+`[20:871, 1060:2170]` to the input dimensions, take the pixels at the insert
+coordinates and set their BGR values to `round(.038 * BGR + 40.4)`. Blend
+with a rectangular alpha mask blurred at sigma 1.2 px and restore every
+pixel inside the measured lower outline. Both cases now keep the broad
+candidate in review and recover the three known clipped prints. The clean
+scan still removes the scanner candidate. A 54 × 46 px dark insert also
+covers the regression in the upload tests for both crop modes.
+
+Paired uploads for `(865, 2185, 163, 150)` and `(950, 2490, 88, 90)`
+checked the previous and current scanner logic through the normal worker.
+Each changed from three rows to four. For the three known prints, the
+stored masks, crop-mode metadata and original preview JPEGs matched in each
+pair. Both inserted cases show the scanner hint in the mobile editor. The
+two named downloads and the old trimmed alias were held.
+
+A simulated matte scanner feature also moved to review. A narrow strip
+almost entirely covered by the lower print can leave too little exposed
+evidence for the new check. The pinned scan's isolated scanner check took
+67.62 ms before and 92.15 ms after at the median of 24 paired warm runs with
+one OpenCV thread. Instance and both crop-mode metrics reproduced across
+the frozen, seeded, Golden, stock, flatbed and contact-sheet controls.
 
 ## Four neighboring loose prints on a flatbed
 

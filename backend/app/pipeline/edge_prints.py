@@ -9,7 +9,7 @@ from app.pipeline.geometry import order_quad_cyclic
 from app.pipeline.print_edges import _side_line
 
 
-CAPTURE_EDGE_REVISION = 5
+CAPTURE_EDGE_REVISION = 6
 CAPTURE_EDGE_SOURCE = "capture_edge_boundary"
 CAPTURE_EDGE_HOLD = "PRINT_AT_CAPTURE_EDGE"
 SCANNER_BACKING_REVIEW = "SCANNER_BACKING_UNCERTAIN"
@@ -283,15 +283,53 @@ def _has_compact_tone_change(light: np.ndarray, surface: np.ndarray, reduction: 
     return False
 
 
+def _has_local_tonal_corner(light: np.ndarray, surface: np.ndarray) -> bool:
+    reduction = min(.5, 1400 / max(light.shape))
+    width, height = (round(size * reduction) for size in light.shape[::-1])
+    span = 9
+    if min(width, height) < 3 * span:
+        return False
+    size = (width, height)
+    reduced = cv2.resize(light, size, interpolation=cv2.INTER_AREA)
+    clear = np.uint8(cv2.resize(255 * surface, size, interpolation=cv2.INTER_AREA) == 255)
+    # Include the complete sample windows in the clearance test, even near
+    # an adjacent print. The outer radius is span + span // 2.
+    kernel = np.ones((3 * span, 3 * span), np.uint8)
+    inspect = cv2.erode(clear, kernel, borderType=cv2.BORDER_CONSTANT, borderValue=0)[span:-span, span:-span]
+    min_area = 130
+    if np.count_nonzero(inspect) < min_area:
+        return False
+    average = cv2.boxFilter(reduced, cv2.CV_32F, (span, span), normalize=True)
+    tl = average[:-2 * span, :-2 * span]
+    tr = average[:-2 * span, 2 * span:]
+    bl = average[2 * span:, :-2 * span]
+    br = average[2 * span:, 2 * span:]
+    corner = np.zeros_like(inspect, dtype=bool)
+    # An isolated light or dark quadrant differs from both adjacent ones.
+    # Charge the change against the variation among the other three so a
+    # single long scanner rail or a smooth gradient contributes little.
+    for target, across, down, diagonal in ((tl, tr, bl, br), (tr, tl, br, bl),
+                                           (bl, br, tl, tr), (br, bl, tr, tl)):
+        step_x, step_y = target - across, target - down
+        variation = np.maximum(np.abs(diagonal - across), np.abs(diagonal - down))
+        corner |= ((step_x * step_y > 0)
+                   & (np.minimum(np.abs(step_x), np.abs(step_y)) >= 3 + variation))
+    supported = np.uint8(corner) & inspect
+    if np.count_nonzero(supported) < min_area:
+        return False
+    _, _, components, _ = cv2.connectedComponentsWithStats(supported)
+    return bool(np.any(components[1:, cv2.CC_STAT_AREA] >= min_area))
+
+
 def _has_independent_content(image: np.ndarray, occluded: np.ndarray, quad: np.ndarray) -> bool:
     x, y, width, height = cv2.boundingRect(quad)
     surface = np.zeros((height, width), np.uint8)
     cv2.fillConvexPoly(surface, np.rint(quad - np.float32([x, y])).astype(np.int32), 1)
     region = np.s_[y:y + height, x:x + width]
     surface[occluded[region] != 0] = 0
-    surface = cv2.erode(surface, np.ones((17, 17), np.uint8), borderType=cv2.BORDER_CONSTANT, borderValue=0)
+    interior = cv2.erode(surface, np.ones((17, 17), np.uint8), borderType=cv2.BORDER_CONSTANT, borderValue=0)
     light = cv2.cvtColor(image[region], cv2.COLOR_BGR2LAB)[..., 0]
-    if _has_compact_tone_change(light, surface, min(1., 544 / min(image.shape[:2]))):
+    if _has_compact_tone_change(light, interior, min(1., 544 / min(image.shape[:2]))):
         return True
 
     # A rail can be strong in one direction. A small patch of photographic
@@ -304,7 +342,7 @@ def _has_independent_content(image: np.ndarray, occluded: np.ndarray, quad: np.n
         bottom = min(top + 256, height)
         start, end = max(0, top - 53), min(height, bottom + 53)
         core = slice(top - start, bottom - start)
-        clear = surface[start:end]
+        clear = interior[start:end]
         inspected = cv2.boxFilter(clear, cv2.CV_32F, window, normalize=False,
                                  borderType=cv2.BORDER_CONSTANT)[core] >= 8200
         if not inspected.any():
@@ -317,11 +355,11 @@ def _has_independent_content(image: np.ndarray, occluded: np.ndarray, quad: np.n
         counts = cv2.boxFilter(detail, cv2.CV_32F, window, normalize=False, borderType=cv2.BORDER_CONSTANT)[core]
         if np.any(counts[inspected] > 275):
             return True
-    return not observed
+    return not observed or _has_local_tonal_corner(light, surface)
 
 
 def scanner_backing_evidence(
-    image: np.ndarray, quad: np.ndarray, clipped: list[np.ndarray],
+    image: np.ndarray, quad: np.ndarray, clipped: list[np.ndarray], *, allow_rejection: bool = True,
 ) -> Literal["backing", "uncertain"] | None:
     """Check whether a classical outline follows scanner hardware across neighboring prints."""
     sides = np.roll(quad, -1, axis=0) - quad
@@ -348,4 +386,4 @@ def scanner_backing_evidence(
               for start, end in sides_to_test]
     if not tracks[0] or not tracks[1] or len(tracks[0] | tracks[1]) != 2:
         return None
-    return "uncertain" if _has_independent_content(image, occluded, quad) else "backing"
+    return "uncertain" if not allow_rejection or _has_independent_content(image, occluded, quad) else "backing"

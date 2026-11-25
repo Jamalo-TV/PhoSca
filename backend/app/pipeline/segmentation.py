@@ -1724,7 +1724,7 @@ def _recover_capture_edge_prints(
                     continue
                 # A disputed outline can also cover a separate dark print.
                 if evidence is None and crossing_occlusions:
-                    evidence = scanner_backing_evidence(image, quad, clipped + crossing_occlusions)
+                    evidence = scanner_backing_evidence(image, quad, clipped + crossing_occlusions, allow_rejection=False)
                 if evidence is not None:
                     updated[index] = replace(item, review_reasons=[SCANNER_BACKING_REVIEW, *item.review_reasons])
         except (cv2.error, ValueError):

@@ -196,10 +196,15 @@ def scan_with_backing_rails(settings, case):
     if case == "dark_detail":
         texture = rng.integers(29, 55, (24, 26, 3), dtype=np.uint8)
         page[520:707, 350:495] = cv2.resize(texture, (145, 187), interpolation=cv2.INTER_CUBIC)
-    if case == "dark_tone":
+    if case in {"dark_tone", "small_dark_corner"}:
         patch = np.zeros(page.shape[:2], np.float32)
-        patch[545:640, 394:490] = 10
-        page -= np.rint(cv2.GaussianBlur(patch, (0, 0), 4)).astype(np.uint8)[..., None]
+        if case == "small_dark_corner":
+            patch[1002:1048, 382:436] = 4
+            blur = 1.2
+        else:
+            patch[545:640, 394:490] = 10
+            blur = 4
+        page -= np.rint(cv2.GaussianBlur(patch, (0, 0), blur)).astype(np.uint8)[..., None]
     detections = []
     for left, top, bottom in ((454, 0, 392), (587, 404, 941), (454, 949, 1319)):
         page[top:bottom + 1, left:] = 222
@@ -220,7 +225,9 @@ def scan_with_backing_rails(settings, case):
     return page, segmentation.SegmentationResult([*detections, extra], {})
 
 
-@pytest.mark.parametrize("case", ["scanner", "single_rail", "dark_edge", "dark_detail", "dark_tone", "model_support"])
+@pytest.mark.parametrize("case", [
+    "scanner", "single_rail", "dark_edge", "dark_detail", "dark_tone", "small_dark_corner", "model_support",
+])
 def test_scanner_backing_requires_native_evidence_without_an_independent_photo(case):
     settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
     page, original = scan_with_backing_rails(settings, case)
@@ -234,7 +241,8 @@ def test_scanner_backing_requires_native_evidence_without_an_independent_photo(c
         assert len(result.detections) == 3
     else:
         assert result.detections[-1].mask == original.detections[-1].mask
-        assert (SCANNER_BACKING_REVIEW in result.detections[-1].review_reasons) == (case in {"dark_detail", "dark_tone"})
+        needs_review = case in {"dark_detail", "dark_tone", "small_dark_corner"}
+        assert (SCANNER_BACKING_REVIEW in result.detections[-1].review_reasons) == needs_review
 
 
 @pytest.mark.parametrize("ambiguity", ["multiple_proposals", "multiple_outlines"])
@@ -314,7 +322,8 @@ def test_capture_edge_hold_applies_to_stale_download_metadata():
     assert variant_path_from_photo(photo, "source_corrected_untrimmed") == "/previous-crop.jpg"
 
 
-async def test_dark_content_on_scanner_backing_is_kept_for_review(client, monkeypatch):
+@pytest.mark.parametrize("case", ["dark_tone", "small_dark_corner"])
+async def test_dark_content_on_scanner_backing_is_kept_for_review(client, monkeypatch, case):
     from app.config import get_settings
     from app.services import pipeline
 
@@ -324,7 +333,7 @@ async def test_dark_content_on_scanner_backing_is_kept_for_review(client, monkey
     monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
     monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
     get_settings.cache_clear()
-    page, original = scan_with_backing_rails(get_settings(), "dark_tone")
+    page, original = scan_with_backing_rails(get_settings(), case)
     monkeypatch.setattr(segmentation, "_segment_album_page", lambda *_: original)
     monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
     album = await client.post("/api/v1/albums", json={"name": "Dunkler Abzug im Scanner"})
