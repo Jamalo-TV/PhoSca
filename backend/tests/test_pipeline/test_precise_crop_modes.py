@@ -914,10 +914,19 @@ def test_radial_curvature_keeps_tilted_print_in_review(coefficient) -> None:
     mask["polygon"] = _vertices(center + seed * (1 + coefficient * (seed ** 2).sum(axis=1, keepdims=True) / scale ** 2), image)
 
     crop = _crop(image, box, mask, dual_mode=True)
-    assert crop.metadata["crop_modes"]["full_print"]["status"] == "review_needed"
-    assert "PRINT_BOUNDARY_CURVED" in crop.metadata["crop_modes"]["full_print"]["reason_codes"]
+    full = crop.metadata["crop_modes"]["full_print"]
+    assert full["status"] == "review_needed"
+    assert "PRINT_BOUNDARY_CURVED" in full["reason_codes"]
+    traces = full["suggested_edge_traces"]
+    assert traces and all(len(trace) >= 2 for trace in traces)
+    known_corners = np.float32(fixture.prints[0].reference_modes["full_print"].corners)
+    for trace in traces:
+        locations = np.float32([(point["x"], point["y"]) for point in trace]) * outer_scale
+        x, y = locations.T
+        observed = cv2.remap(inverse, x[:, None].copy(), y[:, None].copy(), cv2.INTER_LINEAR)[:, 0]
+        assert max(abs(cv2.pointPolygonTest(known_corners, tuple(point), True)) for point in observed) < .9
     assert crop.metadata["crop_modes"]["image_only"]["status"] == "review_needed"
-    assert crop.image_only is None
+    assert crop.image_only is None and crop.full_print_preview is None
 
 
 def test_clipped_or_occluded_proposals_remain_review_previews() -> None:

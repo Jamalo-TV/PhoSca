@@ -824,7 +824,7 @@ def _dual_crop_result(
     orientation_model_path: Path | None, manual_rotation: int | None, page_regions: list[dict],
     protect_regions: bool, owned_sampling: bool,
     neighbors: list[np.ndarray], corner_mount_detected: bool, print_outline: np.ndarray | None,
-    motif_suggestion: np.ndarray | None,
+    motif_suggestion: np.ndarray | None, print_edge_traces: list,
 ) -> CropResult:
     page_height, page_width = page.shape[:2]
     height, width = full_image.shape[:2]
@@ -837,6 +837,8 @@ def _dual_crop_result(
     )
     rotation = int(orientation.get("rotation_degrees") or 0) % 360
     full_mode = _geometry_for_mode(source_quad, matrix, full_image, page_width, page_height, rotation, full_reasons)
+    if print_edge_traces:
+        full_mode["suggested_edge_traces"] = print_edge_traces
     if owned_sampling:
         full_mode["sampling"] = OWNED_BILINEAR
     full_print_preview = None
@@ -1088,7 +1090,7 @@ def _inspect_print(
     page: np.ndarray, quad: np.ndarray, mask: dict, visible: np.ndarray | None,
     neighbors: list[np.ndarray], regions: list[dict], *, dual_mode: bool, manual: bool,
     allow_page_face_overlap: bool, protect_regions: bool, enable_classical_retry: bool,
-    manual_neighbors: list[dict] | None = None,
+    manual_neighbors: list[dict] | None = None, collect_curve_segments: bool = False,
 ) -> _PrintInspection:
     height, width = page.shape[:2]
     metrics = _validate_quad(quad, width, height)
@@ -1097,7 +1099,7 @@ def _inspect_print(
     corner_mount = False
     edge_confirmation = False
     if dual_mode and not manual and mask.get("warp_quad") is None:
-        refined, boundary, reasons = refine_print_boundary(page, quad)
+        refined, boundary, reasons = refine_print_boundary(page, quad, collect_curve_segments=collect_curve_segments)
         if refined is not None and mask.get("detector_source") == CONTRAST_COMPONENT_SOURCE:
             if not reasons:
                 extension = find_outer_stock_candidate(page, refined, neighbors)
@@ -1311,6 +1313,7 @@ def correct_photo_crop(
         page_image, src_points, mask, visible, neighbor_polygons, regions,
         dual_mode=dual_mode, manual=manual, allow_page_face_overlap=allow_page_face_overlap,
         protect_regions=protect_regions, enable_classical_retry=enable_classical_retry,
+        collect_curve_segments=True,
         manual_neighbors=[
             neighbor["warp_quad"] for neighbor in neighbor_masks or []
             if (neighbor.get("manual_added") is True or neighbor.get(REVIEWED_CROSSING_OUTLINE) is True)
@@ -1319,6 +1322,12 @@ def correct_photo_crop(
     )
     src_points, quad_metrics = inspection.quad, inspection.metrics
     boundary_refinement, full_reasons = inspection.boundary, inspection.reasons.copy()
+    curve_segments = [segment for edge in boundary_refinement.values() if isinstance(edge, dict)
+                      for segment in edge.pop("curve_segments", [])]
+    print_edge_traces = []
+    if ("PRINT_BOUNDARY_CURVED" in full_reasons
+            and set(full_reasons) <= {"PRINT_BOUNDARY_CURVED", EXTENDED_PRINT_OUTLINE_REVIEW}):
+        print_edge_traces = [_vertices_on_page(np.asarray(segment), width, height) for segment in curve_segments]
     blurred_boundary = not full_reasons and any(
         (edge.get("edge_width_px") or 0) >= 4.75
         for edge in boundary_refinement.values() if isinstance(edge, dict)
@@ -1461,6 +1470,7 @@ def correct_photo_crop(
             owned_sampling=owned_sampling,
             neighbors=neighbor_polygons, corner_mount_detected=corner_mount_detected,
             print_outline=print_outline,
+            print_edge_traces=print_edge_traces,
             motif_suggestion=_explicit_quad(mask, "scalloped_motif_suggestion", width, height)
             if print_outline is not None and trim_border else None,
         )

@@ -1658,3 +1658,46 @@ in this environment. Separate capture and motif geometry are still
 unverified, so neither group contributes to the release split.
 [Roelofs album](https://id.rijksmuseum.nl/200322643) ·
 [Dutch album](https://id.rijksmuseum.nl/200322353)
+
+### Measured paper curves in review
+
+The print-edge fit now retains short runs of supported original-pixel
+measurements when it reports a curved paper edge. Desktop and mobile show
+these runs as dashed lines next to the editable straight corners. A missing
+run or a jump between measurements stays open. No fitted curve is extended
+to the corners or used as a crop mask.
+
+Golden page 37 shows two measured segments in the ordinary upload flow.
+Both crop downloads are still withheld. Deliberately distorted camera
+controls place the displayed points within one native pixel of the
+independent synthetic boundary. The frozen seeded run passes all 23
+recoverable crop checks. Model-free Golden and the frozen detection run
+retain their prior instance, warp and mode-availability metrics. A
+paired native boundary benchmark on page 37 took 79.5 ms without tracing
+and 79.8 ms with tracing over ten warmed runs per version at two OpenCV
+threads. A control with a 4-pixel outward bow loses 1,598 source pixels
+when its four corners alone are saved as a
+manual rectangular crop. Rendering a complete closed contour would require
+independent observations of all sides and corners. The segments in this
+change provide review evidence for that work.
+
+The flank prints on Golden page 04 remain separate investigations. The
+left outline sampled at 32 vertices comes within 0.81 native pixels of the
+independently measured outer edge. The straight outer chord deviates by
+up to 5.82 pixels. Adaptive pale-corridor measurements support 96.4% of
+the outer edge and reject flush album edges and continuous covers in the
+controls. Printed frames, scene panels and some shadow and glare patterns
+can still reproduce the corridor. On the right, the top join shows a
+4.0–4.9 pixel gap between the prints. Part of the adjoining sky has no
+resolved second edge. The right outer edge also departs from the corner
+chord by about 7.5 native pixels. These findings are source diagnostics
+for page 04. The detector has insufficient evidence for a closed review
+outline for either flank.
+
+A one-parameter radial fit with a fixed image centre reduced held-out
+line error on six of nine measured side segments. Error increased on
+the other three, including from 0.82 to 1.12 pixels RMS on the lower
+left side. With no independent proof of optical distortion or plane
+geometry, these measurements are insufficient to apply the same warp
+across the page. Published document dewarping methods can also use
+text-line constraints that album prints lack. [Grid regularisation study](https://openaccess.thecvf.com/content/CVPR2022/html/Jiang_Revisiting_Document_Image_Dewarping_by_Grid_Regularization_CVPR_2022_paper.html)

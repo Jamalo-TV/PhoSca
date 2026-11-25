@@ -22,9 +22,18 @@ const printEdgeReviewHints = {
   PRINT_OUTER_EDGE_CONFLICT_REVIEW: "Aussen sind mehrere Kanten sichtbar. Lege die Ecken im Editor an die tatsächliche Papierkante.",
   PRINT_EXTENDED_OUTLINE_REVIEW: "Prüfe die erweiterte Kontur am Original. Setze die Ecken an den Papierrand, damit der ganze Abzug erhalten bleibt.",
   PRINT_BOUNDARY_UNSUPPORTED: "Prüfe den sichtbaren Papierrand am Original. Korrigiere die markierten Ecken, soweit die Kante erkennbar ist.",
+  PRINT_BOUNDARY_CURVED: "Die Abzugskante ist gekrümmt. Prüfe am Original, ob der Abzug für eine neue Aufnahme flach aufgelegt werden kann.",
 };
 
+export function getSourceEdgeTraces(traces) {
+  return Array.isArray(traces) ? traces.filter((trace) => Array.isArray(trace) && trace.length >= 2
+    && trace.every((point) => [point?.x, point?.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1))) : [];
+}
+
 export function getPrintEdgeReviewHint(fullPrint) {
+  if (getSourceEdgeTraces(fullPrint?.suggested_edge_traces).length) {
+    return "Die gestrichelten Abschnitte zeigen die gemessene Papierkante im Original. Vergleiche sie mit den geraden Zuschnittkanten.";
+  }
   return fullPrint?.reason_codes?.map((reason) => printEdgeReviewHints[reason]).find(Boolean);
 }
 
@@ -71,7 +80,6 @@ const reviewMessages = {
   CAMERA_ASPECT_REVIEW: "Die Vorschau nutzt die Kamerakalibrierung. Prüfe und bestätige die Fotoecken.",
   PRINT_AT_CAPTURE_EDGE: "Der Abzug reicht bis an den Aufnahmerand. Prüfe, ob er vollständig zu sehen ist.",
   PRINT_POSSIBLY_OCCLUDED: "Ein Teil des Abzugs könnte verdeckt sein.",
-  PRINT_BOUNDARY_CURVED: "Die Abzugskante ist gekrümmt. Prüfe den Zuschnitt am Original.",
   [scallopedOutlineReviewReason]: scallopedOutlineReviewHint,
   PRINT_SCALLOPED_OWNERSHIP_UNCERTAIN: "Prüfe am Original, ob ein zweiter Abzug auf dem gezackten Papier aufliegt. Passe bei getrennten Abzügen beide Zuschnitte einzeln an.",
   PRINT_BOUNDARY_BLURRED: "Die Abzugskante ist unscharf. Prüfe den Zuschnitt am Original.",

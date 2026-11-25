@@ -47,6 +47,7 @@ import MobileApp from "./MobileApp.jsx";
 import {
   adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getFragmentOutline,
+  getSourceEdgeTraces,
   getPrintEdgeReviewHint,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -1397,10 +1398,13 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
     (point, index) => point.x === selectedShape.warpQuad[index].x && point.y === selectedShape.warpQuad[index].y,
   ));
   const selectedModes = selected?.crop_modes || getCropModes(selected);
-  const printEdgeReviewHint = getPrintEdgeReviewHint(selectedModes?.full_print);
+  const fullPrintMode = selected?.enhancement_applied?.review_rejected_detection ? null : selectedModes?.full_print;
+  const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
   const motifReview = selectedModes?.image_only;
   const imageSuggestion = cyclicQuad(sanitizePolygon(motifReview?.suggested_warp_quad));
   const seamTraces = motifReview?.suggested_seam_traces;
+  const traces = editingImage ? seamTraces : fullPrintMode?.suggested_edge_traces;
+  const edgeTraces = useMemo(() => getSourceEdgeTraces(traces), [traces]);
   const motifPreview = selected?.variant_urls?.image_only_preview || selected?.urls?.image_only_preview;
   const fullPrintPreview = selected?.variant_urls?.full_print_preview || selected?.urls?.full_print_preview;
   const needsMotifSelection = editingImage && Boolean(imageSuggestion) && !selectedShape?.imageQuad;
@@ -1489,19 +1493,19 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         handles.slice(1).forEach((point) => context.lineTo(point.x, point.y));
         context.closePath();
         context.stroke();
-        if (Array.isArray(seamTraces)) {
-          context.save();
-          context.strokeStyle = "#a21caf";
-          context.lineWidth = 2;
-          context.setLineDash([5, 3]);
-          seamTraces.map(sanitizePolygon).filter(Boolean).forEach((trace) => {
-            context.beginPath();
-            context.moveTo(trace[0].x * canvas.width, trace[0].y * canvas.height);
-            trace.slice(1).forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
-            context.stroke();
-          });
-          context.restore();
-        }
+      }
+      if (photo.id === selectedPhotoId && edgeTraces.length && !newPrint) {
+        context.save();
+        context.strokeStyle = "#a21caf";
+        context.lineWidth = 2;
+        context.setLineDash([5, 3]);
+        edgeTraces.forEach((trace) => {
+          context.beginPath();
+          context.moveTo(trace[0].x * canvas.width, trace[0].y * canvas.height);
+          trace.slice(1).forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
+          context.stroke();
+        });
+        context.restore();
       }
       context.fillStyle = "#ffffff";
       handles.forEach((point, index) => {
@@ -1541,7 +1545,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         context.fillText(String(index + 1), x + 9, y - 7);
       });
     }
-  }, [alternateOutline, crossingOutline, draftShapes, editingImage, fragmentOutline, newPrint, pageId, pageImage, photos, selectedPhotoId, seamTraces]);
+  }, [alternateOutline, crossingOutline, draftShapes, edgeTraces, editingImage, fragmentOutline, newPrint, pageId, pageImage, photos, selectedPhotoId]);
 
   useEffect(() => {
     draw();

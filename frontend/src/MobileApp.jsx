@@ -5,6 +5,7 @@ import { resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import {
   adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, crossingPrintHint,
   crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getCropModes, getFragmentOutline,
+  getSourceEdgeTraces,
   getPrintEdgeReviewHint,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -108,11 +109,14 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
   const storedOrientation = item.payload?.segmentation_mask?.orientation_degrees ?? null;
   const fragmentReview = item.payload?.confidence != null && item.payload?.review_reasons?.includes(fragmentOutlineReason);
   const fragmentOutline = fragmentReview && getFragmentOutline(item.payload?.segmentation_mask);
+  const reviewedNonPrint = item.payload?.review_reasons?.includes("GEOMETRY_REVIEW_WRONG_OBJECT");
   const crossingOutline = item.payload?.confidence != null
     && item.payload?.review_reasons?.includes(crossingPrintReason)
-    && !item.payload?.review_reasons?.includes("GEOMETRY_REVIEW_WRONG_OBJECT")
+    && !reviewedNonPrint
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.crossing_print_suggestion));
-  const printEdgeReviewHint = getPrintEdgeReviewHint(item.payload?.crop_modes?.full_print);
+  const fullPrintMode = reviewedNonPrint ? null : item.payload?.crop_modes?.full_print;
+  const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
+  const printEdgeTraces = getSourceEdgeTraces(fullPrintMode?.suggested_edge_traces);
   const adjacentOutline = item.payload?.confidence != null
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.adjacent_print_suggestion));
   const scallopedAlternate = item.payload?.confidence != null && item.payload?.segmentation_mask?.scalloped_alternate_is_inner
@@ -201,7 +205,11 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
     <polygon points={alternateOutline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="6" strokeDasharray="16 9" />
   );
-  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g>{visiblePolygon && <polygon points={visiblePolygon.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9"/>}<polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{uncertainLine}{alternateOverlay}{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>
+  const paperTraceOverlay = printEdgeTraces.map((trace, index) => (
+    <polyline key={index} points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
+      fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />
+  ));
+  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g>{visiblePolygon && <polygon points={visiblePolygon.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9"/>}<polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{uncertainLine}{alternateOverlay}{paperTraceOverlay}{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>
     {editable && <>
       {item.payload?.confidence != null && item.payload?.review_reasons?.includes(clippedOverlapReason) && (
         <p className="quad-hint">{clippedOverlapHint}</p>

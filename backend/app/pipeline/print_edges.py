@@ -53,9 +53,25 @@ def _median_edge_width(lab: np.ndarray, valid: np.ndarray, columns: np.ndarray, 
     return round(float(np.median(width)), 4)
 
 
+def _observed_curve_segments(
+    start: np.ndarray, tangent: np.ndarray, inward: np.ndarray, positions: np.ndarray,
+    distances: np.ndarray, supported: np.ndarray,
+) -> list[list[list[float]]]:
+    hits = np.flatnonzero(supported)
+    breaks = (np.diff(hits) != 1) | (np.abs(np.diff(distances[hits])) > 1.2)
+    segments = []
+    for run in np.split(hits, np.flatnonzero(breaks) + 1):
+        if len(run) < 4:
+            continue
+        points = start + positions[run, None] * tangent + (distances[run, None] + .5) * inward
+        sampled = cv2.approxPolyDP(np.float32(points), .28, False)[:, 0]
+        segments.append(sampled.tolist())
+    return segments
+
+
 def _side_line(
     image: np.ndarray, start: np.ndarray, end: np.ndarray, radius: int, *, outward_only: bool = False,
-    rim_color: np.ndarray | None = None,
+    rim_color: np.ndarray | None = None, collect_curve_segments: bool = False,
 ) -> tuple[np.ndarray | None, dict]:
     length = float(np.linalg.norm(end - start))
     along = (end - start) / length
@@ -94,6 +110,8 @@ def _side_line(
     usable = peaks[rows, columns - 1]
     evidence = {"support": 0.0, "ambiguous": False, "corner_support": None,
                 "maximum_residual_px": None, "search_radius_px": radius}
+    if collect_curve_segments:
+        evidence["curve_segments"] = []
     if np.mean(usable.any(axis=1)) < 0.55:
         return None, evidence
 
@@ -162,6 +180,8 @@ def _side_line(
     evidence["edge_width_px"] = _median_edge_width(lab, valid, columns[rows, closest], chosen)
     if evidence["support"] >= .82:
         evidence["measured_bow_px"] = _measured_side_bow(fitted, length)
+    if collect_curve_segments and abs(evidence.get("measured_bow_px") or 0) >= .4:
+        evidence["curve_segments"] = _observed_curve_segments(start, along, inward, positions, nearest, chosen)
     # The transition is measured between pixels. Start at the first print pixel center.
     first = start + inward * (origin + 0.5)
     last = end + inward * (origin + length * slope + 0.5)
@@ -739,7 +759,7 @@ def _weak_rim_transition(image: np.ndarray, quad: np.ndarray) -> float | None:
 
 def refine_print_boundary(
     image: np.ndarray, proposal: np.ndarray, *, search_radius: int | None = None,
-    rim_color: np.ndarray | None = None,
+    rim_color: np.ndarray | None = None, collect_curve_segments: bool = False,
 ) -> tuple[np.ndarray | None, dict, list[str]]:
     sides = np.linalg.norm(np.roll(proposal, -1, axis=0) - proposal, axis=1)
     radius = search_radius or min(56, max(4, round(float(sides.min()) * 0.042)))
@@ -751,11 +771,15 @@ def refine_print_boundary(
     conflicting_outward = 0
     rejected_shadow = False
     for index, (start, end) in enumerate(zip(proposal, np.roll(proposal, -1, axis=0))):
-        line, result = _side_line(image, start, end, radius, rim_color=rim_color)
+        line, result = _side_line(
+            image, start, end, radius, rim_color=rim_color, collect_curve_segments=collect_curve_segments,
+        )
         if search_radius is None and rim_color is None and not result["ambiguous"] and wider >= radius + 4:
             first, last = _line_endpoints(start, end, line) if line is not None else (start, end)
             if line is None or _pale_outside_strip(image, first, last):
-                alternate, retry = _side_line(image, first, last, wider, outward_only=True)
+                alternate, retry = _side_line(
+                    image, first, last, wider, outward_only=True, collect_curve_segments=collect_curve_segments,
+                )
                 if line is not None and result["support"] >= .88:
                     conflicting_outward += int(retry["ambiguous"] and retry["support"] >= .88)
                 observation = None if alternate is None else _observe_print_rim(
@@ -815,7 +839,7 @@ def refine_print_boundary(
                         continue
                     line, retry = _side_line(
                         image, proposal[index], proposal[(index + 1) % 4],
-                        maximum_excursion, rim_color=observed_stock,
+                        maximum_excursion, rim_color=observed_stock, collect_curve_segments=collect_curve_segments,
                     )
                     if line is not None:
                         fitted[index] = line, {**fitted[index][1], **retry, "matched_print_rim": True}
