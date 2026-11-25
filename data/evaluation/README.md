@@ -2812,6 +2812,107 @@ small strips with one OpenCV thread. Very faint graphite, isolated
 characters and connected handwriting remain open cases. The validation
 fingerprint now binds this check.
 
+### Hold motif trims for isolated strong strokes
+
+The new component check handles cases with fewer independent strokes
+than the brighter-paper row detector requires. It uses the existing
+component labels and local-paper estimate. The strip must
+have median Lab lightness of at least 172. Candidate ink is at least 38
+lightness levels below the morphological paper estimate. A candidate
+component needs a surrounding collar contained in the discarded strip.
+Its stroke radii must be consistent. The accepted geometries are
+separated enclosed counters along a joined word, vertically arranged
+counters with a continuous side stem, or a centred counter with a narrow
+apex and two separate legs. The test considers four quarter turns.
+The resulting region still needs contrast of at least 32 in the
+original image for at least 70% of sampled stroke pixels, with at least
+ten valid samples. A confirmed hit uses the existing motif-review reason
+and keeps the full-print geometry and pixels. The crop profile records
+motif margin revision 3.
+
+The paired strip replay at `df92258` and revision 3 starts from
+24 positive patterns and 22 controls. Each is evaluated at three
+scales in the native image, JPEG65 and a projective JPEG view. The
+patterns include OpenCV lettering and shapes extracted from the real
+contact-sheet heading. The positive strip detections rise from 11/216
+to 37/216. The same 21/198 control views report a hint in both runs.
+The remaining controls include isolated rings, dust, paper fibres,
+looped wires, water rings and scratches. A second experimental cue
+using differences between neighbouring component shapes raised the
+combined result to 50/216 in the same positive views. It remains a
+prototype pending broader full-crop and nuisance validation.
+
+In 22 paired whole-image renders, all whole-print JPEGs are byte
+identical. Seven additional motif crops go to review. Their previous
+crops excluded every sampled centre of the marked strokes. The normal
+upload of the synthetic joined-word example produces one proposal on
+the inset image (0.6499 draft IoU against paper). After the user
+confirms the paper outline, the whole-print download is available.
+The motif and trimmed alias return 404, and a general geometry vote
+returns 409. After an explicit motif edit, its export contains all
+2,055 sampled stroke centres and the whole-print JPEG is byte
+identical. The 12 quarter-turn regressions for an isolated letter, a
+joined word and paired rings exercise this review marker through
+`correct_photo_crop`.
+
+The paired mixed detector runs on Golden, the clipped NerdScan scan,
+Domoritz, the JPEG55 contact sheet and the stock challenge reproduce
+all previous detection, mask, render and mode availability metrics.
+The frozen synthetic detections and the separate 11/11 full-print and
+12/12 motif seeded geometry results also reproduce. The very pale date
+in the README example remains an open loss case.
+
+In 36 paired warm samples on one OpenCV thread, the unmarked
+`1920 × 1160` fixture took 82.53 ms before and 82.35 ms after at the
+median for the complete margin check. At that resolution, the joined
+word took 81.02 ms before and 18.24 ms after. A confirmed shape bypasses
+the subsequent faint-mark search.
+
+### Audit cross-source fusion and scalloped stock conflicts
+
+The greedy cross-source cluster can transitively relate two proposals
+from one family through a proposal from the other. In controlled
+two-print overlaps it undercounts 16 of 32 ambiguous trials. A one-to-one
+assignment fixes those undercounts and adds one false proposal in all 32
+matched single-paper trials. On 16 three-layer trials with a matching
+bridge it loses the third print. Two exposed native corners can add
+evidence for distinct candidates, but the same internal corners also
+appear in a sheet printed with a reproduction of two overlapping
+prints. Keep the current assignment for this milestone.
+
+An independent read-only audit of the production cluster members at
+`df92258` replayed 122 page/checkpoint pairs. Each of the two registered
+512 px development detectors ran on 10 Golden pages, 11 additional
+development views (including contact-sheet derivatives), 16 frozen
+synthetic pages and 24 stock challenge cases. Of 29 mixed clusters,
+two contain two proposals from the same family. Both pairs also pass
+the direct same-instance test. The original pixels support one physical
+print for each pair. One is the native camera contact sheet. Its
+outer paper outline wins with 0.99405 draft IoU. No audited cluster
+loses a verified physical print through an incompatible bridge.
+
+The other case is the upper print on the native 4,816 × 6,871
+ScanCropper development page with the synthetic-control checkpoint.
+The inner classical outline wins fusion (0.85386 draft IoU). A
+separate model proposal at confidence 0.460 covers the right half
+of that print, native box `[2345, 543, 3550, 2010]` and draft IoU
+0.55384. Removing exactly that proposal immediately before the native
+scallop check leaves the fusion winner intact. The recovered top mask
+changes from 0.85386 to 0.99795. The lower print stays at 0.99770.
+Recognition against the two draft prints changes from 2/2 with one
+extra to 2/2 with zero extras. The classical-only run reaches the
+same measured outlines. Both recovered contours remain in review. The
+ablation identifies the ownership conflict and uses knowledge of the
+erroneous proposal. Any runtime decision still needs independent
+evidence for the paper edges and stacked-print controls.
+
+In a separate NerdScan probe, branch and step contours continue over
+the three exposed sides of the contained lower detection. Subpixel
+translations and brightness changes of 1–2 levels preserve similar
+continuity in several counterfactual controls. That signal alone
+cannot establish the count. The existing two disputed proposals and
+the count review remain in place.
+
 ### Verify that catalogued pairs represent independent acquisitions
 
 A leave-one-out affine fit of the 15 saved American Colony draft landmarks

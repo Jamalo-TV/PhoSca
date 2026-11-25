@@ -7,6 +7,10 @@ import cv2
 import numpy as np
 
 from app.pipeline.faint_margin import faint_margin_region
+from app.pipeline.margin_stroke_shapes import isolated_margin_strokes
+
+
+MOTIF_MARGIN_REVIEW_REVISION = 3
 
 
 def _mark_clusters(lightness: np.ndarray, owned: np.ndarray) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
@@ -24,23 +28,24 @@ def _mark_clusters(lightness: np.ndarray, owned: np.ndarray) -> tuple[np.ndarray
             & (widths <= 6 * heights) & (areas >= 3) & (areas <= 0.18 * width * height)
             & (areas >= 0.13 * widths * heights))
     ids = np.flatnonzero(keep) + 1
-    if len(ids) < 3 or len(ids) > 300:
-        return background, labels, []
-    rows = centers[ids]
-    block_heights = stats[ids, cv2.CC_STAT_HEIGHT]
     clusters = []
-    for (cx, cy), stroke_height in zip(rows, block_heights, strict=True):
-        block = ids[(np.abs(rows[:, 1] - cy) <= 0.7 * stroke_height)
-                    & (np.abs(rows[:, 0] - cx) <= 9 * stroke_height)
-                    & (block_heights >= 0.35 * stroke_height) & (block_heights <= 2.5 * stroke_height)]
-        if len(block) < 3:
-            continue
-        _, _, bw, bh, area = stats[block].T
-        # A run of uniformly shaped spots or hairline scratches provides little
-        # evidence of a printed mark. Look for a wider stroke or joined letters.
-        if np.any(bw > 1.5 * bh) and area.sum() > 2.6 * stroke_height ** 2:
-            clusters.append(block)
-    return background, labels, sorted(clusters, key=len, reverse=True)
+    if 3 <= len(ids) <= 300:
+        rows = centers[ids]
+        block_heights = stats[ids, cv2.CC_STAT_HEIGHT]
+        for (cx, cy), stroke_height in zip(rows, block_heights, strict=True):
+            block = ids[(np.abs(rows[:, 1] - cy) <= 0.7 * stroke_height)
+                        & (np.abs(rows[:, 0] - cx) <= 9 * stroke_height)
+                        & (block_heights >= 0.35 * stroke_height) & (block_heights <= 2.5 * stroke_height)]
+            if len(block) < 3:
+                continue
+            _, _, bw, bh, area = stats[block].T
+            # A run of uniformly shaped spots or hairline scratches provides little
+            # evidence of a printed mark. Look for a wider stroke or joined letters.
+            if np.any(bw > 1.5 * bh) and area.sum() > 2.6 * stroke_height ** 2:
+                clusters.append(block)
+    if clusters:
+        return background, labels, sorted(clusters, key=len, reverse=True)
+    return background, labels, isolated_margin_strokes(labels, stats, owned)
 
 
 def _to_source(points: np.ndarray, origin: np.ndarray, along: np.ndarray, down: np.ndarray, inverse: np.ndarray) -> np.ndarray:

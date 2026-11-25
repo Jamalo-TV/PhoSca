@@ -357,6 +357,47 @@ def test_visible_margin_date_requires_review_without_changing_the_whole_print(sc
     np.testing.assert_array_equal(reviewed.image_only, reviewed.image)
 
 
+@pytest.mark.parametrize("quarter_turns", [0, 1, 2, 3])
+@pytest.mark.parametrize("mark", ["B", "barbara", "rings"])
+def test_isolated_paper_mark_preserves_source_ink_for_review(quarter_turns, mark) -> None:
+    scale = 2
+    photo = np.full((290 * scale, 480 * scale, 3), 234, np.uint8)
+    yy, xx = np.indices((230 * scale, 392 * scale))
+    photo[70:-50, 88:-88] = np.stack((80 + xx % 37, 49 + yy % 47, 121 + (xx + yy) % 57), axis=2)
+    ink = np.zeros(photo.shape[:2], np.uint8)
+    if mark == "rings":
+        for center in ((246, 23), (246, 44)):
+            cv2.circle(ink, center, 10, 255, 2, cv2.LINE_AA)
+    else:
+        style = cv2.FONT_HERSHEY_SCRIPT_SIMPLEX if mark == "barbara" else cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(ink, mark, (250, 52), style, 1.4, 255, 3, cv2.LINE_AA)
+    blank = cv2.copyMakeBorder(photo, 50, 50, 50, 50, cv2.BORDER_CONSTANT, value=(80, 85, 92))
+    marked = cv2.copyMakeBorder(
+        np.uint8(np.clip(np.rint(photo - .66 * ink[..., None]), 0, 255)),
+        50, 50, 50, 50, cv2.BORDER_CONSTANT, value=(80, 85, 92),
+    )
+    paper = _rect(50, 50, 1009, 629)
+    for _ in range(quarter_turns):
+        paper = np.column_stack((paper[:, 1], marked.shape[1] - 1 - paper[:, 0]))
+        marked, blank = np.rot90(marked).copy(), np.rot90(blank).copy()
+    normal = _vertices(paper, marked)
+    proposal = {"source": "manual_review_quad", "polygon": normal, "visible_polygon": normal, "warp_quad": normal}
+    ratio = 959 / 579
+    result = _crop(marked, {}, proposal, dual_mode=True, print_aspect_ratio=ratio)
+    control = _crop(blank, {}, proposal, dual_mode=True, print_aspect_ratio=ratio)
+    full, motif = (result.metadata["crop_modes"][mode] for mode in ("full_print", "image_only"))
+    assert full == control.metadata["crop_modes"]["full_print"]
+    assert full["status"] == control.metadata["crop_modes"]["image_only"]["status"] == "ready"
+    ys, xs = np.where(ink > 127)
+    np.testing.assert_array_equal(result.image[ys, xs, 0], np.rint(234 - .66 * ink[ys, xs]))
+    if mark == "rings":
+        assert motif["status"] == "ready" and result.image_only is not None
+    else:
+        assert motif["reason_codes"] == [MOTIF_MARGIN_MARKS_REVIEW]
+        assert len(motif["margin_mark_regions"]) == 1
+        assert result.image_only is None and result.image_only_preview is None
+
+
 @pytest.mark.parametrize("sigma", [0, 1.4, 2.4])
 def test_soft_edge_keeps_white_on_white_motif_seed_from_ready_whole_crop(sigma) -> None:
     from app.evaluation.crop_fixtures import synthetic_crop_pages

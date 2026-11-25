@@ -125,14 +125,27 @@ Für **Nur Bildmotiv** untersucht PhoSca zusätzlich die Übergänge
 zwischen Papier und Bild. Der Renderer berechnet beide Ausgaben
 direkt aus der Quellseite. Beim präzisen Sampling gehen in die
 Interpolation nur Quellpixel ein, die zur jeweiligen Fläche gehören.
-Die Randprüfung sucht auf den vorgeschlagenen hellen Abfallstreifen
-nach dunklen Markierungen und bestätigt den Kontrast im Original.
-Bei schwacher Schrift prüft sie zusätzlich die Strichform und die
-Originalpixel auf beiden Seiten des Strichs. Beide Seiten müssen
-zum selben sichtbaren Papierrand gehören.
-Sie kann einen Ausschnitt zurückhalten, wenn er Bildinhalt oder
-Beschriftung entfernen würde. Die Markierung zeigt eine Fundstelle.
-Der Hinweis fordert dazu auf, den gesamten Rand zu prüfen. Wenn
+Die Randprüfung betrachtet nur Papierstreifen zwischen Aussenkontur
+und vorgeschlagener Motivgrenze. Für deutliche Markierungen verwendet
+sie zusammenhängende Komponenten aus der Helligkeitsdifferenz zum
+lokalen Papier. Der erste Test sucht Reihen mehrerer Komponenten.
+Wenn er keine findet, sucht ein zweiter Test einzelne Zeichen oder
+verbundene Schrift. Er verlangt einen vom Motiv getrennten
+Papiersaum, annähernd gleichmässige Strichdicke und eine definierte
+Form aus geschlossenen Innenräumen, einem Stamm oder einer Spitze
+mit zwei Schenkeln. Für beide Tests wird der Strich in die
+Aufnahme zurückprojiziert. Mindestens 70 % der abgetasteten
+Strichpixel müssen dort den erforderlichen Kontrast zum Papier
+erreichen.
+
+Für schwache Schrift prüft PhoSca ausserdem schmale Striche mit
+lokalem Helligkeits- oder Farbkontrast auf beiden Seiten. Die
+Referenzpixel müssen auf demselben Papier und ausserhalb des Motivs
+liegen. Ein bestätigter Fund setzt für **Nur Bildmotiv** den
+Prüfgrund `IMAGE_MARGIN_MARKS_REVIEW` und speichert eine
+Fundstelle in Koordinaten der Quelle. Der Hinweis fordert dazu auf,
+den gesamten Rand zu prüfen. Die Prüfung verändert die Geometrie und
+die Pixel von **Ganzer Abzug** nicht. Wenn
 Fotoecken Papier verdecken, kann **Ganzer Abzug** in Prüfung liegen,
 während das vollständig sichtbare Motiv geometrisch verwendbar ist.
 
@@ -149,6 +162,7 @@ werden im Benchmark getrennt gemessen.
 [Perspektive und Modi](backend/app/pipeline/perspective.py) ·
 [Quellpixel-Sampling](backend/app/pipeline/crop_sampling.py) ·
 [Motivrand und Beschriftung](backend/app/pipeline/motif_margin.py)
+· [Formprüfung für einzelne Striche](backend/app/pipeline/margin_stroke_shapes.py)
 
 ### 4. Prüfen, korrigieren und exportieren
 
@@ -376,7 +390,7 @@ einer Stufe zuordnen. [Instanzdiagnostik und Renderprüfung](data/evaluation/REA
   [Alte Bestätigungen](data/evaluation/README.md#keep-genuine-motif-reviews-open-after-legacy-geometry-approvals) ·
   [Überlappende Papieransprüche](data/evaluation/README.md#keep-manual-exports-held-while-paper-proposals-overlap)
 
-### Schwache Beschriftung und Datenlage
+### Schrift am Motivrand und Datenlage
 
 Die erste Randprüfung erkannte 25 von 54 zuvor geometrisch bereiten
 Zuschnitten mit teilweisem oder vollständigem Schriftverlust. Der
@@ -392,6 +406,14 @@ Kontrastschwelle hatte in früheren Reihen auch Papierstruktur,
 Spiegelungen und Kratzer markiert.
 [Erster Randschutz](data/evaluation/README.md#review-visible-markings-outside-the-proposed-motif) ·
 [Graphit und blaue Schrift](data/evaluation/README.md#check-faint-graphite-and-blue-ink-against-the-original-paper)
+
+In einer weiteren Serie mit 216 markierten Streifen stieg die
+Erkennung mit der Formprüfung für einzelne Komponenten von 11 auf 37.
+Unter 198 Gegenproben kamen keine neuen Prüfhinweise hinzu.
+Die neuen Treffer enthalten einzelne Zeichen wie **A** und **B**
+sowie verbundene Schrift. Sehr blasses Graphit, manche
+Einzelzeichen und kurze Schrift ohne geschlossene Innenräume bleiben
+offen. [Formprüfung](data/evaluation/README.md#hold-motif-trims-for-isolated-strong-strokes)
 
 Beim historischen Detektor gehören der archivierte 28/29-Bericht
 (`e4168ae…`) und die spätere 29/29-Zusammenfassung (`4d823588…`)
@@ -415,24 +437,23 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
    Ein sauberer Treffer kann daher einen weiteren Druck übersehen.
    Der Vergleich soll zusätzliche Treffer, zusätzliche Fehlvorschläge,
    neu verursachte Prüfungen und CPU-p95 getrennt messen.
-2. **Fusion gegen getrennte Nachbarn absichern.** In einer synthetischen
-   Probe verknüpfte eine Modellmaske zwei klassische Hypothesen
-   transitiv. Sie überlappte jede mit IoU 0,823. Die beiden klassischen
-   Hypothesen bestanden mit gegenseitigem IoU 0,675 den direkten
-   Gleichheitstest nicht. Im Ergebnis blieb eine gezählte Instanz.
-   Eine explizite Konfliktprüfung oder eindeutige Zuordnung sollte
-   bekannte Duplikate weiterhin entfernen und eng benachbarte Abzüge
-   in den Gegenproben erhalten. Für einen realen Fall ist dieser
-   Mechanismus noch nicht belegt. [Fusion](backend/app/pipeline/segmentation.py)
-3. **Schriftform unter kontrolliertem Rauschen weiter prüfen.** Ein
-   lokaler Prototyp nutzt geschlossene Innenräume und konsistente
-   Strichbreiten für verbundene Schrift und einzelne Zeichen. Er
-   erhöhte die Zahl markierter positiver Testansichten von 10 auf 49
-   von 216. Die bestehenden 11 Hinweise auf 198 Gegenansichten
-   blieben gleich. Vor einer Integration müssen die Resultate in
-   ausreichend vielen ganzen Zuschnitten, gegeneinander verdrehten
-   Eingaben und Gegenbeispielen mit unregelmässigen Flecken und
-   Wasserkringeln halten. Das sehr blasse README-Datum bleibt offen.
+2. **Den Besitzkonflikt auf ScanCropper auflösen.** Ein zusätzlicher
+   Modellvorschlag umfasst einen Teil des oberen Abzugs. In der
+   Ablation ohne genau diesen Vorschlag stieg die Masken-IoU von
+   0,85386 auf 0,99795. Der Fusionssieger blieb derselbe. Der nächste
+   Test muss prüfen, ob die sichtbaren Papierbogen und die Kanten
+   am Original eine reversible Zählentscheidung stützen. Ein sehr
+   dünner, unabhängiger Abzug dient als Gegenprobe. Eine allgemeine
+   Eins-zu-eins-Fusion bleibt ungeeignet. Sie führt in gezielten
+   Einzelabzugskontrollen zu Fehlvorschlägen.
+   [Fusionsprüfung und ScanCropper-Ablation](data/evaluation/README.md#audit-cross-source-fusion-and-scalloped-stock-conflicts)
+3. **Restfehler bei blasser und offener Schrift prüfen.** Die neue
+   Formprüfung hat ihren Schwerpunkt auf deutlichen Markierungen mit
+   Innenräumen. Das sehr blasse Datum in der README-Abbildung bleibt
+   offen. Der nächste Versuch muss schwache Striche im Original
+   von Papierfasern, Druckraster und Kratzern unterscheiden und auf
+   vollständigen Motivzuschnitten nachmessen, welche Bildpixel
+   wieder in Prüfung landen.
 4. **Zwei echte Albumgruppen als unabhängigen Endtest sichern.** Die
    Quellenaufarbeitung soll nutzbare Originale mit belegtem Papier-
    und Motivbezug liefern. Danach lassen sich getrennte
