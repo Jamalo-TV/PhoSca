@@ -1196,6 +1196,20 @@ observations remain outside calibration and the final manifest.
 | `4REDA.JPG` `02fcf56c076ed5fd8ca6c9c0c933469c3903e5966e2d41694b55772e19d7b2a8` | `REDA3.jpg` `4443fd86e4a9bb134a739e66ca6a11d711eb0f0bf982a69448bf9926a714ce1d` |
 | `5REDA.JPG` `7250cfeb2e6343f7eeba6ff08cba60b9ccbea7ced4da3bc2415eea13e9fdeca3` | `REDA4.jpg` `356bdcd589771f8565aa73c14b3ead5e1c4887bd4a5aea43908bd1f64969e91f` |
 
+Two exposed cards in the same album provide further source-only checks.
+The separate exposure of `REDA6.jpg` shows the same taped corner and
+album backing. Matching the card and extrapolating to its four corners
+leaves up to 9.31 native page pixels of disagreement. The small card on
+`7REDA.JPG` lies loose across the gutter. The 245 × 397 individual scan
+clips its stock by about 2–7 pixels per edge in that scan. The rectangular
+motif remains a candidate for independent measurement after the ink
+boundary and usage rights are verified.
+
+| Page and SHA-256 | Print and SHA-256 |
+| --- | --- |
+| `6REDA.JPG` `fa66ebc5a49f18f37f3bf731ac020a16edc9ad862d2d0b570cee0adb228941d2` | `REDA6.jpg` `5f69b0e9bd7b0d7b1e8d690e1b5b6f10d282a6086207927b1c7cf6030ee72ce9` |
+| `7REDA.JPG` `2883f364a0640f4bbb215b3495e9875b21c3642fe1f55db335be63698dfca3e8` | `REDA9.jpg` `edfdd4627fa131a4d6d99ae7735b78785befb6e39b82e2dc0f97f0b41373df84` |
+
 The Coble Album is a separate physical album in the same repository.
 `calbum3.JPG` matches `ca12twogirls.jpg`. The available page is 360 × 270
 pixels and the mount obscures the print edges. The Willett album archive
