@@ -24,8 +24,25 @@ Wiederholen eines mobilen Uploads kann der Server die Seite anhand ihres
 Hashes wiederverwenden. Für die Arbeit mit dem Bild berücksichtigt er
 die EXIF-Ausrichtung. Bei HDR-JPEGs bleibt die Gain-Map in der
 Originaldatei erhalten.
+
+`POST /api/v1/albums/{album_id}/pages/upload` akzeptiert JPEG und PNG
+als Multipart-Felder `files` oder `file`. Die Standardlimits betragen
+50 MiB pro Datei, 200 MiB pro Anfrage und 40 Megapixel. `201` liefert
+Seiten-ID, Dateiname, Status und SHA-256. `verified: true` bestätigt
+den geprüften Upload. Ein normales Duplikat desselben Hashes im selben
+Album liefert `409`. Ein Aufruf mit `X-Upload-Retry: 1` kann die
+vorhandene Seite zurückgeben. Der Chunk-Endpunkt `/upload/chunk` sammelt
+Teile über Upload-ID und inklusive `Content-Range` und validiert die
+zusammengesetzte Datei vor der Speicherung.
+
+Die Datenbank trennt das Original `Page`, die Abzüge `ExtractedPhoto`,
+die Ausführung `ProcessingRun` mit einzelnen `StageRun`-Einträgen
+und die erzeugten Dateien `Asset`. Ein `ReviewEvent` dokumentiert
+einen Entscheid mitsamt Prüfsnapshot. Der Seitenstatus
+`review_needed` ist ein reguläres Verarbeitungsergebnis. Er kann vom
+Status eines einzelnen Abzugs oder Zuschnittmodus abweichen.
 [Upload](backend/app/routers/pages.py) · [Speicherung](backend/app/services/uploads.py) ·
-[Offline-Warteschlange](frontend/src/offlineQueue.js)
+[Datenmodell](backend/app/models/entities.py) · [Offline-Warteschlange](frontend/src/offlineQueue.js)
 
 ### 2. Abzüge auf der Seite finden
 
@@ -46,8 +63,20 @@ Abzüge oder ein gemeinsames Papier mit mehreren Bildfeldern. Das
 System kann Teilvorschläge zusammenführen oder bei unklarer Zuordnung
 eine zusätzliche Kontur zur Prüfung anzeigen. Die sichtbare Maske und
 die vier Eckpunkte für die Entzerrung werden getrennt gespeichert.
+
+Die ONNX-Koordinaten werden nach dem Entfernen des Letterbox-Paddings
+auf das Quellbild zurückgerechnet. Eine auf eine Linie kollabierte
+Vorhersage kann verworfen werden, während die übrigen Vorschläge einer
+Inferenz erhalten bleiben. Das Modellregister prüft die Gewichtsdatei
+gegen ihren SHA-256. Die Standardschwellen
+`YOLO_PROPOSAL_THRESHOLD=0.25` und `YOLO_CONFIDENCE_THRESHOLD=0.70`
+haben verschiedene Aufgaben. Die erste begrenzt die Modellvorschläge.
+Die zweite beeinflusst, ob ein Vorschlag mit seiner verfügbaren
+Konfidenz zur Prüfung muss. Ein hoher Score allein klärt weder die
+Pixelzugehörigkeit zwischen Nachbarn noch die physische Papierkante.
 [Verarbeitungsdienst](backend/app/services/pipeline.py) ·
-[Erkennung und Zusammenführung](backend/app/pipeline/segmentation.py)
+[Erkennung und Zusammenführung](backend/app/pipeline/segmentation.py) ·
+[Konfiguration](backend/app/config.py)
 
 ### 3. Zwei Zuschnitte aus denselben Originalpixeln bilden
 
@@ -56,6 +85,22 @@ die vier Eckpunkte für die Entzerrung werden getrennt gespeichert.
 | **Ganzer Abzug** | Der entzerrte physische Abzug bis zur Papierkante. Sichtbarer Bildinhalt und der echte Papierrand bleiben erhalten. |
 | **Nur Bildmotiv** | Der entzerrte Bildbereich innerhalb der Motivgrenze. Bei einem verifizierten randlosen Abzug können beide Modi dasselbe Bild verwenden. |
 
+| Geometriefeld | Bedeutung |
+| --- | --- |
+| `bounding_box` | Achsenparalleler Such- und Anzeigeausschnitt. |
+| `visible_polygon` | Schätzung der sichtbaren Abzugsfläche, gegebenenfalls mit mehr als vier Punkten. Grundlage für Instanz- und Überlappungsprüfung. |
+| `warp_quad` | Vier Eckpunkte der verwendeten Projektion. Sichtbare Kontur und Projektionsviereck können voneinander abweichen. |
+| `image_quad` | Vier ausdrücklich gesetzte Motivecken im selben Seitenkoordinatensystem. Beim Speichern müssen sie innerhalb des Papier-Vierecks liegen. |
+| `print_size_mm` | Gemessene physische Breite und Höhe. Die Reihenfolge der Ecken bestimmt, welche Kante zu welcher Dimension gehört. |
+| `page_to_output`, `shape` | 3×3-Homographie von Quellpixelzentren zu Ausgabepixelzentren und Rastergrösse pro Modus. Die Homographie enthält die gewählte Ausgabeausrichtung. |
+
+Die präzisen Polygonkoordinaten verwenden `(0, 0)` bis `(1, 1)`
+für die äussersten Pixelzentren. Ein Punkt wird im Raster mit
+`x · (Breite − 1)` und `y · (Höhe − 1)` abgebildet. Das Bezugsbild
+ist das dekodierte, EXIF-ausgerichtete Quellraster. Bei zur Aufnahme
+passender geometrischer Kamerakalibrierung kann es vor der Projektion
+entzerrt werden.
+
 Für **Ganzer Abzug** verfeinert PhoSca die vermuteten Papierecken
 mit Messungen am Original. Eine perspektivische Projektion bildet
 das Viereck auf ein Rechteck ab. Für das Seitenverhältnis nutzt
@@ -63,6 +108,18 @@ PhoSca nach Möglichkeit eingegebene Papiermasse, eine zur Aufnahme
 passende Kamerakalibrierung oder Hinweise auf die Papierebene.
 Unzureichende Messpunkte, Wölbung, Verdeckung oder widersprüchliche
 Kanten können eine Prüfung auslösen.
+
+Gemessene Papiermasse haben Vorrang. Bei vorhandener Kamera-Matrix
+liefert eine tragfähige Schätzung der Papierebene oder eine orthogonale
+Rekonstruktion das Verhältnis. Ohne diese Daten verwendet PhoSca
+nahezu frontale Seitenlängen oder prüft, ob die perspektivische
+Schätzung bei leicht veränderten Eingaben stabil bleibt. Eine
+schräg gesehene Kante allein kann bei unbekannter Kamera mehrere
+physische Seitenverhältnisse erlauben. In diesem Fall ist
+`PRINT_ASPECT_UNCERTAIN` mit Papiermassen oder einer besseren Aufnahme
+auflösbar. Aussagen zur Kamerakalibrierung sind an den SHA-256 der
+Aufnahme gebunden. Solche Ergebnisse einer automatischen Erkennung
+benötigen weiterhin Prüfung.
 
 Für **Nur Bildmotiv** untersucht PhoSca zusätzlich die Übergänge
 zwischen Papier und Bild. Der Renderer berechnet beide Ausgaben
@@ -78,6 +135,17 @@ Beschriftung entfernen würde. Die Markierung zeigt eine Fundstelle.
 Der Hinweis fordert dazu auf, den gesamten Rand zu prüfen. Wenn
 Fotoecken Papier verdecken, kann **Ganzer Abzug** in Prüfung liegen,
 während das vollständig sichtbare Motiv geometrisch verwendbar ist.
+
+Beim Sampling begrenzt das gewählte Projektionsviereck die zulässigen
+Quellpixel für die JPEG-Ausgabe. An einer Kante fallen bilineare Taps
+ausserhalb dieser Fläche oder des Rasters weg. Die übrigen Gewichte
+werden renormalisiert. Wenn die Interpolationszelle am Eckpunkt keinen
+zulässigen Tap enthält, kann der nächste zulässige Quellpixel in
+höchstens zwei Originalpixeln Abstand verwendet werden. Fehlt auch
+dieser, bleibt die Geometrie zur Prüfung. Eine Prüfvorschau kann eine
+gemessene, nicht rechteckige Kontur mit Transparenz rendern. Die
+Qualität des Samplers und die Richtigkeit der gewählten Papiergrenze
+werden im Benchmark getrennt gemessen.
 [Perspektive und Modi](backend/app/pipeline/perspective.py) ·
 [Quellpixel-Sampling](backend/app/pipeline/crop_sampling.py) ·
 [Motivrand und Beschriftung](backend/app/pipeline/motif_margin.py)
@@ -101,6 +169,38 @@ gewählte verfügbare Variante. Manuelle Korrekturen durchlaufen
 weiterhin Geometrie-, Nachbarschafts- und Pixelprüfungen. Rechenläufe,
 Bilddateien, Prüfentscheide und Korrekturrevisionen bleiben mit der
 Quellseite verknüpft.
+
+| Aktion | Verhalten |
+| --- | --- |
+| Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |
+| Abzug korrigieren oder ergänzen | `PATCH /api/v1/photos/{id}/bounding-box` setzt die überprüfte Geometrie. `POST /api/v1/pages/{id}/manual-photos` ergänzt einen Abzug. Ungültige Ecken können mit `422` abgelehnt werden. Ein überlappender Vorschlag hält bei ungeklärter Papierzugehörigkeit beide Modi zurück. |
+| Falsches Objekt markieren | `wrong_object` bezieht sich auf die aktuelle Box und Maske. Der Eintrag wird aus der aktiven Anzahl und Kundenansicht entfernt. Die Prüfgeometrie bleibt für die Historie erhalten. |
+| Geometrie vollständig bestätigen | `POST /api/v1/review/events` archiviert den Entscheid zur aktuellen Geometrie. Ist der ganze Abzug gesperrt oder eine echte Motivprüfung offen, liefert `correct` ein `409`. Ein gleichlautender Wiederholungsaufruf mit demselben Idempotenzschlüssel wird als Wiederholung erkannt. |
+| Erneut berechnen | `POST /api/v1/photos/{id}/reprocess` rendert mit den aktuellen Daten vom gespeicherten Albumoriginal. Eine Neuberechnung allein erledigt keinen historischen Entscheid, dessen Snapshot eine offene Motivprüfung enthält. |
+
+Die Zustände liegen unter `enhancement_applied.correction.crop_modes`,
+getrennt als `full_print` und `image_only`. Der Wechsel von
+`ready` zu `review_needed` kann trotz vorhandener Geometrie erfolgen,
+etwa bei fehlender Kalibrierung oder einem offenen Besitzkonflikt.
+`reason_codes` erklären den Zustand. `geometry_status: ready` kann
+dabei die bereits berechnete Geometrie kennzeichnen. Die Varianten
+folgen diesem Vertrag.
+
+| Abruf | Ergebnis |
+| --- | --- |
+| `GET /api/v1/pages/{id}/image` | Unveränderte gespeicherte Albumaufnahme. |
+| `GET /api/v1/photos/{id}/image?variant=full_print` oder `image_only` | JPEG des angeforderten Modus, wenn er bereit und verfügbar ist. Ein gesperrter Modus liefert `404` und keine Download-URL. |
+| `full_print_preview`, `image_only_preview` | Separat erzeugte PNG-Prüfvorschau, falls für den offenen Modus ein Vorschauartefakt existiert. Die Antwort verwendet `Cache-Control: private, no-store`. |
+| `original`, `source_corrected` am Foto-Endpunkt | Quellengetreue, bereits perspektivisch korrigierte JPEG-Ansicht. Die unveränderte Albumdatei ist über den Seiten-Endpunkt verfügbar. |
+| `source_corrected_untrimmed` | Entzerrte Quellenansicht für die Kontrolle. Ihre Verfügbarkeit erlaubt keine Freigabe der benannten Modi. |
+| `source_corrected_trimmed` | Alter Name für einen getrimmten Zuschnitt. Beim präzisen Pfad gelten auch die Sperren von `image_only`. |
+
+Eine manuelle Geometriekorrektur löscht die automatische
+`segmentation_confidence`. Die Geometrie-, Zuordnungs- und
+Samplingprüfungen gelten weiterhin. Bei einer automatischen
+Erkennung überprüft der Download-Endpunkt den Freigabenachweis auch
+beim Abruf. Ein alter Zustand `ready` genügt deshalb nach einer
+Änderung der Konfiguration oder des Freigabedokuments allein nicht.
 [Review-API](backend/app/routers/review.py) · [Editor-API](backend/app/routers/photos.py) ·
 [Varianten und Download](backend/app/pipeline/variants.py)
 
@@ -114,12 +214,28 @@ Die ursprüngliche perspektivisch korrigierte Version bleibt
 erhalten. Eigene Qualitätsregeln steuern die Wahl der Standardversion.
 Ein perzeptueller Hash weist auf ähnliche Abzüge hin.
 
+OCR arbeitet auf der Seite und ordnet Text später anhand seiner Lage
+zu. Bei fehlender OCR kann ein vorhandener Sidecar Text liefern.
+Beim Wiederholen ersetzt der OCR-Schritt die ungeprüften Einträge.
+Bestätigte Texte bleiben erhalten. Der Seitenlauf kann trotz gesperrter
+Ganzabzüge OCR erzeugen und die nachgelagerte Verbesserung für diese
+Abzüge auslassen.
+
 Docker Compose verbindet Nginx und React mit FastAPI, PostgreSQL,
 Redis, den Celery-Workern sowie dem Volume für Originale und
 Derivate. Lokal kann SQLite als Entwicklungsdatenbank dienen.
 Das Modellregister bindet die konfigurierten Gewichte an ihre Hashes.
 Bei aktiviertem `AUTH_REQUIRED` prüft die API Rollen und Albumzugriff
 über einen API-Schlüssel oder eine Browsersitzung.
+
+Die Derivate liegen unter
+`processed/<album>/runs/<run>/stages/<stage>/photos`. Ein Lauf bindet
+Quellhash, Pipelineversion und Konfigurationsfingerabdruck.
+Korrekturen wechseln die aktive Variantenreferenz. Speicherbereinigung
+ist ein separater Vorgang. `Album.completed` beschreibt den Abschluss
+der Verarbeitung. Seiten mit offenen Prüfungen zählen als
+verarbeitet. Die Qualitätsfreigabe der Bildverbesserung und die
+Freigabe der beiden benannten Zuschnitte verwenden getrennte Regeln.
 [Verarbeitung und OCR](backend/app/services/pipeline.py) ·
 [Freigabe von Bildversionen](backend/app/pipeline/release.py) · [Betrieb](docs/OPERATIONS.md)
 
@@ -133,30 +249,198 @@ Orientierung, Inhaltsverlust, fremde Interpolationspixel und Laufzeit.
 Sie erfasst auch brauchbare Geometrien, die zur Prüfung zurückgehalten
 werden. Für echte Freigabereferenzen toleriert die Prüfung höchstens
 zwei Originalpixel Eckfehler und ein Prozent Abweichung im
-Seitenverhältnis. Sie verlangt ausserhalb eines Ein-Pixel-Bands
-vollständigen Inhalt und eine Ausgabe ohne fremde Quellpixel.
+Seitenverhältnis. Die Anforderungen für einzelne Ausgaben sind
+strenger als ein hoher mittlerer IoU. Im Freigabereport wird jeder
+vorhergesagte Abzug höchstens einer Referenz zugeordnet.
+
+| Prüfbereich | Mindestanforderung |
+| --- | --- |
+| Instanzerkennung und finale Masken | Zuordnung bei IoU ≥ 0,85, mittlerer Polygon-IoU ≥ 0,85, Präzision und Trefferquote je ≥ 90 %, Kanten-F-Score ≥ 0,80. Auf dieser Stufe gelten zusätzlich höchstens 8 % Inhaltsverlust, höchstens 12 % fremde Fläche und keine als schwerwiegend klassifizierten Fehler. |
+| Ausgabe pro Modus | Zugeordnete Instanz, richtige Orientierung, höchstens 2 Originalpixel Eckfehler, höchstens 1 % Seitenverhältnisfehler und, falls Referenzlandmarken vorhanden sind, höchstens 2 px Landmarkenfehler bei p95. |
+| Sampling pro Modus | Null Inhaltsschnitt und null fremde Beiträge jenseits eines Bands von einem Originalpixel, null Abtastungen ausserhalb des Quellrasters, höchstens 1 px Samplingdefizit und höchstens 1 px Abweichung zwischen Homographie und Geometriemetadaten. Der synthetische Test verlangt zusätzlich null fremde Quellsamples über die gesamte Ausgabe. |
+| Status pro Modus | Unwiederherstellbare Referenzen müssen in Prüfung liegen. Keine verifizierte falsche oder unwiederherstellbare Ausgabe darf als bereit gelten. |
 
 Die automatische Freigabe braucht einen bestandenen Nachweis für die
 eingesetzte Konfiguration. Die Herkunft der Modellgewichte wird mit
 Quellen, Album-IDs, Bild-Hashes und Splits dokumentiert. Die
 Detektorkonfidenz wird auf einem separaten Datensatz für die
-eingesetzte Konfiguration kalibriert. Testquellen dürfen sich weder
+eingesetzte Konfiguration kalibriert. Der Fit ist isoton und erfolgt
+pro Detektorquelle, etwa für ONNX und klassische Konturen getrennt.
+Ein Fit benötigt pro Quelle mindestens 20 Vorhersagen insgesamt,
+darunter richtige und falsche Beispiele. Quellen ohne Fit bleiben
+unkalibriert. Testquellen dürfen sich weder
 nach Album-ID noch nach Bild-Hash mit Trainings-, Entwicklungs- oder
 Kalibrierungsquellen überschneiden. Beide Modi brauchen überprüfte
 Referenzen aus mindestens zwei gemeinsamen physischen Albumgruppen.
 Pro Modus müssen mindestens **90 %** der wiederherstellbaren
 Zuschnitte automatisch freigabefähig sein, insgesamt und in jeder
-erforderlichen Gruppe. Unwiederherstellbare Fälle müssen in Prüfung
-bleiben.
+erforderlichen Gruppe. Der Server akzeptiert den Bericht nur mit
+passenden Modell-, Profil-, Quellen- und Berichtshashes. Die
+Release-Regel bezieht sich auf tatsächlich automatisch
+freigabefähige Ausgaben.
 
-Die automatische Freigabe bleibt gesperrt. Der eingefrorene
-synthetische Vergleich mit dem zugehörigen Kontrollmodell erreicht
-**18/18 erkannte Abzüge** und **23/23 bestandene wiederherstellbare
-Zuschnitte**. Diese Messung prüft Regressionen. Die unabhängigen
-Originalraster und die passende Kalibrierung für die Freigabe sind
-noch unvollständig.
+Die automatische Freigabe bleibt gesperrt. Auf dem eingefrorenen
+synthetischen Satz findet der Detektor-Kontrolllauf **18/18 Abzüge**.
+Mit denselben automatisch gefundenen Vorschlägen bestehen
+**6/11 Ganzabzüge** und **7/12 Motive** die jeweilige Geometrieprüfung.
+Ein getrennter Lauf mit vorgegebenen, leicht versetzten
+Startkonturen besteht **11/11 Ganzabzüge** und **12/12 Motive**.
+Die Trennung zeigt, wie viel die Qualität der Erkennung zur
+Ausgabequalität beiträgt. Unabhängige Originalraster und die passende
+Kalibrierung für die Freigabe sind noch unvollständig.
 [Prüfverfahren und Belege](data/evaluation/README.md) ·
+[Auswertung im Code](scripts/evaluate_onnx_segmentation.py) ·
 [Freigabeprüfung im Code](backend/app/pipeline/crop_validation.py)
+
+## Technische Rückschau
+
+### Ausgangsbefund und Fehlersuche
+
+Der Ausgangsbefund aus neun echten Cloud-Ansichten waren 22 Treffer,
+sechs fehlende Abzüge und 17 Fehlvorschläge. Das entspricht 78,6 %
+Trefferquote und 56,4 % Präzision. Elf der Fehlvorschläge stammten aus
+drei physischen Mehrbildabzügen. Der exakte Cloud-Lauf liess sich aus
+den verfügbaren Originalen, Modellgewichten und Reports nicht erneut
+ausführen. Der spätere Entwicklungsvergleich verwendet sieben andere
+reproduzierbare Ansichten. Davon stammen mehrere aus demselben Scan.
+[Ausgangsbefund und reproduzierbarer Vergleich](data/evaluation/README.md#replay-the-available-real-image-development-views)
+
+Für die Fehlersuche vergleiche ich pro Abzug vier Zustände. Der rohe
+Detektor zeigt, ob es überhaupt einen Vorschlag gab. Die finale Maske
+zeigt, ob mehrere Abzüge zusammengelegt oder ein Abzug fragmentiert
+wurde. Der auf die Quelle zurückprojizierte Zuschnitt zeigt, ob
+Entzerrung und Randbehandlung Inhalt entfernen. Der API- und
+Browserpfad zeigt, ob genau diese Variante als Vorschau, Prüfung
+oder Download behandelt wird. So lässt sich derselbe Fehler gezielt
+einer Stufe zuordnen. [Instanzdiagnostik und Renderprüfung](data/evaluation/README.md)
+
+### Erkennung, Training und Fusion
+
+| Versuch | Ergebnis und Entscheidung |
+| --- | --- |
+| Klassische Geometrie gezielt verbessern | Die Liniensuche holte auf Golden-Seite 11 einen Abzug mit 0,911 Masken-IoU zurück. Der zweite blieb unerkannt. Auf Seite 37 verdrängte ein Diagonalfragment die vollständige Kontur. Nach der Korrektur erreichte die Maske 0,994 IoU, während eine gemessene Papierkurve weiterhin Prüfung verlangte. Der klassische Golden-Lauf verbesserte sich insgesamt von 12/29 mit 16 Fehlvorschlägen auf 14/29 mit 15. [Liniensuche](data/evaluation/README.md#line-pair-search-after-rejected-contours) · [Konturauswahl](data/evaluation/README.md#nested-classical-contours-on-the-same-print) |
+| Synthetisch auf physische Papierabzüge trainieren | Modell-only erkannte 12/12 Mehrbildabzüge und 32/34 getrennte Abzüge im gezielten Stock-Test bei IoU 0,85, ohne Fehlvorschläge. Der Hybrid blieb auf echten Golden-Seiten bei 14/29, mit 16 statt 15 Fehlvorschlägen gegenüber klassischer Geometrie. Der Kandidat wurde für den Einsatz verworfen. [Stock-Experiment](data/evaluation/README.md#synthetic-stock-detector-experiment) |
+| Transfer mit wenigen echten Kameraoriginalen prüfen | Im Mischarm ersetzten 40 Derivate von fünf Originalen 40 der 96 Trainingsbilder. Checkpoint-Ausgangspunkt, Validierung, Input von 512 × 512 und Schwellen blieben im Vergleich gleich. Die Golden-Erkennung im Hybrid stieg von 14/29 mit 20 Fehlvorschlägen auf 29/29 mit zwei. Auf dem eingefrorenen Satz erreichte der Mischarm 17/18 mit vier Fehlvorschlägen, 9/11 bestandene Ganzabzüge und 10/12 Motive. Auf dem realen Kontaktbogen lieferte er drei Fehlvorschläge mehr als der synthetische Kontrollarm. Beide Gewichte bleiben Entwicklungsartefakte. Die Golden-Seiten teilen die physische Quellgruppe mit dem alten Kameramaterial. [Gepaarter Transfer](data/evaluation/README.md#compare-real-camera-pages-against-a-paired-synthetic-control) |
+| Lokale Maskenverfeinerung nachtrainieren | Auf 166 dichten Validierungsausschnitten stieg der mittlere IoU von 0,562 auf 0,907. Auf dem Met-Entwicklungsscan sank die Trefferzahl von 44 auf 42. Zusätzlich fiel die eingefrorene Erkennungsprüfung aus. Der Verfeinerer wurde nicht übernommen. [Dense-Gutters-Auswertung](data/evaluation/README.md#precise-crop-validation) |
+| Reale Entwicklungsansichten getrennt auswerten | Klassisch ergaben sich 22/24 Treffer und acht Fehlvorschläge, gemischt 23/24 und drei. Der Gesamtwert verdeckt einen Rückschritt beim angeschnittenen NerdScan-Abzug mit 35,3 % Verlust der Entwurfsfläche. Dieser Vergleich zeigt, warum ein Gewinn der Gesamterkennung und ein sicherer Zuschnitt getrennt bewertet werden. [Realer Entwicklungsvergleich](data/evaluation/README.md#replay-the-available-real-image-development-views) |
+| Schwache Zusatzvorschläge am Original überprüfen | Zwei zusätzliche klassische Golden-Vorschläge wanderten nach nativer Grenzprüfung in die Zählprüfung. Die aktive Zählung erreichte damit 29/29 ohne zusätzlich gezählte Objekte. Beide Vorschläge blieben für den Reviewer sichtbar. [Prüfung von Fallback-Konturen](data/evaluation/README.md#review-unsupported-fallback-outlines-before-counting-a-print) |
+
+### Konturen, Perspektive und Ausgabesicherheit
+
+- **Mehrbildabzug als physische Instanz.** Beim Kontaktbogen stützen
+  übereinstimmende Rasterabstände, durchgehendes Papier an den Rändern
+  und fehlende Hinweise auf einen eigenen Schatten die Zuordnung zu
+  einem Abzug. Im 33-%-JPEG75-Fall steigt der Masken-IoU der angebotenen
+  Aussenkontur gegen den Entwurf von 0,8317 auf 0,9885. In der
+  verlustfreien Variante steigt er von 0,8286 auf 0,9898. Die
+  konkurrierenden Fragmente bleiben sichtbar und zunächst gezählt.
+  Bei weniger als zwei Originalpixeln eigenem Rand kann ein zweites
+  Papier gleich aussehen. Ein lockerer Vorschlag mit drei gestützten
+  Seiten überschritt bei Domoritz in 28 von 190 Gegenproben eine
+  bekannte physische Trennung. Eine solche Geometrie bleibt ein
+  Korrekturhinweis. [Kontaktbogen](data/evaluation/README.md#compare-the-whole-contact-print-with-its-counted-fragments) ·
+  [Unschärfe-Gegenproben](data/evaluation/README.md#split-print-under-mild-blur)
+- **Bessere Vorschau bei verbleibendem Randfehler.** Beim JPEG55
+  verbesserte die neu entzerrte Aussenkontur den Zuschnitt-IoU
+  gegen den Entwurf von 0,8363 auf 0,9884. Der fehlende Inhalt sank
+  von 16,37 % auf 1,07 %. Der grösste Eckfehler blieb bei 4,84
+  Originalpixeln. 220 Ausgabepixel erhielten fremde Beiträge jenseits
+  des Ein-Pixel-Bands. Das Ergebnis blieb als Prüfvorschau verfügbar.
+  Die nachträgliche Suche eines Rastermusters um acht Pixel in beide
+  Richtungen lieferte auch bei 47 von 63 Kontrollen mit getrennten
+  Papieren fälschlich dieselbe Rasterevidenz. Die automatische
+  Entscheidung behält die engere Prüfung.
+  [Vorschau und Messreihe](data/evaluation/README.md#straighten-the-proposed-contact-print-for-review)
+- **Papierkurve und Motivkurve unterscheiden.** Die Eingabe von
+  Papiermassen hatte auf Golden-Seite 37 früher eine Freigabe trotz
+  offener Papierkurve erlaubt. Der neue Pfad hält die Kurve auch nach
+  manueller Änderung fest. Er akzeptierte 36 belegte gerade
+  Papiergrenzen mit gekrümmtem Druckmotiv und hielt 180 getestete
+  Eckänderungen an tatsächlich gewölbten Abzügen zurück. Beim
+  JPEG75-Kontaktabzug bleiben konkurrierende Motivübergänge und
+  Beschriftung auf dem Papier entscheidend. Ein höherer
+  Krümmungsschwellwert würde diese Fragen offenlassen.
+  [Papierkurven](data/evaluation/README.md#keeping-a-measured-paper-curve-in-review-after-a-manual-edit) ·
+  [Kontaktbogenmotiv](data/evaluation/README.md#require-an-intentional-motif-outline-in-review)
+- **Manuelle Prüfung und Export vor Inhaltsverlust schützen.** Das
+  alte, pauschal um 6 % eingerückte Motiv erhielt nur einen von
+  1’938 vermessenen Beschriftungspunkten und schnitt fünf Felder
+  der letzten Reihe an. Heute erfordert der Editor eine bewusste
+  Motivkontur. Eine ältere allgemeine Geometriebestätigung kann
+  eine offene Motivprüfung nicht ausblenden. Ausserdem hält ein
+  überlappender aktiver Fragmentvorschlag beide Exporte zurück,
+  bis seine Zuordnung geklärt ist. Am echten Kontaktabzug ergab
+  der Standardweg nach ausdrücklicher Korrektur zwei Downloads
+  mit allen 35 Bildfeldern und allen 1’938 geprüften
+  Beschriftungspunkten im Motiv. [Manueller Ablauf](data/evaluation/README.md#require-an-intentional-motif-outline-in-review) ·
+  [Alte Bestätigungen](data/evaluation/README.md#keep-genuine-motif-reviews-open-after-legacy-geometry-approvals) ·
+  [Überlappende Papieransprüche](data/evaluation/README.md#keep-manual-exports-held-while-paper-proposals-overlap)
+
+### Schwache Beschriftung und Datenlage
+
+Die erste Randprüfung erkannte 25 von 54 zuvor geometrisch bereiten
+Zuschnitten mit teilweisem oder vollständigem Schriftverlust. Der
+zweite Schritt mit beidseitigem Originalkontrast fing drei weitere
+Verluste ab. In derselben 162-Fälle-Reihe blieben alle Ganzabzüge
+pixelgleich. Von den 54 Ausgangsfehlern bestehen noch 26. Sie
+enthalten Bleistift, einzelne Zeichen, verbundene Schrift und
+Ausschnitte einer real geformten Beschriftung. Der separate Test mit
+216 Beispielen schwacher Beschriftung und 660 Gegenproben verbesserte
+die Erkennung von 19 auf 52. Bei den Gegenproben kam keine
+Fehlmarkierung hinzu. Eine pauschale niedrigere
+Kontrastschwelle hatte in früheren Reihen auch Papierstruktur,
+Spiegelungen und Kratzer markiert.
+[Erster Randschutz](data/evaluation/README.md#review-visible-markings-outside-the-proposed-motif) ·
+[Graphit und blaue Schrift](data/evaluation/README.md#check-faint-graphite-and-blue-ink-against-the-original-paper)
+
+Beim historischen Detektor gehören der archivierte 28/29-Bericht
+(`e4168ae…`) und die spätere 29/29-Zusammenfassung (`4d823588…`)
+zu verschiedenen Modell-Digests. Das Modellregister nennt für die
+spätere Datei eine NCHW-Eingabe mit 1024 × 1024 Pixeln. In der
+vorliegenden Arbeitskopie fehlen die registrierte ONNX-Datei und
+Teile ihres Trainingsinventars. Bei den zusätzlichen
+Archivkandidaten sind zum Teil getrennte Aufnahmen katalogisiert,
+aber native Paare, überprüfte Grenzen, Nutzungsrechte oder der
+Ausschluss von Trainingsüberlappung sind noch offen. An der Freigabe
+fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
+[Modellregister](models/manifest.json) ·
+[Historische Modellherkunft](data/evaluation/README.md#recover-detector-provenance-from-the-git-archive) ·
+[Archivpaare](data/evaluation/README.md#verify-that-catalogued-pairs-represent-independent-acquisitions)
+
+### Nächste technische Hypothesen
+
+1. **Zählfehler früher lokalisieren.** Zuerst in bisher unerklärten
+   Seitenbereichen zusätzliche klassische Vorschläge protokollieren.
+   Die heutige Risikoprüfung beurteilt vor allem vorhandene Vorschläge.
+   Ein sauberer Treffer kann daher einen weiteren Druck übersehen.
+   Der Vergleich soll zusätzliche Treffer, zusätzliche Fehlvorschläge,
+   neu verursachte Prüfungen und CPU-p95 getrennt messen.
+2. **Fusion gegen getrennte Nachbarn absichern.** In einer synthetischen
+   Probe verknüpfte eine Modellmaske zwei klassische Hypothesen
+   transitiv. Sie überlappte jede mit IoU 0,823. Die beiden klassischen
+   Hypothesen bestanden mit gegenseitigem IoU 0,675 den direkten
+   Gleichheitstest nicht. Im Ergebnis blieb eine gezählte Instanz.
+   Eine explizite Konfliktprüfung oder eindeutige Zuordnung sollte
+   bekannte Duplikate weiterhin entfernen und eng benachbarte Abzüge
+   in den Gegenproben erhalten. Für einen realen Fall ist dieser
+   Mechanismus noch nicht belegt. [Fusion](backend/app/pipeline/segmentation.py)
+3. **Schriftform unter kontrolliertem Rauschen weiter prüfen.** Ein
+   lokaler Prototyp nutzt geschlossene Innenräume und konsistente
+   Strichbreiten für verbundene Schrift und einzelne Zeichen. Er
+   erhöhte die Zahl markierter positiver Testansichten von 10 auf 49
+   von 216. Die bestehenden 11 Hinweise auf 198 Gegenansichten
+   blieben gleich. Vor einer Integration müssen die Resultate in
+   ausreichend vielen ganzen Zuschnitten, gegeneinander verdrehten
+   Eingaben und Gegenbeispielen mit unregelmässigen Flecken und
+   Wasserkringeln halten. Das sehr blasse README-Datum bleibt offen.
+4. **Zwei echte Albumgruppen als unabhängigen Endtest sichern.** Die
+   Quellenaufarbeitung soll nutzbare Originale mit belegtem Papier-
+   und Motivbezug liefern. Danach lassen sich getrennte
+   Kalibrierungsquellen für die tatsächlich aktiven Detektorquellen
+   beschaffen und das festgelegte Modell einmal auf dem
+   zurückgehaltenen Freigabesatz prüfen. Für die Modellwahl und
+   Grenzwertsuche sind separate Entwicklungsalben erforderlich.
+   [Referenzformat und Splitregeln](data/evaluation/README.md)
 
 ## Beispiele und offene Fälle
 
