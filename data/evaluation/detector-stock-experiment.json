@@ -1,0 +1,477 @@
+{
+  "purpose": "synthetic development experiment with no model promotion",
+  "physical_albums_used_for_fine_tuning": [],
+  "inventory_csv_sha256": "96415a34db21270aed48ea50b4e425153c4c6e7d30e50f02a528c63ebf2b62eb",
+  "generated_sources_json_sha256": "819bce5454be794fd8fdfa6fa72e28d059405f6ca500ebe53ab27704a87e9d73",
+  "checkpoint_origin": {
+    "role": "candidate_pretrained_base",
+    "release": "Ultralytics assets v8.3.0",
+    "publisher_url": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n-seg.pt",
+    "publisher_hash_evidence": "https://huggingface.co/Ultralytics/YOLO11/blob/97c61428146e92d06e5cde0c70308ed8d36a6c34/yolo11n-seg.pt",
+    "sha256": "55ed65c56c91713d23e8402371c6c49a6fd84f257f7dce452e8d70e41dcbe152",
+    "size_bytes": 6182636,
+    "publisher_training_dataset": "COCO-Seg",
+    "publisher_training_dataset_documentation": "https://docs.ultralytics.com/models/yolo11",
+    "model_weight_license": "AGPL-3.0",
+    "album_disjointness_verified": false
+  },
+  "dataset_generator": {
+    "numpy": "2.5.5",
+    "opencv": "4.10.0",
+    "train": 96,
+    "val": 24,
+    "challenge": 24
+  },
+  "training": {
+    "ultralytics": "8.3.0",
+    "torch": "2.7.1+cpu",
+    "numpy": "2.2.6",
+    "onnx": "1.18.0",
+    "onnxslim": "0.1.82",
+    "epochs": 8,
+    "batch": 8,
+    "imgsz": 512,
+    "seed": 0,
+    "device": "cpu",
+    "best_checkpoint_sha256": "22dbf02b433be5740d0512aeed0b1a36e0f6efd09b8dd0fe4cc675de23ebb2bd",
+    "onnx_sha256": "7192cea9972571db05527d66d2e6cbd04ea445f43eef616273112af6c00d7fcf"
+  },
+  "results": {
+    "challenge-model": {
+      "detector": {
+        "detection_precision": 1.0,
+        "detection_recall": 0.9565217391304348,
+        "mask_iou": 0.961507576429667,
+        "corner_localization_error": 0.0030136710239193317,
+        "totals": {
+          "true_positive": 44,
+          "false_positive": 0,
+          "false_negative": 2,
+          "duplicates": 0,
+          "serious_failures": 2
+        }
+      },
+      "modes": {
+        "full_print": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": 0.961960173008056,
+          "mean_content_cutoff": 0.029041495741948996,
+          "mean_foreign_fraction": 0.01272314475764605
+        },
+        "image_only": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": null,
+          "mean_content_cutoff": null,
+          "mean_foreign_fraction": null
+        }
+      },
+      "stock_cases": {
+        "neighboring_prints": {
+          "true_positive": 32,
+          "false_positive": 0,
+          "false_negative": 2
+        },
+        "shared_multipanel_stock": {
+          "true_positive": 12,
+          "false_positive": 0,
+          "false_negative": 0
+        }
+      }
+    },
+    "challenge-hybrid": {
+      "detector": {
+        "detection_precision": 0.671875,
+        "detection_recall": 0.9347826086956522,
+        "mask_iou": 0.9274228422231824,
+        "corner_localization_error": 0.009995734110935186,
+        "totals": {
+          "true_positive": 43,
+          "false_positive": 21,
+          "false_negative": 3,
+          "duplicates": 0,
+          "serious_failures": 21
+        }
+      },
+      "modes": {
+        "full_print": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": 0.9322340027761556,
+          "mean_content_cutoff": 0.035992269685481984,
+          "mean_foreign_fraction": 0.03616734702929692
+        },
+        "image_only": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": null,
+          "mean_content_cutoff": null,
+          "mean_foreign_fraction": null
+        }
+      },
+      "stock_cases": {
+        "neighboring_prints": {
+          "true_positive": 32,
+          "false_positive": 14,
+          "false_negative": 2
+        },
+        "shared_multipanel_stock": {
+          "true_positive": 11,
+          "false_positive": 7,
+          "false_negative": 1
+        }
+      }
+    },
+    "challenge-fallback": {
+      "detector": {
+        "detection_precision": 0.34375,
+        "detection_recall": 0.2391304347826087,
+        "mask_iou": 0.597358542297451,
+        "corner_localization_error": 0.07659399137703767,
+        "totals": {
+          "true_positive": 11,
+          "false_positive": 21,
+          "false_negative": 35,
+          "duplicates": 0,
+          "serious_failures": 38
+        }
+      },
+      "modes": {
+        "full_print": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": 0.5957300947034759,
+          "mean_content_cutoff": 0.21052945451702185,
+          "mean_foreign_fraction": 0.24290996733819564
+        },
+        "image_only": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": null,
+          "mean_content_cutoff": null,
+          "mean_foreign_fraction": null
+        }
+      },
+      "stock_cases": {
+        "neighboring_prints": {
+          "true_positive": 4,
+          "false_positive": 14,
+          "false_negative": 30
+        },
+        "shared_multipanel_stock": {
+          "true_positive": 7,
+          "false_positive": 7,
+          "false_negative": 5
+        }
+      }
+    },
+    "golden-hybrid": {
+      "detector": {
+        "detection_precision": 0.4666666666666667,
+        "detection_recall": 0.4827586206896552,
+        "mask_iou": 0.7126928048716056,
+        "corner_localization_error": 0.06498511456418782,
+        "totals": {
+          "true_positive": 14,
+          "false_positive": 16,
+          "false_negative": 15,
+          "duplicates": 0,
+          "serious_failures": 21
+        }
+      },
+      "modes": {
+        "full_print": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": 0.7138787784813369,
+          "mean_content_cutoff": 0.2629166375569487,
+          "mean_foreign_fraction": 0.1335733794956468
+        },
+        "image_only": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": null,
+          "mean_content_cutoff": null,
+          "mean_foreign_fraction": null
+        }
+      },
+      "page_04": {
+        "true_positive": 0,
+        "false_positive": 2,
+        "false_negative": 3
+      }
+    },
+    "golden-model": {
+      "detector": {
+        "detection_precision": 0.6666666666666666,
+        "detection_recall": 0.06896551724137931,
+        "mask_iou": 0.8063591917319131,
+        "corner_localization_error": 0.023277730273548514,
+        "totals": {
+          "true_positive": 2,
+          "false_positive": 1,
+          "false_negative": 27,
+          "duplicates": 0,
+          "serious_failures": 27
+        }
+      },
+      "modes": {
+        "full_print": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": 0.8097317434535233,
+          "mean_content_cutoff": 0.18508654100346397,
+          "mean_foreign_fraction": 0.0072407414360592766
+        },
+        "image_only": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": null,
+          "mean_content_cutoff": null,
+          "mean_foreign_fraction": null
+        }
+      },
+      "page_04": {
+        "true_positive": 0,
+        "false_positive": 0,
+        "false_negative": 3
+      }
+    },
+    "updated-golden": {
+      "detector": {
+        "detection_precision": 0.4827586206896552,
+        "detection_recall": 0.4827586206896552,
+        "mask_iou": 0.7423883384079225,
+        "corner_localization_error": 0.05547551834509553,
+        "totals": {
+          "true_positive": 14,
+          "false_positive": 15,
+          "false_negative": 15,
+          "duplicates": 0,
+          "serious_failures": 21
+        }
+      },
+      "modes": {
+        "full_print": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": 0.7436237275847258,
+          "mean_content_cutoff": 0.2322048307884883,
+          "mean_foreign_fraction": 0.09747227030796542
+        },
+        "image_only": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": null,
+          "mean_content_cutoff": null,
+          "mean_foreign_fraction": null
+        }
+      },
+      "page_04": {
+        "true_positive": 0,
+        "false_positive": 2,
+        "false_negative": 3
+      }
+    },
+    "locked-hybrid": {
+      "detector": {
+        "detection_precision": 0.9444444444444444,
+        "detection_recall": 0.9444444444444444,
+        "mask_iou": 0.9730316763542172,
+        "corner_localization_error": 0.0037640661200081618,
+        "totals": {
+          "true_positive": 17,
+          "false_positive": 1,
+          "false_negative": 1,
+          "duplicates": 0,
+          "serious_failures": 0
+        }
+      },
+      "modes": {
+        "full_print": {
+          "verified": 18,
+          "recoverable": 11,
+          "passing_recoverable": 6,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": 0.9614415714833979,
+          "mean_content_cutoff": 0.023461145442129953,
+          "mean_foreign_fraction": 0.016025810268830456
+        },
+        "image_only": {
+          "verified": 18,
+          "recoverable": 12,
+          "passing_recoverable": 7,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": 0.9918278497310897,
+          "mean_content_cutoff": 0.008172150268910305,
+          "mean_foreign_fraction": 0.0
+        }
+      }
+    },
+    "locked-model": {
+      "detector": {
+        "detection_precision": 0.9444444444444444,
+        "detection_recall": 0.9444444444444444,
+        "mask_iou": 0.9759746417488344,
+        "corner_localization_error": 0.002203333050500886,
+        "totals": {
+          "true_positive": 17,
+          "false_positive": 1,
+          "false_negative": 1,
+          "duplicates": 0,
+          "serious_failures": 0
+        }
+      },
+      "modes": {
+        "full_print": {
+          "verified": 18,
+          "recoverable": 11,
+          "passing_recoverable": 6,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": 0.951968707720074,
+          "mean_content_cutoff": 0.03400172516221849,
+          "mean_foreign_fraction": 0.014917113712928969
+        },
+        "image_only": {
+          "verified": 18,
+          "recoverable": 12,
+          "passing_recoverable": 6,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": 0.9918940106847698,
+          "mean_content_cutoff": 0.008105989315230192,
+          "mean_foreign_fraction": 0.0
+        }
+      }
+    },
+    "updated-geometry": {
+      "detector": {
+        "detection_precision": 1.0,
+        "detection_recall": 1.0,
+        "mask_iou": 1.0,
+        "corner_localization_error": 0.0,
+        "totals": {
+          "true_positive": 18,
+          "false_positive": 0,
+          "false_negative": 0,
+          "duplicates": 0,
+          "serious_failures": 0
+        }
+      },
+      "modes": {
+        "full_print": {
+          "verified": 18,
+          "recoverable": 11,
+          "passing_recoverable": 11,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": 0.9736733050567727,
+          "mean_content_cutoff": 0.008590068190457663,
+          "mean_foreign_fraction": 0.018672069902499464
+        },
+        "image_only": {
+          "verified": 18,
+          "recoverable": 12,
+          "passing_recoverable": 12,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": 0.9916325759389842,
+          "mean_content_cutoff": 0.008367424061015663,
+          "mean_foreign_fraction": 0.0
+        }
+      }
+    },
+    "domoritz-hybrid": {
+      "detector": {
+        "detection_precision": 1.0,
+        "detection_recall": 1.0,
+        "mask_iou": 0.984693115867835,
+        "corner_localization_error": 0.001796174852643162,
+        "totals": {
+          "true_positive": 4,
+          "false_positive": 0,
+          "false_negative": 0,
+          "duplicates": 0,
+          "serious_failures": 0
+        }
+      },
+      "modes": {
+        "full_print": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": 0.979292733745965,
+          "mean_content_cutoff": 0.020704712845229692,
+          "mean_foreign_fraction": 0.000155664594785776
+        },
+        "image_only": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": null,
+          "mean_content_cutoff": null,
+          "mean_foreign_fraction": null
+        }
+      }
+    },
+    "domoritz-fallback": {
+      "detector": {
+        "detection_precision": 1.0,
+        "detection_recall": 1.0,
+        "mask_iou": 0.984693115867835,
+        "corner_localization_error": 0.001796174852643162,
+        "totals": {
+          "true_positive": 4,
+          "false_positive": 0,
+          "false_negative": 0,
+          "duplicates": 0,
+          "serious_failures": 0
+        }
+      },
+      "modes": {
+        "full_print": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": 0.979292733745965,
+          "mean_content_cutoff": 0.020704712845229692,
+          "mean_foreign_fraction": 0.000155664594785776
+        },
+        "image_only": {
+          "verified": 0,
+          "recoverable": 0,
+          "passing_recoverable": 0,
+          "passing_geometry_in_review": 0,
+          "mean_footprint_iou": null,
+          "mean_content_cutoff": null,
+          "mean_foreign_fraction": null
+        }
+      }
+    }
+  }
+}
