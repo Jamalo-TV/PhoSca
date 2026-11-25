@@ -1,4 +1,3 @@
-import DOMPurify from "dompurify";
 import {
   Aperture,
   Camera,
@@ -85,7 +84,7 @@ function StatusBadge({ status }) {
 }
 
 function SafeText({ text, className = "" }) {
-  return <span className={className} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(text || "") }} />;
+  return <span className={className}>{text ?? ""}</span>;
 }
 
 function EmptyState({ label }) {
