@@ -10,6 +10,7 @@ export const clippedOverlapReason = "CLIPPED_PRINT_OVERLAP_UNCERTAIN";
 export const clippedOverlapHint = "Prüfe am Original, ob hier ein weiterer Papierabzug aufliegt. Ziehe die Ecken an seine Papierkante oder markiere den Vorschlag als «Falsches Objekt».";
 export const fragmentOutlineReason = "FRAGMENT_OUTLINE_UNCERTAIN";
 export const fragmentOutlineHint = "Prüfe am Original, ob die Ausschnitte zu einem Abzug gehören. Falls ja, korrigiere einen Ausschnitt mit dem Aussenumriss und markiere die übrigen darin als «Falsches Objekt».";
+export const fragmentCountHint = "Prüfe, ob die markierten Ausschnitte innerhalb der blauen Kontur zu einem Abzug gehören. Achte besonders auf die gepunktete Seite.";
 export const scallopedOutlineReviewReason = "PRINT_SCALLOPED_OUTLINE_REVIEW";
 export const scallopedOutlineReviewHint = "Die Vorschau folgt der gewellten Papierkante. Prüfe am Original, ob der ganze Abzug sichtbar ist.";
 export const adjacentPrintHint = "Prüfe am Original, ob der gestrichelte Bereich ein eigener Abzug ist und ob der helle Streifen zu seinem Papier gehört.";
@@ -62,15 +63,6 @@ export function getPrintOutlinePreviewHint(fullPrint) {
   return preview.reason_codes?.includes("PRINT_ASPECT_UNCERTAIN")
     ? "Vorgeschlagener Abzug mit geschätztem Seitenverhältnis."
     : "Vorschau des vorgeschlagenen Aussenumrisses.";
-}
-
-export function getFragmentOutline(mask) {
-  const { quad, uncertain_edge: edge } = mask?.fragment_outline_suggestion || {};
-  if (!Array.isArray(quad) || quad.length !== 4 || !Number.isInteger(edge) || edge < 0 || edge > 3
-      || !quad.every((point) => [point?.x, point?.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1))) {
-    return null;
-  }
-  return { quad, weakEdge: [quad[edge], quad[(edge + 1) % 4]] };
 }
 
 export function getCropModes(photo) {

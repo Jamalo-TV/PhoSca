@@ -47,10 +47,11 @@ import MobileApp from "./MobileApp.jsx";
 import EdgeMeasurement from "./EdgeMeasurement.jsx";
 import {
   adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
-  crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getFragmentOutline,
+  crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
 } from "./CropVariants.jsx";
+import { getFragmentOutline, getFragmentReviewOutlines } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
 const tabs = [
@@ -1363,7 +1364,7 @@ const printAdditionErrors = {
   deferred_print_proposal_stale: "Dieser Vorschlag wurde bereits geprüft. Die Ansicht wurde aktualisiert.",
 };
 
-function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onConfirmCount, selectedPhotoId, onSelectPhoto }) {
+function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onConfirmCount, selectedPhotoId, onSelectPhoto, reviewingCount }) {
   const canvasRef = useRef(null);
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
@@ -1408,6 +1409,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const crossingPolygon = crossingReview && !rejectedDetection ? selected.segmentation_mask?.crossing_print_suggestion : null;
   const crossingOutline = useMemo(() => cyclicQuad(sanitizePolygon(crossingPolygon)), [crossingPolygon]);
   const selectedShape = selected && (draftShapes[selected.id] || draftShapeFromPhoto(selected));
+  const fragmentGroups = useMemo(() => reviewingCount ? getFragmentReviewOutlines(photos) : [], [reviewingCount, photos]);
+  const countOutlines = useMemo(() => !newPrint && !editingImage ? fragmentGroups.filter(
+    ({ photoIds }) => !selectedShape?.usingOutlineSuggestion || !photoIds.has(selectedPhotoId),
+  ) : [], [newPrint, editingImage, fragmentGroups, selectedShape?.usingOutlineSuggestion, selectedPhotoId]);
   const crossingNeedsCorrection = crossingReview && (editingImage || draftShapeFromPhoto(selected).warpQuad.every(
     (point, index) => point.x === selectedShape.warpQuad[index].x && point.y === selectedShape.warpQuad[index].y,
   ));
@@ -1584,6 +1589,21 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       });
       context.restore();
     }
+    if (countOutlines.length) {
+      context.save();
+      context.strokeStyle = "#2563eb";
+      context.lineWidth = 3;
+      for (const { supportedSides, weakEdge } of countOutlines) {
+        for (const [line, dashes] of [[supportedSides, [9, 5]], [weakEdge, [2, 5]]]) {
+          context.setLineDash(dashes);
+          context.beginPath();
+          context.moveTo(line[0].x * canvas.width, line[0].y * canvas.height);
+          line.slice(1).forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
+          context.stroke();
+        }
+      }
+      context.restore();
+    }
     if (newPrint?.corners.length) {
       const points = newPrint.corners.map(({ x, y }) => [x * canvas.width, y * canvas.height]);
       context.strokeStyle = "#2563eb";
@@ -1602,7 +1622,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         context.fillText(String(index + 1), x + 9, y - 7);
       });
     }
-  }, [alternateOutline, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, fragmentOutline, measuredTraces,
+  }, [alternateOutline, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, fragmentOutline, measuredTraces,
     printSuggestion,
     missingTraces, newPrint, pageId, pageImage, photos, selectedPhotoId, showMissingEdges]);
 
@@ -1831,6 +1851,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         </div>
       )}
       {currentCountReview?.error && <p role="alert">{currentCountReview.error}</p>}
+      {countOutlines.length > 0 && <p className="crop-editor-hint" id="fragment-count-review-hint">{fragmentCountHint}</p>}
       {!newPrint && !editingImage && !selected && pendingNested > 0 && (
         <p className="crop-editor-hint" role="status">
           {pendingNested === 1 ? "1 unklarer Vorschlag" : `${pendingNested} unklare Vorschläge`}. Wähle einen Abzug mit gestrichelter Innenkontur.
@@ -1897,6 +1918,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         onPointerCancel={onPointerUp}
         className={newPrint ? "mark-print-corners" : undefined}
         aria-label="Albumseite mit markierten Abzügen"
+        aria-describedby={countOutlines.length ? "fragment-count-review-hint" : undefined}
       />
       {!newPrint && (overlapReview || fragmentReview || crossingReview) && !rejectedDetection && (
         <div className="manual-print-actions">
@@ -2084,6 +2106,7 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
           onAddPhoto={addPhoto}
           onRejectPhoto={rejectPhoto}
           onConfirmCount={confirmCount}
+          reviewingCount={reviewType === "segmentation"}
         />
       </section>
       <section className="side-surface">

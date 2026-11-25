@@ -1426,6 +1426,60 @@ seeded geometry passes 23 of 23 recoverable crops. Twenty warmed
 measurements of the native check on the blur fixture gave 27 ms median
 and 43 ms p95 per considered parent.
 
+#### Compare the fragments while checking print count
+
+The current model-free replay finds all four prints at sigma 1. It finds
+three and adds four false proposals at sigma 1.2 and at sigma 1 followed
+by JPEG75. On those two derivatives, the lower-right print has three
+proposals sharing the same outer outline. The provisional whole-print crop
+cuts off about 65% of the draft footprint. The mixed development detector
+finds all 12 prints over the three derivatives with zero false proposals
+at IoU 0.85. The draft has no verified physical aspect or motif reference.
+
+Desktop and mobile count review show the shared outline once while all
+seven individual proposals remain visible. The dotted side identifies the
+weak paper edge. Only current detections with the same four corners and
+weak side can share this outline. A corrected or rejected row stops
+contributing. The whole-print and motif exports still require review.
+The browser replay saved the proposed corners on one row and separately
+rejected the other two fragments. Count review then shows five active
+rows and retires the shared outline. The unrelated extra proposal remains
+available for its own review.
+
+The original pixels support three outer sides. A matched-step probe in the
+weak section of the right side found a material transition displaced by
+4.0 and 4.5 native pixels from the proposed straight line. The weak segment
+can be influenced by the pale sky and scanner backing. The outline remains
+an editing suggestion. In 28 of 190 source-derived controls with three
+supported outer sides, the same outline test crossed a known physical
+separator. A fresh JPEG75 detection on a version with two unrelated
+overlapping prints also gave both rows one common suggestion. Both rows
+remain visible and count separately on that input.
+
+#### Replay the available real-image development views
+
+The original nine-view Cloud report and its exact inputs remain unavailable
+in the checked Git history, local artefacts and GitHub workflow runs. Four
+tracked manifests pin seven locally reproducible views as a separate
+development comparison. The three Domoritz derivatives share the original
+scan and its draft labels. They count as stress variants of the same source.
+
+| Development views at instance IoU 0.85 | Classical matches | Classical false proposals | Mixed matches | Mixed false proposals |
+| --- | ---: | ---: | ---: | ---: |
+| Domoritz original and three blur variants | 14/16 | 8 | 16/16 | 0 |
+| ScanCropper original and PDF-embedded scan | 5/5 | 0 | 5/5 | 0 |
+| NerdScan clipped source | 3/3 | 0 | 2/3 | 3 |
+| Total | 22/24 | 8 | 23/24 | 3 |
+
+Use the existing `domoritz-flatbed-development.json`,
+`domoritz-flatbed-blur-development.json`, `scancropper-flatbed-development.json`
+and `nerdscan-clipped-development.json` manifests with the evaluation script.
+The classical arm uses `--classical-only` and an absent `--model`. The mixed
+arm uses its registered scratch weights from the transfer receipt, with
+`--include-classical-fallback`. Weights and release configuration stay under
+the existing acceptance criteria. The mixed NerdScan replay cuts off 35.3%
+of the draft footprint at one clipped print, and both modes remain in review.
+
 ### Scalloped paper on white scanner backing
 
 The ScanCropper development fixture pins two original rasters with five loose
