@@ -10,6 +10,7 @@ from app.pipeline.album_windows import (
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
 from app.pipeline.edge_prints import CAPTURE_EDGE_HOLD
+from app.pipeline.fragmented_prints import FRAGMENTED_PRINT_REVIEW
 from app.pipeline.geometry import (
     normalized_polygon_overlap,
     normalized_vertices_to_pixels,
@@ -49,7 +50,7 @@ _PAPER_RIM_SOURCE = "visible_paper_rim"
 _REFINED_VISIBILITY_SOURCES = {_PRINT_BOUNDARY_SOURCE, _PAPER_RIM_SOURCE}
 _LOCALIZED_OCCLUSION_REASONS = {"PRINT_CORNERS_UNCERTAIN", "PRINT_POSSIBLY_OCCLUDED"}
 _PRINT_EDGE_CONFIRMATION = "PRINT_EDGE_CONFIRMATION_REQUIRED"
-_CROP_PREVIEW_REASONS = {_PRINT_EDGE_CONFIRMATION, PRINT_ASPECT_REFERENCE_REVIEW}
+_CROP_PREVIEW_REASONS = {_PRINT_EDGE_CONFIRMATION, PRINT_ASPECT_REFERENCE_REVIEW, FRAGMENTED_PRINT_REVIEW}
 
 
 def _pale_backing_review_fit(boundary: dict) -> bool:
@@ -1110,6 +1111,8 @@ def _inspect_print(
                 metrics = _validate_quad(quad, width, height)
     if dual_mode:
         manual_addition = mask.get("manual_added") is True
+        if not manual and mask.get("fragmented_print") is True:
+            reasons.append(FRAGMENTED_PRINT_REVIEW)
         if mask.get("album_window_occluded") is True:
             reasons.append(ALBUM_WINDOW_OCCLUDED)
         elif mask.get("source") == ALBUM_WINDOW_SOURCE:

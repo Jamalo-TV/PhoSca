@@ -1245,3 +1245,42 @@ warmed measurements of the recovery on this 600 × 851 scan gave 26 ms
 median and 28 ms p95 per considered print. The model-free Golden and
 frozen synthetic measures are unchanged. Seeded geometry still passes
 all 23 recoverable crops.
+
+### Split print under mild blur
+
+The pinned blur derivative is based on the same 600 × 851 JPEG and the
+same draft outlines. From the repository root, use OpenCV 4.10.0 and the
+normal PhoSca decoder to create the local fixture.
+
+```bash
+PYTHONPATH=backend python -c 'import cv2; from app.pipeline.image_ops import load_image; p="runs/crop-quality/domoritz-flatbed-"; cv2.imwrite(p+"blur-development.png", cv2.GaussianBlur(load_image(p+"development.jpg"), (0, 0), 1))'
+python scripts/evaluate_onnx_segmentation.py --classical-only --dataset-manifest data/evaluation/domoritz-flatbed-blur-development.json --visuals --output runs/crop-quality/domoritz-fragments-blurred.json
+```
+
+The original ranking rejected the upper-left print as a container,
+although the classical detector had proposed its complete outline.
+Two partial contrast proposals survived instead. At IoU 0.85 the
+development replay moves from three of four matched prints and two
+false proposals to four matched prints and zero false proposals. The
+three other masks and full-print preview measures are identical.
+
+The ranking retains the complete contour for review only when its
+perimeter is visible against pale backing in the source. A supported
+inner edge, an independent rival outline, or a step along the outer
+edges vetoes the change. Several separated scene structures must cross
+the proposed division at two of three near-native sampling widths.
+The recovered preview for the upper-left print improved from 0.590 to
+0.982 footprint IoU, with zero measured foreign interpolation mass
+against the draft. The source has no independent motif reference.
+Both variants remain in review. The upload and browser replay showed
+the review reason and verified that neither download was available.
+
+An independent stress test accepted no false joins in 1,116 transformed
+controls with narrow gutters, touching equal stock and overlapping
+prints. The real development case recovered at blur sigma 0.8 and 1.
+Some stronger blur and recompressed variants still split. The same
+comparison on the unchanged JPEG, the model-free Golden pages and the
+frozen synthetic fixtures retained their prior results. The frozen
+seeded geometry passes 23 of 23 recoverable crops. Twenty warmed
+measurements of the native check on the blur fixture gave 27 ms median
+and 43 ms p95 per considered parent.

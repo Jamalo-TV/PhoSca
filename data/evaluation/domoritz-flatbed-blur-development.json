@@ -1,0 +1,22 @@
+{
+  "split_policy": {
+    "role": "development",
+    "album_independent": false
+  },
+  "pages": [
+    {
+      "id": "domoritz-2021-loose-flatbed-blur-sigma1",
+      "source_group": "domoritz-loose-prints-physical-album-unconfirmed",
+      "annotation_provenance": "development_draft",
+      "page_category": "real_flatbed_derivative",
+      "difficulty_tags": ["adjacent_prints", "flatbed_scan", "blur"],
+      "image": "../../runs/crop-quality/domoritz-flatbed-blur-development.png",
+      "image_sha256": "2a83d780f5fc57b4a9de86f31932a2f008a5701e1a50bd9a556aec602171dffd",
+      "source_image_sha256": "c0228db8de84c6277e03b2f6871124eac9377f57204731893700c33e50915b81",
+      "preparation": "Decode the pinned flatbed JPEG with PhoSca load_image, apply OpenCV 4.10.0 GaussianBlur with sigma=1 native pixel, and save as PNG",
+      "annotations": "domoritz-flatbed-labels.txt",
+      "annotations_sha256": "1246d6bc1e345aa9e7b6e4563781d3e43e90798f1a11357418b6cd8095325bd9",
+      "expected_count": 4
+    }
+  ]
+}

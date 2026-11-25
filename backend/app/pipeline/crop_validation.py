@@ -14,6 +14,7 @@ from app.pipeline.crop_sampling import OWNED_BILINEAR
 from app.pipeline.confidence import is_sha256, load_confidence_calibration
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.edge_prints import CAPTURE_EDGE_REVISION
+from app.pipeline.fragmented_prints import FRAGMENTED_PRINT_REVISION
 from app.pipeline.model_registry import sha256
 from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVISION
 from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
@@ -65,6 +66,10 @@ def crop_validation_profile(settings: Settings) -> dict:
         ),
         "multipanel_print_detection": (
             MULTIPANEL_PRINT_REVISION
+            if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+        ),
+        "fragmented_print_detection": (
+            FRAGMENTED_PRINT_REVISION
             if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "capture_edge_outline": (
@@ -138,7 +143,7 @@ def detector_calibration_profile(settings: Settings, *, segmentation: dict | Non
         "pipeline_version", "precise_photo_crops", "model_registry_sha256", "visible_mask_refinement", "source_contour_refinement",
         "print_boundary",
         "classical_fallback", "classical_line_pairs", "separated_contrast_prints", "empty_drawn_frame_rejection",
-        "album_window_detection", "multipanel_print_detection", "capture_edge_outline", "dense_tile_inference",
+        "album_window_detection", "multipanel_print_detection", "fragmented_print_detection", "capture_edge_outline", "dense_tile_inference",
         "deskew_inference", "proposal_threshold",
         "acceptance_threshold", "min_detection_aspect_ratio",
         "max_detection_aspect_ratio", "opencv_version",

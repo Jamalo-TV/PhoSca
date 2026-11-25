@@ -14,6 +14,7 @@ from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
     clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
 )
+from app.pipeline.fragmented_prints import FRAGMENTED_PRINT_REVIEW, measure_fragmented_print
 from app.pipeline.geometry import (
     PolygonOverlap,
     normalized_polygon_overlap,
@@ -1483,9 +1484,8 @@ def _adjacent_panel_groups(pairs: list[tuple[int, int]]) -> list[tuple[int, ...]
 
 
 def _can_seed_shared_stock(item: SegmentationDetection) -> bool:
-    if MULTIPANEL_PRINT_REVIEW in item.review_reasons or item.mask.get("detector_source") in {
-        "chromatic_mount", ALBUM_WINDOW_SOURCE, CONTRAST_COMPONENT_SOURCE,
-    }:
+    if ({MULTIPANEL_PRINT_REVIEW, FRAGMENTED_PRINT_REVIEW}.intersection(item.review_reasons)
+            or item.mask.get("detector_source") in {"chromatic_mount", ALBUM_WINDOW_SOURCE, CONTRAST_COMPONENT_SOURCE}):
         return False
     # An interior image can legitimately be much narrower than a physical
     # print. The recovered outer outline must still pass the normal geometry check.
@@ -1648,8 +1648,50 @@ def _recover_capture_edge_prints(
     return SegmentationResult(updated, metadata)
 
 
+def _verified_fragment_parent(
+    image: np.ndarray, index: int, children: list[int],
+    detections: list[SegmentationDetection], containers: dict[int, list[int]],
+) -> SegmentationDetection | None:
+    parent = detections[index]
+    if (len(children) != 2 or parent.mask.get("detector_source") != "edge_contour"
+            or _score_value(parent, "rectangularity") < .92 or _score_value(parent, "exterior_background_sides") != 4
+            or any(detections[child].mask.get("detector_source") != "contrast_region" for child in children)
+            or min(_score_value(detections[child], "rectangularity") for child in children) > .80):
+        return None
+    height, width = image.shape[:2]
+    outer = _detection_polygon(parent)
+    parts = [_detection_polygon(detections[child]) for child in children]
+    if len(outer) != 4 or any(len(part) != 4 for part in parts):
+        return None
+    overlaps = [normalized_polygon_overlap(part, outer) for part in parts]
+    if (min(overlap.first_containment for overlap in overlaps) < .94
+            or not .58 <= sum(overlap.second_containment for overlap in overlaps) <= 1.02
+            or normalized_polygon_overlap(*parts).iou > .10):
+        return None
+    try:
+        measured = measure_fragmented_print(
+            image, normalized_vertices_to_pixels(outer, width, height),
+            [normalized_vertices_to_pixels(part, width, height) for part in parts],
+        )
+    except (cv2.error, ValueError):
+        return None
+    if measured is None:
+        return None
+    outline = pixel_vertices_to_normalized(measured, width, height)
+    for other_index, other in enumerate(detections):
+        if (other_index in containers or other_index in children
+                or _normalized_box_overlap(parent.bounding_box, other.bounding_box)[0] == 0):
+            continue
+        overlap = normalized_polygon_overlap(outline, _detection_polygon(other))
+        if overlap.second_containment > .04 and overlap.iou < .82:
+            return None
+    polygon = _normalized_polygon(measured, width, height)
+    return replace(parent, mask={**parent.mask, "visible_polygon": polygon, "warp_quad": polygon, "fragmented_print": True},
+                   review_reasons=[FRAGMENTED_PRINT_REVIEW, *parent.review_reasons])
+
+
 def _filter_nested_classical_detections(
-    detections: list[SegmentationDetection],
+    detections: list[SegmentationDetection], *, source_image: np.ndarray | None = None,
 ) -> tuple[list[SegmentationDetection], dict[str, int]]:
     if len(detections) < 2:
         return detections, {}
@@ -1657,11 +1699,20 @@ def _filter_nested_classical_detections(
     rejected: dict[int, str] = {}
     areas = [_normalized_box_area(detection.bounding_box) for detection in detections]
 
-    for index, detection in enumerate(detections):
+    containers = {}
+    for index in range(len(detections)):
         children = _distinct_nested_children(index, detections, areas)
         child_area_ratio = sum(areas[child] for child in children) / max(areas[index], 1e-9)
         if areas[index] > 0.18 and len(children) >= 2 and child_area_ratio > 0.24:
+            containers[index] = children
+    verified = {}
+    for index, children in containers.items():
+        parent = (_verified_fragment_parent(source_image, index, children, detections, containers)
+                  if source_image is not None else None)
+        if parent is None:
             rejected[index] = "container_detection_with_multiple_photo_regions"
+        else:
+            verified[index] = parent
 
     for index, detection in enumerate(detections):
         if index in rejected:
@@ -1690,17 +1741,19 @@ def _filter_nested_classical_detections(
     rejection_counts: dict[str, int] = {}
     for reason in rejected.values():
         rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
-    return [detection for index, detection in enumerate(detections) if index not in rejected], rejection_counts
+    return [verified.get(index, detection) for index, detection in enumerate(detections) if index not in rejected], rejection_counts
 
 
-def select_candidate_set(detections: list[SegmentationDetection]) -> tuple[list[SegmentationDetection], dict[str, int]]:
+def select_candidate_set(
+    detections: list[SegmentationDetection], *, source_image: np.ndarray | None = None,
+) -> tuple[list[SegmentationDetection], dict[str, int]]:
     """Perform duplicate suppression only after every proposal was assessed.
 
     This intentionally differs from the historical contour-area-first NMS:
     a large page/container can no longer suppress a smaller valid print before
     it has a chance to fail the geometry and boundary gates.
     """
-    filtered, rejected = _filter_nested_classical_detections(detections)
+    filtered, rejected = _filter_nested_classical_detections(detections, source_image=source_image)
     selected: list[SegmentationDetection] = []
     duplicate_count = 0
     for candidate in sorted(filtered, key=lambda item: item.confidence, reverse=True):
@@ -1806,7 +1859,7 @@ def detect_photos_classical(
         detections, panels = _group_multipanel_prints(multipanel_source, detections)
         if panels:
             rejected_counts["panels_on_shared_print_stock"] = panels
-    detections, nested_rejections = select_candidate_set(detections)
+    detections, nested_rejections = select_candidate_set(detections, source_image=multipanel_source)
     for reason, count in nested_rejections.items():
         rejected_counts[reason] = rejected_counts.get(reason, 0) + count
     detections.sort(key=lambda detection: (detection.bounding_box["y1"], detection.bounding_box["x1"]))
@@ -1823,6 +1876,7 @@ def detect_photos_classical(
             "fallback_used": True,
             "candidate_sources": source_counts,
             "rejected_candidates": rejected_counts,
+            "fragmented_prints_recovered": sum(FRAGMENTED_PRINT_REVIEW in item.review_reasons for item in detections),
             "line_refinement_skipped": unrefined_candidates,
         },
     )
@@ -2679,7 +2733,8 @@ def segment_album_page(
     fixed_indices = {index for index, detection in enumerate(result.detections)
                      if detection.mask.get("source") == ALBUM_WINDOW_SOURCE
                      or detection.mask.get("detector_source") in {CONTRAST_COMPONENT_SOURCE, CAPTURE_EDGE_SOURCE}
-                     or MULTIPANEL_PRINT_REVIEW in detection.review_reasons}
+                     or MULTIPANEL_PRINT_REVIEW in detection.review_reasons
+                     or FRAGMENTED_PRINT_REVIEW in detection.review_reasons}
     refinable = [index for index in range(len(result.detections)) if index not in fixed_indices]
     originals = [_detection_polygon(result.detections[index]) for index in refinable]
     fixed = [_detection_polygon(result.detections[index]) for index in sorted(fixed_indices)]
