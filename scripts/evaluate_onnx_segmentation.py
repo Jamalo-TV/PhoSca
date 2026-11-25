@@ -139,20 +139,31 @@ def _reference_bytes(path: Path, pinned_hash: str | None) -> bytes:
 
 
 def _has_disjoint_calibration_holdout(settings, records, detector_profile) -> bool:
-    from app.pipeline.confidence import load_confidence_calibration
+    from app.pipeline.training_provenance import disjoint_sources
 
-    path = settings.segmentation_calibration_path
-    if not settings.require_confidence_calibration or not path.is_file():
-        return False
     try:
-        artifact = load_confidence_calibration(path, detector_profile)
-        reference_groups = {str(record.get("source_group") or "").strip().casefold() for record in records}
-        reference_images = {record.get("image_sha256") for record in records}
-        return reference_images.isdisjoint(artifact["source_images"]) and reference_groups.isdisjoint(
-            group.strip().casefold() for group in artifact["source_groups"]
-        )
+        return disjoint_sources(_page_source_index(records), _calibration_source_index(settings, detector_profile))
     except (OSError, ValueError, AttributeError):
         return False
+
+
+def _page_source_index(records):
+    from app.pipeline.training_provenance import TrainingProvenanceError, source_index
+
+    images = source_index({record.get("image_sha256"): record.get("source_group") for record in records})
+    if len(images) != len(records):
+        raise TrainingProvenanceError("Page source inventory contains duplicate image digests.")
+    return images
+
+
+def _calibration_source_index(settings, detector_profile):
+    from app.pipeline.confidence import load_confidence_calibration
+    from app.pipeline.training_provenance import TrainingProvenanceError, source_index
+
+    if not settings.require_confidence_calibration:
+        raise TrainingProvenanceError("Final evaluation requires confidence calibration.")
+    artifact = load_confidence_calibration(settings.segmentation_calibration_path, detector_profile)
+    return source_index(artifact["source_images"])
 
 
 def _load_cases(args) -> tuple[list[dict], dict]:
@@ -346,6 +357,7 @@ def _reference_masks(
 def _check_references(args, records, split, parse_labels, load_image, hash_file, *, review_directory: Path | None = None):
     from app.evaluation.cropping import is_locked_album_manifest
     from app.evaluation.reference_review import render_reference_page, write_reference_review
+    from app.pipeline.training_provenance import FINAL_SPLIT_ROLES
 
     totals = {
         name: Counter(present=0, verified=0, verified_recoverable=0, physical_dimensions=0) for name in MODES
@@ -451,10 +463,13 @@ def _check_references(args, records, split, parse_labels, load_image, hash_file,
                 calibration=calibration,
             )
             sections.append((str(record["id"]), section))
-    locked = not calibration and is_locked_album_manifest(records, split)
+    final_role = split.get("role") in FINAL_SPLIT_ROLES
+    locked = final_role and is_locked_album_manifest(records, split)
     dataset_issues = []
     if calibration:
         dataset_issues.append("CALIBRATION_SPLIT_RESERVED")
+    elif not final_role:
+        dataset_issues.append("FINAL_SPLIT_ROLE_REQUIRED")
     if split.get("album_independent") is not True:
         dataset_issues.append("ALBUM_INDEPENDENCE_UNCONFIRMED")
     if len(groups) < 2:
@@ -686,13 +701,9 @@ def _rendered_mode_passes(mode, *, synthetic: bool, real_manifest_locked: bool, 
             and hard["expected"] and hard["passes"] / hard["expected"] >= .90
             and hard["corner_error_p95_px"] is not None and hard["corner_error_p95_px"] <= 2
         )
-    real = mode["real"]
-    groups = mode["real_by_group"]
-    return bool(
-        real_manifest_locked and mode["verified"] == expected_photos
-        and real["expected"] and real["automatic_release_passes"] / real["expected"] >= .90
-        and len(groups) >= 2 and all(counts["automatic_release_passes"] / counts["expected"] >= .90 for counts in groups.values())
-    )
+    from app.pipeline.crop_validation import real_mode_coverage_passes
+
+    return real_manifest_locked and real_mode_coverage_passes(mode, expected_photos)
 
 
 def _detection_passes(metrics, args) -> bool:
@@ -836,7 +847,8 @@ def main() -> None:
     from app.pipeline.confidence import CALIBRATION_INPUT_SCHEMA, calibrate_confidence
     from app.pipeline.crop_validation import (
         CROP_VALIDATION_SCHEMA, CROP_VALIDATION_UNAVAILABLE, automatic_crop_review_reasons, crop_validation_profile,
-        detector_calibration_profile, geometrically_ready_crop_modes, route_ready_crop_modes_to_review,
+        detector_calibration_profile, detector_training_provenance, geometrically_ready_crop_modes,
+        route_ready_crop_modes_to_review,
     )
     from app.pipeline.decisions import component_review_reasons, confidence_components
     from app.pipeline.enhancement import prepare_for_cutout
@@ -844,6 +856,7 @@ def main() -> None:
     from app.pipeline.protected_regions import detect_protected_regions
     from app.pipeline.quality import segmentation_review_reasons
     from app.pipeline.segmentation import segment_album_page
+    from app.pipeline.training_provenance import FINAL_SPLIT_ROLES, disjoint_sources
 
     if args.synthetic:
         from app.evaluation.crop_fixtures import geometry_seed, synthetic_crop_pages
@@ -856,6 +869,10 @@ def main() -> None:
     if not records:
         raise SystemExit("No evaluation pages")
     expected_calibration_detector = None
+    training = None
+    reviewed_sources = None
+    calibration_sources = None
+    final_split = split.get("role") in FINAL_SPLIT_ROLES
     calibration_rows: list[dict] = []
     calibration_excluded_pages: list[str] = []
     if not args.check_references and not args.geometry_only:
@@ -865,6 +882,26 @@ def main() -> None:
             raise SystemExit("Calibration export requires a verified, album-independent calibration split.")
         if expected_calibration_detector is None:
             raise SystemExit("Calibration export requires the registered detector configuration.")
+    if final_split and not args.check_references:
+        if not args.require_final_quality:
+            raise SystemExit("A reserved final split can only be evaluated with --require-final-quality.")
+        if args.classical_only or args.legacy_crop or not is_locked_album_manifest(records, split):
+            raise SystemExit("Final evaluation requires a registered precise-crop detector and verified, pinned album pages.")
+    if args.calibration_output or (final_split and not args.check_references):
+        try:
+            training = detector_training_provenance(settings, expected_calibration_detector)
+            reviewed_sources = _page_source_index(records)
+            calibration_sources = (reviewed_sources if args.calibration_output else
+                                   _calibration_source_index(settings, expected_calibration_detector))
+        except (OSError, ValueError, AttributeError) as error:
+            raise SystemExit(f"Album independence evidence unavailable: {error}") from error
+        if not disjoint_sources(training.source_images, calibration_sources):
+            raise SystemExit("Calibration shares an image or physical album with detector training or development.")
+        if final_split:
+            if not disjoint_sources(training.source_images, reviewed_sources):
+                raise SystemExit("The final split shares an image or physical album with detector training or development.")
+            if not disjoint_sources(calibration_sources, reviewed_sources):
+                raise SystemExit("The final split shares an image or physical album with detector calibration.")
     if args.check_references:
         if args.apply_reference_review:
             preflight = _check_references(args, records, split, parse_yolo_segmentation, load_image, sha256_file)
@@ -1134,9 +1171,18 @@ def main() -> None:
     calibration_holdout_disjoint = None if args.synthetic else _has_disjoint_calibration_holdout(
         settings, records, expected_calibration_detector,
     )
+    training_calibration_disjoint = (
+        bool(training and calibration_sources and disjoint_sources(training.source_images, calibration_sources))
+        if not args.synthetic else None
+    )
+    training_release_disjoint = (
+        bool(training and final_split and reviewed_sources and disjoint_sources(training.source_images, reviewed_sources))
+        if not args.synthetic else None
+    )
     real_manifest_locked = (
         not args.synthetic and reference_files_locked and calibration_holdout_disjoint
-        and split.get("role") != "calibration" and is_locked_album_manifest(records, split)
+        and training_calibration_disjoint and training_release_disjoint
+        and final_split and is_locked_album_manifest(records, split)
     )
     shared_groups = quality["full_print"]["real_by_group"].keys() & quality["image_only"]["real_by_group"].keys()
     shared_recoverable_album_groups = None if args.synthetic else len(shared_groups) >= 2
@@ -1155,6 +1201,8 @@ def main() -> None:
         "locked_real_album_manifest": None if args.synthetic else real_manifest_locked,
         "locked_reference_artifacts": None if args.synthetic else reference_files_locked,
         "calibration_holdout_disjoint": calibration_holdout_disjoint,
+        "training_calibration_disjoint": training_calibration_disjoint,
+        "training_release_disjoint": training_release_disjoint,
         "shared_recoverable_album_groups": shared_recoverable_album_groups,
         "standard_detection_thresholds": (
             args.iou_threshold >= 0.85 and args.min_mean_iou >= 0.85
@@ -1170,6 +1218,8 @@ def main() -> None:
         "manifest": str(args.manifest),
         "dataset_manifest": str(args.dataset_manifest) if args.dataset_manifest else None,
         "dataset_manifest_sha256": getattr(args, "dataset_manifest_sha256", None),
+        "training_provenance_sha256": training.manifest_sha256 if training else None,
+        "release_source_images": reviewed_sources if final_split else None,
         "split": split,
         "geometry_only": args.geometry_only,
         "legacy_crop": args.legacy_crop,
@@ -1255,7 +1305,10 @@ def main() -> None:
         return
     if not detector_gate_passed:
         raise SystemExit(2)
-    if args.require_final_quality and (not final_instance_gate_passed or not all(rendered_gates.values())):
+    if args.require_final_quality and (
+        not final_instance_gate_passed or not all(rendered_gates.values())
+        or (not args.synthetic and not validation_gates["standard_detection_thresholds"])
+    ):
         raise SystemExit(3)
 
 

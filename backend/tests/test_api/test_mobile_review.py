@@ -977,7 +977,7 @@ async def test_review_can_remove_a_false_nested_candidate_from_occlusion_evidenc
 @pytest.mark.parametrize("corner_mount", [False, True], ids=["full-print-visible", "motif-only-visible"])
 @pytest.mark.parametrize("with_refiner", [False, True], ids=["primary-detector", "visible-mask-refiner"])
 async def test_automatic_crop_download_requires_current_album_validation(
-    client, monkeypatch, tmp_path, corner_mount, with_refiner,
+    client, monkeypatch, tmp_path, corner_mount, with_refiner, training_inventory,
 ) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
@@ -993,7 +993,10 @@ async def test_automatic_crop_download_requires_current_album_validation(
     model_path.write_bytes(b"registered-checkpoint-for-api-test")
     digest = hashlib.sha256(model_path.read_bytes()).hexdigest()
     registry_path = tmp_path / "manifest.json"
-    registry = {"models": {model_path.name: {"sha256": digest, "license": "test", "input": {"width": 640}}}}
+    registry = {"models": {model_path.name: {
+        "sha256": digest, "license": "test", "input": {"width": 640},
+        "training_provenance": training_inventory(model_path, digest),
+    }}}
     refinement_key = "source_contour_refinement"
     refiner_metadata = {refinement_key: {"revision": SOURCE_CONTOUR_REVISION}}
     refiner = tmp_path / "visible-mask.onnx"
@@ -1001,7 +1004,10 @@ async def test_automatic_crop_download_requires_current_album_validation(
     if with_refiner:
         refiner.write_bytes(refiner_bytes)
         refiner_digest = hashlib.sha256(refiner_bytes).hexdigest()
-        registry["models"][refiner.name] = {"sha256": refiner_digest, "license": "test"}
+        registry["models"][refiner.name] = {
+            "sha256": refiner_digest, "license": "test",
+            "training_provenance": training_inventory(refiner, refiner_digest),
+        }
         monkeypatch.setenv("VISIBLE_MASK_MODEL_PATH", str(refiner))
         refinement_key = "visible_mask_refinement"
         refiner_metadata = {refinement_key: {"model_sha256": refiner_digest, "refined_detections": 1}}
@@ -1068,16 +1074,32 @@ async def test_automatic_crop_download_requires_current_album_validation(
     assert all(payload["urls"][name] is None for name in ("full_print", "image_only", "source_corrected_trimmed"))
     assert (await client.get(payload["urls"]["source_corrected"])).status_code == 200
 
+    counts = {
+        "verified": 20, "obstructed": 0, "obstructed_routed_to_review": 0, "verified_ready_failures": 0,
+        "real": {"expected": 20, "automatic_release_passes": 19},
+        "real_by_group": {
+            "test-final-album-a": {"expected": 10, "automatic_release_passes": 10},
+            "test-final-album-b": {"expected": 10, "automatic_release_passes": 9},
+        },
+    }
     report = {
         "schema_version": CROP_VALIDATION_SCHEMA,
         "model_sha256": digest,
         "validation_profile": profile,
         "legacy_crop": False,
         "geometry_only": False,
-        "split": {"album_independent": True},
+        "classical_only": False,
+        "split": {"album_independent": True, "role": "test"},
         "dataset_manifest_sha256": "d" * 64,
+        "metrics": {"page_count": 2, "expected_photos": 20},
+        "crop_modes": {"full_print": counts, "image_only": counts},
+        "release_source_images": {"a" * 64: "test-final-album-a", "b" * 64: "test-final-album-b"},
+        "training_provenance_sha256": {
+            name: model["training_provenance"]["sha256"] for name, model in registry["models"].items()
+        },
         "validation_gates": {
             "locked_real_album_manifest": True, "locked_reference_artifacts": True, "calibration_holdout_disjoint": True,
+            "training_calibration_disjoint": True, "training_release_disjoint": True,
             "shared_recoverable_album_groups": True,
             "standard_detection_thresholds": True,
             "detection": True, "final_instance_segmentation": True,
@@ -1096,6 +1118,33 @@ async def test_automatic_crop_download_requires_current_album_validation(
     assert result.status_code == 200, result.text
     unavailable = (await client.get(url)).json()["urls"]
     assert all(unavailable[mode] is None for mode in crop_variants)
+
+    failing_group_counts = {
+        **counts, "real": {"expected": 20, "automatic_release_passes": 18},
+        "real_by_group": counts["real_by_group"] | {
+            "test-final-album-b": {"expected": 10, "automatic_release_passes": 8},
+        },
+    }
+    separate_groups = {
+        **counts, "real_by_group": {
+            "test-final-album-b": counts["real_by_group"]["test-final-album-b"],
+            "test-final-album-c": counts["real_by_group"]["test-final-album-a"],
+        },
+    }
+    for overrides in (
+        {"split": {"album_independent": True, "role": "development"}},
+        {"training_provenance_sha256": {}},
+        {"release_source_images": {"c" * 64: "test-final-album-a", "b" * 64: "test-final-album-b"}},
+        {"release_source_images": {"e" * 64: "test-final-album-a", "b" * 64: "test-final-album-b"}},
+        {"crop_modes": {"full_print": counts, "image_only": failing_group_counts}},
+        {
+            "metrics": {"page_count": 3, "expected_photos": 20},
+            "release_source_images": report["release_source_images"] | {"f" * 64: "test-final-album-c"},
+            "crop_modes": {"full_print": counts, "image_only": separate_groups},
+        },
+    ):
+        validation_path.write_text(json.dumps(report | overrides), encoding="utf-8")
+        assert crop_validation_evidence(get_settings(), digest) is None
 
     monkeypatch.setenv("REQUIRE_CONFIDENCE_CALIBRATION", "false")
     get_settings.cache_clear()

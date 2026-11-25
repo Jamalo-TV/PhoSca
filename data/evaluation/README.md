@@ -99,9 +99,30 @@ label file with `annotations_sha256`. A reference mode that uses a mask PNG
 also needs `mask_sha256`. Inline polygons are covered by the manifest hash.
 Keep physical albums or archive volume identifiers in
 `source_group` and verify train, calibration and test provenance before
-recording `split_policy.album_independent: true`. The release check requires
-at least two distinct physical album groups, unique pinned image hashes and
-verified annotations for every page.
+recording `split_policy.album_independent: true`. Reserve the final manifest
+with `split_policy.role` set to `test` or `locked`. The evaluator accepts that
+split for inference only with `--require-final-quality`. The release check
+requires at least two distinct physical album groups, unique pinned image
+hashes and verified annotations for every page.
+
+Each registered detector checkpoint and any active learned mask refiner need
+a reviewed training provenance inventory. Add a `training_provenance` object
+with the inventory's `path` relative to the model registry and the inventory
+file's `sha256` to that checkpoint's registry entry. The inventory uses
+`schema_version: 1`, the checkpoint's `model_sha256` and a `model_origin` that
+identifies the weight source and inherited checkpoints. Its `review`
+contains a `reviewer` identifier and `evidence` pointing to the documented
+source trail. Each entry in `sources` records an `image_sha256`, the canonical
+physical album ID as `source_group`, the `source` reference and a `split` of
+`train`, `validation`, `selection` or `development`.
+
+Include pages used to fit the weights, choose between candidates or tune the
+deployed configuration. Document inherited weights and their known datasets
+in the review evidence. When album provenance cannot be established, leave
+the inventory unregistered and keep results in review. Use the same canonical
+album IDs across inventories, calibration and final references. Before
+inference, the evaluator rejects any image hash or album ID shared by the
+reviewed training/development inventory, calibration split or final split.
 
 `expected_final_crops` follows the order of the YOLO instances. Each item
 contains a `full_print` and `image_only` record. Each mode has a normalized
@@ -130,21 +151,25 @@ requires references for both modes on every print and at least 90% passing,
 automatically eligible results per mode among recoverable prints. At least two
 of the same physical album groups must have recoverable references in both
 modes. The 90% threshold also applies to each group with recoverable examples
-in the mode being scored. Report schema 31 binds
+in the mode being scored. Report schema 32 binds
 per-mode eligibility to native instance-mask scoring, the source-stock
 occlusion check, album-window detection, dense-page tiled and deskewed inference,
 the classical line-pair fallback, separated contrast recovery, shared print
 stock grouping, empty drawn frame rejection, print edge recovery, page-plane
 estimation, curved motif
 checks, the configured source or learned mask refiner and detector-bound
-confidence calibration.
+confidence calibration. The report pins the reviewed training inventories and
+records the final page hashes and album IDs. The runtime checks disjointness
+against the registered inventories and fitted calibration and verifies the
+overall and per-album counts for both modes.
 A verified motif can qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
 
 Validate the real reference files before running the detector on an independent
 split. `--check-references` checks hashes, geometry and review coverage without
-inference. With `--require-final-quality` it returns a nonzero exit code while
-the reference split is still incomplete. The report lists dataset, page and
+inference. It can prepare a draft before the model or calibration is available.
+With `--require-final-quality` it returns a nonzero exit code while the reference
+split is still incomplete. The report lists dataset, page and
 mode issues, including missing measurements and unverified annotations.
 Instance indices start at zero and follow the page's YOLO labels. The report
 also lists the groups with verified recoverable examples in both modes.
@@ -184,7 +209,8 @@ Export calibration scores from a separate manifest with `split_policy.role`
 set to `calibration` and `split_policy.album_independent` set to `true`.
 Use verified page annotations, page and label SHA-256 hashes and physical
 album `source_group` identifiers. Reserve the final release test albums
-before exporting scores. Each eligible prediction gets its raw score and
+before exporting scores. The export requires the registered training inventories
+and checks calibration albums and images against them. Each eligible prediction gets its raw score and
 a correctness label from one-to-one matching at IoU 0.85 with the reviewed
 instance boundaries. Each fitted detector source needs at least 20 predictions
 with both correct and incorrect examples. With calibration required, sources

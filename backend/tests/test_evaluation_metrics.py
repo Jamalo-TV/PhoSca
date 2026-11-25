@@ -591,7 +591,10 @@ def test_real_release_requires_disjoint_calibration_album_groups(tmp_path) -> No
 
     path = tmp_path / "calibration.json"
     settings = SimpleNamespace(segmentation_calibration_path=path, require_confidence_calibration=True)
-    records = [{"source_group": "Album-A"}, {"source_group": "Album-B"}]
+    records = [
+        {"source_group": "Album-A", "image_sha256": "1" * 64},
+        {"source_group": "Album-B", "image_sha256": "2" * 64},
+    ]
     detector = {"model_sha256": "a" * 64}
     assert not _has_disjoint_calibration_holdout(settings, records, detector)
     settings.require_confidence_calibration = False
@@ -617,7 +620,7 @@ def test_real_release_requires_disjoint_calibration_album_groups(tmp_path) -> No
     assert not _has_disjoint_calibration_holdout(settings, records, {"model_sha256": "e" * 64})
 
 
-def test_calibration_export_and_fit_use_reviewed_album_predictions(monkeypatch, tmp_path) -> None:
+def test_calibration_export_and_fit_use_reviewed_album_predictions(monkeypatch, tmp_path, training_inventory) -> None:
     import hashlib
     import json
     import sys
@@ -634,7 +637,13 @@ def test_calibration_export_and_fit_use_reviewed_album_predictions(monkeypatch, 
     model.write_bytes(b"calibration-detector")
     model_digest = hashlib.sha256(model.read_bytes()).hexdigest()
     registry = tmp_path / "models.json"
-    registry.write_text(json.dumps({"models": {model.name: {"sha256": model_digest, "license": "test"}}}), encoding="utf-8")
+    model_record = {"sha256": model_digest, "license": "test"}
+
+    def write_registry(provenance=None):
+        record = {**model_record, "training_provenance": provenance} if provenance else model_record
+        registry.write_text(json.dumps({"models": {model.name: record}}), encoding="utf-8")
+
+    write_registry()
     truth = rectangle(.05, .1, .45, .5)
     labels = tmp_path / "page.txt"
     labels.write_text("0 " + " ".join(str(value) for point in truth for value in point), encoding="utf-8")
@@ -679,12 +688,26 @@ def test_calibration_export_and_fit_use_reviewed_album_predictions(monkeypatch, 
     assert inference_calls == [] and not export.exists()
 
     manifest.write_text(json.dumps({"split_policy": split | {"role": "calibration"}, "pages": pages}), encoding="utf-8")
+    with pytest.raises(SystemExit, match="Reviewed training provenance is missing"):
+        evaluator.main()
+    source = {"source": "generated training fixture", "split": "train"}
+    for exposure in (
+        {"image_sha256": "c" * 64, "source_group": " Album-0 "},
+        {"image_sha256": pages[0]["image_sha256"], "source_group": "other-album"},
+    ):
+        write_registry(training_inventory(model, model_digest, sources=[source | exposure]))
+        with pytest.raises(SystemExit, match="Calibration shares an image or physical album"):
+            evaluator.main()
+    assert inference_calls == [] and not export.exists()
+    write_registry(training_inventory(model, model_digest))
     evaluator.main()
     rows = json.loads(export.read_bytes())
     assert len(rows["rows"]) == 20
     assert {row["score"] for row in rows["rows"] if row["correct"]} == {.95}
     assert sum(row["correct"] for row in rows["rows"]) == 2
-    assert not json.loads(report.read_bytes())["validation_gates"]["locked_real_album_manifest"]
+    gates = json.loads(report.read_bytes())["validation_gates"]
+    assert gates["training_calibration_disjoint"]
+    assert not gates["locked_real_album_manifest"]
 
     output = tmp_path / "calibration.json"
     monkeypatch.setattr(sys, "argv", ["fit", str(export), "--holdout-id", "fixture", "--output", str(output)])
@@ -692,6 +715,17 @@ def test_calibration_export_and_fit_use_reviewed_album_predictions(monkeypatch, 
     value, evidence = calibrate_confidence(.95, "yolo_onnx", output, detector_profile=rows["detector_profile"])
     assert evidence["calibrated"] and value == 1
     assert calibrate_confidence(.3, "yolo_onnx", output, detector_profile=rows["detector_profile"])[0] == 0
+    monkeypatch.setenv("SEGMENTATION_CALIBRATION_PATH", str(output))
+    manifest.write_text(json.dumps({"split_policy": split, "pages": pages}), encoding="utf-8")
+    final_args = ["evaluate", "--dataset-manifest", str(manifest), "--model", str(model),
+                  "--manifest", str(registry), "--output", str(report)]
+    monkeypatch.setattr(sys, "argv", final_args)
+    with pytest.raises(SystemExit, match="reserved final split"):
+        evaluator.main()
+    monkeypatch.setattr(sys, "argv", [*final_args, "--require-final-quality"])
+    with pytest.raises(SystemExit, match="final split shares an image or physical album with detector calibration"):
+        evaluator.main()
+    assert len(inference_calls) == 2
 
 
 def test_real_mode_coverage_counts_only_eligible_passing_crops() -> None:
@@ -709,6 +743,34 @@ def test_real_mode_coverage_counts_only_eligible_passing_crops() -> None:
     mode["real"]["automatic_release_passes"] = 10
     mode["real_by_group"]["album-b"]["automatic_release_passes"] = 2
     assert _rendered_mode_passes(mode, synthetic=False, real_manifest_locked=True, expected_photos=11)
+    mode["real"]["automatic_release_passes"] = 9
+    assert not _rendered_mode_passes(mode, synthetic=False, real_manifest_locked=True, expected_photos=11)
+
+
+def test_training_provenance_requires_review_checkpoint_and_pinned_inventory(tmp_path, training_inventory) -> None:
+    import json
+
+    from app.pipeline.training_provenance import TrainingProvenanceError, load_training_provenance
+
+    model = tmp_path / "model.onnx"
+    registry = tmp_path / "models.json"
+    model_digest = "a" * 64
+
+    def load(descriptor):
+        registry.write_text(json.dumps({"models": {model.name: {
+            "sha256": model_digest, "training_provenance": descriptor,
+        }}}), encoding="utf-8")
+        return load_training_provenance(registry, {model.name: model_digest})
+
+    for fields in ({"model_sha256": "b" * 64}, {"review": {}}, {"sources": []}):
+        with pytest.raises(TrainingProvenanceError):
+            load(training_inventory(model, model_digest, **fields))
+    descriptor = training_inventory(model, model_digest)
+    result = load(descriptor)
+    assert result.manifest_sha256 == {model.name: descriptor["sha256"]}
+    assert result.source_images == {"c" * 64: "test-training-album"}
+    with pytest.raises(TrainingProvenanceError, match="hash mismatch"):
+        load(descriptor | {"sha256": "f" * 64})
 
 
 def test_review_receipt_is_bound_to_manifest_and_cannot_confirm_missing_evidence(tmp_path) -> None:
@@ -822,6 +884,8 @@ def test_reference_check_requires_verified_positive_modes_from_both_albums(tmp_p
     assert complete["shared_verified_recoverable_groups"] == ["album-a", "album-b"]
     assert complete["modes"]["full_print"]["physical_dimensions"] == 2
     assert not any(complete["reference_issues"].values())
+    assert not check(role="development")["ready_for_locked_evaluation"]
+    assert "FINAL_SPLIT_ROLE_REQUIRED" in check(role=None)["reference_issues"]["dataset"]
     draft = pages[1]["expected_final_crops"][0]["image_only"]
     draft["annotation_provenance"] = "draft"
     draft.pop("physical_size_mm")

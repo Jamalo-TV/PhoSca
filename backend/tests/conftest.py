@@ -1,5 +1,7 @@
+import json
 import sys
 from collections.abc import AsyncGenerator
+from hashlib import sha256
 from pathlib import Path
 
 import numpy as np
@@ -17,6 +19,27 @@ class FakeMagic:
         if content.startswith(b"\x89PNG\r\n\x1a\n"):
             return "image/png"
         return "application/octet-stream"
+
+
+@pytest.fixture
+def training_inventory(tmp_path):
+    def write(model: Path, checkpoint_digest: str, *, sources=None, **fields):
+        inventory = tmp_path / f"{model.name}.training-provenance.json"
+        payload = {
+            "schema_version": 1,
+            "model_sha256": checkpoint_digest,
+            "model_origin": "test checkpoint",
+            "review": {"reviewer": "test-review", "evidence": "generated source for this test"},
+            "sources": sources if sources is not None else [{
+                "image_sha256": "c" * 64, "source_group": "test-training-album",
+                "source": "generated test fixture", "split": "train",
+            }],
+            **fields,
+        }
+        inventory.write_text(json.dumps(payload), encoding="utf-8")
+        return {"path": inventory.name, "sha256": sha256(inventory.read_bytes()).hexdigest()}
+
+    return write
 
 
 @pytest.fixture
