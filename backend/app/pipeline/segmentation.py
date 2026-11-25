@@ -33,9 +33,9 @@ from app.pipeline.geometry import (
 from app.pipeline.image_ops import normalized_box_to_pixels, pixel_box_to_normalized
 from app.pipeline.mounted_prints import mounted_print_evidence
 from app.pipeline.multipanel_prints import (
-    GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE, grid_fragment_on_shared_stock,
-    nested_print_on_shared_stock,
-    recover_shared_stock_outline, shared_stock_outline,
+    FILM_GRID_REVIEW, GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE,
+    film_grid_review_seam, grid_fragment_on_shared_stock, nested_print_on_shared_stock, recover_shared_stock_outline,
+    shared_stock_outline,
 )
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.print_edges import (
@@ -3255,6 +3255,60 @@ def _suggest_crossing_print_outline(
     return SegmentationResult(detections, metadata)
 
 
+def _flag_conflicting_film_grids(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    detections = result.detections
+    if not result.metadata.get("fallback_used") or not 3 <= len(detections) <= _MULTIPANEL_GROUP_LIMIT:
+        return result
+    model_indices = {index for index, item in enumerate(detections)
+                     if item.geometry_valid and not item.review_reasons and item.mask.get("source") == "yolo_seg_mask"
+                     and (item.mask.get("boundary_evidence") or {}).get("score", 0) >= .70}
+    if len(model_indices) < 2:
+        return result
+    height, width = image.shape[:2]
+    outlines = [_detection_polygon(item) for item in detections]
+    disputes = {}
+    for index, item in enumerate(detections):
+        outline = outlines[index]
+        if (not item.geometry_valid or item.review_reasons or item.mask.get("detector_source") != "contrast_region"
+                or (item.mask.get("boundary_evidence") or {}).get("score", 1) >= .70
+                or len(outline) != 4 or not cv2.isContourConvex(outline)):
+            continue
+        owners = {other: overlap for other, shape in enumerate(outlines) if other != index
+                  and (overlap := normalized_polygon_overlap(outline, shape)).first_containment >= .10}
+        if (len(owners) != 2 or not owners.keys() <= model_indices
+                or min(match.second_containment for match in owners.values()) < .80
+                or sum(match.first_containment for match in owners.values()) < .88):
+            continue
+        first, second = owners
+        if normalized_polygon_overlap(outlines[first], outlines[second]).iou > .005:
+            continue
+        try:
+            first_quad, second_quad = (quad_from_polygon(normalized_vertices_to_pixels(outlines[i], width, height))[0]
+                                       for i in (first, second))
+            seam = film_grid_review_seam(image, first_quad, second_quad)
+            if seam is None:
+                continue
+            broad = order_quad_cyclic(normalized_vertices_to_pixels(outline, width, height))
+            _, sides, _ = refine_print_boundary(image, broad)
+        except (cv2.error, ValueError):
+            continue
+        if sum(side["support"] < .40 for side in sides.values()) >= 2:
+            disputes[index, first, second] = _normalized_polygon(seam, width, height)
+    degree = Counter(i for group in disputes for i in group)
+    markers = {}
+    for group, line in disputes.items():
+        if all(degree[index] == 1 for index in group):
+            markers.update(dict.fromkeys(group, line))
+    if not markers:
+        return result
+    updated = detections.copy()
+    for index, seam in markers.items():
+        item = updated[index]
+        updated[index] = replace(item, mask={**item.mask, "film_grid_review_seam": seam},
+                                 review_reasons=[FILM_GRID_REVIEW, *item.review_reasons])
+    return SegmentationResult(updated, result.metadata)
+
+
 def segment_album_page(
     image: np.ndarray, settings: Settings, *, source_image: np.ndarray | None = None,
     protected_regions: list[dict] | None = None,
@@ -3276,6 +3330,7 @@ def segment_album_page(
             result = _suggest_adjacent_album_edge_print(evidence_source, result)
             result = _suggest_crossing_print_outline(evidence_source, result, prepared=image)
             result = _defer_nested_print_candidates(evidence_source, result)
+            result = _flag_conflicting_film_grids(evidence_source, result)
     model_path = settings.visible_mask_model_path
     if not settings.enable_precise_photo_crops:
         return result

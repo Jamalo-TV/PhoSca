@@ -11,8 +11,9 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic,
 from app.pipeline.print_edges import _edge_band, _is_pale_stock, refine_print_boundary
 
 
-MULTIPANEL_PRINT_REVISION = 7
+MULTIPANEL_PRINT_REVISION = 8
 MULTIPANEL_PRINT_REVIEW = "MULTIPANEL_PRINT_REVIEW"
+FILM_GRID_REVIEW = "FILM_GRID_REVIEW"
 RECOVERED_STOCK_SOURCE = "shared_stock_boundary"
 GRID_OUTLINE_REVIEW_SOURCE = "shared_grid_outline_review"
 _UNIT_QUAD = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
@@ -273,6 +274,56 @@ def _perforation_rails_cross_split(luminance: np.ndarray, split: int) -> bool:
     return bool(short.min() >= 12 and short.max() <= 55
                 and short.max() <= 1.3 * short.min() and long.max() <= 1.3 * long.min()
                 and 2 * short.max() <= long.min() <= 4.5 * short.min())
+
+
+def film_grid_review_seam(image: np.ndarray, first: np.ndarray, second: np.ndarray) -> np.ndarray | None:
+    """Locate a regular film-grid divider between two counted proposals."""
+    directions = []
+    for quad in (first, second):
+        edges = np.roll(quad, -1, axis=0) - quad
+        lengths = np.linalg.norm(edges, axis=1)
+        if lengths.min() < 1:
+            return None
+        directions.append(edges / lengths[:, None])
+    # Near a diagonal rotation, the same physical corner need not be the
+    # first corner in both image-ordered quads.
+    first_edges, second_edges = directions
+    offset = max(range(4), key=lambda turn: np.sum(first_edges * np.roll(second_edges, -turn, axis=0)))
+    second = np.roll(second, -offset, axis=0)
+    for turn in range(4):
+        a, b = np.roll(first, -turn, axis=0), np.roll(second, -turn, axis=0)
+        dx, dy = a[1] - a[0]
+        inward = np.float32([-dy, dx])
+        upper, lower = sorted((a, b), key=lambda quad: quad.mean(axis=0) @ inward)
+        envelope = np.float32([upper[0], upper[1], lower[2], lower[3]])
+        sides = np.linalg.norm(np.roll(envelope, -1, axis=0) - envelope, axis=1)
+        if not cv2.isContourConvex(envelope) or sides.min() < 480:
+            continue
+        facing = np.float32([*upper[[3, 2]], *lower[:2]])
+        transform = cv2.getPerspectiveTransform(envelope, _UNIT_QUAD)
+        projected = cv2.perspectiveTransform(facing[None], transform)[0]
+        y = projected[:, 1].reshape(2, 2)
+        seam = float(y.mean())
+        separation = y[1] - y[0]
+        if (not .28 <= seam <= .72 or np.any(separation < .003) or np.any(separation > .027)
+                or np.ptp(y, axis=1).max() > .018
+                or np.max(np.abs(projected[:, 0] - [0, 1, 0, 1])) > .06):
+            continue
+        width, height = 800, 1040
+        scaled = np.diag([width - 1., height - 1., 1.]) @ transform
+        aligned = cv2.warpPerspective(image, scaled, (width, height))
+        light = cv2.cvtColor(aligned[:, 120:680], cv2.COLOR_BGR2LAB)[..., 0]
+        center = round(seam * (height - 1))
+        pale = np.percentile(light, 15, axis=1) >= 160
+        bounds = np.flatnonzero(np.diff(np.r_[False, pale, False])).reshape(-1, 2)
+        crossing = next((int(stop - start) for start, stop in bounds if start <= center < stop), 0)
+        neighbors = [stop - start for start, stop in bounds
+                     if 70 <= abs((start + stop) / 2 - center) <= 360 and 4 <= stop - start <= 24]
+        if len(neighbors) < 2 or not 4 <= crossing <= 24 or not .6 <= crossing / np.median(neighbors) <= 1.5:
+            continue
+        if _perforation_rails_cross_split(light, center):
+            return facing.reshape(2, 2, 2).mean(axis=0)
+    return None
 
 
 def _bridge_intervals(

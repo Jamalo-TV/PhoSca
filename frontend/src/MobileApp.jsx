@@ -5,12 +5,13 @@ import { resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import {
   adjacentPrintHint, captureOutlineReviewReason, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, crossingPrintHint,
-  crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason, getCropModes,
+  crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridReason, fragmentCountHint,
+  fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
   scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
-import { getFragmentOutline, getFragmentReviewOutlines } from "./cropReviewOutlines.js";
+import { getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
 
@@ -104,7 +105,7 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome, uplo
   </main></div>;
 }
 
-function DetectionOverlay({ item, editable = false, countOutlines, onSaved }) {
+function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroups, onSaved }) {
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
   const [showMissingEdges, setShowMissingEdges] = useState(false);
@@ -124,6 +125,8 @@ function DetectionOverlay({ item, editable = false, countOutlines, onSaved }) {
   const fragmentReview = item.payload?.confidence != null && item.payload?.review_reasons?.includes(fragmentOutlineReason);
   const fragmentOutline = fragmentReview && getFragmentOutline(item.payload?.segmentation_mask);
   const reviewedNonPrint = item.payload?.review_reasons?.includes("GEOMETRY_REVIEW_WRONG_OBJECT");
+  const filmGrid = editable && !reviewedNonPrint && item.payload?.confidence != null
+    && item.payload?.review_reasons?.includes(filmGridReason) && getFilmGridSeam(item.payload?.segmentation_mask);
   const crossingOutline = item.payload?.confidence != null
     && item.payload?.review_reasons?.includes(crossingPrintReason)
     && !reviewedNonPrint
@@ -245,6 +248,13 @@ function DetectionOverlay({ item, editable = false, countOutlines, onSaved }) {
       <polyline points={weakEdge.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} strokeDasharray="4 10" />
     </g>
   ));
+  const filmGridOverlay = (filmGrid ? [{ key: "selected-grid", line: filmGrid }] : filmGridGroups).map(({ key, line }) => (
+    <polyline key={key} aria-label="Zwischenraum im Raster" fill="none" stroke="#0e7490"
+      strokeWidth="7" strokeDasharray="14 8" pointerEvents="none"
+      points={line.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
+  ));
+  const overlayHints = [countOutlines.length && "mobile-fragment-count-review-hint",
+    filmGridGroups.length && "mobile-film-grid-count-hint"].filter(Boolean).join(" ");
   const paperTraceOverlay = printEdgeTraces.map((trace, index) => (
     <polyline key={index} points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />
@@ -252,7 +262,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, onSaved }) {
   return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}>
     <div className="review-image-frame">
       <img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"
-        aria-describedby={countOutlines.length ? "mobile-fragment-count-review-hint" : undefined} />
+        aria-describedby={overlayHints || undefined} />
       <svg viewBox="0 0 1000 1000" preserveAspectRatio="none">
         {editable && quad ? <g>
           {visiblePolygon && <polygon points={visiblePolygon.map(point => `${point.x * 1000},${point.y * 1000}`).join(" ")}
@@ -267,7 +277,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, onSaved }) {
           <rect x={box.x1 * 1000} y={box.y1 * 1000} width={(box.x2 - box.x1) * 1000} height={(box.y2 - box.y1) * 1000} />
           <text x={box.x1 * 1000 + 12} y={box.y1 * 1000 + 38}>{index + 1}</text>
         </g>)}
-        {nestedOverlay}{deferredOverlay}{fragmentCountOverlay}
+        {nestedOverlay}{deferredOverlay}{fragmentCountOverlay}{filmGridOverlay}
         {Boolean(visibleTraces?.length) && <MeasuredEdgeOverlay traces={visibleTraces} />}
       </svg>
       {magnifier.visible && <div className="crop-magnifier" style={{
@@ -291,6 +301,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, onSaved }) {
     )}
     {showMissingEdges && missingTraces.length > 0 && <p className="quad-hint">{missingPrintEdgeHint}</p>}
     {countOutlines.length > 0 && <p className="quad-hint" id="mobile-fragment-count-review-hint">{fragmentCountHint}</p>}
+    {filmGridGroups.length > 0 && <p className="quad-hint" id="mobile-film-grid-count-hint">{filmGridCountHint}</p>}
     {nestedOutlines.length > 0 && <p className="quad-hint">{nestedPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
     {deferredProposals.length > 0 && <p className="quad-hint">{deferredPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
     {measurementPage && measurementPage === item.page_id && <EdgeMeasurement key={item.page_id} pageId={item.page_id}
@@ -302,6 +313,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, onSaved }) {
       {item.payload?.confidence != null && item.payload?.review_reasons?.includes(scannerBackingReason) && (
         <p className="quad-hint">{scannerBackingHint}</p>
       )}
+      {filmGrid && <p className="quad-hint">{filmGridHint}</p>}
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
       {printEdgeReviewHint && <p className="quad-hint">{printEdgeReviewHint}</p>}
@@ -479,6 +491,7 @@ function CropReview({ albumId, goHome }) {
     && item?.payload?.crop_modes?.full_print?.reason_codes?.includes(captureOutlineReviewReason);
   const deferredProposals = getDeferredPrintProposals(item?.payload?.deferred_print_proposals);
   const countOutlines = type === "segmentation" ? getFragmentReviewOutlines(item?.payload?.detections || []) : [];
+  const filmGridGroups = type === "segmentation" ? getFilmGridReviewSeams(item?.payload?.detections || []) : [];
   useEffect(()=>{ goHomeRef.current=goHome; },[goHome]);
   useEffect(() => {
     if(!history.state?.phoscaCropGuard){
@@ -537,12 +550,14 @@ function CropReview({ albumId, goHome }) {
     <div className="task-switch"><button className={type === "segmentation" ? "active" : ""} onClick={() => setType("segmentation")} disabled={submitting}>Printanzahl</button><button className={type === "geometry" ? "active" : ""} onClick={() => setType("geometry")} disabled={submitting}>Crop-Qualität</button></div>
     {answerError && <p role="alert">{answerError}</p>}
     {item ? <>
-      <DetectionOverlay item={item} editable={type === "geometry"} countOutlines={countOutlines} onSaved={updateSavedCropModes} />
+      <DetectionOverlay item={item} editable={type === "geometry"} countOutlines={countOutlines}
+        filmGridGroups={filmGridGroups} onSaved={updateSavedCropModes} />
       <section className="answer-grid">
         {cropAnswers[type].map(([value,label]) => (
           <button key={value} className={value === "correct" ? "good" : ""}
             disabled={submitting || (value === "correct" && captureReviewPending)} onClick={() => record(value)}>
-            {value === "correct" && (deferredProposals.length || countOutlines.length) ? "Anzahl bestätigen" : label}
+            {value === "correct" && (deferredProposals.length || countOutlines.length || filmGridGroups.length)
+              ? "Anzahl bestätigen" : label}
           </button>
         ))}
       </section>

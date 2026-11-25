@@ -2598,6 +2598,44 @@ time over 20 warm runs on one OpenCV thread. Both mode metrics and review
 counts match the preceding Golden, Domoritz, stock challenge and frozen
 benchmark results.
 
+### Mark the disputed divider on the negative sleeve
+
+On the 33% JPEG55 camera view, the left-hand classical contour crosses
+the tabletop and has weak native edge support on three sides. Two separate
+model proposals cover the upper three and lower four film rows. Their
+footprints cover 92.7% of the broad contour. The right-hand paper contact
+print and its deferred lower fragment are physically separate.
+
+Multipanel revision 8 checks a weak region that overlaps exactly two
+non-overlapping model proposals. It uses their facing edges to rectify the
+source for measurement. The pale divider must have a width comparable to
+the nearby dividers, and the perforation rows must keep their pitch and
+spacing across it. On JPEG55 the resulting source line runs from roughly
+`(117, 486)` to `(644, 486)`. On JPEG75 and the lossless 33% copy the same
+check also flags the three sleeve proposals and leaves the right-hand
+proposals separate. A different print in the lower slot breaks the grid
+signal. Flush paper with the same artwork can still produce the signal,
+including with narrow tinted rims, so the line supports manual review.
+Fixed-proposal rotation checks preserve the source line through all four
+quarter turns and at 45°, 225° and 315°.
+
+The desktop and mobile count views show the line on the original. Each
+flagged proposal has its own crop task and can be rejected explicitly.
+The normal JPEG55 upload starts with four counted proposals. Rejecting
+the three sleeve proposals leaves one counted paper print and its deferred
+count suggestion. The surviving mask, per-mode crop records and preview
+JPEG match their values before the decisions. Both named downloads and
+the old trimmed alias stay held.
+
+The review stage took 161 ms median and 190 ms p95 on JPEG55 over 25 warm
+single-thread calls with concurrent benchmark load. The frozen, seeded,
+Golden, stock, flatbed, clipped-scan and reduced contact-sheet comparisons
+reproduced their instance and both crop-mode metrics. For JPEG75 and the
+lossless 33% copy, the right-hand contact print still falls below the
+instance threshold at 0.8317 and 0.8286 mask IoU, respectively. The shared
+grid check reads a different perforation phase at those proposed cuts.
+The contact sheet remains a development source.
+
 ### Verify that catalogued pairs represent independent acquisitions
 
 A leave-one-out affine fit of the 15 saved American Colony draft landmarks

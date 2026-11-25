@@ -10,6 +10,9 @@ export const clippedOverlapReason = "CLIPPED_PRINT_OVERLAP_UNCERTAIN";
 export const clippedOverlapHint = "Prüfe am Original, ob hier ein weiterer Papierabzug aufliegt. Ziehe die Ecken an seine Papierkante oder markiere den Vorschlag als «Falsches Objekt».";
 export const scannerBackingReason = "SCANNER_BACKING_UNCERTAIN";
 export const scannerBackingHint = "Prüfe am Original, ob die Markierung einen Abzug zeigt. Gehört der Bereich zur Scannerauflage, wähle «Falsches Objekt».";
+export const filmGridReason = "FILM_GRID_REVIEW";
+export const filmGridHint = "Gehört der Vorschlag zur Negativhülle, wähle «Falsches Objekt». Liegt dort ein Papierabzug, setze unter «Ganzer Abzug» die Ecken an seinen Papierrand.";
+export const filmGridCountHint = "Prüfe die Vorschläge beidseits der türkis gestrichelten Linie im Original. Sind dort Papierabzüge oder Teile einer Negativhülle markiert?";
 export const fragmentOutlineReason = "FRAGMENT_OUTLINE_UNCERTAIN";
 export const fragmentOutlineHint = "Prüfe am Original, ob die Ausschnitte zu einem Abzug gehören. Falls ja, korrigiere einen Ausschnitt mit dem Aussenumriss und markiere die übrigen darin als «Falsches Objekt».";
 export const fragmentCountHint = "Prüfe, ob die markierten Ausschnitte innerhalb der blauen Kontur zu einem Abzug gehören. Achte besonders auf die gepunktete Seite.";
@@ -97,6 +100,7 @@ const reviewMessages = {
   [fragmentOutlineReason]: fragmentOutlineHint,
   [crossingPrintReason]: crossingPrintHint,
   [scannerBackingReason]: scannerBackingHint,
+  [filmGridReason]: filmGridHint,
   CROP_VALIDATION_UNAVAILABLE: "Prüfe und speichere den Zuschnitt, um den Download freizugeben.",
   CAMERA_ASPECT_REVIEW: "Die Vorschau nutzt die Kamerakalibrierung. Prüfe und bestätige die Fotoecken.",
   PRINT_AT_CAPTURE_EDGE: "Der Abzug reicht bis an den Aufnahmerand. Prüfe, ob er vollständig zu sehen ist.",
@@ -132,6 +136,8 @@ export function CropVariants({ photo, hidden = false }) {
     && photo.enhancement_applied?.segmentation_review_reasons?.includes("FRAGMENTED_PRINT_REVIEW");
   const possibleFragmentOutline = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(fragmentOutlineReason);
+  const possibleFilmGrid = photo.segmentation_confidence != null
+    && photo.enhancement_applied?.segmentation_review_reasons?.includes(filmGridReason);
   const possibleAdjacentPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.adjacent_print_suggestion;
   const possibleNestedPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.nested_print_suggestion;
   const possibleCrossingPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.crossing_print_suggestion;
@@ -146,7 +152,7 @@ export function CropVariants({ photo, hidden = false }) {
   const fullPreview = printOutline || photo.urls?.source_corrected_untrimmed || photo.urls?.original;
   const motifPreview = photo.urls?.image_only_preview;
   const preview = mode === "image_only"
-    ? motifPreview || ((possibleMultipanel || possibleFragmentedPrint || possibleFragmentOutline || scannerBackingUncertain || clippedOverlapUncertain
+    ? motifPreview || ((possibleMultipanel || possibleFragmentedPrint || possibleFragmentOutline || scannerBackingUncertain || clippedOverlapUncertain || possibleFilmGrid
         || captureEdgeClipped || pendingPaperEdge) && fullPreview)
     : fullPreview;
   const previewAlt = mode === "image_only" && motifPreview
@@ -166,6 +172,7 @@ export function CropVariants({ photo, hidden = false }) {
     || (possibleCrossingPrint && crossingPrintHint)
     || (scannerBackingUncertain && scannerBackingHint)
     || (clippedOverlapUncertain && clippedOverlapHint)
+    || (possibleFilmGrid && filmGridHint)
     || (scallopedOutline && scallopedOutlineReviewHint)
     || result?.reason_codes?.map((code) => reviewMessages[code]).find(Boolean)
     || (result?.status === "ready" && !url && reviewMessages.CROP_VALIDATION_UNAVAILABLE)

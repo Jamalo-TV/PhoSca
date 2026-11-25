@@ -8,7 +8,9 @@ import pytest
 from app.config import Settings
 from app.pipeline import segmentation
 from app.pipeline.crop_validation import automatic_crop_review_reasons
-from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE
+from app.pipeline.multipanel_prints import (
+    FILM_GRID_REVIEW, MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE, film_grid_review_seam,
+)
 
 
 def page_and_proposals(settings, gap, angle, *, mixed=False, jpeg_quality=91):
@@ -80,6 +82,63 @@ def test_physical_mount_evidence_preserves_nested_print():
     proposals[1] = replace(nested, mask={**nested.mask, "detector_source": "chromatic_mount"})
 
     assert segmentation._group_multipanel_prints(original, proposals) == (proposals, 0)
+
+
+def conflicting_film_grid(settings, *, patterned_lower=True):
+    page = np.full((1020, 940, 3), (133, 157, 183), np.uint8)
+    page[120:907, 71:668] = (216, 221, 225)
+    for index in range(7 if patterned_lower else 3):
+        top = 176 + 104 * index
+        page[top:top + 96, 116:643] = (37, 39, 53)
+        for x in range(122, 638, 13):
+            page[top + 4:top + 11, x:x + 6] = (218, 221, 231)
+            page[top + 85:top + 92, x:x + 6] = (218, 221, 231)
+    if not patterned_lower:
+        texture = np.random.default_rng(77).integers(40, 180, (22, 30, 3), dtype=np.uint8)
+        page[488:896, 116:643] = cv2.resize(texture, (527, 408), interpolation=cv2.INTER_CUBIC)
+    quads = ([[204, 83], [604, 171], [651, 910], [101, 907]],
+             [[116, 176], [642, 176], [642, 479], [116, 479]],
+             [[116, 488], [642, 488], [642, 895], [116, 895]])
+    detections = []
+    for index, quad in enumerate(quads):
+        item = segmentation._make_detection(
+            box={}, points=np.float32(quad), confidence=.8, image_width=page.shape[1], image_height=page.shape[0],
+            settings=settings, source="yolo_seg_mask" if index else "classical_border_quad",
+            detector_source="yolo_onnx" if index else "contrast_region",
+        )
+        detections.append(replace(item, mask={**item.mask, "boundary_evidence": {"score": .8 if index else .59}}))
+    return page, segmentation.SegmentationResult(detections, {"fallback_used": True})
+
+
+@pytest.mark.parametrize("patterned_lower", [True, False])
+def test_film_grid_review_points_to_the_divider_without_combining_instances(patterned_lower):
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    original, proposals = conflicting_film_grid(settings, patterned_lower=patterned_lower)
+
+    result = segmentation._flag_conflicting_film_grids(original, proposals)
+
+    assert len(result.detections) == 3
+    if not patterned_lower:
+        assert result is proposals
+        return
+    line = result.detections[0].mask["film_grid_review_seam"]
+    actual = segmentation.normalized_vertices_to_pixels([(p["x"], p["y"]) for p in line], 940, 1020)
+    np.testing.assert_allclose(actual, [[116, 483.5], [642, 483.5]], atol=1e-3)
+    for original_item, marked in zip(proposals.detections, result.detections, strict=True):
+        assert marked.bounding_box == original_item.bounding_box
+        assert marked.mask == {**original_item.mask, "film_grid_review_seam": line}
+        assert marked.review_reasons == [FILM_GRID_REVIEW]
+
+
+def test_film_grid_divider_aligns_quads_with_different_first_corners():
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    original, result = conflicting_film_grid(settings)
+    upper, lower = (segmentation.normalized_vertices_to_pixels(segmentation._detection_polygon(item), 940, 1020)
+                    for item in result.detections[1:])
+
+    line = film_grid_review_seam(original, upper, np.roll(lower, 1, axis=0))
+
+    np.testing.assert_allclose(line, [[116, 483.5], [642, 483.5]], atol=1e-3)
 
 
 def test_valid_paper_separator_does_not_absorb_a_third_separate_print():

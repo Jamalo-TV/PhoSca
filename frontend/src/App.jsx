@@ -48,11 +48,11 @@ import EdgeMeasurement from "./EdgeMeasurement.jsx";
 import {
   adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
-  deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
+  deferredPrintHint, filmGridCountHint, filmGridHint, filmGridReason, getDeferredPrintProposals, getSourceEdgeTraces,
   getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
   scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
-import { getFragmentOutline, getFragmentReviewOutlines } from "./cropReviewOutlines.js";
+import { getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
 const tabs = [
@@ -1394,11 +1394,19 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
   const scannerReview = selected?.segmentation_confidence != null
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(scannerBackingReason);
+  const filmReview = selected?.segmentation_confidence != null
+    && selected.enhancement_applied?.segmentation_review_reasons?.includes(filmGridReason);
   const fragmentReview = selected?.segmentation_confidence != null
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(fragmentOutlineReason);
   const crossingReview = selected?.segmentation_confidence != null
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(crossingPrintReason);
   const rejectedDetection = Boolean(selected?.reviewed_non_print);
+  const filmMask = filmReview && !rejectedDetection ? selected.segmentation_mask : null;
+  const filmGridSeam = useMemo(() => getFilmGridSeam(filmMask), [filmMask]);
+  const filmGridGroups = useMemo(() => reviewingCount && !newPrint && !editingImage ? getFilmGridReviewSeams(photos) : [],
+    [reviewingCount, newPrint, editingImage, photos]);
+  const detectionReviewHint = (crossingReview && crossingPrintHint) || (scannerReview && scannerBackingHint)
+    || (overlapReview && clippedOverlapHint) || (filmGridSeam && filmGridHint) || (fragmentReview && fragmentOutlineHint);
   const fragmentMask = fragmentReview && !rejectedDetection ? selected.segmentation_mask : null;
   const fragmentOutline = useMemo(() => getFragmentOutline(fragmentMask), [fragmentMask]);
   const suggestedNeighbor = selected?.segmentation_mask?.adjacent_print_suggestion;
@@ -1607,6 +1615,20 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       context.restore();
     }
+    if (!newPrint && !editingImage && (filmGridGroups.length || filmGridSeam)) {
+      const lines = filmGridGroups.length ? filmGridGroups.map(({ line }) => line) : [filmGridSeam];
+      context.save();
+      context.strokeStyle = "#0e7490";
+      context.lineWidth = 3;
+      context.setLineDash([8, 5]);
+      for (const [start, end] of lines) {
+        context.beginPath();
+        context.moveTo(start.x * canvas.width, start.y * canvas.height);
+        context.lineTo(end.x * canvas.width, end.y * canvas.height);
+        context.stroke();
+      }
+      context.restore();
+    }
     if (newPrint?.corners.length) {
       const points = newPrint.corners.map(({ x, y }) => [x * canvas.width, y * canvas.height]);
       context.strokeStyle = "#2563eb";
@@ -1625,7 +1647,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         context.fillText(String(index + 1), x + 9, y - 7);
       });
     }
-  }, [alternateOutline, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, fragmentOutline, measuredTraces,
+  }, [alternateOutline, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage,
+    filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces,
     printSuggestion,
     missingTraces, newPrint, pageId, pageImage, photos, selectedPhotoId, showMissingEdges]);
 
@@ -1855,6 +1878,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       )}
       {currentCountReview?.error && <p role="alert">{currentCountReview.error}</p>}
       {countOutlines.length > 0 && <p className="crop-editor-hint" id="fragment-count-review-hint">{fragmentCountHint}</p>}
+      {filmGridGroups.length > 0 && <p className="crop-editor-hint" id="film-grid-count-hint">{filmGridCountHint}</p>}
       {!newPrint && !editingImage && !selected && pendingNested > 0 && (
         <p className="crop-editor-hint" role="status">
           {pendingNested === 1 ? "1 unklarer Vorschlag" : `${pendingNested} unklare Vorschläge`}. Wähle einen Abzug mit gestrichelter Innenkontur.
@@ -1921,12 +1945,13 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         onPointerCancel={onPointerUp}
         className={newPrint ? "mark-print-corners" : undefined}
         aria-label="Albumseite mit markierten Abzügen"
-        aria-describedby={countOutlines.length ? "fragment-count-review-hint" : undefined}
+        aria-describedby={[
+          countOutlines.length && "fragment-count-review-hint", filmGridGroups.length && "film-grid-count-hint",
+        ].filter(Boolean).join(" ") || undefined}
       />
-      {!newPrint && (overlapReview || scannerReview || fragmentReview || crossingReview) && !rejectedDetection && (
+      {!newPrint && detectionReviewHint && !rejectedDetection && (
         <div className="manual-print-actions">
-          <p className="crop-editor-hint">{crossingReview ? crossingPrintHint
-            : scannerReview ? scannerBackingHint : overlapReview ? clippedOverlapHint : fragmentOutlineHint}</p>
+          <p className="crop-editor-hint">{detectionReviewHint}</p>
           <button className="text-button compact" type="button" onClick={rejectSelected} disabled={saveState?.saving}>
             {currentSave?.rejecting ? "Vorschlag wird geprüft …" : "Falsches Objekt"}
           </button>
