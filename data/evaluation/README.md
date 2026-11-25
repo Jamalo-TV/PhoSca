@@ -2060,4 +2060,26 @@ It persists in all four quarter turns and after a 75% resize with JPEG75.
 Blank paper, an unsupported side with a correct seed, and interrupted lower
 edges stay without a trace. The positive native check takes about 15–17 ms
 with one OpenCV thread. The regression verifies the open line and the unchanged
-rectified raster, mode geometry and review statuses.
+rectified raster, mode geometry and review statuses. The trace is available
+when the face guard also flags possible content cutoff. That warning remains
+in effect for both modes.
+
+### Keep an unassigned paper rim in review
+
+The mixed checkpoint on the frozen `touching_same_color` input fitted one
+side to an ink seam. Its proposed whole-print crop lost 3.59% of the reference
+content and had a maximum corner error of 9.07 native pixels. The linked
+motif lost 0.93%. Both previously reported ready geometry despite the
+obstructed reference. The mixed checkpoint is still a development artifact.
+
+The new check samples the original outside that seam. It requires pale stock
+of the same colour on two other physical sides and an unbroken strip reaching
+the other print. A visible gap or a change of paper colour interrupts this
+evidence. With uncertain ownership, the review shows both previews with the
+same warp and pixels and asks the user to check the shared paper edge.
+
+Each mixed inference mode routes that one additional obstructed instance to
+review in both crop modes. The synthetic seeded, classical frozen and
+classical Golden measurements remain unchanged. At native resolution the
+shared-rim check took 0.53 ms median and 0.66 ms p95 over 100 warm samples
+for the positive case. Print-boundary revision 10 records the changed gate.

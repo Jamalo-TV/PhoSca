@@ -11,7 +11,8 @@ import numpy as np
 PRINT_SHADOW_EDGE_REVIEW = "PRINT_SHADOW_EDGE_REVIEW"
 PRINT_FAINT_RIM_REVIEW = "PRINT_FAINT_OUTER_RIM_REVIEW"
 PRINT_OUTER_EDGE_CONFLICT_REVIEW = "PRINT_OUTER_EDGE_CONFLICT_REVIEW"
-PRINT_BOUNDARY_REVISION = 9
+PRINT_SHARED_RIM_UNCERTAIN = "PRINT_SHARED_RIM_UNCERTAIN"
+PRINT_BOUNDARY_REVISION = 10
 _PRINT_SIDES = ("top", "right", "bottom", "left")
 
 
@@ -497,6 +498,57 @@ def _edge_band(
     if np.any((points < 0) | (points > np.array(image.shape[1::-1]) - 1)):
         return None
     return _sample_lab(image, points.reshape(-1, 2)).reshape(*points.shape[:-1], 3)
+
+
+def paper_rim_reaches_neighbor(
+    image: np.ndarray, quad: np.ndarray, side: int, neighbors: list[np.ndarray],
+) -> bool:
+    """Check whether the outside of a fitted line continues into neighboring stock."""
+    sides = np.roll(quad, -1, axis=0) - quad
+    lengths = np.linalg.norm(sides, axis=1)
+    start, end = quad[side], quad[(side + 1) % 4]
+    reach = float(np.clip(.075 * lengths.min(), 6., 24.))
+    edge = sides[side] / lengths[side]
+    outward = np.float32([edge[1], -edge[0]])
+    extent = np.stack((start, end, start + reach * outward, end + reach * outward))
+    low, high = extent.min(axis=0), extent.max(axis=0)
+    nearby = [polygon for polygon in neighbors
+              if np.all(polygon.max(axis=0) >= low) and np.all(polygon.min(axis=0) <= high)]
+    if not nearby:
+        return False
+
+    fractions = np.linspace(.15, .85, 16, dtype=np.float32)
+    offsets = np.arange(3., reach, dtype=np.float32)
+    # Leave the fitted line's antialiased transition out of the stock color.
+    exterior = _edge_band(image, start, end, (-offsets).tolist(), fractions=fractions)
+    interior = _edge_band(image, start, end, [2., 4.], fractions=fractions)
+    if exterior is None or interior is None:
+        return False
+    stock = np.median(exterior[:, :2], axis=(0, 1))
+    if not _is_pale_stock(stock) or np.mean(np.linalg.norm(interior - stock, axis=2) > 16) < .75:
+        return False
+
+    matching_sides = 0
+    for index, (first, last) in enumerate(zip(quad, np.roll(quad, -1, axis=0), strict=True)):
+        if index == side:
+            continue
+        across = _edge_band(image, first, last, [-3., 2., 4.], fractions=fractions)
+        if across is None:
+            continue
+        difference = np.linalg.norm(across - stock, axis=2)
+        if np.mean((difference[:, 0] > 11) & (difference[:, 1:] <= 11).all(axis=1)) >= .80:
+            matching_sides += 1
+    if matching_sides < 2:
+        return False
+
+    # A change of stock color or a band of album paper breaks the connection.
+    unbroken = np.logical_and.accumulate(np.linalg.norm(exterior - stock, axis=2) <= 11, axis=1)
+    positions = start + fractions[:, None] * sides[side]
+    probes = positions[:, None, :] + offsets[None, :, None] * outward
+    return any(sum(
+        any(cv2.pointPolygonTest(polygon, tuple(point), False) == 1 for point in row[continuous])
+        for row, continuous in zip(probes, unbroken, strict=True)
+    ) >= 10 for polygon in nearby)
 
 
 def _backing_color(image: np.ndarray) -> np.ndarray:

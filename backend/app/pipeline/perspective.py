@@ -39,9 +39,11 @@ from app.pipeline.page_plane import (
 from app.pipeline.print_edges import (
     PRINT_FAINT_RIM_REVIEW,
     PRINT_SHADOW_EDGE_REVIEW,
+    PRINT_SHARED_RIM_UNCERTAIN,
     continuous_motif_rim,
     missing_corner_material,
     observed_rim_points,
+    paper_rim_reaches_neighbor,
     print_corner_coverage,
     refine_print_boundary,
     retry_ambiguous_stock_edge,
@@ -61,7 +63,7 @@ _LOCALIZED_OCCLUSION_REASONS = {"PRINT_CORNERS_UNCERTAIN", "PRINT_POSSIBLY_OCCLU
 _PRINT_EDGE_CONFIRMATION = "PRINT_EDGE_CONFIRMATION_REQUIRED"
 _CROP_PREVIEW_REASONS = {_PRINT_EDGE_CONFIRMATION, PRINT_ASPECT_REFERENCE_REVIEW, FRAGMENTED_PRINT_REVIEW,
                          SCALLOPED_PRINT_REVIEW, PRINT_SHADOW_EDGE_REVIEW, PRINT_FAINT_RIM_REVIEW,
-                         EXTENDED_PRINT_OUTLINE_REVIEW}
+                         EXTENDED_PRINT_OUTLINE_REVIEW, PRINT_SHARED_RIM_UNCERTAIN}
 
 
 def _pale_backing_review_fit(boundary: dict) -> bool:
@@ -1193,6 +1195,16 @@ def _inspect_print(
             occluded = any(manual_print_intersects(target, mark, width, height) for mark in manual_neighbors)
         if (not scalloped and _clipped_visible_corner(quad, visible)) or occluded:
             reasons.append("PRINT_POSSIBLY_OCCLUDED")
+        if not reasons and neighbors:
+            # An observed outward strip may still lack an assignable paper edge.
+            for index, evidence in enumerate(sides):
+                outward = evidence.get("outward_search", {})
+                if (outward.get("print_rim_supported") and outward.get("support", 0) >= .88
+                        and not evidence.get("observed_rim_depth_px") and index not in inferred
+                        and paper_rim_reaches_neighbor(page, quad, index, neighbors)):
+                    evidence["shared_rim_unresolved"] = True
+            if any(evidence.get("shared_rim_unresolved") for evidence in sides):
+                reasons.append(PRINT_SHARED_RIM_UNCERTAIN)
         if not reasons and missing_corner_material(page, quad):
             reasons.append("PRINT_CORNERS_UNCERTAIN")
         if not occluded and set(reasons) <= _LOCALIZED_OCCLUSION_REASONS:
@@ -1335,7 +1347,7 @@ def correct_photo_crop(
             and set(full_reasons) <= {"PRINT_BOUNDARY_CURVED", EXTENDED_PRINT_OUTLINE_REVIEW}):
         print_edge_traces = [_vertices_on_page(np.asarray(segment), width, height) for segment in curve_segments]
     elif (dual_mode and not manual and enable_classical_retry and "PRINT_BOUNDARY_UNSUPPORTED" in full_reasons
-          and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN"}):
+          and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN", "POSSIBLE_CONTENT_CUTOFF"}):
         trace = suggest_partial_corner_edge(page_image, src_points, boundary_refinement)
         if trace is not None:
             print_edge_traces = [_vertices_on_page(trace, width, height)]

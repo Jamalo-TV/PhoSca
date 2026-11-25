@@ -597,6 +597,53 @@ def test_inferred_rim_does_not_snap_to_a_neighboring_prints_ink(case: str) -> No
         assert modes["full_print"]["status"] == modes["image_only"]["status"] == "ready"
 
 
+@pytest.mark.parametrize("case, proposal, neighbor", [
+    ("touching_same_color", [[418, 228], [421, 428], [701, 429], [700, 228]],
+     [[85, 198], [88, 424], [417, 423], [417, 197]]),
+    ("touching", [[415, 228], [415, 424], [420, 428], [470, 432], [699, 428], [698, 228]],
+     [[84, 198], [85, 423], [361, 426], [421, 421], [421, 228], [415, 197]]),
+])
+def test_unresolved_outward_rim_at_neighbor_can_only_be_previewed(case, proposal, neighbor) -> None:
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+    from app.pipeline.print_edges import PRINT_SHARED_RIM_UNCERTAIN
+
+    fixture = next(page for page in synthetic_crop_pages("locked") if page.name == case)
+    # Original native proposal vertices from the fine-tuned detector.
+    mask = {"polygon": _vertices(proposal, fixture.image), "source": "yolo_seg_mask"}
+    adjacent = {"polygon": _vertices(neighbor, fixture.image)}
+    without_neighbor = _crop(fixture.image, {}, mask, dual_mode=True)
+    crop = _crop(fixture.image, {}, mask, dual_mode=True, neighbor_masks=[adjacent])
+    boundary = crop.metadata["boundary_refinement"]["left"]
+    assert boundary["outward_search"]["print_rim_supported"]
+    assert "observed_rim_depth_px" not in boundary and not boundary.get("matched_print_rim")
+    for mode, result in crop.metadata["crop_modes"].items():
+        original = without_neighbor.metadata["crop_modes"][mode]
+        assert original["status"] == "ready"
+        assert result["warp_quad"] == original["warp_quad"]
+        if case == "touching_same_color":
+            assert boundary["shared_rim_unresolved"]
+            assert result["status"] == "review_needed" and PRINT_SHARED_RIM_UNCERTAIN in result["reason_codes"]
+        else:
+            assert not boundary.get("shared_rim_unresolved")
+            assert result["status"] == "ready"
+    np.testing.assert_array_equal(crop.image, without_neighbor.image)
+    np.testing.assert_array_equal(crop.image_only, without_neighbor.image_only)
+
+
+def test_visible_album_gap_breaks_a_neighbor_rim_connection() -> None:
+    from app.pipeline.print_edges import paper_rim_reaches_neighbor
+
+    page = np.full((260, 370, 3), 130, np.uint8)
+    page[45:225, 25:321] = 235
+    page[50:220, 158:316] = (90, 100, 120)
+    fitted = _rect(157, 45, 320, 224)
+    neighbor = [_rect(25, 45, 149, 224)]
+    assert paper_rim_reaches_neighbor(page, fitted, 3, neighbor)
+
+    page[:, 148:152] = 130
+    assert not paper_rim_reaches_neighbor(page, fitted, 3, neighbor)
+
+
 def test_only_the_fully_visible_print_can_be_recovered_from_an_overlap() -> None:
     from app.evaluation.crop_fixtures import synthetic_crop_pages
 

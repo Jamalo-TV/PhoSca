@@ -13,7 +13,8 @@ _GOLDEN = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures"
 
 
 @pytest.mark.parametrize(("scale", "quality"), [(1., None), (.75, 75)])
-def test_overextended_corner_offers_one_source_edge_without_changing_either_crop(monkeypatch, scale, quality):
+@pytest.mark.parametrize("protect_face", [False, True])
+def test_overextended_corner_offers_one_source_edge_without_changing_either_crop(monkeypatch, scale, quality, protect_face):
     page = cv2.imread(str(_GOLDEN / "page_31.jpg"))
     size = np.rint(np.array(page.shape[1::-1]) * scale).astype(int)
     if scale != 1:
@@ -30,7 +31,10 @@ def test_overextended_corner_offers_one_source_edge_without_changing_either_crop
         {"x": .38793629, "y": .79171926},
     ]
     mask = {"source": "classical_border_quad", "detector_source": "contrast_region", "polygon": seed}
-    options = dict(dual_mode=True, enable_classical_retry=True, auto_orient=False, protect_regions=False)
+    regions = [{"type": "head", "source": "opencv_haarcascade_profileface", "margin_ratio": 0,
+                "box": {"x1": .54, "y1": .89, "x2": .65, "y2": .98}}] if protect_face else []
+    options = dict(dual_mode=True, enable_classical_retry=True, auto_orient=False, protect_regions=protect_face,
+                   protected_regions=regions, allow_page_face_overlap=True)
     with monkeypatch.context() as patch:
         patch.setattr(perspective, "suggest_partial_corner_edge", lambda *_: None)
         baseline = perspective.correct_photo_crop(page, {}, mask, **options)
@@ -40,6 +44,7 @@ def test_overextended_corner_offers_one_source_edge_without_changing_either_crop
     full = modes["full_print"]
     assert {mode["status"] for mode in modes.values()} == {"review_needed"}
     assert "PRINT_BOUNDARY_UNSUPPORTED" in full["reason_codes"]
+    assert ("POSSIBLE_CONTENT_CUTOFF" in full["reason_codes"]) == protect_face
     trace, = full["suggested_edge_traces"]
     assert len(trace) == 2
     points = normalized_vertices_to_pixels([(p["x"], p["y"]) for p in trace], *size)
