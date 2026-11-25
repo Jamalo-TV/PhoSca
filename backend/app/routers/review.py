@@ -622,6 +622,7 @@ async def get_review_queue(
                 )
             ).all()
             detections = [_photo_review_payload(photo) for photo in photos if not _rejected_detection(photo)]
+            segmentation = ((page.processing_metadata or {}).get("steps") or {}).get("segmentation") or {}
             items.append(
                 ReviewItem(
                     item_type="segmentation",
@@ -634,6 +635,7 @@ async def get_review_queue(
                     payload={
                         "detection_count": len(detections), "detections": detections,
                         "photo_count_revision": (page.processing_metadata or {}).get("photo_count_revision"),
+                        "missing_print_edge_traces": segmentation.get("missing_print_edge_traces", []),
                     },
                 )
             )

@@ -1842,3 +1842,81 @@ loose prints lack an unambiguous mounted match. These are provenance leads.
 Neither contributes to the independent release groups.
 [Phelps finding aid](https://www.sos.mo.gov/CMSImages/Archives/manuscripts/RG998_MS506.pdf) ·
 [Crowe capture and rights](https://da.mdah.ms.gov/series/crowe/gentech)
+
+### Uncounted print beside the pale leaf edge
+
+The left print on Golden page 04 is lost during proposal construction.
+Three Canny passes and the parallel-line search produce no closed
+candidate. One contrast contour surrounds the print and part of the leaf.
+Its 0.402 IoU and frame contact explain why the existing rejection is
+appropriate. The conservative pale-leaf inset clips the candidate at the
+left and bottom. Reducing the proposal inset to two pixels at 2048 × 1536
+gives 0.981 IoU on the original and 0.996 on the prepared raster.
+Feeding that contour into normal ranking changes existing survivors.
+A painted shadow also passes the contour and local material tests.
+
+After a crossing-outline finding, a separate search near the leaf edge
+can show native measurements beside that outline. The adjacent region
+must be staggered, unclaimed by other proposals, and supported by
+measured transitions on at least three sides. On page 04, review shows
+nine open segments, including over 1,000 pixels along the curved left
+edge. The displayed span bows by more than four pixels. The gaps at
+corners and competing transitions stay open. The count, predicted masks,
+and download state use the existing detections.
+The additional search took 248 ms median over eight warmed page-04
+repetitions with two OpenCV threads, excluding image preparation.
+
+Desktop review and mobile print-count review offer the measurements as
+an overlay. Saving a matching manual outline retires the page hint in
+the same transaction. A long, measured curved segment is retained on
+that photo and keeps both crop modes in review. On page 04, a Haar face
+proposal straddles the true print boundary. In this trace-backed review
+path, the existing content-cutoff review reason preserves that caution
+while allowing the editor to store the outline. Both crop downloads and
+the legacy motif alias remain withheld after reprocessing.
+
+### Synthetic stock detector experiment
+
+The legacy checkpoint and registered ONNX could not be reconstructed.
+This experiment starts from Ultralytics YOLO11n-seg v8.3.0 with published
+SHA-256 `55ed65c56c91713d23e8402371c6c49a6fd84f257f7dce452e8d70e41dcbe152`.
+The base is COCO-Seg pretrained under AGPL-3.0. The model and its ONNX
+export are scratch artifacts. The production model registry is unchanged.
+[Publisher checkpoint](https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n-seg.pt) ·
+[Publisher hash](https://huggingface.co/Ultralytics/YOLO11/blob/97c61428146e92d06e5cde0c70308ed8d36a6c34/yolo11n-seg.pt)
+
+`scripts/prepare_detector_experiment.py` generates 96 train, 24 validation,
+and 24 challenge pages. Each carries a synthetic source-group ID,
+generation seed, split, image hash and label hash. Shared paper has one
+label regardless of the number of image panels. Separately mounted prints
+have separate labels. The generator uses no physical album pages. The
+internal validation and challenge share layout families with training
+and use separate seeds. The CSV records every artifact and the JSON pins
+the run inputs, output hashes and paired evaluation metrics.
+[Source inventory](detector-stock-experiment-sources.csv) ·
+[Experiment receipt](detector-stock-experiment.json)
+
+```bash
+PYTHONPATH=backend python scripts/prepare_detector_experiment.py /tmp/phosca-stock-data
+python scripts/train_segmentation_model.py --data /tmp/phosca-stock-data/data.yaml \
+  --base-model /tmp/yolo11n-seg.pt --project /tmp/phosca-stock-run --name stock-512 \
+  --device cpu --imgsz 512 --batch 8 --epochs 8 --export /tmp/phosca-stock-run/stock-512.onnx
+```
+
+The challenge has 12 one-stock multipanel cases and 34 separately
+mounted prints. Model-only inference finds 12/12 and 32/34 at IoU 0.85
+with zero false proposals. The hybrid path finds 11/12 and 32/34, with
+21 false proposals. The classical fallback finds 7/12 and 4/34, also with
+21 false proposals. On the true Golden pages, the hybrid retains 14/29
+matches with 16 false proposals, versus 14/29 and 15 for the fallback.
+On page 04 it matches none of the three prints at IoU 0.85. On the
+Domoritz draft flatbed input, both hybrid and fallback match all four
+prints. The hybrid finds 17/18 on the locked synthetic split and passes
+6/11 whole-print and 7/12 motif checks. The frozen seeded geometry
+control passes all 23. The experiment is rejected for deployment.
+For a replay, supply `--model` and a scratch `--manifest` containing the
+experiment ONNX digest and its 512 × 512 NCHW input to
+`scripts/evaluate_onnx_segmentation.py`. Use `images/challenge` and
+`labels/challenge` for the stock cases and `--synthetic locked` for the
+frozen comparison. Run the model with and without
+`--include-classical-fallback` and compare with `--classical-only`.

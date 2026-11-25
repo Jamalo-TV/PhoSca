@@ -49,7 +49,7 @@ import {
   adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getFragmentOutline,
   getSourceEdgeTraces,
-  getPrintEdgeReviewHint,
+  getPrintEdgeReviewHint, missingPrintEdgeHint,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
@@ -1365,6 +1365,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
   const canvasRef = useRef(null);
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
+  const [showMissingEdges, setShowMissingEdges] = useState(false);
   const [pageImage, setPageImage] = useState(null);
   const [draftShapes, setDraftShapes] = useState({});
   const [editMode, setEditMode] = useState("full_print");
@@ -1374,6 +1375,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
   const editingImage = editMode === "image_only";
   const pageId = page?.id;
   const measuredTraces = measuredEdge?.pageId === pageId ? measuredEdge?.traces : null;
+  const pendingMissingTraces = page?.processing_metadata?.steps?.segmentation?.missing_print_edge_traces;
+  const missingTraces = useMemo(() => getSourceEdgeTraces(pendingMissingTraces), [pendingMissingTraces]);
   const activePage = useRef(pageId);
   const newPrint = addition?.pageId === pageId ? addition : null;
   const additionSize = newPrint && parsePrintSize(newPrint.printSizeFields);
@@ -1419,6 +1422,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
     activePage.current = pageId;
     setMeasurementPage(null);
     setMeasuredEdge(null);
+    setShowMissingEdges(false);
   }, [pageId]);
 
   useEffect(() => {
@@ -1535,12 +1539,13 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
         }
       });
     });
-    if (measuredTraces?.length && !editingImage) {
+    const visibleTraces = showMissingEdges ? [...missingTraces, ...(measuredTraces || [])] : measuredTraces;
+    if (visibleTraces?.length && !editingImage) {
       context.save();
       context.strokeStyle = "#2563eb";
       context.lineWidth = 3;
       context.setLineDash([5, 4]);
-      for (const trace of measuredTraces) {
+      for (const trace of visibleTraces) {
         context.beginPath();
         context.moveTo(trace[0].x * canvas.width, trace[0].y * canvas.height);
         trace.slice(1).forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
@@ -1567,7 +1572,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
       });
     }
   }, [alternateOutline, crossingOutline, draftShapes, edgeTraces, editingImage, fragmentOutline, measuredTraces,
-    newPrint, pageId, pageImage, photos, selectedPhotoId]);
+    missingTraces, newPrint, pageId, pageImage, photos, selectedPhotoId, showMissingEdges]);
 
   useEffect(() => {
     draw();
@@ -1747,6 +1752,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
           {!editingImage && <>
             <button className="text-button compact" type="button" onClick={() => setMeasurementPage(pageId)}
               disabled={saveState?.saving}>Kantenmessung öffnen</button>
+            {missingTraces.length > 0 && (
+              <button className="text-button compact" type="button" aria-pressed={showMissingEdges}
+                onClick={() => setShowMissingEdges(!showMissingEdges)}>Möglichen weiteren Abzug prüfen</button>
+            )}
             {Boolean(measuredTraces?.length) && <button className="text-button compact" type="button"
               onClick={() => setMeasuredEdge(null)}>Messspur ausblenden</button>}
           </>}
@@ -1754,6 +1763,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
       )}
       {measurementPage && measurementPage === pageId && <EdgeMeasurement key={pageId} pageId={pageId}
         onClose={() => setMeasurementPage(null)} onMeasured={(traces) => setMeasuredEdge({ pageId, traces })} />}
+      {!editingImage && showMissingEdges && missingTraces.length > 0 && (
+        <p className="crop-editor-hint">{missingPrintEdgeHint}</p>
+      )}
       {newPrint && (
         <p className="crop-editor-hint" aria-live="polite">
           {newPrint.corners.length === 4 ? "Prüfe und verschiebe die Ecken an den sichtbaren Papierrand."

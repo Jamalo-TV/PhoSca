@@ -278,6 +278,34 @@ async def test_capture_outline_hold_survives_manual_edit_and_legacy_exports(clie
     assert replay.json()["enhancement_applied"]["correction"]["manual_paper_boundary"]["requires_review"] is True
     await assert_downloads_held()
 
+    pages_url = f"/api/v1/albums/{album.json()['id']}/pages"
+    page, = (await client.get(pages_url)).json()
+    page_steps = page["processing_metadata"]["steps"]["segmentation"]
+    trace_runs = page_steps["missing_print_edge_traces"]
+    queue = await client.get("/api/v1/review/queue", params={"type": "segmentation", "album_id": album.json()["id"]})
+    count_review, = queue.json()
+    assert count_review["payload"]["detection_count"] == 2
+    assert count_review["payload"]["missing_print_edge_traces"] == trace_runs
+    left_outline = [
+        {"x": x / 2559, "y": y / 1919} for x, y in [(70, 749), (843, 754), (860, 1847), (140, 1843)]
+    ]
+    addition = await client.post(f"/api/v1/pages/{page['id']}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": left_outline, "print_size_mm": {"width": 70, "height": 100},
+    })
+    assert addition.status_code == 201, addition.text
+    photo = addition.json()
+    metadata = photo["enhancement_applied"]
+    assert metadata["review_provenance"]["paper_trace_review"]["traces"]
+    assert metadata["correction"]["manual_paper_boundary"]["requires_review"] is True
+    added_url = f"/api/v1/photos/{photo['id']}"
+    assert (await client.post(f"{added_url}/reprocess")).status_code == 200
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{added_url}/image", params={"variant": variant})).status_code == 404
+    queue = await client.get("/api/v1/review/queue", params={"type": "segmentation", "album_id": album.json()["id"]})
+    count_review, = queue.json()
+    assert count_review["payload"]["detection_count"] == 3
+    assert not count_review["payload"]["missing_print_edge_traces"]
+
 
 async def test_verified_recovery_of_inset_straight_print_exports_both_modes(client, monkeypatch):
     from app.config import get_settings

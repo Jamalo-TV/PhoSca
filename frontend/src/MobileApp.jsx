@@ -7,7 +7,7 @@ import {
   adjacentPrintHint, captureOutlineReviewReason, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, crossingPrintHint,
   crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getCropModes, getFragmentOutline,
   getSourceEdgeTraces,
-  getPrintEdgeReviewHint,
+  getPrintEdgeReviewHint, missingPrintEdgeHint,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
@@ -105,11 +105,15 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome, uplo
 function DetectionOverlay({ item, editable = false, onSaved }) {
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
+  const [showMissingEdges, setShowMissingEdges] = useState(false);
+  useEffect(() => setShowMissingEdges(false), [item.id]);
   useEffect(() => {
     setMeasurementPage(null);
     setMeasuredEdge(null);
   }, [item.page_id]);
   const measuredTraces = measuredEdge?.pageId === item.page_id ? measuredEdge?.traces : null;
+  const missingTraces = getSourceEdgeTraces(item.payload?.missing_print_edge_traces);
+  const visibleTraces = showMissingEdges ? [...missingTraces, ...(measuredTraces || [])] : measuredTraces;
   const sourceBox = item.payload?.bounding_box;
   const detections = sourceBox ? [{ bounding_box: sourceBox, photo_id: item.payload?.photo_id }] : (item.payload?.detections || []);
   const visiblePolygon = sanitizeReviewPolygon(item.payload?.visible_polygon || item.payload?.polygon);
@@ -156,7 +160,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
     setSaveError("");
   }, [item.id]);
   const box = quadToBox(quad);
-  const validQuad = isValidQuad(quad);
+  const validQuad = !editable || isValidQuad(quad);
   const crossingNeedsCorrection = crossingOutline && initialOuter()?.every(
     (point, index) => point.x === quad?.[index]?.x && point.y === quad?.[index]?.y,
   );
@@ -219,16 +223,21 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
     <polyline key={index} points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />
   ));
-  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g>{visiblePolygon && <polygon points={visiblePolygon.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9"/>}<polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{uncertainLine}{alternateOverlay}{paperTraceOverlay}{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}{Boolean(measuredTraces?.length) && <MeasuredEdgeOverlay traces={measuredTraces} />}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>
+  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}><div className="review-image-frame"><img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"/><svg viewBox="0 0 1000 1000" preserveAspectRatio="none">{editable && quad ? <g>{visiblePolygon && <polygon points={visiblePolygon.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")} fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9"/>}<polygon className="editable-quad" points={quad.map(point=>`${point.x*1000},${point.y*1000}`).join(" ")}/>{uncertainLine}{alternateOverlay}{paperTraceOverlay}{quad.map((point,index)=><g key={index}><circle className="drag-handle" cx={point.x*1000} cy={point.y*1000} r="25" onPointerDown={event=>moveCorner(event,index)}/><text className="corner-label" x={point.x*1000+28} y={point.y*1000-22}>{index+1}</text></g>)}</g> : shown.map((d, i) => { const b=d.bounding_box; return <g key={d.photo_id || i}><rect x={b.x1*1000} y={b.y1*1000} width={(b.x2-b.x1)*1000} height={(b.y2-b.y1)*1000}/><text x={b.x1*1000+12} y={b.y1*1000+38}>{i+1}</text></g>;})}{Boolean(visibleTraces?.length) && <MeasuredEdgeOverlay traces={visibleTraces} />}</svg>{magnifier.visible && <div className="crop-magnifier" style={{ left:`${lensX}%`, top:`${lensY}%`, backgroundImage:`url(${item.preview_url})`, backgroundPosition:`${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%` }}><i /></div>}</div><span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span></div>
     {item.page_id && (
       <div className="edge-measurement-controls">
         <button className="magnifier-toggle" type="button" onClick={() => setMeasurementPage(item.page_id)}>
           Kantenmessung öffnen
         </button>
+        {missingTraces.length > 0 && (
+          <button className="magnifier-toggle" type="button" aria-pressed={showMissingEdges}
+            onClick={() => setShowMissingEdges(!showMissingEdges)}>Möglichen weiteren Abzug prüfen</button>
+        )}
         {Boolean(measuredTraces?.length) && <button className="magnifier-toggle" type="button"
           onClick={() => setMeasuredEdge(null)}>Messspur ausblenden</button>}
       </div>
     )}
+    {showMissingEdges && missingTraces.length > 0 && <p className="quad-hint">{missingPrintEdgeHint}</p>}
     {measurementPage && measurementPage === item.page_id && <EdgeMeasurement key={item.page_id} pageId={item.page_id}
       onClose={() => setMeasurementPage(null)} onMeasured={(traces) => setMeasuredEdge({ pageId: item.page_id, traces })} />}
     {editable && <>

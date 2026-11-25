@@ -11,7 +11,7 @@ import numpy as np
 from app.config import Settings
 from app.pipeline.adjacent_prints import ADJACENT_PRINT_REVIEW, adjacent_album_edge_outlines
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves
-from app.pipeline.crossing_prints import CROSSING_PRINT_REVIEW, crossing_print_outlines
+from app.pipeline.crossing_prints import CROSSING_PRINT_REVIEW, crossing_print_outlines, near_leaf_edge_traces
 from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
     clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
@@ -2963,7 +2963,9 @@ def _suggest_adjacent_album_edge_print(image: np.ndarray, result: SegmentationRe
     )
 
 
-def _suggest_crossing_print_outline(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+def _suggest_crossing_print_outline(
+    image: np.ndarray, result: SegmentationResult, *, prepared: np.ndarray | None = None,
+) -> SegmentationResult:
     rejections = result.metadata.get("rejected_candidates") or {}
     if (not result.metadata.get("fallback_used") or not rejections.get("frame_touching_container_candidate")
             or not 2 <= len(result.detections) <= 4):
@@ -3005,7 +3007,16 @@ def _suggest_crossing_print_outline(image: np.ndarray, result: SegmentationResul
         item, mask={**item.mask, "crossing_print_suggestion": _normalized_polygon(quad, width, height)},
         review_reasons=[CROSSING_PRINT_REVIEW],
     )
-    return SegmentationResult(detections, result.metadata)
+    metadata = result.metadata
+    if prepared is not None:
+        others = [_detection_polygon(photo) for j, photo in enumerate(result.detections) if j != index]
+        try:
+            traces = near_leaf_edge_traces(image, prepared, quad, others, _quadrilateral_from_contour)
+        except (cv2.error, ValueError, np.linalg.LinAlgError):
+            traces = []
+        if traces:
+            metadata = {**metadata, "missing_print_edge_traces": traces}
+    return SegmentationResult(detections, metadata)
 
 
 def segment_album_page(
@@ -3027,7 +3038,7 @@ def segment_album_page(
             result = _recover_capture_edge_prints(evidence_source, result, settings)
             result = _recover_scalloped_prints(evidence_source, result, trim_border=settings.enable_border_trim)
             result = _suggest_adjacent_album_edge_print(evidence_source, result)
-            result = _suggest_crossing_print_outline(evidence_source, result)
+            result = _suggest_crossing_print_outline(evidence_source, result, prepared=image)
     model_path = settings.visible_mask_model_path
     if not settings.enable_precise_photo_crops:
         return result

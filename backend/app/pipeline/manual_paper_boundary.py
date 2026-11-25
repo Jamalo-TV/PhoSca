@@ -30,9 +30,16 @@ def paper_curve_review_reference(correction: dict) -> dict | None:
 
 def manual_paper_reference(metadata: dict, crop_quad: list[dict] | None) -> dict | None:
     review = metadata.get("review_provenance") or {}
+    trace_curve = review.get("paper_trace_review")
+    if trace_curve and len(crop_quad or []) == 4:
+        seed, edited = ([(point["x"], point["y"]) for point in corners]
+                        for corners in (trace_curve["warp_quad"], crop_quad))
+        overlap = normalized_polygon_overlap(seed, edited)
+        if overlap.iou < .82 and max(overlap.first_containment, overlap.second_containment) < .90:
+            trace_curve = None
+    else:
+        trace_curve = None
     original = review.get("original_prediction") or {}
-    if original.get("segmentation_confidence") is None:
-        return None
     mask = original.get("segmentation_mask") or {}
     previous_print = original.get("print_warp_quad") or []
     capture_outline = original.get("capture_outline_unverified")
@@ -42,11 +49,16 @@ def manual_paper_reference(metadata: dict, crop_quad: list[dict] | None) -> dict
         capture_outline = original.get("status") == "review_needed" and any(
             point.get(axis) in (0., 1.) for point in previous_print for axis in ("x", "y")
         )
-    curve = review.get("paper_curve_review")
+    curve = trace_curve or review.get("paper_curve_review")
     outline = mask.get("visible_polygon") or mask.get("polygon") or []
     seed = mask.get("warp_quad") or mask.get("polygon") or []
-    if capture_outline:
+    if capture_outline and original.get("segmentation_confidence") is not None:
         return {"capture_outline": True, "warp_quad": previous_print or seed, "outline": outline, "curve": curve}
+    if trace_curve:
+        return {"warp_quad": trace_curve["warp_quad"], "outline": [], "curve": trace_curve,
+                "legacy_extended": False, "trace_review": True}
+    if original.get("segmentation_confidence") is None:
+        return None
     if len(crop_quad or []) != 4:
         return None
     if len(seed) != 4:
@@ -60,6 +72,39 @@ def manual_paper_reference(metadata: dict, crop_quad: list[dict] | None) -> dict
     if overlap.iou < .82 and max(overlap.first_containment, overlap.second_containment) < .90:
         return None
     return {"warp_quad": seed, "outline": outline, "curve": curve, "legacy_extended": legacy_extended}
+
+
+def paper_curve_from_review_traces(
+    quad: list[dict], traces: list, width: int, height: int,
+) -> dict | None:
+    outline = order_quad_cyclic(normalized_vertices_to_pixels(
+        [(point["x"], point["y"]) for point in quad], width, height,
+    ))
+    sides = set()
+    matching_traces = []
+    for trace in traces:
+        points = normalized_vertices_to_pixels([(point["x"], point["y"]) for point in trace], width, height)
+        for side, (start, end) in enumerate(zip(outline, np.roll(outline, -1, axis=0), strict=True)):
+            length = np.linalg.norm(end - start)
+            tangent = (end - start) / length
+            inward = np.float32([-tangent[1], tangent[0]])
+            distance = (points - start) @ tangent
+            depth = (points - start) @ inward
+            span = distance[-1] - distance[0]
+            if abs(span) < .65 * length or distance.min() < -5 or distance.max() > length + 5:
+                continue
+            if np.max(np.abs(depth)) > 12:
+                continue
+            chord = depth[0] + (depth[-1] - depth[0]) * (distance - distance[0]) / span
+            # Sustained departure of observed points from their own chord is
+            # not repaired by entering dimensions or by shifting all corners.
+            if np.quantile(np.abs(depth - chord), .65) > 2.5:
+                sides.add(side)
+                matching_traces.append(trace)
+                break
+    if not sides:
+        return None
+    return {"warp_quad": quad, "sides": sorted(sides), "traces": matching_traces}
 
 
 def manual_paper_download_needs_review(metadata: dict, crop_quad: list[dict] | None) -> bool:

@@ -465,7 +465,9 @@ async def perspective_correction_task_logic(
             orientation_model_path=settings.photo_orientation_model_path,
             protect_regions=settings.enable_protected_region_guard,
             protected_regions=protected_regions,
-            allow_page_face_overlap=automatic_detection and photo.geometry_valid,
+            allow_page_face_overlap=photo.geometry_valid and (
+                automatic_detection or (manual_boundary or {}).get("trace_review") is True
+            ),
             # Saving reviewer corners clears prediction confidence, even when the client retains its model tag.
             allow_border_expansion=automatic_detection,
             dual_mode=precise_crops,

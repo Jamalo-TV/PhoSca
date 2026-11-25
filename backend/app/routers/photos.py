@@ -20,11 +20,13 @@ from app.core.auth import Principal, get_principal, require_write_principal
 from app.database import get_async_session
 from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PageStatus, PhotoStatus, ProcessingRun, StageRun
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
-from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE
+from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE, reviewed_outline_covers_traces
 from app.pipeline.decisions import is_reviewed_non_print
 from app.pipeline.edge_trace import measure_edge_trace
 from app.pipeline.image_ops import load_image, normalized_box_to_pixels
-from app.pipeline.manual_paper_boundary import capture_outline_review_required, paper_curve_review_reference
+from app.pipeline.manual_paper_boundary import (
+    capture_outline_review_required, paper_curve_from_review_traces, paper_curve_review_reference,
+)
 from app.pipeline.perspective import manual_print_intersects, validate_review_quads
 from app.pipeline.presets import available_presets
 from app.pipeline.variants import (
@@ -160,6 +162,23 @@ def _geometry_snapshot(photo: ExtractedPhoto) -> dict:
         "geometry_valid": photo.geometry_valid,
         "status": photo.status.value,
     }
+
+
+def _claim_missing_print_trace(
+    page: Page, review_provenance: dict, quad: list[dict] | None, width: int, height: int,
+) -> None:
+    if len(quad or []) != 4:
+        return
+    metadata = deepcopy(page.processing_metadata or {})
+    segmentation = (metadata.get("steps") or {}).get("segmentation") or {}
+    traces = segmentation.get("missing_print_edge_traces", [])
+    if not reviewed_outline_covers_traces(quad, traces):
+        return
+    curve = paper_curve_from_review_traces(quad, traces, width, height)
+    if curve is not None:
+        review_provenance["paper_trace_review"] = curve
+    segmentation.pop("missing_print_edge_traces")
+    page.processing_metadata = metadata
 
 
 async def _render_photo_edit(
@@ -490,6 +509,7 @@ async def create_manual_photo(
         "manual_creation": creation,
         "prediction_provenance": await _prediction_provenance(session, photo),
     }
+    _claim_missing_print_trace(page, review_provenance, quad, width, height)
     photo.enhancement_applied = {"review_provenance": review_provenance}
     page.processing_metadata = {**(page.processing_metadata or {}), "photo_count_revision": str(photo_id)}
     session.add(photo)
@@ -603,6 +623,7 @@ async def update_photo_bounding_box(
             review_provenance.setdefault("paper_curve_review", deepcopy(curve))
     review_provenance.setdefault("original_prediction", before)
     review_provenance.setdefault("prediction_provenance", prediction_provenance)
+    _claim_missing_print_trace(page, review_provenance, segmentation_mask.get("warp_quad"), width, height)
     revisions = list(review_provenance.get("correction_revisions") or [])
     revisions.append(
         {
