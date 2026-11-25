@@ -2044,3 +2044,20 @@ hybrid adds three false proposals relative to the classical fallback.
 Both trained candidates remain development artifacts. Automatic release
 still requires a separately calibrated production configuration and verified
 crop references in two independent physical album groups.
+
+### Measure an open edge at an overextended corner
+
+The classical and mixed hybrid proposals on Golden page 31 include an extra
+triangle of album paper at the lower-right print. Three corners are within
+7 native pixels of the draft outline and one is about 115 pixels away.
+The current review can show a line on the measured lower paper edge. A
+geometric estimate from three corners locates a search window. Only the
+edge supported by original pixels appears in the editor. Both modes stay
+in review and retain their current preview pixels and perspective.
+
+The trace appears only on this print across all ten Golden fallback pages.
+It persists in all four quarter turns and after a 75% resize with JPEG75.
+Blank paper, an unsupported side with a correct seed, and interrupted lower
+edges stay without a trace. The positive native check takes about 15–17 ms
+with one OpenCV thread. The regression verifies the open line and the unchanged
+rectified raster, mode geometry and review statuses.

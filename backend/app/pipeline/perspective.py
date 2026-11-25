@@ -47,6 +47,7 @@ from app.pipeline.print_edges import (
     retry_ambiguous_stock_edge,
     suggest_ambiguous_stock_edge,
     suggest_missing_pale_backing_edge,
+    suggest_partial_corner_edge,
 )
 from app.pipeline.print_stock import find_outer_stock_candidate
 from app.pipeline.protected_regions import detect_protected_regions, merge_protected_regions, validate_protected_regions
@@ -1333,6 +1334,11 @@ def correct_photo_crop(
     if ("PRINT_BOUNDARY_CURVED" in full_reasons
             and set(full_reasons) <= {"PRINT_BOUNDARY_CURVED", EXTENDED_PRINT_OUTLINE_REVIEW}):
         print_edge_traces = [_vertices_on_page(np.asarray(segment), width, height) for segment in curve_segments]
+    elif (dual_mode and not manual and enable_classical_retry and "PRINT_BOUNDARY_UNSUPPORTED" in full_reasons
+          and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN"}):
+        trace = suggest_partial_corner_edge(page_image, src_points, boundary_refinement)
+        if trace is not None:
+            print_edge_traces = [_vertices_on_page(trace, width, height)]
     checked_manual_boundary = dual_mode and manual and manual_boundary_reference is not None
     capture_outline = checked_manual_boundary and manual_boundary_reference.get("capture_outline")
     if checked_manual_boundary:

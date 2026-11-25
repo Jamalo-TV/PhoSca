@@ -261,6 +261,45 @@ def _line_endpoints(start: np.ndarray, end: np.ndarray, line: np.ndarray) -> tup
     return first.astype(np.float32), last.astype(np.float32)
 
 
+def suggest_partial_corner_edge(image: np.ndarray, quad: np.ndarray, boundary: dict) -> np.ndarray | None:
+    """Measure one open edge near an overextended corner for the review overlay."""
+    sides = [boundary.get(name) or {} for name in _PRINT_SIDES]
+    if any(side.get("ambiguous") for side in sides):
+        return None
+    weak_sides = [index for index, side in enumerate(sides) if side.get("support", 0) < .55]
+    if len(weak_sides) != 1:
+        return None
+    weak_side, = weak_sides
+    shortest = float(np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min())
+    if shortest < 40:
+        return None
+    radius = min(56, max(4, round(shortest * .042)))
+    traces = []
+    for corner in (weak_side, (weak_side + 1) % 4):
+        opposite = (corner + 2) % 4
+        fixed_sides = (sides[opposite], sides[(opposite - 1) % 4])
+        if any(side.get("support", 0) < .90 or (side.get("corner_support") or 0) < .85 for side in fixed_sides):
+            continue
+        probe = quad.copy()
+        # This parallelogram opens a new search window. Its inferred corner
+        # and its unsupported side are never added to the review overlay.
+        probe[corner] = quad[(corner - 1) % 4] + quad[(corner + 1) % 4] - quad[opposite]
+        change = np.linalg.norm(probe[corner] - quad[corner])
+        if not .08 * shortest <= change <= .30 * shortest or not cv2.isContourConvex(probe):
+            continue
+        if cv2.pointPolygonTest(quad, tuple(map(float, probe[corner])), True) < -1:
+            continue
+        measured_side = corner if corner != weak_side else (corner - 1) % 4
+        start, end = probe[measured_side], probe[(measured_side + 1) % 4]
+        line, measured = _side_line(image, start, end, radius)
+        minimum_support = max(.90, sides[measured_side].get("support", 0) + .08)
+        if line is None or measured["support"] < minimum_support or (measured["corner_support"] or 0) < .78:
+            continue
+        first, last = _line_endpoints(start, end, line)
+        traces.append(np.array([first + .10 * (last - first), last - .10 * (last - first)]))
+    return traces[0] if len(traces) == 1 else None
+
+
 def _pale_outside_strip(image: np.ndarray, start: np.ndarray, end: np.ndarray) -> bool:
     tangent = end - start
     inward = np.array([-tangent[1], tangent[0]], np.float32) / np.linalg.norm(tangent)
