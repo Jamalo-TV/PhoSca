@@ -23,7 +23,7 @@ from app.models import (
     ReviewEvent,
     StageRun,
 )
-from app.pipeline.decisions import is_reviewed_non_print
+from app.pipeline.decisions import is_reviewed_non_print, motif_geometry_requires_review
 from app.pipeline.manual_paper_boundary import PAPER_GRID_OVERLAP_REVIEW, paper_grid_needs_overlap_check
 from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import ReviewItem
@@ -441,12 +441,17 @@ async def add_review_event(
 
     if payload.task_type == "geometry" and payload.answer == "correct":
         photo = context["photo"]
-        metadata = photo.enhancement_applied or {}
-        full_mode = ((metadata.get("correction") or {}).get("crop_modes") or {}).get("full_print")
+        correction = (photo.enhancement_applied or {}).get("correction") or {}
+        full_mode = (correction.get("crop_modes") or {}).get("full_print")
         if full_mode and not variant_path_from_photo(photo, "full_print"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Adjust the print corners or recapture the page before approving this crop.",
+            )
+        if motif_geometry_requires_review(correction):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="motif_geometry_review_required",
             )
 
     snapshot = await _snapshot_task(session, payload, context)
@@ -463,6 +468,7 @@ async def add_review_event(
             event_metadata[key] = deepcopy(client_metadata[key])
     event = ReviewEvent(
         id=uuid4(),
+        created_at=datetime.now(timezone.utc),
         task_type=payload.task_type,
         task_id=payload.task_id,
         answer=payload.answer,
@@ -522,8 +528,9 @@ def _completed_review_exists(task_type: str, task_id_column):
 
 async def _geometry_review_is_current(session: AsyncSession, photo: ExtractedPhoto) -> bool:
     metadata = photo.enhancement_applied or {}
-    full_mode = ((metadata.get("correction") or {}).get("crop_modes") or {}).get("full_print") or {}
-    if PAPER_GRID_OVERLAP_REVIEW in (full_mode.get("reason_codes") or []):
+    correction = metadata.get("correction") or {}
+    full_mode = (correction.get("crop_modes") or {}).get("full_print") or {}
+    if PAPER_GRID_OVERLAP_REVIEW in (full_mode.get("reason_codes") or []) or motif_geometry_requires_review(correction):
         return False
     if photo.segmentation_confidence is None and paper_grid_needs_overlap_check(photo.segmentation_mask or {}, metadata):
         return False
@@ -548,6 +555,7 @@ async def _geometry_review_is_current(session: AsyncSession, photo: ExtractedPho
     return (
         geometry.get("bounding_box") == photo.bounding_box
         and geometry.get("segmentation_mask") == photo.segmentation_mask
+        and not motif_geometry_requires_review(snap.get("current_correction"))
     )
 
 
@@ -602,6 +610,7 @@ def _photo_review_payload(photo: ExtractedPhoto) -> dict:
         "image_quad": deepcopy((correction.get("crop_modes") or {}).get("image_only", {}).get("warp_quad") or mask.get("image_quad")),
         "print_size_mm": deepcopy(mask.get("print_size_mm")),
         "crop_modes": deepcopy(correction.get("crop_modes") or {}),
+        "motif_review_pending": motif_geometry_requires_review(correction),
         "confidence": photo.segmentation_confidence,
         "confidence_components": confidence_components,
         "geometry_valid": photo.geometry_valid,
@@ -691,16 +700,15 @@ async def get_review_queue(
             if await _geometry_review_is_current(session, photo):
                 continue
             payload = _photo_review_payload(photo)
+            review_status = PhotoStatus.review_needed if payload["motif_review_pending"] else photo.status
             items.append(
                 ReviewItem(
                     item_type="geometry",
                     id=photo.id,
                     album_id=photo.album_id,
                     page_id=photo.page_id,
-                    status=photo.status.value,
-                    reason="crop requires confirmation"
-                    if photo.status == PhotoStatus.review_needed
-                    else "quality-control sample",
+                    status=review_status.value,
+                    reason="crop requires confirmation" if review_status == PhotoStatus.review_needed else "quality-control sample",
                     preview_url=f"/api/v1/pages/{photo.page_id}/image",
                     payload=payload
                     | {"crop_url": payload["source_corrected_url"] if photo.original_storage_path else None},

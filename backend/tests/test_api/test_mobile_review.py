@@ -672,6 +672,100 @@ async def test_mobile_review_event_is_idempotent_and_removes_task(client) -> Non
     assert all(item["id"] != str(page_id) for item in remaining)
 
 
+@pytest.mark.parametrize("reason", ["IMAGE_BOUNDARY_CURVED", "WIDE_MOTIF_CONFIRMATION_REQUIRED"])
+async def test_geometry_review_reopens_a_motif_missed_by_an_old_approval(client, reason) -> None:
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, PhotoStatus, ReviewEvent
+
+    album_id, _, photo_id = await _seed_review_data()
+    payload = {
+        "task_type": "geometry",
+        "task_id": str(photo_id),
+        "answer": "correct",
+        "idempotency_key": uuid4().hex,
+        "metadata": {"ui": "mobile-v2"},
+    }
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_confidence = None
+        photo.status = PhotoStatus.completed
+        correction = {"crop_modes": {
+            "full_print": {"status": "ready"},
+            "image_only": {"status": "review_needed", "reason_codes": [reason]},
+        }}
+        photo.enhancement_applied = {
+            "variants": {"full_print": {"path": photo.original_storage_path}},
+            "correction": correction,
+        }
+        session.add(ReviewEvent(
+            task_type="geometry", task_id=photo_id, answer="correct", idempotency_key=payload["idempotency_key"],
+            event_metadata={"client": payload["metadata"], "snapshot": {"photos": [{
+                "photo_id": str(photo_id),
+                "current_geometry": {"bounding_box": photo.bounding_box, "segmentation_mask": photo.segmentation_mask},
+                "current_correction": correction,
+            }]}},
+        ))
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    queue = {"album_id": str(album_id), "type": "geometry", "include_rejected": False}
+    event_url = "/api/v1/review/events"
+    queue_url = "/api/v1/review/queue"
+    pending, = (await client.get(queue_url, params=queue)).json()
+    assert pending["id"] == str(photo_id) and pending["status"] == "review_needed"
+    assert pending["payload"]["motif_review_pending"] is True
+    assert (await client.get(url)).json()["motif_review_pending"] is True
+    assert (await client.get(f"{url}/image?variant=full_print")).status_code == 200
+    for mode in ("image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image?variant={mode}")).status_code == 404
+    blocked = await client.post(event_url, json=payload | {"idempotency_key": uuid4().hex})
+    assert blocked.status_code == 409 and blocked.json()["detail"] == "motif_geometry_review_required"
+    repeated = await client.post(event_url, json=payload)
+    assert repeated.status_code == 201 and repeated.json()["duplicate"] is True
+    assert (await client.get("/api/v1/review/progress")).json()["by_type"] == {"geometry": 1}
+
+    # A newer raster from the same mask does not make the historic approval current.
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        metadata = photo.enhancement_applied
+        photo.enhancement_applied = {
+            "variants": {**metadata["variants"], "image_only": {"path": photo.original_storage_path}},
+            "correction": {"crop_modes": {
+                **metadata["correction"]["crop_modes"], "image_only": {"status": "ready"},
+            }},
+        }
+        await session.commit()
+    newer, = (await client.get(queue_url, params=queue)).json()
+    assert newer["payload"]["motif_review_pending"] is False
+    assert (await client.get(f"{url}/image?variant=image_only")).status_code == 200
+    approved = await client.post(event_url, json=payload | {"idempotency_key": uuid4().hex})
+    assert approved.status_code == 201, approved.text
+    assert (await client.get(queue_url, params=queue)).json() == []
+
+
+async def test_disabled_motif_classification_does_not_keep_geometry_review_open(client) -> None:
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+
+    album_id, _, photo_id = await _seed_review_data()
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_confidence = None
+        photo.enhancement_applied = {
+            "variants": {"full_print": {"path": photo.original_storage_path}},
+            "correction": {"crop_modes": {
+                "full_print": {"status": "ready"},
+                "image_only": {"status": "review_needed", "reason_codes": ["IMAGE_BORDER_CLASSIFICATION_DISABLED"]},
+            }},
+        }
+        await session.commit()
+    accepted = await client.post("/api/v1/review/events", json={
+        "task_type": "geometry", "task_id": str(photo_id), "answer": "correct", "idempotency_key": uuid4().hex,
+    })
+    assert accepted.status_code == 201, accepted.text
+    assert (await client.get("/api/v1/review/queue", params={"album_id": str(album_id), "type": "geometry"})).json() == []
+
+
 async def test_mobile_review_rejects_answer_from_wrong_task_contract(client) -> None:
     _, page_id, _ = await _seed_review_data()
     response = await client.post(
@@ -1388,16 +1482,17 @@ async def test_measured_grid_crop_stays_held_while_a_linked_proposal_overlaps(cl
     parent_url = f"/api/v1/photos/{parent_id}"
     child_url = f"/api/v1/photos/{child_id}"
 
-    async def save(url, quad):
-        return await client.patch(f"{url}/bounding-box", json={"bounding_box": bounds(quad), "segmentation_mask": {
-            "polygon": quad, "warp_quad": quad, "print_size_mm": {"width": 140, "height": 139},
-        }})
+    async def save(url, quad, *, motif=None):
+        mask = {"polygon": quad, "warp_quad": quad, "print_size_mm": {"width": 140, "height": 139}}
+        if motif is not None:
+            mask["image_quad"] = motif
+        return await client.patch(f"{url}/bounding-box", json={"bounding_box": bounds(quad), "segmentation_mask": mask})
 
     async def held_downloads():
         for variant in ("full_print", "image_only", "source_corrected_trimmed"):
             assert (await client.get(f"{parent_url}/image", params={"variant": variant})).status_code == 404
 
-    result = await save(parent_url, outer)
+    result = await save(parent_url, outer, motif=outer)
     assert result.status_code == 200, result.text
     modes = result.json()["enhancement_applied"]["correction"]["crop_modes"]
     assert all(mode["status"] == "review_needed" and PAPER_GRID_OVERLAP_REVIEW in mode["reason_codes"] for mode in modes.values())

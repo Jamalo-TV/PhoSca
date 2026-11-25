@@ -339,12 +339,20 @@ Generated reports and visual comparisons belong under `runs/`, which is
 ignored because reports can contain local paths and private derivatives.
 
 The Library of Congress catalog links stand-alone scans of mounted prints to
-the source album pages in the Prokudin-Gorskii collection. Three print scans
-are staged in `runs/crop-quality/independent-intake-prokudin/intake.json`.
-The corresponding page scans could not be retrieved during intake. The
-catalog records nominal dimensions of 8 × 8 cm and the scan rasters include
-material beyond the image. Both reference boundaries still need verification.
-[Library of Congress digitization notes](https://www.loc.gov/pictures/collection/prok/digitizing.html)
+the source album pages in the Prokudin-Gorskii collection. The archive
+documents separate acquisitions of 430 mounted pages from 14 volumes and
+714 individual print scans at 3,000 pixels on the longer side. The earlier
+`runs/crop-quality/independent-intake-prokudin/intake.json` and its three
+staged print scans are absent in the current workspace. Catalogued
+candidates with exact leaf links include LOT 10333 no. 128
+(`LC-DIG-prok-02023`, leaf `proka.0004a.22`) and LOT 10334 no. 54
+(`LC-DIG-prok-02032`, leaf `proka.0005a.08`). Native raster requests
+returned HTTP 403 from the network proxy. The catalog records nominal dimensions and the
+rasters may include material beyond the print. Both boundaries and usage
+rights still need verification before inclusion in the final split.
+[Digitization notes](https://www.loc.gov/pictures/collection/prok/digitizing.html) ·
+[LOT 10333 no. 128](https://www.loc.gov/pictures/item/2018679139/) ·
+[LOT 10334 no. 54](https://www.loc.gov/pictures/collection/prok/item/2018679194/)
 
 ## Precise crop validation
 
@@ -2721,6 +2729,24 @@ confirmed owned interpolation support. The 609 × 792 whole-print download
 was byte-identical before and after the motif edit. Both Gallery download
 links returned the verified JPEGs. These development measurements use a
 manual review and test paper dimensions.
+
+### Keep genuine motif reviews open after legacy geometry approvals
+
+A full-print JPEG can be available while the motif has its own unresolved
+geometry. The review queue now uses both modes. A new complete geometry
+approval returns 409 while a motif boundary, visibility or protected-content
+check is open. Mobile points to the desktop motif editor and leaves the
+other review answers and Skip available. A disabled motif classifier or
+an older crop without a motif mode can still complete the geometry review.
+
+On the 33% JPEG75 contact print, the prior application had accepted a
+mobile geometry approval and hidden the task while the motif and trimmed
+alias returned 404. The updated application reopened that task from the
+unchanged prior review history. The whole print continued to download.
+After the desktop motif edit, both Gallery downloads matched the earlier
+verified JPEGs byte for byte. A fresh mobile approval then completed the
+task. A focused test also keeps the task open when reprocessing resolves
+the motif on the same paper mask without a fresh approval.
 
 ### Verify that catalogued pairs represent independent acquisitions
 

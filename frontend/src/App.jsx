@@ -2237,7 +2237,8 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
                 if (item.payload?.photo_id) setSelectedPhotoId(item.payload.photo_id);
               }}
             >
-              <span>{item.item_type}</span>
+              <span>{item.item_type === "geometry" && item.payload?.motif_review_pending
+                && item.payload?.crop_modes?.full_print?.status === "ready" ? "Nur Bildmotiv prüfen" : item.item_type}</span>
               <StatusBadge status={item.status} />
             </button>
           ))}

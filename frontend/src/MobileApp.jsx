@@ -31,6 +31,8 @@ const cropAnswers = {
   ],
 };
 
+const motifDesktopReviewHint = "Setze die Motivecken im Desktop-Editor, bevor du den Zuschnitt als vollständig bestätigst.";
+
 function OnlineBadge() {
   const [online, setOnline] = useState(navigator.onLine);
   useEffect(() => {
@@ -138,7 +140,8 @@ function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroup
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.crossing_print_suggestion));
   const fullPrintMode = reviewedNonPrint ? null : item.payload?.crop_modes?.full_print;
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
-  const motifBoundaryReviewHint = !reviewedNonPrint && getMotifBoundaryReviewHint(item.payload?.crop_modes?.image_only);
+  const motifReviewPending = !reviewedNonPrint && item.payload?.motif_review_pending;
+  const motifBoundaryReviewHint = getMotifBoundaryReviewHint(item.payload?.crop_modes?.image_only);
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
   const printEdgeTraces = getSourceEdgeTraces(fullPrintMode?.suggested_edge_traces);
@@ -215,7 +218,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroup
       const cropModes = getCropModes(saved);
       const held = cropModes?.full_print?.reason_codes?.includes(captureOutlineReviewReason);
       setSavedCropUrl(held ? "" : `/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`);
-      onSaved?.(cropModes, saved.segmentation_mask);
+      onSaved?.(cropModes, saved.segmentation_mask, saved.motif_review_pending);
     } catch (error) {
       setSaveError(error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message === "print_outline_review_required" ? printOutlineSaveHint
@@ -339,8 +342,8 @@ function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroup
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
       {printEdgeReviewHint && <p className="quad-hint">{printEdgeReviewHint}</p>}
-      {motifBoundaryReviewHint && <p className="quad-hint">
-        {motifBoundaryReviewHint} Die Motivecken kannst du im Desktop-Editor setzen.
+      {motifReviewPending && <p className="quad-hint" id="mobile-motif-review-hint">
+        {motifBoundaryReviewHint && `${motifBoundaryReviewHint} `}{motifDesktopReviewHint}
       </p>}
       {adjacentOutline && <p className="quad-hint">{adjacentPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
       {scallopedAlternate && <p className="quad-hint">Prüfe den gestrichelten Vorschlag am Original. Wähle «Prints zusammen», falls dort ein eigener Abzug aufliegt.</p>}
@@ -514,6 +517,7 @@ function CropReview({ albumId, goHome }) {
   useEffect(() => { load().catch(e => setMessage(e.message)); }, [load]); const item = items[index];
   const captureReviewPending = type === "geometry"
     && item?.payload?.crop_modes?.full_print?.reason_codes?.includes(captureOutlineReviewReason);
+  const motifReviewPending = type === "geometry" && item?.payload?.motif_review_pending;
   const deferredProposals = getDeferredPrintProposals(item?.payload?.deferred_print_proposals);
   const countOutlines = type === "segmentation" ? getFragmentReviewOutlines(item?.payload?.detections || []) : [];
   const filmGridGroups = type === "segmentation" ? getFilmGridReviewSeams(item?.payload?.detections || []) : [];
@@ -532,19 +536,20 @@ function CropReview({ albumId, goHome }) {
     return ()=>removeEventListener("popstate",keepReviewOpen);
   },[]);
   function leaveReview(){ leavingRef.current=true; history.back(); }
-  function updateSavedCropModes(cropModes, segmentationMask) {
+  function updateSavedCropModes(cropModes, segmentationMask, motifReviewPending) {
     if (cropModes) {
       setItems(current => current.map(task => {
         if (task.id !== item.id) return task;
         const variantUrls = { ...task.payload.variant_urls };
         if (!cropModes.full_print?.outline_preview) delete variantUrls.full_print_preview;
         return { ...task, payload: { ...task.payload, crop_modes: cropModes, segmentation_mask: segmentationMask,
-          variant_urls: variantUrls } };
+          motif_review_pending: motifReviewPending, variant_urls: variantUrls } };
       }));
     }
     setMessage(cropModes?.full_print?.reason_codes?.includes(captureOutlineReviewReason)
       ? "Vier Ecken gespeichert. Die Papierkante bleibt in Prüfung."
-      : "Vier Ecken gespeichert und Perspektive korrigiert");
+      : motifReviewPending ? "Vier Ecken gespeichert. Der Motivzuschnitt bleibt in Prüfung."
+        : "Vier Ecken gespeichert und Perspektive korrigiert");
   }
   async function record(value) {
     if (!item || submitting) return;
@@ -566,7 +571,7 @@ function CropReview({ albumId, goHome }) {
       setMessage("Antwort gespeichert");
       setIndex((current) => current + 1);
     } catch (error) {
-      setAnswerError(error.message);
+      setAnswerError(error.message === "motif_geometry_review_required" ? motifDesktopReviewHint : error.message);
       await load().catch(() => {});
     } finally {
       setSubmitting(false);
@@ -581,7 +586,9 @@ function CropReview({ albumId, goHome }) {
       <section className="answer-grid">
         {cropAnswers[type].map(([value,label]) => (
           <button key={value} className={value === "correct" ? "good" : ""}
-            disabled={submitting || (value === "correct" && captureReviewPending)} onClick={() => record(value)}>
+            disabled={submitting || (value === "correct" && (captureReviewPending || motifReviewPending))}
+            aria-describedby={value === "correct" && motifReviewPending ? "mobile-motif-review-hint" : undefined}
+            onClick={() => record(value)}>
             {value === "correct" && (deferredProposals.length || countOutlines.length || filmGridGroups.length || paperGridGroups.length)
               ? "Anzahl bestätigen" : label}
           </button>

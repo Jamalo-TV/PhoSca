@@ -22,6 +22,23 @@ class ReviewReason(str, Enum):
     TEXT_DISTORTION_RISK = "TEXT_DISTORTION_RISK"
 
 
+_MOTIF_GEOMETRY_REASONS = frozenset({
+    "IMAGE_BOUNDARY_CURVED",
+    "IMAGE_BOUNDARY_UNCERTAIN",
+    "IMAGE_BOUNDARY_SAMPLING_UNCERTAIN",
+    "IMAGE_QUAD_UNSTABLE",
+    "IMAGE_RECTANGLE_INCONSISTENT",
+    "IMAGE_VISIBILITY_UNCERTAIN",
+    "BORDER_PROTECTED_CONTENT_VETO",
+    "WIDE_MOTIF_CONFIRMATION_REQUIRED",
+})
+
+
+def motif_geometry_requires_review(correction: dict | None) -> bool:
+    motif = (((correction or {}).get("crop_modes") or {}).get("image_only") or {})
+    return motif.get("status") == "review_needed" and not _MOTIF_GEOMETRY_REASONS.isdisjoint(motif.get("reason_codes") or ())
+
+
 def is_reviewed_non_print(rejection: dict | None, bounding_box: dict | None, mask: dict | None) -> bool:
     return bool(rejection and rejection == {"bounding_box": bounding_box, "segmentation_mask": mask})
 

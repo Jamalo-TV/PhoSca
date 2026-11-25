@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.models import OCRTextType, PageStatus, PhotoStatus
-from app.pipeline.decisions import photo_is_reviewed_non_print
+from app.pipeline.decisions import motif_geometry_requires_review, photo_is_reviewed_non_print
 from app.pipeline.variants import photo_image_url, variant_path_from_photo
 from app.schemas.common import BoundingBox, NormalizedPoint, PrintSizeMM, SegmentationMask, StrictSchema
 
@@ -65,6 +65,11 @@ class PhotoRead(BaseModel):
     @property
     def reviewed_non_print(self) -> bool:
         return photo_is_reviewed_non_print(self)
+
+    @computed_field
+    @property
+    def motif_review_pending(self) -> bool:
+        return motif_geometry_requires_review(self.enhancement_applied.get("correction"))
 
     @computed_field
     @property
