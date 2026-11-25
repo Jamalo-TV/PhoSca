@@ -2190,10 +2190,60 @@ obstructed cases marked ready. No model weights were promoted.
 
 ### Identify mounted prints in the Russell railroad album
 
-The Library of Congress catalog cross-references twelve printed pages in the
+The Library of Congress catalog cross-references thirteen printed pages in the
 bound Russell album with item records and measured print-stock dimensions.
 The [intake receipt](loc-russell-album-intake.json) records the whole-volume
-accession, the page-to-item mapping, and an item TIFF with its rights advisory.
+accession and publication advisory, the page-to-item mapping, and an item
+TIFF. The acquisition vendor's catalogue confirms that the paper prints in
+this volume are mounted on heavy stock. The page 3 record points to a public
+domain negative that can corroborate interior landmarks after matching.
 The managed network returned HTTP 403 for the official full-leaf manifest
-and the item download. The intake remains pending until the original rasters,
-independent capture and motif geometry can be checked.
+and the item download. Original rasters, separate capture and both crop
+references remain pending.
+
+### Preserve the paper contour when line fitting follows printed detail
+
+At 75% resolution the contact-sheet Canny contour encloses the complete
+paper. Line fitting previously moved its right side 94–114 source pixels
+inward onto the printed grid. The prepared edge detector favored the
+strong internal contrast even though the exterior of that line was still
+the same paper as the outer rim.
+
+The precise classical path now compares a large inward displacement with
+the original pixels. It checks the pale stock strip for a second material
+transition, verifies that the outer step stops at both corners, and checks
+where the adjoining sides meet the outer contour. When those checks pass,
+the raw contour supplies the whole-print review warp. The existing paper
+edge confirmation holds both crop modes. A retained contour may own an
+uncounted raster suggestion, and an already held proposal remains counted
+if it is itself the smaller contour. The calibration and validation profiles
+record classical contour refinement revision 1.
+
+The development replay decodes the pinned camera original, resizes to
+3060 × 2304 with OpenCV `INTER_AREA`, and encodes once at JPEG quality 75
+(SHA-256 `ae4a57a70f0ad426bd5c66bcaad9b1df438889bb59c1b222e850acafc2df2862`).
+The normalized draft paper reference is the one in the camera manifest.
+With the fixed mixed checkpoint, one print remains matched and counted
+false proposals drop from four to three. Against the draft paper footprint,
+instance mask IoU improves from 0.9160 to 0.9936 and whole-print crop IoU
+from 0.9085 to 0.9931. Crop cutoff falls from 9.15% to 0.57%, and the worst
+corner distance from 114.8 to 8.6 pixels in the tested source raster.
+Foreign fraction rises from about 0.001% to 0.15% (50 to 4,931 foreign source
+samples) as the wider warp reaches the draft boundary. The source has slight
+edge curvature and still lacks verified aspect and motif references.
+
+The guard took 1.57 ms median and 2.02 ms p95 over 100 warm runs on one
+OpenCV thread. Nearby paper, thin separating gaps, a rail extending past
+the corners and a white-on-white source stayed outside the retention path.
+A broad pale printed rectangle can imitate mounted stock. The confirmation
+hold covers that ambiguity. The normal upload serves the wider rectified
+whole print for review, exposes the reversible grid suggestion and holds
+both exports. The motif still needs a separate correction. The 33% capture
+remains a detector problem because it lacks the outer contour before line
+fitting.
+
+Golden, Domoritz, the frozen mixed hybrid and the generated stock
+challenge reproduced their previous instance and crop metrics. The frozen
+synthetic control hybrid retains 18/18 instance matches with no false
+proposals. The seeded geometry control retains 11/11 whole-print and
+12/12 motif passes, with zero obstructed cases marked ready.

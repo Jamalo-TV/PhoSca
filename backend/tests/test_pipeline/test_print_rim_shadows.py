@@ -3,12 +3,15 @@ import numpy as np
 import pytest
 
 from app.evaluation.cropping import evaluate_rendered_crop
+from app.pipeline import segmentation
 from app.pipeline.geometry import normalized_vertices_to_pixels
 from app.pipeline.perspective import correct_photo_crop
 from app.pipeline.print_edges import (
+    PRINT_EDGE_CONFIRMATION,
     PRINT_FAINT_RIM_REVIEW,
     PRINT_OUTER_EDGE_CONFLICT_REVIEW,
     PRINT_SHADOW_EDGE_REVIEW,
+    line_fit_omits_print_stock,
     refine_print_boundary,
 )
 
@@ -113,3 +116,47 @@ def test_faint_backing_guide_continued_past_corners_does_not_verify_a_rim():
         assert side["outward_search"]["support"] >= .88
         assert side["outward_search"]["corner_support"] >= .78
     assert PRINT_FAINT_RIM_REVIEW not in reasons
+
+
+@pytest.mark.parametrize("layout", ["single_print", "matching_album", "continuing_line", "adjacent_print", "near_rail"])
+def test_inward_line_fit_requires_stock_and_terminating_corners(layout):
+    image, _ = _scan(stock=(225, 126, 122), ink=120, jpeg_quality=75)
+    fitted = _PAPER.copy()
+    fitted[1:3, 0] -= 48
+    if layout == "matching_album":
+        tone = image[400, 1040]
+        image[:212] = image[851:] = tone
+        image[:, :221] = image[:, 1061:] = tone
+    elif layout == "continuing_line":
+        image[:212, 1007:1061] = image[212, 1007:1061]
+    elif layout == "adjacent_print":
+        # A second, same-colour print sits within the larger contour. Its
+        # narrow gap lies inside the stock corridor, away from either edge.
+        image[212:851, 1053:1057] = image[400, 1080]
+    elif layout == "near_rail":
+        image[:, 1061:1069] = image[400, 1040]
+
+    assert line_fit_omits_print_stock(image, _PAPER, fitted) is (layout == "single_print")
+
+
+def test_retained_contour_is_the_crop_seed_and_holds_both_modes(monkeypatch, tmp_path):
+    image, truth = _scan(stock=(225, 126, 122), ink=120, jpeg_quality=75)
+    fitted = _PAPER.copy()
+    fitted[1:3, 0] -= 48
+    box = cv2.boundingRect(_PAPER)
+    candidate = segmentation._ContourCandidate(box, _PAPER, float(truth["full_print"].mean()), "edge_contour")
+    monkeypatch.setattr(segmentation, "_find_contour_candidates", lambda *_: [candidate])
+    monkeypatch.setattr(segmentation, "_refine_quadrilateral_with_lines", lambda *_: (fitted, True))
+    setting = segmentation.Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://", YOLO_MODEL_PATH=tmp_path / "none.onnx")
+
+    proposal, = segmentation.segment_album_page(image, setting, source_image=image, protected_regions=[]).detections
+
+    assert proposal.review_reasons == [PRINT_EDGE_CONFIRMATION]
+    assert proposal.mask["warp_quad"] == proposal.mask["polygon"]
+    motif = segmentation._normalized_polygon(_MOTIF, *image.shape[1::-1])
+    crop = correct_photo_crop(
+        image, proposal.bounding_box, {**proposal.mask, "image_quad": motif},
+        dual_mode=True, auto_orient=False, protect_regions=False,
+        print_aspect_ratio=839 / 638,
+    )
+    _assert_review_geometry(image, truth, crop, PRINT_EDGE_CONFIRMATION)

@@ -12,7 +12,9 @@ PRINT_SHADOW_EDGE_REVIEW = "PRINT_SHADOW_EDGE_REVIEW"
 PRINT_FAINT_RIM_REVIEW = "PRINT_FAINT_OUTER_RIM_REVIEW"
 PRINT_OUTER_EDGE_CONFLICT_REVIEW = "PRINT_OUTER_EDGE_CONFLICT_REVIEW"
 PRINT_SHARED_RIM_UNCERTAIN = "PRINT_SHARED_RIM_UNCERTAIN"
+PRINT_EDGE_CONFIRMATION = "PRINT_EDGE_CONFIRMATION_REQUIRED"
 PRINT_BOUNDARY_REVISION = 10
+CLASSICAL_CONTOUR_REFINEMENT_REVISION = 1
 _PRINT_SIDES = ("top", "right", "bottom", "left")
 
 
@@ -498,6 +500,78 @@ def _edge_band(
     if np.any((points < 0) | (points > np.array(image.shape[1::-1]) - 1)):
         return None
     return _sample_lab(image, points.reshape(-1, 2)).reshape(*points.shape[:-1], 3)
+
+
+def line_fit_omits_print_stock(image: np.ndarray, contour: np.ndarray, fitted: np.ndarray) -> bool:
+    """Keep a source-supported contour when a fitted side moves onto the print."""
+    edges = np.roll(contour, -1, axis=0) - contour
+    lengths = np.linalg.norm(edges, axis=1)
+    if lengths.min() < 260:
+        return False
+    inward = np.column_stack((-edges[:, 1], edges[:, 0])) / lengths[:, None]
+    movement = fitted - contour
+    depths = np.stack(((movement * inward).sum(axis=1), (np.roll(movement, -1, axis=0) * inward).sum(axis=1)))
+    narrowed = np.flatnonzero(depths.min(axis=0) >= max(15., .04 * lengths.min()))
+    if len(narrowed) != 1:
+        return False
+    side, = narrowed
+    after = (side + 1) % 4
+    if np.max(np.abs(np.delete(depths, side, axis=1))) > .025 * lengths.min():
+        return False
+    depth = float(depths[:, side].min())
+    if depths[:, side].max() > .18 * lengths.min():
+        return False
+
+    body = np.linspace(.05, .95, 96, dtype=np.float32)
+    ends = np.float32([13, 20, 27, 34]) / lengths[side]
+    along = np.r_[body, ends, 1 - ends, -ends, 1 + ends]
+    offsets = np.linspace(0, depth - 5, min(128, int(np.ceil(depth)) - 4))
+    strip = _edge_band(image, contour[side], contour[after],
+                       [-.18 * depth, -.10 * depth, -.065 * depth, -.04 * depth, *offsets], fractions=along)
+    fitted_exterior = _edge_band(image, fitted[side], fitted[after], [-min(12, .22 * depth), -min(7, .14 * depth)],
+                                 fractions=body)
+    if strip is None or fitted_exterior is None:
+        return False
+    sampled_stock = strip[:, 4:]
+    settled = int(np.searchsorted(offsets, .16 * depth))
+    inside = sampled_stock[:len(body)]
+    stock = np.median(inside[:, settled:], axis=(0, 1))
+    matching = np.linalg.norm(inside - stock, axis=2) <= 13
+    # Find a second boundary after paper begins and before the fitted edge.
+    steady = matching[:, :-2] & matching[:, 1:-1] & matching[:, 2:]
+    before = np.maximum.accumulate(steady, axis=1)[:, :-5]
+    later = np.maximum.accumulate(steady[:, ::-1], axis=1)[:, ::-1][:, 5:]
+    gap = ~matching[:, 3:-4] & ~matching[:, 4:-3]
+    interrupted = np.any(before & gap & later, axis=1)
+    core = matching[:, settled:]
+    exterior = np.linalg.norm(strip[:len(body), 2:4] - stock, axis=2) > 13
+    if (not _is_pale_stock(stock) or any(part.mean() < .88 for part in np.array_split(core, 4))
+            or interrupted.mean() > .15 or np.min(core.mean(axis=0)) < .80 or exterior.mean() < .82
+            or np.mean(np.linalg.norm(fitted_exterior - stock, axis=2) <= 13) < .84):
+        return False
+    step = sampled_stock[:, settled:settled + max(2, len(offsets) // 6)].mean(axis=1) - strip[:, :2].mean(axis=1)
+    direction = np.median(step[:len(body)], axis=0)
+    strength = float(np.linalg.norm(direction))
+    if strength < 16:
+        return False
+    projected = step @ (direction / strength)
+    if np.percentile(projected[:len(body)], 15) < .55 * strength:
+        return False
+    arms = np.median(projected[len(body):].reshape(4, -1), axis=1)
+    if min(arms[:2]) < .48 * strength or np.max(np.abs(arms[2:])) > .44 * strength:
+        return False
+
+    # Both original flanks must meet the extended side across the lost strip.
+    for flank, reverse in (((side - 1) % 4, True), (after, False)):
+        fractions = np.float32([.21, .34, .47, .60]) * depth / lengths[flank]
+        band = _edge_band(image, contour[flank], contour[(flank + 1) % 4], [-7, -4, 4, 7],
+                          fractions=1 - fractions if reverse else fractions)
+        if band is None:
+            return False
+        matches = np.linalg.norm(band - stock, axis=2) <= 14
+        if matches[:, 2:].mean() < .75 or matches[:, :2].mean() > .25:
+            return False
+    return True
 
 
 def paper_rim_reaches_neighbor(

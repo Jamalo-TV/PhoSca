@@ -37,7 +37,9 @@ from app.pipeline.multipanel_prints import (
     recover_shared_stock_outline, shared_stock_outline,
 )
 from app.pipeline.page_deskew import album_rotation, deskewed_view
-from app.pipeline.print_edges import _backing_color, _is_pale_stock, refine_print_boundary
+from app.pipeline.print_edges import (
+    PRINT_EDGE_CONFIRMATION, _backing_color, _is_pale_stock, line_fit_omits_print_stock, refine_print_boundary,
+)
 from app.pipeline.quality import evaluate_segmentation_geometry
 from app.pipeline.scalloped_prints import (
     SCALLOPED_PRINT_CONFLICT, SCALLOPED_PRINT_REVIEW, measure_scalloped_print, possible_layer_edge, suggest_scalloped_motif,
@@ -1970,8 +1972,15 @@ def detect_photos_classical(
         _, _, candidate_width, candidate_height = candidate.box
         candidate_pixels = (candidate_width + line_pad) * (candidate_height + line_pad)
         refined_by_lines = False
+        retained_stock = False
         if max_line_refinement_pixels is None or line_pixels + candidate_pixels <= max_line_refinement_pixels:
-            polygon_points, refined_by_lines = _refine_quadrilateral_with_lines(image, polygon_points, line_cache)
+            contour = polygon_points
+            fitted, refined_by_lines = _refine_quadrilateral_with_lines(image, contour, line_cache)
+            retained_stock = (refined_by_lines and candidate.source == "edge_contour"
+                              and polygon_source == "classical_border_quad" and multipanel_source is not None
+                              and line_fit_omits_print_stock(multipanel_source, contour, fitted))
+            polygon_points = contour if retained_stock else fitted
+            refined_by_lines = refined_by_lines and not retained_stock
             line_pixels += candidate_pixels
         else:
             unrefined_candidates += 1
@@ -2003,14 +2012,17 @@ def detect_photos_classical(
             for reason in quality.review_reasons:
                 rejected_counts[reason] = rejected_counts.get(reason, 0) + 1
             continue
+        polygon = _normalized_polygon(polygon_points, width, height)
+        review = {"warp_quad": polygon, "paper_edge_confirmation": True} if retained_stock else {}
         detections.append(
             SegmentationDetection(
                 bounding_box=pixel_box_to_normalized(x, y, w, h, width, height),
                 mask={
-                    "polygon": _normalized_polygon(polygon_points, width, height),
+                    "polygon": polygon,
                     "source": polygon_source,
                     "detector_source": candidate.source,
                     "corner_refinement": "line_segments" if refined_by_lines else "contour",
+                    **review,
                     "scores": {
                         "edge_support": round(assessment.edge_support, 3),
                         "border_contrast": round(assessment.border_contrast, 3),
@@ -2026,7 +2038,7 @@ def detect_photos_classical(
                 confidence=assessment.confidence,
                 aspect_ratio=quality.aspect_ratio,
                 geometry_valid=quality.geometry_valid,
-                review_reasons=quality.review_reasons,
+                review_reasons=[*quality.review_reasons, PRINT_EDGE_CONFIRMATION] if retained_stock else quality.review_reasons,
             )
         )
 
@@ -3049,7 +3061,8 @@ def _defer_nested_print_candidates(image: np.ndarray, result: SegmentationResult
     height, width = image.shape[:2]
     quads = {}
     for index, item in enumerate(detections):
-        if not item.geometry_valid or item.review_reasons:
+        held_stock = item.mask.get("paper_edge_confirmation") is True and item.review_reasons == [PRINT_EDGE_CONFIRMATION]
+        if not item.geometry_valid or (item.review_reasons and not held_stock):
             continue
         polygon = _detection_polygon(item)
         if len(polygon) == 4 and cv2.isContourConvex(polygon):
@@ -3062,6 +3075,8 @@ def _defer_nested_print_candidates(image: np.ndarray, result: SegmentationResult
             continue
         if first > second:
             parent, child = child, parent
+        if detections[child].review_reasons:
+            continue
         outer_quad, inner_quad = _order_points(quads[parent]), _order_points(quads[child])
         if nested_print_on_shared_stock(image, outer_quad, inner_quad):
             quads[child] = inner_quad
@@ -3082,7 +3097,7 @@ def _defer_nested_print_candidates(image: np.ndarray, result: SegmentationResult
         item = updated[parent]
         updated[parent] = replace(item, mask={
             **item.mask, "nested_print_suggestion": _normalized_polygon(suggestions[child], width, height),
-        }, review_reasons=[MULTIPANEL_PRINT_REVIEW])
+        }, review_reasons=[MULTIPANEL_PRINT_REVIEW, *item.review_reasons])
     uncounted = set(deferred.values())
     return SegmentationResult(
         [item for index, item in enumerate(updated) if index not in uncounted],

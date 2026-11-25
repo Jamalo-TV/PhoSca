@@ -37,6 +37,7 @@ from app.pipeline.page_plane import (
     measured_page_aspect,
 )
 from app.pipeline.print_edges import (
+    PRINT_EDGE_CONFIRMATION,
     PRINT_FAINT_RIM_REVIEW,
     PRINT_SHADOW_EDGE_REVIEW,
     PRINT_SHARED_RIM_UNCERTAIN,
@@ -60,8 +61,7 @@ _PRINT_BOUNDARY_SOURCE = "physical_print_boundary"
 _PAPER_RIM_SOURCE = "visible_paper_rim"
 _REFINED_VISIBILITY_SOURCES = {_PRINT_BOUNDARY_SOURCE, _PAPER_RIM_SOURCE}
 _LOCALIZED_OCCLUSION_REASONS = {"PRINT_CORNERS_UNCERTAIN", "PRINT_POSSIBLY_OCCLUDED"}
-_PRINT_EDGE_CONFIRMATION = "PRINT_EDGE_CONFIRMATION_REQUIRED"
-_CROP_PREVIEW_REASONS = {_PRINT_EDGE_CONFIRMATION, PRINT_ASPECT_REFERENCE_REVIEW, FRAGMENTED_PRINT_REVIEW,
+_CROP_PREVIEW_REASONS = {PRINT_EDGE_CONFIRMATION, PRINT_ASPECT_REFERENCE_REVIEW, FRAGMENTED_PRINT_REVIEW,
                          SCALLOPED_PRINT_REVIEW, PRINT_SHADOW_EDGE_REVIEW, PRINT_FAINT_RIM_REVIEW,
                          EXTENDED_PRINT_OUTLINE_REVIEW, PRINT_SHARED_RIM_UNCERTAIN}
 
@@ -1151,6 +1151,8 @@ def _inspect_print(
                 metrics = _validate_quad(quad, width, height)
     if dual_mode:
         manual_outline = mask.get("manual_added") is True or mask.get(REVIEWED_CROSSING_OUTLINE) is True
+        if not manual and mask.get("paper_edge_confirmation") is True:
+            reasons.append(PRINT_EDGE_CONFIRMATION)
         scalloped = not manual and mask.get("scalloped_print") is True and visible is not None
         if scalloped:
             reasons.append(SCALLOPED_PRINT_REVIEW)
@@ -1221,7 +1223,7 @@ def _inspect_print(
         protection["review_untrimmed"] = True
         reasons.append("POSSIBLE_CONTENT_CUTOFF")
     if edge_confirmation and not reasons:
-        reasons.append(_PRINT_EDGE_CONFIRMATION)
+        reasons.append(PRINT_EDGE_CONFIRMATION)
     return _PrintInspection(quad, metrics, boundary, reasons, corner_mount, protection)
 
 
@@ -1233,7 +1235,7 @@ def _source_visible_outline(
         return None
     height, width = page.shape[:2]
     if not inspection.reasons or (
-        inspection.reasons == [_PRINT_EDGE_CONFIRMATION] and _pale_backing_review_fit(inspection.boundary)
+        inspection.reasons == [PRINT_EDGE_CONFIRMATION] and _pale_backing_review_fit(inspection.boundary)
     ):
         overlap = normalized_polygon_overlap(
             pixel_vertices_to_normalized(visible, width, height),

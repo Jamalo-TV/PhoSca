@@ -16,8 +16,13 @@
   "album_manifest": "https://www.loc.gov/resource/ppmsca.78514/?fo=json",
   "alternate_catalog_link": "https://hdl.loc.gov/loc.pnp/ppmsca.78514",
   "object_provenance": "Library of Congress catalog traces the album through R. K. Hawley and General Winfield Scott Hancock; purchased in 2018 from 19th Century Rare Book & Photograph Shop.",
+  "same_copy_vendor_catalog": {
+    "url": "https://www.19thshop.com/wp-content/files_mf/1530304065Cat175.pdf",
+    "printed_pages": "20–25",
+    "evidence": "The matching Hancock–Hawley provenance and count identify this volume. The catalog describes 108 albumen prints mounted on heavy stock, with most captions on separate slips. Its illustrations are low resolution. Native capture independence requires the library rasters."
+  },
   "page_number_rule": "Page values are printed catalog page numbers, not IIIF canvas or presentation-sequence indices. Cross-map each catalog item to a downloaded canvas by title, text and visible image content before recording a file as a match.",
-  "rights_status": "Page-38 print advisory verified. Verify album-level advisory and each other candidate asset. The MARC collection record documents original access on appointment for preservation.",
+  "rights_status": "The volume's MARC 540 field and the page-38 item report no known restrictions on publication. The MARC 506 field requires appointments to access the physical volume. Verify each other asset's item-level advisory.",
   "collection_rights_guidance": "https://www.loc.gov/rr/print/res/rights.html",
   "failed_requests": [
     {
@@ -42,6 +47,16 @@
     }
   ],
   "references": [
+    {
+      "printed_page": 3,
+      "item": "https://www.loc.gov/item/2022652187/",
+      "accession": "LC-DIG-ppmsca-80137",
+      "title": "Front of \"slave pen,\" Alexandria, Va.",
+      "sheet_height_width_mm": [265, 386],
+      "negative": "https://catalog.archives.gov/id/528808",
+      "negative_rights": "https://docsteach.org/document/slave-pen-of-price-birch-co-alexandria-va/",
+      "landmark_evidence": "The catalog cites the independently held public-domain negative. After image matching it can corroborate interior landmarks. The extent of this album print and its visible motif require the album leaf and the item capture."
+    },
     {
       "printed_page": 9,
       "item": "https://www.loc.gov/item/2022652193/",
@@ -160,7 +175,7 @@
   ],
   "pending": [
     "Download full native leaves and the same-print reference item files once authorized network access is available.",
-    "Verify item rights and bind provenance to one physical group.",
+    "Verify each remaining item's rights and bind provenance to one physical group.",
     "Match the page-turner canvas to each printed page. Pin native bytes with SHA-256 and retain resolution, capture metadata and source URL.",
     "Compare TIFF metadata and original pixel grids for independent exposure evidence. An accession and dimensions alone establish item identity and full stock size, while motif dimensions still need independent support.",
     "Use native rank and plane checks for capture correspondence. Compare full stock and the photographic image boundaries, with held-out landmarks where a separately captured exposure exists. Send ambiguous borders and obscured corners to review.",

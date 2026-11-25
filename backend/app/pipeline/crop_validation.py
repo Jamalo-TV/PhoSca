@@ -20,7 +20,7 @@ from app.pipeline.fragmented_prints import FRAGMENTED_PRINT_REVISION
 from app.pipeline.fusion_ownership import FUSION_OWNERSHIP_REVISION
 from app.pipeline.model_registry import sha256
 from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVISION
-from app.pipeline.print_edges import PRINT_BOUNDARY_REVISION
+from app.pipeline.print_edges import CLASSICAL_CONTOUR_REFINEMENT_REVISION, PRINT_BOUNDARY_REVISION
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
 from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
 from app.pipeline.training_provenance import (
@@ -70,6 +70,10 @@ def crop_validation_profile(settings: Settings) -> dict:
         ),
         "classical_line_pairs": (
             (2 if settings.enable_precise_photo_crops else 1) if settings.enable_classical_segmentation_fallback else None
+        ),
+        "classical_contour_refinement": (
+            CLASSICAL_CONTOUR_REFINEMENT_REVISION
+            if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "classical_duplicate_contours": (
             1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
@@ -171,7 +175,8 @@ def detector_calibration_profile(settings: Settings, *, segmentation: dict | Non
     return {"model_sha256": model, **{key: profile[key] for key in (
         "pipeline_version", "precise_photo_crops", "model_registry_sha256", "visible_mask_refinement", "source_contour_refinement",
         "print_boundary",
-        "classical_fallback", "fusion_ownership", "classical_line_pairs", "classical_duplicate_contours", "adjacent_print_outlines",
+        "classical_fallback", "fusion_ownership", "classical_line_pairs", "classical_contour_refinement",
+        "classical_duplicate_contours", "adjacent_print_outlines",
         "crossing_print_outlines", "separated_contrast_prints",
         "empty_drawn_frame_rejection",
         "album_window_detection", "multipanel_print_detection", "fragmented_print_detection", "scalloped_print_outline",

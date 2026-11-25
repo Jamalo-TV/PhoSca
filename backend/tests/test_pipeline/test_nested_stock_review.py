@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import cv2
 import numpy as np
 import pytest
@@ -5,6 +7,7 @@ import pytest
 from app.config import Settings
 from app.pipeline import segmentation
 from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVIEW, nested_print_on_shared_stock
+from app.pipeline.print_edges import PRINT_EDGE_CONFIRMATION
 
 
 _OUTER = np.float32([[78, 75], [629, 75], [629, 477], [78, 477]])
@@ -66,6 +69,28 @@ def test_distributed_paper_shadow_keeps_an_inset_print_out_of_the_link(blur):
         separate = cv2.GaussianBlur(separate, (0, 0), blur)
 
     assert not nested_print_on_shared_stock(separate, _OUTER, _INNER)
+
+
+def test_already_held_contour_can_be_a_parent_but_not_a_fragment():
+    page = _contact_sheet()
+    height, width = page.shape[:2]
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    parent, child = [
+        segmentation._make_detection(
+            box={}, points=quad, confidence=.9, image_width=width, image_height=height, settings=settings,
+            source="classical_border_quad", detector_source="edge_contour",
+        ) for quad in (_OUTER, _INNER)
+    ]
+
+    def hold(item):
+        return replace(item, mask={**item.mask, "paper_edge_confirmation": True},
+                       review_reasons=[PRINT_EDGE_CONFIRMATION])
+
+    child_held = segmentation.SegmentationResult([parent, hold(child)], {})
+    assert segmentation._defer_nested_print_candidates(page, child_held) is child_held
+    parent_held = segmentation.SegmentationResult([hold(parent), child], {})
+    retained, = segmentation._defer_nested_print_candidates(page, parent_held).detections
+    assert retained.review_reasons == [MULTIPANEL_PRINT_REVIEW, PRINT_EDGE_CONFIRMATION]
 
 
 @pytest.mark.parametrize("layout", [
