@@ -11,7 +11,7 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic,
 from app.pipeline.print_edges import _edge_band, _is_pale_stock, refine_print_boundary
 
 
-MULTIPANEL_PRINT_REVISION = 6
+MULTIPANEL_PRINT_REVISION = 7
 MULTIPANEL_PRINT_REVIEW = "MULTIPANEL_PRINT_REVIEW"
 RECOVERED_STOCK_SOURCE = "shared_stock_boundary"
 GRID_OUTLINE_REVIEW_SOURCE = "shared_grid_outline_review"
@@ -151,7 +151,9 @@ def grid_fragment_on_shared_stock(
         if not all(_continuous_grid_margin(strip) for strip in strips):
             return False
         start, end = round((left + .10 * (right - left)) * width), round((right - .10 * (right - left)) * width)
-        return _perforation_rails_cross_split(lab[:, start:end, 0], center)
+        if not _perforation_rails_cross_split(lab[:, start:end, 0], center):
+            return False
+        return not check_seam_edge or not _grid_fragment_has_offset_rim(image, native[0], native[1])
     return False
 
 
@@ -167,6 +169,28 @@ def _grid_fragment_has_paper_edge(image: np.ndarray, quad: np.ndarray, *, check_
         return True
     sides = ((quad[1], quad[2]), (quad[3], quad[0]))
     return any(_nested_print_cast_shadow(image, start, stop) for start, stop in sides)
+
+
+def _grid_fragment_has_offset_rim(image: np.ndarray, start: np.ndarray, stop: np.ndarray) -> bool:
+    """Look for distributed paper color near an approximate model edge."""
+    edge = stop - start
+    inward = np.float32([-edge[1], edge[0]]) / np.linalg.norm(edge)
+    fractions = np.linspace(.06, .94, 256, dtype=np.float32)
+    along = start + fractions[:, None] * edge
+    offsets = np.arange(-12., 12.01, .5, dtype=np.float32)
+    tilts = np.arange(-6., 6.01, 1.5, dtype=np.float32)
+    depths = offsets[None, :, None] + tilts[:, None, None] * (fractions - .5)
+    points = along + depths[..., None] * inward
+    sampled = _sample_lab(image, points.reshape(-1, len(fractions), 2))
+    if sampled is None:
+        return True
+    stock = np.median(sampled, axis=1)
+    neutral = (stock[:, 0] >= 125) & (np.abs(stock[:, 1:] - 128).max(axis=1) <= 25)
+    matching = np.linalg.norm(sampled - stock[:, None], axis=2) <= 12
+    # A paper rim must have support along its length. A row of light holes
+    # in an otherwise dark printed rail can have a similar overall mean.
+    sections = matching.reshape(-1, 8, len(fractions) // 8).mean(axis=2)
+    return bool(np.any(neutral & (sections.min(axis=1) >= .65)))
 
 
 def _grid_fragment_corner_shadow(

@@ -242,6 +242,19 @@ def test_recovering_grid_outline_retains_the_crop_seed_and_checks_thin_separatin
     assert disputed.full_print_preview is None and "outline_preview" not in full_mode
 
 
+@pytest.mark.parametrize("offset,tilt,thickness,tone", [(-8, 0, 1, 150), (5, -3, 2, 145)])
+@pytest.mark.parametrize("jpeg", [False, True])
+def test_grid_with_recognizable_offset_rim_retains_both_proposals(offset, tilt, thickness, tone, jpeg):
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    page, _, proposals = _grid_with_weak_outer_proposal(settings)
+    cv2.line(page, (109, 534 + offset), (791, 535 + offset + tilt), (tone,) * 3, thickness, cv2.LINE_AA)
+    if jpeg:
+        ok, encoded = cv2.imencode(".jpg", page, [cv2.IMWRITE_JPEG_QUALITY, 55])
+        assert ok
+        page = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+    assert segmentation._defer_nested_print_candidates(page, proposals) is proposals
+
+
 async def test_restoring_grid_fragment_invalidates_the_overlapping_review_png(client, monkeypatch):
     from uuid import uuid4
 

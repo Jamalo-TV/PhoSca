@@ -2396,6 +2396,39 @@ comparisons and the seeded crop benchmark. The seeded results remain
 11/11 for whole prints and 12/12 for motifs. The configuration profiles
 record the preview under `print_outline_suggestion` revision 2.
 
+### Keep distinct prints when a paper rim is offset from the model edge
+
+The fragment contour can fall several pixels inside or outside a physical
+paper seam. For recovered grid outlines the separation check now samples
+the original page on both sides of the proposed cut, including slightly
+slanted lines. It requires similar stock color across all eight sections
+of the line. A few bright perforations in printed detail cannot supply
+that distributed support. A supported rim retains both count proposals.
+The recovered outline remains available for review when the original
+ownership checks allow it. The change is recorded in multipanel revision 7.
+
+On crops derived from the 33% JPEG55 development capture, the added check
+retained separate proposals in all 40 raster-rim controls that previously
+linked, and all 38 that linked after another JPEG55 encode. These were
+one- to three-pixel light or muted rims placed at eight offsets. With
+subpixel coverage and tilted edges, two-pixel rims went from 60 to zero
+linked cases before recompression and from 61 to three after JPEG55.
+Thinner rims and weak shadows confined to printed ink remain ambiguous.
+The wider search is a veto on grouping. The rail witness and the review
+decision for JPEG75 and the lossless variant use the same criteria as before.
+
+The unmodified JPEG55 upload retains four rows and the same source JPEGs,
+proposed outline PNG and crop transforms. Both export modes continue to
+require review. On an upload with a muted two-pixel rim eight pixels above
+the proposed cut, count review keeps six rows instead of five and a
+deferred fragment. The existing five rows keep their crop transforms and
+preview pixels. Neither named export is available for the held rows.
+
+The added scan took 8.7 ms median and 10.3 ms p95 of CPU
+time over 20 warm runs on one OpenCV thread. Both mode metrics and review
+counts match the preceding Golden, Domoritz, stock challenge and frozen
+benchmark results.
+
 ### Verify that catalogued pairs represent independent acquisitions
 
 A leave-one-out affine fit of the 15 saved American Colony draft landmarks
@@ -2405,3 +2438,16 @@ An independent exposure still needs confirmation using the native raster
 noise and pixel grids. The saved transfer inventories do not contain the
 two exact Colony file hashes. Earlier near-duplicate comparisons did not
 cover this candidate or the Russell album.
+
+The Getty Bayard album was disbound in the 1980s. The published page
+viewer reconstructs the volume digitally. Catalogued dimensions and
+individual print records are available, but the viewer does not establish
+an independent capture of the mounted leaves. [Getty catalogue preview](https://api.pageplace.de/preview/DT0400.9781606068946_A49387925/preview-9781606068946_A49387925.pdf) ·
+[Reconstruction description](https://www.museaward.com/winner-info.php?id=231877)
+
+The conservation report for the two Ioannis Lampakis albums of the 1896
+Olympics documents scans of mounted prints and the removal and preservation
+of images from one of the albums. The family archive restricts reuse of
+its website material. Downloadable paired masters and permission for this
+evaluation remain unconfirmed. [Conservation report](https://resources.culturalheritage.org/pmgtopics/2013-volume-fifteen/46-T15_Adamopoulou.pdf) ·
+[Family archive terms](https://www.aol.org.gr/ioannis/)
