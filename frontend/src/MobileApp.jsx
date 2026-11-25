@@ -1,6 +1,7 @@
 import { Camera, Check, ChevronLeft, CircleHelp, CloudOff, Images, ListChecks, RefreshCw, Save, Upload, WandSparkles, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createAlbum, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
+import { resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import {
   clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, fragmentOutlineHint,
   fragmentOutlineReason, getCropModes, getFragmentOutline,
@@ -274,21 +275,7 @@ function isValidQuad(quad) {
   return sameDirection && area>0.001;
 }
 
-function drawMappedTriangle(context, image, source, destination) {
-  const [s0,s1,s2]=source, [d0,d1,d2]=destination;
-  const denominator=s0.x*(s1.y-s2.y)+s1.x*(s2.y-s0.y)+s2.x*(s0.y-s1.y);
-  if(Math.abs(denominator)<1e-8) return;
-  const a=(d0.x*(s1.y-s2.y)+d1.x*(s2.y-s0.y)+d2.x*(s0.y-s1.y))/denominator;
-  const c=(d0.x*(s2.x-s1.x)+d1.x*(s0.x-s2.x)+d2.x*(s1.x-s0.x))/denominator;
-  const e=(d0.x*(s1.x*s2.y-s2.x*s1.y)+d1.x*(s2.x*s0.y-s0.x*s2.y)+d2.x*(s0.x*s1.y-s1.x*s0.y))/denominator;
-  const b=(d0.y*(s1.y-s2.y)+d1.y*(s2.y-s0.y)+d2.y*(s0.y-s1.y))/denominator;
-  const d=(d0.y*(s2.x-s1.x)+d1.y*(s0.x-s2.x)+d2.y*(s1.x-s0.x))/denominator;
-  const f=(d0.y*(s1.x*s2.y-s2.x*s1.y)+d1.y*(s2.x*s0.y-s0.x*s2.y)+d2.y*(s0.x*s1.y-s1.x*s0.y))/denominator;
-  context.save(); context.beginPath(); context.moveTo(d0.x,d0.y); context.lineTo(d1.x,d1.y); context.lineTo(d2.x,d2.y); context.closePath(); context.clip();
-  context.setTransform(a,b,c,d,e,f); context.drawImage(image,0,0); context.restore();
-}
-
-function drawQuadPreview(canvas, image, quad, measuredAspect, orientation) {
+function drawQuadPreview(canvas, { image, pixels }, quad, measuredAspect, orientation) {
   const [first, second, third] = quad;
   const clockwise = (second.x - first.x) * (third.y - first.y) - (second.y - first.y) * (third.x - first.x) > 0;
   const ordered = clockwise ? quad : [quad[1], quad[0], quad[3], quad[2]];
@@ -307,34 +294,38 @@ function drawQuadPreview(canvas, image, quad, measuredAspect, orientation) {
   const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
   const rawWidth=Math.max(distance(source[0],source[1]),distance(source[3],source[2]),1);
   const rawHeight=Math.max(distance(source[0],source[3]),distance(source[1],source[2]),1);
-  const widthLimit = measuredAspect ? Math.min(1000, Math.floor(1000 * measuredAspect)) : 1000;
-  const width = Math.min(widthLimit, Math.max(240, Math.round(rawWidth)));
   const aspect = measuredAspect || rawWidth / rawHeight;
-  const height = Math.max(1, Math.round(width / aspect));
-  const steps = (orientation ?? 0) / 90;
-  canvas.width = steps % 2 ? height : width;
-  canvas.height = steps % 2 ? width : height;
-  const corners = [{ x: 0, y: 0 }, { x: canvas.width, y: 0 },
-    { x: canvas.width, y: canvas.height }, { x: 0, y: canvas.height }];
-  const destination = corners.map((_, index) => corners[(index + steps) % 4]);
-  const context=canvas.getContext("2d",{alpha:false}); context.fillStyle="#071b18";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  drawMappedTriangle(context,image,[source[0],source[1],source[2]],[destination[0],destination[1],destination[2]]);
-  drawMappedTriangle(context,image,[source[0],source[2],source[3]],[destination[0],destination[2],destination[3]]);
+  const limit = 720;
+  const width = Math.max(1, Math.min(limit, Math.round(limit * aspect), Math.max(240, Math.round(rawWidth))));
+  const height = Math.min(limit, Math.max(1, Math.round(width / aspect)));
+  const scaled = source.map(({ x, y }) => ({
+    x: x * (pixels.width - 1) / Math.max(1, image.naturalWidth - 1),
+    y: y * (pixels.height - 1) / Math.max(1, image.naturalHeight - 1),
+  }));
+  const result = resamplePerspective(pixels, scaled, width, height, orientation);
+  if (!result) return;
+  if (canvas.width !== result.width) canvas.width = result.width;
+  if (canvas.height !== result.height) canvas.height = result.height;
+  canvas.getContext("2d", { alpha: false }).putImageData(new ImageData(result.data, result.width, result.height), 0, 0);
 }
 
 function LiveCropPreview({ src, quad, savedCropUrl, measuredAspect, orientation }) {
-  const canvasRef = useRef(null); const [image,setImage]=useState(null);
+  const canvasRef = useRef(null);
+  const [sample, setSample] = useState(null);
   useEffect(() => {
-    let cancelled = false; const nextImage = new Image();
-    nextImage.onload = () => { if(!cancelled) setImage(nextImage); };
-    nextImage.src=src; return () => { cancelled=true; };
+    if (!src) return;
+    const image = new Image();
+    image.onload = () => setSample({ src, image, pixels: samplePreviewSource(image) });
+    image.src = src;
+    return () => { image.onload = null; };
   }, [src]);
   useEffect(() => {
-    if (image && canvasRef.current && isValidQuad(quad)) {
-      drawQuadPreview(canvasRef.current, image, quad, measuredAspect, orientation);
-    }
-  }, [image, quad, measuredAspect, orientation, savedCropUrl]);
+    if (savedCropUrl || !sample || sample.src !== src || !isValidQuad(quad)) return;
+    const frame = requestAnimationFrame(() => {
+      if (canvasRef.current) drawQuadPreview(canvasRef.current, sample, quad, measuredAspect, orientation);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [sample, src, quad, measuredAspect, orientation, savedCropUrl]);
   return <section className={`live-crop-preview ${savedCropUrl ? "rectified" : ""}`}><header><ZoomIn size={17}/><div><strong>{savedCropUrl ? "Gerichteter Ausschnitt" : "Live-Ausschnitt"}</strong><span>{savedCropUrl ? "Perspektive wurde aus den vier Ecken korrigiert" : "Vorschau folgt allen vier Ecken live"}</span></div></header>{savedCropUrl ? <img src={savedCropUrl} alt="Perspektivisch gerichteter Ausschnitt"/> : <canvas ref={canvasRef}/>}</section>;
 }
 
