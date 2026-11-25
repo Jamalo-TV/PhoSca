@@ -1937,3 +1937,34 @@ crop modes, and exports both at their expected dimensions after confirmation.
 The pipeline revision is `2026-11-precise-crops-v37` so validation applies to
 the corrected behavior. Automatic crop release still requires verified
 configuration-specific evidence.
+
+### Keep an enclosed contact grid in count review
+
+A 4080 × 3072 camera image includes one 35-frame paper contact sheet and a
+separate loose negative-film sleeve. The fallback proposed the paper, its
+enclosed image grid and the sleeve. The current detector keeps the paper and
+shows the grid as a dashed, uncounted candidate. Both crop modes stay in
+review until the user confirms the outer paper and the motif. The user can also
+add the dashed contour as a separate print. A flush print on similar paper can
+look identical in one exposure. One supported interpretation must never become
+an automatic count confirmation.
+
+The native check requires near-parallel edges in the outer print's plane,
+continuous pale stock around the inner perimeter, and no distributed exterior
+shadow that would support raised paper. It linked neither touching nor
+staggered independent prints in the 40 paired controls. The independently
+replayed helper took 1.71 ms median to test all three pairs in the camera scene.
+On the real development image, false proposals fell from two to one at IoU
+0.85. The remaining false proposal is the film sleeve. The paper mask IoU
+stayed at 0.995 and its crop footprint IoU stayed at 0.9945 against the draft.
+The published digital layout omits 132–147 native pixels at the nearest
+physical paper corners, so the manifest has no verified crop-mode reference.
+
+Save the pinned camera file as `runs/crop-quality/contact-sheet-camera-development.jpg`.
+The images stay local. [Source capture and printing process](https://github.com/stevekm/contact-sheets/blob/d30662533467f0542e23ee4f8ed19484a54e282d/README.md#L313-L323)
+
+```bash
+python scripts/evaluate_onnx_segmentation.py --classical-only \
+  --dataset-manifest data/evaluation/contact-sheet-camera-development.json \
+  --visuals --output runs/crop-quality/contact-sheet-camera-development.json
+```

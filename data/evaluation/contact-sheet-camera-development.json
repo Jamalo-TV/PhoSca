@@ -1,0 +1,34 @@
+{
+  "split_policy": {
+    "role": "development",
+    "album_independent": false
+  },
+  "pages": [
+    {
+      "id": "stevekm-contact-sheet-a-camera",
+      "source_group": "stevekm-contact-sheet-35mm-print-01",
+      "annotation_provenance": "development_draft",
+      "page_category": "photographed_loose_print",
+      "difficulty_tags": ["multipanel_print", "nested_motif", "adjacent_non_print", "glare"],
+      "image": "../../runs/crop-quality/contact-sheet-camera-development.jpg",
+      "image_sha256": "41a5650e9d9c6e220829ec128682d94dc9005fffb311776e638cdeb7b25f8cda",
+      "source_image_url": "https://raw.githubusercontent.com/stevekm/contact-sheets/d30662533467f0542e23ee4f8ed19484a54e282d/images/film_sheet_and_contact_sheet.jpg",
+      "source_raster_pixels": [4080, 3072],
+      "source_description_url": "https://github.com/stevekm/contact-sheets/blob/d30662533467f0542e23ee4f8ed19484a54e282d/README.md#L313-L323",
+      "rights": "Published in an open repository. No image-specific terms were located. Keep the source and derivatives local and exclude them from training.",
+      "annotations": "contact-sheet-camera-development-labels.txt",
+      "annotations_sha256": "3c7fc39b7554f6e2b3e1db8bbf2da85c51f3ced9dee2afa630bee5d6e7ee9d3a",
+      "expected_count": 1,
+      "observation": "The right-hand object is a physical contact-sheet print of 35 frames. The loose negative-film sleeve on the left is not a paper photo print. The paper-outline annotation is visual and approximate.",
+      "related_design": {
+        "url": "https://raw.githubusercontent.com/stevekm/contact-sheets/d30662533467f0542e23ee4f8ed19484a54e282d/images/contact_sheet_01_export.jpg",
+        "sha256": "5a2a975d8690f7d70c3ff6510d4b787703b45e535ceab2ad6e92833861b58e3d",
+        "raster_pixels": [4528, 6621],
+        "registration_inliers": 1149,
+        "held_out_quadrant_landmark_p95_pixels": [3.654, 5.057, 2.882, 2.917],
+        "nearest_physical_corner_disagreement_pixels": [139.2, 139.1, 147.5, 131.8],
+        "observation": "The design aligns features within the printed sheet. Its outer rectangle omits physical paper margins, so it supplies neither an approved paper boundary nor an approved motif crop."
+      }
+    }
+  ]
+}

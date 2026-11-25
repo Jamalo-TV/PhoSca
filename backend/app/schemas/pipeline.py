@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
@@ -115,6 +115,7 @@ class BoundingBoxUpdate(StrictSchema):
 class AdjacentPrintSuggestion(StrictSchema):
     photo_id: Annotated[UUID, Field(strict=False)]
     polygon: list[NormalizedPoint] = Field(min_length=4, max_length=4)
+    kind: Literal["nested"] | None = None
 
 
 class ManualPhotoCreate(StrictSchema):

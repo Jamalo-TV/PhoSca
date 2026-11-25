@@ -7,11 +7,11 @@ from math import sqrt
 import cv2
 import numpy as np
 
-from app.pipeline.geometry import order_quad_cyclic, quad_from_polygon
-from app.pipeline.print_edges import _is_pale_stock, refine_print_boundary
+from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic, quad_from_polygon
+from app.pipeline.print_edges import _edge_band, _is_pale_stock, refine_print_boundary
 
 
-MULTIPANEL_PRINT_REVISION = 3
+MULTIPANEL_PRINT_REVISION = 4
 MULTIPANEL_PRINT_REVIEW = "MULTIPANEL_PRINT_REVIEW"
 RECOVERED_STOCK_SOURCE = "shared_stock_boundary"
 _UNIT_QUAD = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
@@ -54,6 +54,61 @@ def _common_stock(image: np.ndarray, quad: np.ndarray) -> np.ndarray | None:
             # when the farther sample is already on a neighboring print.
             return None
     return stock
+
+
+def nested_print_on_shared_stock(image: np.ndarray, outer_quad: np.ndarray, inner_quad: np.ndarray) -> bool:
+    """Find a count-review candidate using ordered quadrilaterals in native pixels."""
+    scale = np.float32([image.shape[1] - 1, image.shape[0] - 1])
+    if np.any(scale <= 0):
+        return False
+    overlap = normalized_polygon_overlap(outer_quad / scale, inner_quad / scale)
+    if overlap.second_containment < .99 or not .60 <= overlap.iou <= .88:
+        return False
+
+    to_unit = cv2.getPerspectiveTransform(outer_quad, _UNIT_QUAD)
+    projected = cv2.perspectiveTransform(inner_quad[None], to_unit)[0]
+    margins = np.minimum(projected, 1 - projected)
+    if margins.min() < .004 or margins.max() > .18:
+        return False
+    edges = np.roll(projected, -1, axis=0) - projected
+    tilt = np.r_[edges[::2, 1], edges[1::2, 0]]
+    if np.max(np.abs(tilt)) > .02:
+        return False
+
+    sides = list(zip(inner_quad, np.roll(inner_quad, -1, axis=0), strict=True))
+    fractions = np.linspace(.10, .90, 120, dtype=np.float32)
+    rim = [_edge_band(image, start, stop, [-13, -10, -7, -4], fractions=fractions) for start, stop in sides]
+    if any(band is None for band in rim):
+        return False
+    tones = np.float32(rim)
+    stock = np.median(tones, axis=(0, 1, 2))
+    if not _is_pale_stock(stock):
+        return False
+    matching = np.linalg.norm(tones - stock, axis=3) <= 11
+    if np.any(matching.mean(axis=(1, 2)) < .66):
+        return False
+
+    # A separate inset can share the paper color. A distributed shadow
+    # supplies contrary evidence, while a flush inset can stay ambiguous.
+    return not any(_nested_print_cast_shadow(image, start, stop) for start, stop in sides)
+
+
+def _nested_print_cast_shadow(image: np.ndarray, start: np.ndarray, stop: np.ndarray) -> bool:
+    fractions = np.linspace(.04, .96, 220, dtype=np.float32)
+    offsets = [-32, -23, -16, -12, -9, -6, -4]
+    colors = _edge_band(image, start, stop, offsets, fractions=fractions)
+    if colors is None:
+        return True
+    lightness = colors[..., 0].astype(np.float32)
+    far = lightness[:, :3].mean(axis=1)
+    middle = lightness[:, 3:5].mean(axis=1)
+    near = lightness[:, 5:].mean(axis=1)
+    darkens_toward_edge = (far > 172) & (far - middle >= 1) & (middle - near >= 2) & (far - near >= 4)
+    return bool(
+        darkens_toward_edge.mean() >= .42
+        and all(part.mean() >= .27 for part in np.array_split(darkens_toward_edge, 4))
+        and _is_pale_stock(np.median(colors, axis=(0, 1)))
+    )
 
 
 def _bridge_intervals(

@@ -433,11 +433,11 @@ async def create_manual_photo(
         "request_id": str(payload.request_id),
         "warp_quad": quad,
         "print_size_mm": size.model_dump() if size else None,
-        "adjacent_suggestion": suggestion.model_dump(mode="json") if suggestion else None,
+        "adjacent_suggestion": suggestion.model_dump(mode="json", exclude_none=True) if suggestion else None,
     }
     # Two sessions can edit the same outline with different request UUIDs.
     # Its source and displayed coordinates identify a single addition.
-    identity = f"adjacent-print:{suggestion.model_dump_json()}" if suggestion else str(payload.request_id)
+    identity = f"adjacent-print:{suggestion.model_dump_json(exclude_none=True)}" if suggestion else str(payload.request_id)
     photo_id = uuid5(page.id, identity)
     existing = await session.get(ExtractedPhoto, photo_id)
     if existing is None:
@@ -468,21 +468,22 @@ async def create_manual_photo(
             (photo.enhancement_applied or {}).get("review_rejected_detection"), photo.bounding_box, photo.segmentation_mask,
         )
     ]
+    suggestion_key = "nested_print_suggestion" if suggestion and suggestion.kind == "nested" else "adjacent_print_suggestion"
     if suggestion:
         anchor = next((photo for photo in active if photo.id == suggestion.photo_id), None)
-        if (anchor is None or (anchor.segmentation_mask or {}).get("adjacent_print_suggestion")
+        if (anchor is None or (anchor.segmentation_mask or {}).get(suggestion_key)
                 != creation_request["adjacent_suggestion"]["polygon"]):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="adjacent_print_suggestion_stale")
     else:
         # A manually marked outline can exactly match an open suggestion.
         matches = [
-            photo for photo in active
-            if _same_visible_outline((photo.segmentation_mask or {}).get("adjacent_print_suggestion"), quad)
+            (photo, key) for photo in active for key in ("adjacent_print_suggestion", "nested_print_suggestion")
+            if _same_visible_outline((photo.segmentation_mask or {}).get(key), quad)
         ]
-        anchor = matches[0] if len(matches) == 1 else None
+        anchor, suggestion_key = matches[0] if len(matches) == 1 else (None, None)
     if anchor is not None:
         anchor.segmentation_mask = {
-            key: value for key, value in (anchor.segmentation_mask or {}).items() if key != "adjacent_print_suggestion"
+            key: value for key, value in (anchor.segmentation_mask or {}).items() if key != suggestion_key
         }
     # An older editor could save a suggestion as an unlinked manual photo.
     # Equal current corners describe the same visible footprint on this page.

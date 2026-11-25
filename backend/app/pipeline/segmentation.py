@@ -32,7 +32,8 @@ from app.pipeline.geometry import (
 from app.pipeline.image_ops import normalized_box_to_pixels, pixel_box_to_normalized
 from app.pipeline.mounted_prints import mounted_print_evidence
 from app.pipeline.multipanel_prints import (
-    MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE, recover_shared_stock_outline, shared_stock_outline,
+    MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE, nested_print_on_shared_stock,
+    recover_shared_stock_outline, shared_stock_outline,
 )
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.print_edges import _backing_color, _is_pale_stock, refine_print_boundary
@@ -2843,7 +2844,7 @@ def _refine_source_contours(
     candidates = {}
     for index, (item, own) in enumerate(zip(result.detections, originals, strict=True)):
         if (item.mask.get("detector_source") in {CONTRAST_COMPONENT_SOURCE, RECOVERED_STOCK_SOURCE, CAPTURE_EDGE_SOURCE}
-                or SCALLOPED_PRINT_CONFLICT in item.review_reasons):
+                or item.mask.get("nested_print_suggestion") or SCALLOPED_PRINT_CONFLICT in item.review_reasons):
             continue
         measured = measure_detected_visibility(
             image, item.mask, own, [other for i, other in enumerate(originals) if i != index], regions,
@@ -2983,6 +2984,50 @@ def _suggest_adjacent_album_edge_print(image: np.ndarray, result: SegmentationRe
     )
 
 
+def _defer_nested_print_candidates(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    detections = result.detections
+    if len(detections) < 2:
+        return result
+    height, width = image.shape[:2]
+    quads = {}
+    for index, item in enumerate(detections):
+        if not item.geometry_valid or item.review_reasons:
+            continue
+        polygon = _detection_polygon(item)
+        if len(polygon) == 4 and cv2.isContourConvex(polygon):
+            quads[index] = normalized_vertices_to_pixels(polygon, width, height)
+    pairs = []
+    for parent, child in combinations(quads, 2):
+        outer, inner = detections[parent].bounding_box, detections[child].bounding_box
+        iou, _, first, second = _normalized_box_overlap(outer, inner)
+        if not .54 <= iou <= .92 or max(first, second) < .95:
+            continue
+        if first > second:
+            parent, child = child, parent
+        outer_quad, inner_quad = _order_points(quads[parent]), _order_points(quads[child])
+        if nested_print_on_shared_stock(image, outer_quad, inner_quad):
+            quads[child] = inner_quad
+            pairs.append((parent, child))
+    degree = Counter(index for pair in pairs for index in pair)
+    deferred = {
+        parent: child for parent, child in pairs
+        if degree[parent] == 1 and degree[child] == 1
+    }
+    if not deferred:
+        return result
+    updated = detections.copy()
+    for parent, child in deferred.items():
+        item = updated[parent]
+        updated[parent] = replace(item, mask={
+            **item.mask, "nested_print_suggestion": _normalized_polygon(quads[child], width, height),
+        }, review_reasons=[MULTIPANEL_PRINT_REVIEW])
+    uncounted = set(deferred.values())
+    return SegmentationResult(
+        [item for index, item in enumerate(updated) if index not in uncounted],
+        {**result.metadata, "nested_print_count_suggestions": len(uncounted)},
+    )
+
+
 def _suggest_crossing_print_outline(
     image: np.ndarray, result: SegmentationResult, *, prepared: np.ndarray | None = None,
 ) -> SegmentationResult:
@@ -3059,6 +3104,7 @@ def segment_album_page(
             result = _recover_scalloped_prints(evidence_source, result, trim_border=settings.enable_border_trim)
             result = _suggest_adjacent_album_edge_print(evidence_source, result)
             result = _suggest_crossing_print_outline(evidence_source, result, prepared=image)
+            result = _defer_nested_print_candidates(evidence_source, result)
     model_path = settings.visible_mask_model_path
     if not settings.enable_precise_photo_crops:
         return result

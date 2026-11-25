@@ -49,7 +49,7 @@ import {
   adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getFragmentOutline,
   getSourceEdgeTraces,
-  getPrintEdgeReviewHint, missingPrintEdgeHint,
+  getPrintEdgeReviewHint, missingPrintEdgeHint, nestedPrintHint,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
@@ -1392,8 +1392,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
   const fragmentMask = fragmentReview && !rejectedDetection ? selected.segmentation_mask : null;
   const fragmentOutline = useMemo(() => getFragmentOutline(fragmentMask), [fragmentMask]);
   const suggestedNeighbor = selected?.segmentation_mask?.adjacent_print_suggestion;
+  const suggestedNested = selected?.segmentation_mask?.nested_print_suggestion;
+  const pendingNested = photos.filter((photo) => !photo.reviewed_non_print && photo.segmentation_mask?.nested_print_suggestion).length;
   const alternatePolygon = selected?.segmentation_confidence != null && !rejectedDetection
-    ? suggestedNeighbor || (selected.segmentation_mask?.scalloped_alternate_is_inner
+    ? suggestedNested || suggestedNeighbor || (selected.segmentation_mask?.scalloped_alternate_is_inner
       && selected.segmentation_mask?.scalloped_alternate_polygon)
     : null;
   const alternateOutline = useMemo(() => cyclicQuad(sanitizePolygon(alternatePolygon)), [alternatePolygon]);
@@ -1478,20 +1480,22 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
           context.stroke();
           context.restore();
         }
-        const dashedOutline = shape.usingOutlineSuggestion ? null : crossingOutline || alternateOutline;
-        if (dashedOutline) {
-          context.save();
-          context.strokeStyle = "#a21caf";
-          context.setLineDash([7, 5]);
-          context.beginPath();
-          dashedOutline.forEach(({ x, y }, index) => {
-            if (index === 0) context.moveTo(x * canvas.width, y * canvas.height);
-            else context.lineTo(x * canvas.width, y * canvas.height);
-          });
-          context.closePath();
-          context.stroke();
-          context.restore();
-        }
+      }
+      const dashedOutline = photo.id === selectedPhotoId
+        ? !shape.usingOutlineSuggestion && (crossingOutline || alternateOutline)
+        : !photo.reviewed_non_print && sanitizePolygon(photo.segmentation_mask?.nested_print_suggestion);
+      if (!editingImage && dashedOutline?.length === 4) {
+        context.save();
+        context.strokeStyle = "#a21caf";
+        context.setLineDash([7, 5]);
+        context.beginPath();
+        dashedOutline.forEach(({ x, y }, index) => {
+          if (index === 0) context.moveTo(x * canvas.width, y * canvas.height);
+          else context.lineTo(x * canvas.width, y * canvas.height);
+        });
+        context.closePath();
+        context.stroke();
+        context.restore();
       }
       if (editingImage && photo.id !== selectedPhotoId) return;
       const handles = editingImage
@@ -1765,6 +1769,11 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
       {!editingImage && showMissingEdges && missingTraces.length > 0 && (
         <p className="crop-editor-hint">{missingPrintEdgeHint}</p>
       )}
+      {!newPrint && !editingImage && !selected && pendingNested > 0 && (
+        <p className="crop-editor-hint" role="status">
+          {pendingNested === 1 ? "1 unklarer Vorschlag" : `${pendingNested} unklare Vorschläge`}. Wähle einen Abzug mit gestrichelter Innenkontur.
+        </p>
+      )}
       {newPrint && (
         <p className="crop-editor-hint" aria-live="polite">
           {newPrint.corners.length === 4 ? "Prüfe und verschiebe die Ecken an den sichtbaren Papierrand."
@@ -1773,11 +1782,13 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
       )}
       {!newPrint && !editingImage && alternateOutline && (
         <>
-          <p className="crop-editor-hint">{suggestedNeighbor ? adjacentPrintHint
+          <p className="crop-editor-hint">{suggestedNested ? nestedPrintHint : suggestedNeighbor ? adjacentPrintHint
             : "Prüfe den gestrichelten Vorschlag am Original. Ergänze ihn, falls dort ein eigener Abzug aufliegt."}</p>
           <button className="text-button compact" type="button" disabled={!canAddPhoto || saveState?.saving}
-            onClick={() => startAddition(alternateOutline, suggestedNeighbor ? { photo_id: selected.id, polygon: suggestedNeighbor } : null)}>
-            {suggestedNeighbor ? "Vorschlag für eigenen Abzug bearbeiten" : "Gestrichelten Vorschlag als Abzug ergänzen"}
+            onClick={() => startAddition(alternateOutline, suggestedNested
+              ? { photo_id: selected.id, polygon: suggestedNested, kind: "nested" }
+              : suggestedNeighbor ? { photo_id: selected.id, polygon: suggestedNeighbor } : null)}>
+            {suggestedNeighbor && !suggestedNested ? "Vorschlag für eigenen Abzug bearbeiten" : "Gestrichelten Vorschlag als Abzug ergänzen"}
           </button>
         </>
       )}

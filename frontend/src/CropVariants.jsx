@@ -13,6 +13,7 @@ export const fragmentOutlineHint = "Prüfe am Original, ob die Ausschnitte zu ei
 export const scallopedOutlineReviewReason = "PRINT_SCALLOPED_OUTLINE_REVIEW";
 export const scallopedOutlineReviewHint = "Die Vorschau folgt der gewellten Papierkante. Prüfe am Original, ob der ganze Abzug sichtbar ist.";
 export const adjacentPrintHint = "Prüfe am Original, ob der gestrichelte Bereich ein eigener Abzug ist und ob der helle Streifen zu seinem Papier gehört.";
+export const nestedPrintHint = "Prüfe am Original, ob der gestrichelte Bereich zum selben Papierabzug gehört. Bei einem Abzug bleiben alle Bilder im Motiv. Ergänze den Bereich, wenn dort ein eigener Abzug aufliegt.";
 export const crossingPrintReason = "CROSSING_PRINT_OUTLINE_REVIEW";
 export const crossingPrintHint = "Prüfe am Original, ob die gestrichelte Kontur einen eigenen Abzug zeigt. Falls die durchgezogene Markierung falsch ist, lade die gestrichelte Kontur und setze die Ecken an den Papierrand.";
 export const crossingPrintSaveHint = "Korrigiere und speichere zuerst die vier Ecken unter «Ganzer Abzug».";
@@ -119,6 +120,7 @@ export function CropVariants({ photo, hidden = false }) {
   const possibleFragmentOutline = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(fragmentOutlineReason);
   const possibleAdjacentPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.adjacent_print_suggestion;
+  const possibleNestedPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.nested_print_suggestion;
   const possibleCrossingPrint = photo.segmentation_confidence != null && photo.segmentation_mask?.crossing_print_suggestion;
   const scannerBackingUncertain = photo.enhancement_applied?.segmentation_review_reasons?.includes("SCANNER_BACKING_UNCERTAIN");
   const clippedOverlapUncertain = photo.segmentation_confidence != null
@@ -140,6 +142,7 @@ export function CropVariants({ photo, hidden = false }) {
       : "Vorschau zur Prüfung";
   const reviewMessage = (captureEdgeClipped
     && "Der vorgeschlagene Abzug reicht bis an den Aufnahmerand. Lade für den Zuschnitt eine Aufnahme hoch, die ihn ganz zeigt.")
+    || (possibleNestedPrint && nestedPrintHint)
     || (possibleMultipanel && reviewMessages.MULTIPANEL_PRINT_REVIEW)
     || (possibleFragmentedPrint && reviewMessages.FRAGMENTED_PRINT_REVIEW)
     || (possibleFragmentOutline && fragmentOutlineHint)

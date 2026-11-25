@@ -1,0 +1,153 @@
+import cv2
+import numpy as np
+import pytest
+
+from app.pipeline.multipanel_prints import nested_print_on_shared_stock
+
+
+_OUTER = np.float32([[78, 75], [629, 75], [629, 477], [78, 477]])
+_INNER = np.float32([[119, 115], [588, 115], [588, 436], [119, 436]])
+
+
+def _contact_sheet(stock: tuple[int, int, int] = (223, 227, 230)) -> np.ndarray:
+    page = np.full((550, 713, 3), (91, 106, 120), np.uint8)
+    cv2.fillConvexPoly(page, _OUTER.astype(np.int32), stock)
+    cv2.fillConvexPoly(page, _INNER.astype(np.int32), (42, 42, 42))
+    for row in range(3):
+        for column in range(4):
+            left, top = 126 + column * 115, 123 + row * 104
+            color = 105 + 20 * (row + column)
+            cv2.rectangle(page, (left, top), (left + 108, top + 95), (color, color, color), -1)
+    return page
+
+
+def test_link_requires_enclosed_grid_on_consistent_pale_stock():
+    page = _contact_sheet()
+    assert nested_print_on_shared_stock(page, _OUTER, _INNER)
+    assert not nested_print_on_shared_stock(page, _INNER, _INNER)
+    assert not nested_print_on_shared_stock(_contact_sheet((103, 141, 171)), _OUTER, _INNER)
+
+
+@pytest.mark.parametrize("shift", [np.float32([510, 0]), np.float32([540, 45])])
+def test_independent_adjacent_print_does_not_link(shift):
+    page = np.pad(_contact_sheet(), ((0, 0), (0, 520), (0, 0)), constant_values=100)
+    assert not nested_print_on_shared_stock(page, _OUTER, _INNER + shift)
+
+
+@pytest.mark.parametrize("shift", [np.float32([20, 0]), np.float32([0, 20])])
+def test_enclosed_quad_needs_parallel_edges_in_both_axes(shift):
+    inner = _INNER.copy()
+    inner[2] += shift
+    assert not nested_print_on_shared_stock(_contact_sheet(), _OUTER, inner)
+
+
+def test_projected_grid_keeps_a_matching_stock_link():
+    image = _contact_sheet()
+    page_quad = np.float32([[0, 0], [712, 0], [712, 549], [0, 549]])
+    perspective_quad = np.float32([[7, 8], [695, 26], [702, 530], [30, 540]])
+    transform = cv2.getPerspectiveTransform(page_quad, perspective_quad)
+    warped = cv2.warpPerspective(image, transform, image.shape[1::-1])
+    outer, inner = cv2.perspectiveTransform(np.stack((_OUTER, _INNER)), transform)
+
+    assert nested_print_on_shared_stock(warped, outer, inner)
+
+
+@pytest.mark.parametrize("blur", [0, .85])
+def test_distributed_paper_shadow_keeps_an_inset_print_out_of_the_link(blur):
+    page = _contact_sheet()
+    layer = np.ones(page.shape[:2], np.uint8)
+    cv2.fillConvexPoly(layer, _INNER.astype(np.int32), 0)
+    distance = cv2.distanceTransform(layer, cv2.DIST_L2, 5)
+    shadow = 9 * (.5 + .5 * np.cos(np.minimum(distance / 22, 1) * np.pi)) * layer
+    separate = np.uint8(np.clip(page - shadow[:, :, None], 0, 255))
+    if blur:
+        separate = cv2.GaussianBlur(separate, (0, 0), blur)
+
+    assert not nested_print_on_shared_stock(separate, _OUTER, _INNER)
+
+
+@pytest.mark.parametrize("separate_print", [False, True])
+async def test_nested_grid_requires_review_in_the_upload_and_export_flow(client, monkeypatch, separate_print):
+    from uuid import uuid4
+
+    from app.config import get_settings
+    from app.pipeline import segmentation
+    from app.pipeline.image_ops import pixel_box_to_normalized
+    from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVIEW
+    from app.services import pipeline
+
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
+    monkeypatch.setenv("MAX_UPLOAD_SIZE", "1048576")
+    monkeypatch.setenv("MAX_REQUEST_SIZE", "2097152")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    get_settings.cache_clear()
+    page = _contact_sheet()
+    height, width = page.shape[:2]
+
+    def proposal(quad):
+        box = pixel_box_to_normalized(*cv2.boundingRect(quad), width, height)
+        return segmentation._make_detection(
+            box=box, points=quad, confidence=.9, image_width=width, image_height=height,
+            settings=get_settings(), source="classical_border_quad", detector_source="edge_contour",
+        )
+
+    stock, grid = proposal(_OUTER), proposal(_INNER)
+    monkeypatch.setattr(segmentation, "_segment_album_page", lambda *_: segmentation.SegmentationResult([stock, grid], {}))
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    album = await client.post("/api/v1/albums", json={"name": "Kontaktabzug"})
+    assert album.status_code == 201, album.text
+    album_id = album.json()["id"]
+    album_url = f"/api/v1/albums/{album_id}"
+    ok, payload = cv2.imencode(".png", page)
+    assert ok
+    upload = await client.post(f"{album_url}/pages/upload", files=[("files", ("album.png", payload.tobytes(), "image/png"))])
+    assert upload.status_code == 201, upload.text
+    photo, = (await client.get(f"{album_url}/photos")).json()
+    assert photo["segmentation_mask"]["polygon"] == stock.mask["polygon"]
+    assert photo["segmentation_mask"]["nested_print_suggestion"] == grid.mask["polygon"]
+    assert photo["enhancement_applied"]["segmentation_review_reasons"] == [MULTIPANEL_PRINT_REVIEW]
+    assert photo["crop_download_urls"] == {"full_print": None, "image_only": None}
+    count_review, = (await client.get("/api/v1/review/queue", params={"type": "segmentation", "album_id": album_id})).json()
+    assert count_review["payload"]["detection_count"] == 1
+    count_entry, = count_review["payload"]["detections"]
+    assert count_entry["segmentation_mask"]["nested_print_suggestion"] == grid.mask["polygon"]
+
+    url = f"/api/v1/photos/{photo['id']}"
+    if separate_print:
+        # At limited contrast a flush second print can look like part of the
+        # larger print. The reviewer may explicitly add it from the suggestion.
+        addition = {
+            "request_id": str(uuid4()), "warp_quad": grid.mask["polygon"],
+            "adjacent_suggestion": {"photo_id": photo["id"], "polygon": grid.mask["polygon"], "kind": "nested"},
+        }
+        page_id = upload.json()["pages"][0]["page_id"]
+        add_url = f"/api/v1/pages/{page_id}/manual-photos"
+        added = await client.post(add_url, json=addition)
+        assert added.status_code == 201, added.text
+        retry = await client.post(add_url, json=addition)
+        assert retry.status_code == 200 and retry.json()["id"] == added.json()["id"]
+        duplicate = await client.post(add_url, json={**addition, "request_id": str(uuid4())})
+        assert duplicate.status_code == 409
+        assert duplicate.json()["detail"] == "adjacent_print_suggestion_saved"
+        updated = (await client.get(url)).json()
+        assert not updated["segmentation_mask"].get("nested_print_suggestion")
+        assert updated["crop_download_urls"] == {"full_print": None, "image_only": None}
+        queue = await client.get("/api/v1/review/queue", params={"type": "segmentation", "album_id": album_id})
+        assert queue.json()[0]["payload"]["detection_count"] == 2
+        return
+
+    vertices = stock.mask["polygon"]
+    reviewed = await client.patch(f"{url}/bounding-box", json={
+        "bounding_box": stock.bounding_box,
+        "segmentation_mask": {"polygon": vertices, "warp_quad": vertices, "image_quad": grid.mask["polygon"],
+                              "source": "manual_quad", "print_size_mm": {"width": 551, "height": 402}},
+    })
+    assert reviewed.status_code == 200, reviewed.text
+    assert not reviewed.json()["segmentation_mask"].get("nested_print_suggestion")
+    for mode, reference in (("full_print", page[75:478, 78:630]), ("image_only", page[115:437, 119:589])):
+        download = await client.get(reviewed.json()["crop_download_urls"][mode])
+        assert download.status_code == 200, download.text
+        crop = cv2.imdecode(np.frombuffer(download.content, np.uint8), cv2.IMREAD_COLOR)
+        assert crop.shape == reference.shape
+        assert np.abs(crop.astype(float) - reference).mean() < 3
