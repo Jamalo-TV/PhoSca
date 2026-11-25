@@ -119,8 +119,9 @@ export async function getReviewProgress() {
   return parseResponse(await apiFetch("/api/v1/review/progress"));
 }
 
-export async function patchBoundingBox(photoId, boundingBox, segmentationMask = null) {
+export async function patchBoundingBox(photoId, boundingBox, segmentationMask = null, confirmPrintOutline = false) {
   const body = segmentationMask ? { bounding_box: boundingBox, segmentation_mask: segmentationMask } : { bounding_box: boundingBox };
+  if (confirmPrintOutline) body.confirm_print_outline = true;
   return parseResponse(
     await apiFetch(`/api/v1/photos/${photoId}/bounding-box`, {
       method: "PATCH",

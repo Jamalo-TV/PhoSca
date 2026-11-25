@@ -110,6 +110,7 @@ class ReviewSegmentationMask(SegmentationMask):
 class BoundingBoxUpdate(StrictSchema):
     bounding_box: BoundingBox
     segmentation_mask: ReviewSegmentationMask | None = None
+    confirm_print_outline: bool = False
 
 
 class AdjacentPrintSuggestion(StrictSchema):

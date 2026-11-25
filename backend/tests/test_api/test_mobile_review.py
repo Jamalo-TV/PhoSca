@@ -1113,6 +1113,61 @@ async def test_crossing_outline_requires_outer_correction_before_a_motif_edit(cl
     assert "PRINT_POSSIBLY_OCCLUDED" in modes["full_print"]["reason_codes"]
 
 
+@pytest.mark.parametrize("use_suggestion", [False, True])
+async def test_print_outline_suggestion_needs_explicit_whole_print_review(client, monkeypatch, use_suggestion):
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.print_edges import PRINT_EDGE_CONFIRMATION
+
+    album, _, anchor_id, _, _ = await _seed_adjacent_manual_addition(monkeypatch)
+
+    def outline(left, top, right, bottom):
+        return [{"x": x / 289, "y": y / 169} for x, y in [(left, top), (right, top), (right, bottom), (left, bottom)]]
+
+    initial = outline(23, 28, 123, 131)
+    suggestion = outline(18, 24, 127, 134)
+    async with get_session_factory()() as session:
+        anchor = await session.get(ExtractedPhoto, anchor_id)
+        anchor.segmentation_mask = {"polygon": initial}
+        old_box = anchor.bounding_box
+        mode = {"status": "review_needed", "reason_codes": [PRINT_EDGE_CONFIRMATION]}
+        metadata = dict(anchor.enhancement_applied)
+        metadata["correction"] = {**metadata["correction"], "crop_modes": {
+            "full_print": {**mode, "warp_quad": initial, "suggested_warp_quad": suggestion},
+            "image_only": mode,
+        }}
+        metadata["review_reasons"] = [PRINT_EDGE_CONFIRMATION]
+        anchor.enhancement_applied = metadata
+        await session.commit()
+
+    url = f"/api/v1/photos/{anchor_id}"
+    queue = (await client.get("/api/v1/review/queue", params={"album_id": album, "type": "geometry"})).json()
+    item, = queue
+    mode = item["payload"]["crop_modes"]["full_print"]
+    assert mode["warp_quad"] == initial and mode["suggested_warp_quad"] == suggestion
+    for mode_name in ("full_print", "image_only"):
+        assert (await client.get(f"{url}/image", params={"variant": mode_name})).status_code == 404
+    edit = {"polygon": initial, "warp_quad": initial, "image_quad": outline(30, 34, 110, 123)}
+    for mask in (None, edit, {**edit, "orientation_degrees": 90}):
+        blocked = await client.patch(f"{url}/bounding-box", json={"bounding_box": old_box, "segmentation_mask": mask})
+        assert blocked.status_code == 409 and blocked.json()["detail"] == "print_outline_review_required"
+
+    selected = suggestion if use_suggestion else initial
+    corrected = await client.patch(f"{url}/bounding-box", json={
+        "bounding_box": {"x1": selected[0]["x"], "y1": selected[0]["y"], "x2": selected[2]["x"], "y2": selected[2]["y"]},
+        "segmentation_mask": {**edit, "polygon": selected, "warp_quad": selected, "source": "manual_quad",
+                              "print_size_mm": {"width": 109, "height": 110}},
+        "confirm_print_outline": not use_suggestion,
+    })
+    assert corrected.status_code == 200, corrected.text
+    photo = corrected.json()
+    assert photo["id"] == str(anchor_id)
+    assert "suggested_warp_quad" not in photo["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+    assert len((await client.get(f"/api/v1/albums/{album}/photos")).json()) == 1
+    for mode_name in ("full_print", "image_only"):
+        assert (await client.get(photo["crop_download_urls"][mode_name])).status_code == 200
+
+
 async def test_manual_save_of_matching_outline_retires_the_open_suggestion(client, monkeypatch) -> None:
     from app.database import get_session_factory
     from app.models import ExtractedPhoto

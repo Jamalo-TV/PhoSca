@@ -52,6 +52,7 @@ from app.pipeline.print_edges import (
     suggest_missing_pale_backing_edge,
     suggest_partial_corner_edge,
 )
+from app.pipeline.print_outline_suggestion import suggest_outer_print_outline
 from app.pipeline.print_stock import find_outer_stock_candidate
 from app.pipeline.protected_regions import detect_protected_regions, merge_protected_regions, validate_protected_regions
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVIEW
@@ -1319,6 +1320,7 @@ def correct_photo_crop(
         src_points = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=np.float32)
     if not measured_edge:
         src_points = _order_points(src_points)
+    seed_points = src_points
     manual = not allow_border_expansion or str(mask.get("source") or "").startswith("manual")
     manual_rotation = mask.get("orientation_degrees") if manual else None
     regions = [] if not protect_regions else (
@@ -1500,7 +1502,7 @@ def correct_photo_crop(
         print_outline = visible if SCALLOPED_PRINT_REVIEW in full_reasons and protection["passed"] and not (
             {"PRINT_POSSIBLY_OCCLUDED", "POSSIBLE_CONTENT_CUTOFF"} & set(full_reasons)
         ) else None
-        return _dual_crop_result(
+        result = _dual_crop_result(
             page_image, corrected, src_points, matrix, metadata, _explicit_quad(mask, "image_quad", width, height),
             full_reasons, trim_border=trim_border, auto_orient=auto_orient, orientation_model_path=orientation_model_path,
             manual_rotation=manual_rotation, page_regions=regions, protect_regions=protect_regions,
@@ -1511,6 +1513,24 @@ def correct_photo_crop(
             motif_suggestion=_explicit_quad(mask, "scalloped_motif_suggestion", width, height)
             if print_outline is not None and trim_border else None,
         )
+        modes = result.metadata["crop_modes"]
+        uncertain = {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_BOUNDARY_UNSUPPORTED", "PRINT_OUTER_RIM_UNCERTAIN"}
+        if (enable_classical_retry and not manual and mask.get("detector_source") == "contrast_region"
+                and not mask.get("warp_quad") and not print_edge_traces and uncertain.intersection(full_reasons)
+                and CAPTURE_EDGE_HOLD not in full_reasons
+                and all(mode["status"] == "review_needed" for mode in modes.values())):
+            try:
+                alternative = suggest_outer_print_outline(page_image, seed_points, src_points, neighbor_polygons)
+                if alternative is not None:
+                    _validate_quad(alternative, width, height)
+            except (ValueError, cv2.error):
+                alternative = None
+            if alternative is not None:
+                modes["full_print"]["suggested_warp_quad"] = _vertices_on_page(alternative, width, height)
+                for mode in modes.values():
+                    if PRINT_EDGE_CONFIRMATION not in mode["reason_codes"]:
+                        mode["reason_codes"].append(PRINT_EDGE_CONFIRMATION)
+        return result
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:
         before_shape = corrected.shape[:2]

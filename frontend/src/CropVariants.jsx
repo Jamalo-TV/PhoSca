@@ -18,6 +18,7 @@ export const deferredPrintHint = "Prüfe die violett gestrichelten Konturen am O
 export const crossingPrintReason = "CROSSING_PRINT_OUTLINE_REVIEW";
 export const crossingPrintHint = "Prüfe am Original, ob die gestrichelte Kontur einen eigenen Abzug zeigt. Falls die durchgezogene Markierung falsch ist, lade die gestrichelte Kontur und setze die Ecken an den Papierrand.";
 export const crossingPrintSaveHint = "Korrigiere und speichere zuerst die vier Ecken unter «Ganzer Abzug».";
+export const printOutlineSaveHint = "Prüfe und speichere zuerst die Papierkontur unter «Ganzer Abzug».";
 export const captureOutlineReviewReason = "PRINT_CAPTURE_OUTLINE_REVIEW";
 export const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
 const printEdgeReviewHints = {
@@ -43,6 +44,9 @@ export function getDeferredPrintProposals(proposals) {
 }
 
 export function getPrintEdgeReviewHint(fullPrint) {
+  if (fullPrint?.suggested_warp_quad?.length === 4) {
+    return "Vergleiche den vorgeschlagenen Aussenumriss mit dem Original. Setze die Ecken an die sichtbare Papierkante.";
+  }
   if (fullPrint?.reason_codes?.includes("PRINT_CURVED_OUTLINE_REVIEW")) {
     return printEdgeReviewHints.PRINT_CURVED_OUTLINE_REVIEW;
   }

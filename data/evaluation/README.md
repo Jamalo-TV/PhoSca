@@ -835,6 +835,21 @@ checks all pinned files and leaves eight missing metric references and 61
 mode annotations awaiting independent review. [Whiting album catalog](https://www.loc.gov/item/2007675298/)
 and [American Colony album catalog](https://www.loc.gov/pictures/item/2007675258/).
 
+The physical volumes in these Whiting receipts have three catalog identities.
+*Diary in photos*, volume I (LOT 13836, series `17161`/`17162`) has been used
+in development diagnostics and belongs outside the final split. *World War I
+in Palestine and the Sinai* (LOT 13833, `13708`/`13709`) and *Members and
+activities of the American Colony* (`15831`/`15830`) are separate albums.
+The drafts retain their conservative source grouping while prior use and
+same-print duplication across the albums are checked.
+
+The American Colony pair `15831-00019` / `15830-00057` has a whole-stock
+corner disagreement of 0.135 native pixels and held-out landmark p95 of
+0.397 pixels. The motif still needs a source-only decision on the shared
+paper and image boundary. The TIFFs record 200 and 400 dpi and timestamps
+three seconds apart. Separate acquisition still needs a comparison of
+the raw pixel grids and capture metadata. [American Colony album catalog](https://www.loc.gov/pictures/item/2007675258/)
+
 The International Bomber Command Centre catalog pairs four mounted Quine
 album pages with larger images of all 14 prints. A separate Langworthy
 album page has six represented prints and multiple close-ups of one print.
@@ -2247,3 +2262,44 @@ challenge reproduced their previous instance and crop metrics. The frozen
 synthetic control hybrid retains 18/18 instance matches with no false
 proposals. The seeded geometry control retains 11/11 whole-print and
 12/12 motif passes, with zero obstructed cases marked ready.
+
+### Suggest an outer outline for the low-resolution camera review
+
+The 33% contact-sheet capture loses the physical paper outline during
+initial detection. When both modes already need geometry review and a
+classical contrast proposal has an unresolved boundary, a local source
+search compares two chroma thresholds around the same pale stock. The
+result must enclose the original proposal closely, agree across both
+thresholds, and have a visible four-sided perimeter. Native samples near
+the ends check narrow gaps that morphological closing can hide. The search
+abstains when it would newly surround or cross a competing detection.
+
+The alternate quadrilateral appears dashed in the whole-print editor on
+desktop and mobile. It can be loaded into the existing photo's draft.
+The original preview pixels, effective warp, mask ownership, and detection
+count remain in place until the reviewer saves. Both modes keep their
+previous review reasons and exports stay held. An unchanged outer quad
+requires explicit whole-print confirmation. A motif-only or rotation-only
+edit cannot resolve the pending outline review. A very thin flush join or a
+printed shape can mimic continuous stock, so the alternative requires the
+reviewer's source comparison.
+
+The camera replay decodes the pinned original, scales both dimensions by
+0.33 with OpenCV `INTER_AREA` to 1346 × 1014, and encodes once at JPEG55
+(SHA-256 `e31141f16b3c6abd0a3595cce0f9a229752cbd29684af4bc92e693efa1ea3f83`).
+Against the draft paper footprint, the existing whole-print preview has
+IoU 0.8377 and maximum corner distance 60.4 native pixels. The suggested
+outline has IoU 0.9847 and maximum corner distance 4.9 pixels. The right-hand
+paper also receives an outline on JPEG75 and the lossless resized input.
+On all three variants, the sleeve receives no suggestion and the existing
+previews keep their pixels and homographies. The instance benchmark remains
+at zero matches and five counted proposals at IoU 0.85 for JPEG55. The
+source still lacks independently verified motif geometry and aspect.
+
+The `print_outline_suggestion` revision is recorded in both configuration
+profiles. The source search took 64 ms median and 92 ms p95 over 20 warm
+runs with one OpenCV thread. Golden, Domoritz, the stock challenge and
+the frozen comparisons reproduced their existing instance and crop metrics.
+The frozen synthetic control retains 18/18 instance matches and the seeded
+geometry test retains 11/11 whole-print and 12/12 motif passes. This camera
+sample remains a development case.

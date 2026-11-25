@@ -578,12 +578,20 @@ async def update_photo_bounding_box(
             payload.segmentation_mask.as_dict() if payload.segmentation_mask else _rect_mask_from_box(box, width, height)
         )
         original_mask = photo.segmentation_mask or {}
+        correction = (photo.enhancement_applied or {}).get("correction") or {}
+        full_print = (correction.get("crop_modes") or {}).get("full_print") or {}
+        if full_print.get("suggested_warp_quad") and photo.segmentation_confidence is not None:
+            explicit = payload.segmentation_mask is not None and payload.segmentation_mask.warp_quad is not None
+            outer = segmentation_mask.get("warp_quad") or []
+            previous_outlines = (full_print.get("warp_quad"), original_mask.get("warp_quad") or original_mask.get("polygon"))
+            if not explicit or (not payload.confirm_print_outline and any(
+                _same_visible_outline(previous, outer, native_size=(width, height)) for previous in previous_outlines
+            )):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="print_outline_review_required")
         if original_mask.get("crossing_print_suggestion"):
             if payload.segmentation_mask is None or payload.segmentation_mask.warp_quad is None:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="crossing_print_outline_required")
             outer = segmentation_mask.get("warp_quad")
-            correction = (photo.enhancement_applied or {}).get("correction") or {}
-            full_print = (correction.get("crop_modes") or {}).get("full_print") or {}
             if (segmentation_mask.get("image_quad") is not None
                     or _same_visible_outline(original_mask.get("polygon"), outer, native_size=(width, height))
                     or _same_visible_outline(full_print.get("warp_quad"), outer, native_size=(width, height))):

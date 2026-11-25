@@ -7,7 +7,7 @@ import {
   adjacentPrintHint, captureOutlineReviewReason, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, crossingPrintHint,
   crossingPrintReason, crossingPrintSaveHint, fragmentOutlineHint, fragmentOutlineReason, getCropModes, getFragmentOutline,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
-  getPrintEdgeReviewHint, missingPrintEdgeHint, nestedPrintHint,
+  getPrintEdgeReviewHint, missingPrintEdgeHint, nestedPrintHint, printOutlineSaveHint,
 } from "./CropVariants.jsx";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
@@ -128,6 +128,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.crossing_print_suggestion));
   const fullPrintMode = reviewedNonPrint ? null : item.payload?.crop_modes?.full_print;
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
+  const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
   const printEdgeTraces = getSourceEdgeTraces(fullPrintMode?.suggested_edge_traces);
   const adjacentOutline = item.payload?.confidence != null
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.adjacent_print_suggestion));
@@ -195,7 +196,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
         print_size_mm: size,
         ...(orientation !== savedOrientation ? { orientation_degrees: orientation } : {}),
         source: "manual_mobile_quad",
-      });
+      }, Boolean(printSuggestion));
       const savedDegrees = saved.segmentation_mask?.orientation_degrees ?? null;
       setOrientation(savedDegrees);
       setSavedOrientation(savedDegrees);
@@ -205,6 +206,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
       onSaved?.(cropModes, saved.segmentation_mask);
     } catch (error) {
       setSaveError(error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
+        : error.message === "print_outline_review_required" ? printOutlineSaveHint
         : error.message || "Ausschnitt konnte nicht gespeichert werden.");
     }
     finally { setSaving(false); }
@@ -221,7 +223,7 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
     <polyline points={fragmentOutline.weakEdge.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="6" strokeDasharray="16 9" />
   );
-  const alternateOutline = adjacentOutline || scallopedAlternate || (!usingOutlineSuggestion && crossingOutline);
+  const alternateOutline = (!usingOutlineSuggestion && (crossingOutline || printSuggestion)) || adjacentOutline || scallopedAlternate;
   const alternateOverlay = alternateOutline && (
     <polygon points={alternateOutline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="6" strokeDasharray="16 9" />
@@ -266,9 +268,9 @@ function DetectionOverlay({ item, editable = false, onSaved }) {
       {printEdgeReviewHint && <p className="quad-hint">{printEdgeReviewHint}</p>}
       {adjacentOutline && <p className="quad-hint">{adjacentPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
       {scallopedAlternate && <p className="quad-hint">Prüfe den gestrichelten Vorschlag am Original. Wähle «Prints zusammen», falls dort ein eigener Abzug aufliegt.</p>}
-      {(fragmentOutline || crossingOutline) && (
+      {(fragmentOutline || crossingOutline || printSuggestion) && (
         <button className="magnifier-toggle" type="button" disabled={saving} onClick={() => {
-          const suggestion = crossingOutline || cyclicReviewQuad(fragmentOutline.quad);
+          const suggestion = crossingOutline || printSuggestion || cyclicReviewQuad(fragmentOutline?.quad);
           if (!suggestion) return;
           setQuad(suggestion);
           setUsingOutlineSuggestion(true);
