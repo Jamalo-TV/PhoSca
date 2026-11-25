@@ -120,11 +120,14 @@ export async function patchBoundingBox(photoId, boundingBox, segmentationMask = 
   );
 }
 
-export async function addManualPhoto(pageId, requestId, warpQuad) {
+export async function addManualPhoto(pageId, requestId, warpQuad, printSize, adjacentSuggestion) {
   return parseResponse(await apiFetch(`/api/v1/pages/${pageId}/manual-photos`, {
     method: "POST",
     headers: jsonHeaders,
-    body: JSON.stringify({ request_id: requestId, warp_quad: warpQuad }),
+    body: JSON.stringify({
+      request_id: requestId, warp_quad: warpQuad,
+      print_size_mm: printSize, adjacent_suggestion: adjacentSuggestion,
+    }),
   }));
 }
 

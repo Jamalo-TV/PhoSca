@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from pathlib import Path
@@ -528,6 +529,137 @@ async def test_saving_coordinates_cannot_release_a_photo_hidden_by_an_album_wind
             assert payload["crop_download_urls"][name] is None
     for name in ("full_print", "image_only"):
         assert (await client.get(f"{url}/image?variant={name}")).status_code == 404
+
+
+async def _seed_adjacent_manual_addition(monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    monkeypatch.setenv("ENABLE_BORDER_TRIM", "false")
+    get_settings.cache_clear()
+    image = np.full((170, 290, 3), 35, dtype=np.uint8)
+    image[24:135, 18:128] = (61, 113, 154)
+    image[27:145, 154:265] = (221, 230, 232)
+    image[34:137, 162:257] = (115, 64, 82)
+    album, page, anchor_id = await _seed_review_data(image)
+
+    def vertices(left, top, right, bottom):
+        return [{"x": x / 289, "y": y / 169} for x, y in [(left, top), (right, top), (right, bottom), (left, bottom)]]
+
+    first = vertices(18, 24, 127, 134)
+    suggestion = vertices(155, 27, 264, 144)
+    async with get_session_factory()() as session:
+        anchor = await session.get(ExtractedPhoto, anchor_id)
+        anchor.bounding_box = {"x1": first[0]["x"], "y1": first[0]["y"], "x2": first[2]["x"], "y2": first[2]["y"]}
+        anchor.segmentation_mask = {
+            "source": "classical_border_quad", "polygon": first, "adjacent_print_suggestion": suggestion,
+        }
+        await session.commit()
+    request = {
+        "request_id": str(uuid4()), "warp_quad": vertices(154, 27, 264, 144),
+        "adjacent_suggestion": {"photo_id": str(anchor_id), "polygon": suggestion},
+    }
+    return album, page, anchor_id, request, vertices(162, 34, 256, 136)
+
+
+async def test_adjacent_save_consumes_only_the_saved_suggestion_and_keeps_exact_replays(client, monkeypatch) -> None:
+    from app.routers import photos
+
+    album, page, anchor, body, inner = await _seed_adjacent_manual_addition(monkeypatch)
+    create = f"/api/v1/pages/{page}/manual-photos"
+    listing = f"/api/v1/albums/{album}/photos"
+    anchor_url = f"/api/v1/photos/{anchor}"
+    body["print_size_mm"] = {"width": 110, "height": 117}
+    outdated = {**body, "adjacent_suggestion": {**body["adjacent_suggestion"], "polygon": body["warp_quad"]}}
+    assert (await client.post(create, json=outdated)).status_code == 409
+
+    async def reject_render(*args, **kwargs):
+        raise ValueError("simulated invalid crop")
+
+    with monkeypatch.context() as faults:
+        faults.setattr(photos, "perspective_correction_task_logic", reject_render)
+        failed = await client.post(create, json=body)
+        assert failed.status_code == 422, failed.text
+    assert (await client.get(anchor_url)).json()["segmentation_mask"]["adjacent_print_suggestion"] == body["adjacent_suggestion"]["polygon"]
+    assert len((await client.get(listing)).json()) == 1
+
+    saved = await client.post(create, json=body)
+    assert saved.status_code == 201, saved.text
+    photo = saved.json()
+    assert photo["segmentation_mask"]["print_size_mm"] == body["print_size_mm"]
+    assert photo["aspect_ratio"] == pytest.approx(110 / 117)
+    assert photo["enhancement_applied"]["correction"]["aspect_ratio_estimation"]["method"] == "known_print_aspect"
+    assert "adjacent_print_suggestion" not in (await client.get(anchor_url)).json()["segmentation_mask"]
+    for changed in (
+        {**body, "request_id": str(uuid4())},
+        {**body, "print_size_mm": {"width": 108, "height": 117}},
+        {key: value for key, value in body.items() if key != "adjacent_suggestion"},
+    ):
+        assert (await client.post(create, json=changed)).status_code == 409
+    replay = await client.post(create, json=body)
+    assert replay.status_code == 200 and replay.json()["id"] == photo["id"]
+    assert len((await client.get(listing)).json()) == 2
+    assert (await client.get(photo["crop_download_urls"]["full_print"])).status_code == 200
+
+    corrected = await client.patch(f"/api/v1/photos/{photo['id']}/bounding-box", json={
+        "bounding_box": photo["bounding_box"],
+        "segmentation_mask": {
+            "polygon": body["warp_quad"], "warp_quad": body["warp_quad"], "image_quad": inner, "source": "manual_quad",
+        },
+    })
+    assert corrected.status_code == 200, corrected.text
+    for mode in ("full_print", "image_only"):
+        assert (await client.get(corrected.json()["crop_download_urls"][mode])).status_code == 200
+
+
+async def test_manual_save_of_matching_outline_retires_the_open_suggestion(client, monkeypatch) -> None:
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+
+    album, page, anchor, bound, _ = await _seed_adjacent_manual_addition(monkeypatch)
+    route = f"/api/v1/pages/{page}/manual-photos"
+    outlined = bound["adjacent_suggestion"]["polygon"]
+    manual = {"request_id": str(uuid4()), "warp_quad": outlined}
+
+    response = await client.post(route, json=manual)
+    assert response.status_code == 201, response.text
+    assert "adjacent_print_suggestion" not in (await client.get(f"/api/v1/photos/{anchor}")).json()["segmentation_mask"]
+    same_footprint = {**manual, "request_id": str(uuid4()), "warp_quad": outlined[1:] + outlined[:1]}
+    assert (await client.post(route, json=same_footprint)).status_code == 409
+    assert (await client.post(route, json=bound)).status_code == 409
+
+    # Older sessions could save exact corners without consuming the hint.
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, anchor)
+        photo.segmentation_mask = {**photo.segmentation_mask, "adjacent_print_suggestion": outlined}
+        await session.commit()
+    assert (await client.post(route, json={**bound, "warp_quad": outlined})).status_code == 409
+    assert "adjacent_print_suggestion" not in (await client.get(f"/api/v1/photos/{anchor}")).json()["segmentation_mask"]
+    assert len((await client.get(f"/api/v1/albums/{album}/photos")).json()) == 2
+
+
+@pytest.mark.parametrize("same_request", [True, False])
+async def test_concurrent_adjacent_saves_exhibit_a_single_photo(client, monkeypatch, same_request) -> None:
+    from app.routers import photos
+
+    album, page, _, body, _ = await _seed_adjacent_manual_addition(monkeypatch)
+    barrier = asyncio.Barrier(2)
+    prediction = photos._prediction_provenance
+
+    async def sync_before_insert(session, photo):
+        result = await prediction(session, photo)
+        await asyncio.wait_for(barrier.wait(), timeout=5)
+        return result
+
+    monkeypatch.setattr(photos, "_prediction_provenance", sync_before_insert)
+    second = body if same_request else {**body, "request_id": str(uuid4())}
+    route = f"/api/v1/pages/{page}/manual-photos"
+    responses = await asyncio.gather(client.post(route, json=body), client.post(route, json=second))
+    assert sorted(response.status_code for response in responses) == ([200, 201] if same_request else [201, 409])
+    assert len((await client.get(f"/api/v1/albums/{album}/photos")).json()) == 2
 
 
 async def test_add_missed_photo_reopens_count_review_and_supports_both_downloads(client, monkeypatch) -> None:

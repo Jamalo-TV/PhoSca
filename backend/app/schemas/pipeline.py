@@ -106,9 +106,16 @@ class BoundingBoxUpdate(StrictSchema):
     segmentation_mask: ReviewSegmentationMask | None = None
 
 
+class AdjacentPrintSuggestion(StrictSchema):
+    photo_id: Annotated[UUID, Field(strict=False)]
+    polygon: list[NormalizedPoint] = Field(min_length=4, max_length=4)
+
+
 class ManualPhotoCreate(StrictSchema):
     request_id: Annotated[UUID, Field(strict=False)]
     warp_quad: list[NormalizedPoint] = Field(min_length=4, max_length=4)
+    print_size_mm: PrintSizeMM | None = None
+    adjacent_suggestion: AdjacentPrintSuggestion | None = None
 
 
 class OCRUpdate(StrictSchema):

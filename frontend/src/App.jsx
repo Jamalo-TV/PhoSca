@@ -1354,6 +1354,11 @@ function TrainingAnnotationView() {
   );
 }
 
+const adjacentAdditionErrors = {
+  adjacent_print_suggestion_saved: "Dieser Abzug wurde bereits gespeichert. Öffne ihn in der aktualisierten Ansicht, wenn du seine Ecken ändern möchtest.",
+  adjacent_print_suggestion_stale: "Der Vorschlag wurde geändert. Prüfe die Albumseite in der aktualisierten Ansicht erneut.",
+};
+
 function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, selectedPhotoId, onSelectPhoto }) {
   const canvasRef = useRef(null);
   const [pageImage, setPageImage] = useState(null);
@@ -1366,6 +1371,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
   const pageId = page?.id;
   const activePage = useRef(pageId);
   const newPrint = addition?.pageId === pageId ? addition : null;
+  const additionSize = newPrint && parsePrintSize(newPrint.printSizeFields);
   const canAddPhoto = pageImage?.pageId === pageId && ["completed", "review_needed"].includes(page?.status);
   const selected = photos.find((photo) => photo.id === selectedPhotoId);
   const overlapReview = selected?.segmentation_confidence != null
@@ -1518,10 +1524,12 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
       points.slice(1).forEach((point) => context.lineTo(...point));
       if (points.length === 4) context.closePath();
       context.stroke();
-      points.forEach(([x, y]) => {
+      points.forEach(([x, y], index) => {
         context.beginPath();
         context.arc(x, y, 6, 0, 2 * Math.PI);
         context.fill();
+        context.font = "bold 14px sans-serif";
+        context.fillText(String(index + 1), x + 9, y - 7);
       });
     }
   }, [alternateOutline, draftShapes, editingImage, fragmentOutline, newPrint, pageId, pageImage, photos, selectedPhotoId, seamTraces]);
@@ -1549,7 +1557,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
     if (saveState?.saving) return;
     const point = pointToBox(event);
     if (newPrint) {
-      if (newPrint.saving) return;
+      if (newPrint.saving || newPrint.invalidated) return;
       if (newPrint.corners.length === 4) {
         const pointIndex = newPrint.corners.findIndex((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) < 0.025);
         if (pointIndex >= 0) {
@@ -1658,27 +1666,28 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
     }
   }
 
-  function startAddition(corners = []) {
+  function startAddition(corners = [], adjacentSuggestion = null) {
     setEditMode("full_print");
     onSelectPhoto(null);
     setSaveState(null);
-    setAddition({ pageId, requestId: crypto.randomUUID(), corners });
+    setAddition({ pageId, requestId: crypto.randomUUID(), corners, adjacentSuggestion, printSizeFields: printSizeInputs(null) });
   }
 
   async function saveNewPrint() {
-    if (!newPrint || newPrint.saving || newPrint.corners.length !== 4) return;
+    if (!newPrint || newPrint.saving || newPrint.invalidated || newPrint.corners.length !== 4 || additionSize.error) return;
     setAddition({ ...newPrint, saving: true, error: null });
     try {
-      const photo = await onAddPhoto(pageId, newPrint.requestId, newPrint.corners);
+      const photo = await onAddPhoto(pageId, newPrint.requestId, newPrint.corners, additionSize.size, newPrint.adjacentSuggestion);
       if (activePage.current !== pageId) return;
       setAddition(null);
       onSelectPhoto(photo.id);
       setSaveState({ photoId: photo.id, mode: "full_print", url: photo.urls?.full_print });
     } catch (error) {
-      const message = error.message === "protected_region_cut"
+      const stale = adjacentAdditionErrors[error.message];
+      const message = stale || (error.message === "protected_region_cut"
         ? "Der Ausschnitt schneidet einen geschützten Bildbereich ab. Verschiebe die Ecken, bis der Bereich vollständig sichtbar ist."
-        : error.message;
-      if (activePage.current === pageId) setAddition({ ...newPrint, error: message });
+        : error.message);
+      if (activePage.current === pageId) setAddition({ ...newPrint, error: message, invalidated: Boolean(stale) });
     }
   }
 
@@ -1710,7 +1719,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
           <p className="crop-editor-hint">{suggestedNeighbor ? adjacentPrintHint
             : "Prüfe den gestrichelten Vorschlag am Original. Ergänze ihn, falls dort ein eigener Abzug aufliegt."}</p>
           <button className="text-button compact" type="button" disabled={!canAddPhoto || saveState?.saving}
-            onClick={() => startAddition(alternateOutline)}>
+            onClick={() => startAddition(alternateOutline, suggestedNeighbor ? { photo_id: selected.id, polygon: suggestedNeighbor } : null)}>
             {suggestedNeighbor ? "Vorschlag für eigenen Abzug bearbeiten" : "Gestrichelten Vorschlag als Abzug ergänzen"}
           </button>
         </>
@@ -1766,12 +1775,18 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, sele
       )}
       {newPrint && (
         <div className="manual-print-actions">
+          {newPrint.corners.length === 4 && <PrintSizeFields
+            value={newPrint.printSizeFields}
+            onChange={(fields) => setAddition((current) => ({ ...current, printSizeFields: fields, error: null }))}
+            disabled={newPrint.saving || newPrint.invalidated}
+            error={additionSize.error}
+          />}
           <button className="primary-button compact" type="button" onClick={saveNewPrint}
-            disabled={newPrint.saving || newPrint.corners.length !== 4}>
+            disabled={newPrint.saving || newPrint.invalidated || newPrint.corners.length !== 4 || Boolean(additionSize.error)}>
             {newPrint.saving ? "Abzug wird berechnet …" : "Abzug speichern"}
           </button>
-          <button className="text-button compact" type="button" onClick={() => startAddition()}
-            disabled={newPrint.saving || newPrint.corners.length === 0}>
+          <button className="text-button compact" type="button" onClick={() => startAddition([], newPrint.adjacentSuggestion)}
+            disabled={newPrint.saving || newPrint.invalidated || newPrint.corners.length === 0}>
             Ecken zurücksetzen
           </button>
           <button className="text-button compact" type="button" onClick={() => setAddition(null)} disabled={newPrint.saving}>
@@ -1866,8 +1881,14 @@ function ReviewView({ albumId, albumStatus, pages, photos, selectedPageId, setSe
     return detail;
   }
 
-  async function addPhoto(pageId, requestId, corners) {
-    const photo = await addManualPhoto(pageId, requestId, corners);
+  async function addPhoto(pageId, requestId, corners, printSize, adjacentSuggestion) {
+    let photo;
+    try {
+      photo = await addManualPhoto(pageId, requestId, corners, printSize, adjacentSuggestion);
+    } catch (error) {
+      if (adjacentAdditionErrors[error.message]) await refreshCorrections().catch(() => {});
+      throw error;
+    }
     const [detail] = await Promise.all([getPhoto(photo.id), refreshCorrections()]);
     return detail;
   }

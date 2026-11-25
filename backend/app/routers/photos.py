@@ -220,13 +220,23 @@ async def _review_overlapping_exports(
         ))
 
 
-def _replay_manual_photo(photo: ExtractedPhoto, page_id: UUID, quad: list[dict], response: Response) -> ExtractedPhoto:
+def _replay_manual_photo(
+    photo: ExtractedPhoto, page_id: UUID, creation_request: dict, response: Response,
+) -> ExtractedPhoto:
     provenance = (photo.enhancement_applied or {}).get("review_provenance") or {}
     creation = provenance.get("manual_creation") or {}
-    if photo.page_id != page_id or creation.get("warp_quad") != quad:
+    if photo.page_id != page_id or any(creation.get(key) != value for key, value in creation_request.items()):
+        if creation_request["adjacent_suggestion"] is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="adjacent_print_suggestion_saved")
+        if creation.get("print_size_mm") != creation_request["print_size_mm"]:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This request already saved different measurements.")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This request already saved different corners.")
     response.status_code = status.HTTP_200_OK
     return photo
+
+
+def _same_visible_outline(points: object, quad: list[dict]) -> bool:
+    return any(points == cycle[index:] + cycle[:index] for cycle in (quad, quad[::-1]) for index in range(4))
 
 
 @router.get("/presets")
@@ -329,33 +339,86 @@ async def create_manual_photo(
     principal: Principal | None = Depends(require_write_principal),
 ) -> ExtractedPhoto:
     page = await _page_for_principal(session, page_id, principal, for_update=True)
-    photo_id = uuid5(page.id, str(payload.request_id))
     quad = [point.model_dump() for point in payload.warp_quad]
+    size = payload.print_size_mm
+    suggestion = payload.adjacent_suggestion
+    creation_request = {
+        "request_id": str(payload.request_id),
+        "warp_quad": quad,
+        "print_size_mm": size.model_dump() if size else None,
+        "adjacent_suggestion": suggestion.model_dump(mode="json") if suggestion else None,
+    }
+    # Two sessions can edit the same outline with different request UUIDs.
+    # Its source and displayed coordinates identify a single addition.
+    identity = f"adjacent-print:{suggestion.model_dump_json()}" if suggestion else str(payload.request_id)
+    photo_id = uuid5(page.id, identity)
     existing = await session.get(ExtractedPhoto, photo_id)
+    if existing is None:
+        previous_request = ExtractedPhoto.enhancement_applied["review_provenance"]["manual_creation"]["request_id"]
+        existing = await session.scalar(select(ExtractedPhoto).where(
+            ExtractedPhoto.page_id == page_id, previous_request.as_string() == creation_request["request_id"],
+        ))
     if existing is not None:
-        return _replay_manual_photo(existing, page_id, quad, response)
+        return _replay_manual_photo(existing, page_id, creation_request, response)
     if page.status not in {PageStatus.completed, PageStatus.review_needed}:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Wait for page analysis before adding a print.")
     if not settings.enable_precise_photo_crops:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Manual additions require precise crop modes.")
     width, height = _source_size(page)
     mask = {"source": "manual_added", "manual_added": True, "polygon": quad, "visible_polygon": quad, "warp_quad": quad}
+    if size:
+        mask["print_size_mm"] = size.model_dump()
     try:
         validate_review_quads(mask, width, height, require_cyclic=True)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    neighbors = list(await session.scalars(
+        select(ExtractedPhoto).where(ExtractedPhoto.page_id == page_id)
+        .with_for_update().execution_options(populate_existing=True)
+    ))
+    active = [
+        photo for photo in neighbors if not is_reviewed_non_print(
+            (photo.enhancement_applied or {}).get("review_rejected_detection"), photo.bounding_box, photo.segmentation_mask,
+        )
+    ]
+    if suggestion:
+        anchor = next((photo for photo in active if photo.id == suggestion.photo_id), None)
+        if (anchor is None or (anchor.segmentation_mask or {}).get("adjacent_print_suggestion")
+                != creation_request["adjacent_suggestion"]["polygon"]):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="adjacent_print_suggestion_stale")
+    else:
+        # A manually marked outline can exactly match an open suggestion.
+        matches = [
+            photo for photo in active
+            if _same_visible_outline((photo.segmentation_mask or {}).get("adjacent_print_suggestion"), quad)
+        ]
+        anchor = matches[0] if len(matches) == 1 else None
+    if anchor is not None:
+        anchor.segmentation_mask = {
+            key: value for key, value in (anchor.segmentation_mask or {}).items() if key != "adjacent_print_suggestion"
+        }
+    # An older editor could save a suggestion as an unlinked manual photo.
+    # Equal current corners describe the same visible footprint on this page.
+    if any((photo.segmentation_mask or {}).get("manual_added") is True
+           and _same_visible_outline((photo.segmentation_mask or {}).get("warp_quad"), quad) for photo in active):
+        if anchor is not None:
+            await session.commit()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="adjacent_print_suggestion_saved")
     box = {
         "x1": min(point["x"] for point in quad), "y1": min(point["y"] for point in quad),
         "x2": max(point["x"] for point in quad), "y2": max(point["y"] for point in quad),
     }
+    aspect_ratio = size.aspect_ratio if size else (
+        (box["x2"] - box["x1"]) * (width - 1) / ((box["y2"] - box["y1"]) * (height - 1))
+    )
     photo = ExtractedPhoto(
         id=photo_id, page_id=page.id, album_id=page.album_id, storage_path="",
         bounding_box=box, segmentation_mask=mask, segmentation_confidence=None,
-        aspect_ratio=(box["x2"] - box["x1"]) * (width - 1) / ((box["y2"] - box["y1"]) * (height - 1)),
+        aspect_ratio=aspect_ratio,
         geometry_valid=True, status=PhotoStatus.pending,
     )
     creation = {
-        "request_id": str(payload.request_id), "warp_quad": deepcopy(quad),
+        **deepcopy(creation_request),
         "recorded_at": datetime.now(timezone.utc).isoformat(),
     }
     review_provenance = {
@@ -376,7 +439,7 @@ async def create_manual_photo(
         existing = await session.get(ExtractedPhoto, photo_id)
         if existing is None:
             raise
-        return _replay_manual_photo(existing, page_id, quad, response)
+        return _replay_manual_photo(existing, page_id, creation_request, response)
     await _review_overlapping_exports(session, photo, width, height)
     return await _render_photo_edit(session, photo_id, settings)
 

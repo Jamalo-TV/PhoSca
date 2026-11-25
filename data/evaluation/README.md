@@ -1231,6 +1231,15 @@ HTTP 403. The page coverage and separate motif dimensions remain unverified.
 [Scott record](https://collections.museumsvictoria.com.au/items/1563024) ·
 [Hill record](https://collections.museumsvictoria.com.au/items/1562410)
 
+The Library of Congress Free to Use and Reuse bulk package and Harvard's
+Smithsonian Open Access mirror give two further documented archive paths.
+The package metadata, two candidate Gardner assets and the mirror's
+documented control asset all returned HTTP 403. The reachable Library of
+Congress companion repository provides the starter notebook. Whether
+the exact pinned Whiting and Gardner rasters occur in the archives remains
+unverified. [Library of Congress package](https://data.labs.loc.gov/free-to-use/) ·
+[Smithsonian mirror](https://source.coop/harvard-lil/smithsonian-open-access)
+
 ## Clipped prints in the NerdScan development scan
 
 NerdScan's original upload has
@@ -1582,3 +1591,24 @@ frozen model-free and seeded benchmarks and the ScanCropper, ScanSplitter
 and blurred Domoritz checks keep their prior instance and crop metrics.
 The new search took 176 ms median on page 37 and 137 ms on page 11 over
 six warmed repetitions with two OpenCV threads.
+
+### Confirming a suggested print exactly once
+
+Before confirmation was bound to the displayed suggestion, a second editor
+could add another manual record using a fresh request identifier. The
+duplicate could then reopen the first print's exports for overlap review.
+The workflow now uses the source photo and displayed outline as a shared
+identity. A successful save removes the suggestion in the same transaction
+that creates the print. If rendering fails, the suggestion and photo count
+stay as they were. An exact retry returns the saved record. A competing
+or outdated edit refreshes the review view and shows a conflict. Manually
+marked overlapping prints with distinct outlines still use overlap review.
+Matching corners from an older editor also retire the stale suggestion.
+
+The desktop addition form can record the measured width and height of the
+numbered edges at first save. The upload test ran two desktop editors on
+Golden page 37. Their saves returned 201 and 409, the exact replay returned
+200, and the page ended with two records. Both crop downloads still need
+the missing metric evidence for this real page. A separate controlled API
+fixture supplied measured dimensions, saved the motif boundary and verified
+both downloads, including protection against stale and conflicting requests.
