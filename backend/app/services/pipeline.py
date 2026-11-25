@@ -54,6 +54,9 @@ from app.pipeline.enhancement import conservative_enhance_photo, prepare_for_cut
 from app.pipeline.exif import write_caption_exif
 from app.pipeline.geometry import normalized_vertices_to_pixels
 from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, save_png, sha256_file
+from app.pipeline.manual_paper_boundary import (
+    MANUAL_PAPER_BOUNDARY_REVISION, manual_paper_download_needs_review, manual_paper_reference,
+)
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
 from app.pipeline.page_plane import MeasuredPrintReference, PrintPagePlane
 from app.pipeline.perspective import apply_refined_visibility, correct_photo_crop, page_plane_from_prints
@@ -371,9 +374,20 @@ async def perspective_correction_task_logic(
     ):
         return {"photo_id": str(photo.id), "review_required": True, "reason": "GEOMETRY_REVIEW_WRONG_OBJECT"}
     run = await get_or_create_run(session, photo.page, settings)
-    if skip_if_exists and photo.original_storage_path and Path(photo.original_storage_path).exists():
-        previous = (photo.enhancement_applied or {}).get("correction") or {}
-        modes = previous.get("crop_modes") or {}
+    automatic_detection = photo.segmentation_confidence is not None
+    metadata = photo.enhancement_applied or {}
+    mask = photo.segmentation_mask or {}
+    current_quad = mask.get("warp_quad") or mask.get("polygon")
+    manual_boundary = None if automatic_detection else manual_paper_reference(metadata, current_quad)
+    boundary_needs_review = manual_boundary is not None and manual_paper_download_needs_review(metadata, current_quad)
+    previous = metadata.get("correction") or {}
+    modes = previous.get("crop_modes") or {}
+    boundary_check = previous.get("manual_paper_boundary") or {}
+    boundary_recheck = boundary_needs_review and (
+        boundary_check.get("revision") != MANUAL_PAPER_BOUNDARY_REVISION
+        or any(mode.get("status") == "ready" for mode in modes.values())
+    )
+    if skip_if_exists and not boundary_recheck and photo.original_storage_path and Path(photo.original_storage_path).exists():
         full_mode = modes.get("full_print") or {}
         image_mode = modes.get("image_only") or {}
         trimmed_path = previous.get("trimmed_path")
@@ -394,16 +408,15 @@ async def perspective_correction_task_logic(
             }
     stage = await start_stage(session, run, "perspective_correction", input_path=Path(photo.page.storage_path))
 
-    mask = photo.segmentation_mask or {}
     precise_crops = (settings.enable_precise_photo_crops or mask.get("manual_added") is True
-                     or mask.get(REVIEWED_CROSSING_OUTLINE) is True or bool(mask.get("crossing_print_suggestion")))
+                     or mask.get(REVIEWED_CROSSING_OUTLINE) is True or bool(mask.get("crossing_print_suggestion"))
+                     or boundary_needs_review)
     loads_source = page_image is None
     if page_image is None:
         page_image, page_camera = await asyncio.to_thread(
             load_crop_source, Path(photo.page.storage_path), photo.page.file_hash_sha256,
             settings.camera_calibration_path if precise_crops else None,
         )
-    automatic_detection = photo.segmentation_confidence is not None
     page_steps = (photo.page.processing_metadata or {}).get("steps") or {}
     protection_evidence = page_steps.get("protected_regions") or {}
     protected_regions = protection_evidence.get("regions") if protection_evidence.get("enabled", True) else None
@@ -461,6 +474,7 @@ async def perspective_correction_task_logic(
             page_plane=page_plane,
             measured_page_references=measured_references,
             neighbor_masks=neighbor_masks,
+            manual_boundary_reference=manual_boundary,
         )
         corrected = crop_result.image
         correction_metadata = crop_result.metadata

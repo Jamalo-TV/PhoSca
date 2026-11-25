@@ -1701,3 +1701,35 @@ left side. With no independent proof of optical distortion or plane
 geometry, these measurements are insufficient to apply the same warp
 across the page. Published document dewarping methods can also use
 text-line constraints that album prints lack. [Grid regularisation study](https://openaccess.thecvf.com/content/CVPR2022/html/Jiang_Revisiting_Document_Image_Dewarping_by_Grid_Regularization_CVPR_2022_paper.html)
+
+### Guard for a manual print rectangle that would cut a paper curve
+
+For a manual correction of the same print, PhoSca checks an outward
+curve in the original server-stored visible contour against the source
+pixels. The saved proposal's corners anchor the measurement. Replacing
+the submitted polygon or moving the editable corners a few pixels cannot
+erase that evidence. A distinct nearby transition can indicate actual
+paper outside a printed arc. The strongest source-supported portions
+are shown as separate traces and both crop modes stay in review. Four
+corner geometry still supplies the interactive perspective draft.
+
+The 4-pixel control returned 404 for both crop downloads and the legacy
+motif alias after two normal manual saves. Its previously generated ready
+metadata also failed the read-side check until reprocessing. A straight
+outline with extra points remained downloadable. The faint straight-paper
+control with curved ink allowed both modes after correcting the actual
+outer corners. Deliberately generated 3–5 pixel outward curves retained
+the hold, including the 4-pixel cases with light blur and JPEG quality 75
+and 85. A denser outline and a source-supported curve are required for
+this check. The isolated trace on page 37 does not meet that requirement.
+A light printed arc can produce an automatic curvature diagnosis even
+when the paper is straight.
+
+The Hegan album, The Rooms VA 103, has documented independent captures of
+removed prints. The publication uses the images with permission and
+offers no paired native masters. The Memorial University Grenfell album
+PF-325 has measured individual images with reserved reproduction rights.
+No matched whole-page rasters were located for those prints. Neither
+album contributes verified reference cases at this stage.
+[Hegan conservation study](https://digitalcommons.uri.edu/jfs/vol18/iss18/5/) ·
+[Grenfell archive record](https://collections.mun.ca/digital/collection/m_grenfell/id/1023/)

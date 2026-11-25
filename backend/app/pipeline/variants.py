@@ -13,6 +13,7 @@ from app.pipeline.camera_calibration import capture_calibration
 from app.pipeline.crop_validation import crop_validation_evidence
 from app.pipeline.decisions import is_reviewed_non_print
 from app.pipeline.image_ops import calculate_blur_score
+from app.pipeline.manual_paper_boundary import manual_paper_download_needs_review
 from app.pipeline.quality_critic import evaluate_candidate
 from app.pipeline.release import select_released_variant
 
@@ -251,6 +252,9 @@ def variant_path_from_photo(photo: Any, variant: str) -> str | None:
         if (modes.get(mode) or {}).get("status") != "ready":
             return None
         automatic = getattr(photo, "segmentation_confidence", None) is not None
+        mask = getattr(photo, "segmentation_mask", None) or {}
+        if not automatic and manual_paper_download_needs_review(metadata, mask.get("warp_quad") or mask.get("polygon")):
+            return None
         if (correction.get("aspect_ratio_estimation") or {}).get("method") == "calibrated_camera":
             if automatic:
                 return None
