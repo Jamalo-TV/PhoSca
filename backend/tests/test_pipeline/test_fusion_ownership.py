@@ -7,6 +7,7 @@ import pytest
 from app.config import Settings
 from app.evaluation.crop_fixtures import _photograph
 from app.pipeline.enhancement import prepare_for_cutout
+from app.pipeline.frame_backing_review import FRAME_BACKING_COUNT_REVIEW, FRAME_BACKING_PROPOSAL
 from app.pipeline.fusion_ownership import (
     NESTED_FALLBACK_CONTOUR, NESTED_FALLBACK_CONTOUR_REVIEW, nested_fallback_contour_spans,
 )
@@ -181,3 +182,54 @@ def test_an_oblique_one_pixel_gap_preserves_two_prints_with_inset_contours():
         rows = np.rint(530 + .075 * (columns - 540) + bow * (1 - position ** 2)).astype(int)
         separated[rows, columns] = 221
         assert not nested_fallback_contour_spans(jpeg75(separated), parent, children)
+
+
+@pytest.mark.parametrize("overprint", [None, "across_surface", "on_album"])
+def test_frame_backing_crossing_is_reviewable_and_keeps_distinct_print_evidence(overprint):
+    image = np.ascontiguousarray(np.rot90(load_image(_PAGE_26), 2))
+    ok, jpeg = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    assert ok
+    source = cv2.imdecode(jpeg, cv2.IMREAD_COLOR)
+    height, width = source.shape[:2]
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+
+    def make(points, confidence, source_name, detector):
+        item = _make_detection(
+            box={}, points=np.float32(points), confidence=confidence, image_width=width, image_height=height,
+            settings=settings, source=source_name, detector_source=detector,
+        )
+        assert item is not None
+        return item
+
+    model = make([(1619, 822), (1623, 1762), (1673, 1778), (2286, 1778), (2258, 801)],
+                 .927, "yolo_seg_mask", "yolo_onnx")
+    whole = make([(1618, 819), (2255, 810), (2256, 1744), (1631, 1767)], .883,
+                 "classical_border_quad", "edge_contour")
+    frame = make([(1644, 823), (2266, 799), (2181, 1919), (1249, 1919)], .612,
+                 "classical_border_quad", "contrast_region")
+    prepared, _ = prepare_for_cutout(source)
+    previous, _ = fuse_candidate_evidence(prepared, [model], [whole, frame])
+    assert len(previous) == 2
+    if overprint == "across_surface":
+        # A partially captured photo crosses the album edge inside the broader proposal.
+        overlay = np.int32([[945, 0], [1055, 0], [1046, 545], [951, 550]])
+        cv2.fillConvexPoly(source, [width - 1, height - 1] - overlay, (171, 156, 149))
+    elif overprint == "on_album":
+        # A pale layer below the album edge leaves the entire transverse line intact.
+        overlay = np.int32([[952, 195], [1110, 195], [1080, 530], [954, 528]])
+        cv2.fillConvexPoly(source, [width - 1, height - 1] - overlay, (207, 213, 225))
+
+    selected, evidence = fuse_candidate_evidence(prepared, [model], [whole, frame], ownership_source=source)
+    if overprint:
+        assert selected == previous and not evidence.get("deferred_print_proposals")
+        return
+
+    parent, = selected
+    assert parent.mask == next(row.mask for row in previous if row.mask["polygon"] == whole.mask["polygon"])
+    assert parent.review_reasons == [FRAME_BACKING_COUNT_REVIEW]
+    offer, = evidence["deferred_print_proposals"]
+    assert (offer["reason"], offer["id"], offer["parent_cluster_id"]) == (FRAME_BACKING_PROPOSAL, 1, 0)
+    assert offer["polygon"] == frame.mask["polygon"]
+    trace, = offer["surface_edge_traces"]
+    points = np.array([[p["x"], p["y"]] for p in trace]) * [width - 1, height - 1]
+    np.testing.assert_allclose(points, [[2311, 1782.42], [1119, 1807.45]], atol=2)

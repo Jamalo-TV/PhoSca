@@ -260,6 +260,23 @@ Bestätigung der Anzahl diese Vorschläge. Beide Zuschnittmodi des
 übergeordneten Abzugs brauchen weiterhin die eigene Zuschnittprüfung.
 [Gedrehte Golden-Seite 26 und Gegenproben](data/evaluation/README.md#review-two-fallback-contours-inside-a-detected-print)
 
+Ein schwacher Kontrastvorschlag am Aufnahmerand kann vom erkannten
+Foto über den Albumkarton bis auf den Untergrund reichen. PhoSca
+sucht im Original nach einem Materialwechsel, der beide seitlichen
+Grenzen des Vorschlags kreuzt und ausserhalb davon weiterläuft. Die
+Prüfung vergleicht ausserdem das Material beidseits der seitlichen
+Grenzen, die sichtbare Albumfläche und die vom Foto übernommene
+Innenkante. Ist der Befund ausreichend gestützt, zeigt die
+**Anzahlprüfung** den gesamten offenen Vorschlag und markiert den
+gemessenen Materialwechsel in Türkis.
+
+Prüfe auch den Bereich zwischen der türkisen Linie und dem
+Aufnahmerand. Dort kann ein eigener schmaler Abzug sichtbar sein.
+Wenn du Papier erkennst, öffne den Vorschlag und setze die Ecken an
+den sichtbaren Abzug. Die Markierung dient als Orientierung bei der
+Anzahlprüfung. Die beiden Zuschnittmodi werden separat beurteilt.
+[Beispiel mit Albumkante und Untergrund](data/evaluation/README.md#review-a-fallback-outline-crossing-the-album-edge)
+
 Wenn ein klassisch erkannter Umriss eine Ecke diagonal abschneidet,
 kann **Ganzer Abzug** eine zweite Vorschau anbieten. PhoSca verlängert
 die beiden betroffenen Seiten in einem begrenzten Suchbereich und
@@ -866,9 +883,11 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
   [Vergleich und Messwerte](data/evaluation/README.md#show-an-inward-source-transition-below-an-album-edge)
 - **Golden-Seite 26 gedreht und komprimiert.** Alle vier echten
   Abzüge bleiben erfasst. Zwei Teilkonturen innerhalb des oberen
-  rechten Abzugs erscheinen zur Anzahlprüfung. Ein falscher, bis
-  zum Aufnahmebildrand reichender Vorschlag bleibt in der aktiven
-  Liste. [Erkennung und Korrekturablauf](data/evaluation/README.md#review-two-fallback-contours-inside-a-detected-print)
+  rechten Abzugs erscheinen zur Anzahlprüfung. Ein dritter
+  Vorschlag reicht über Album und Untergrund bis zum Aufnahmerand.
+  Er erscheint mit einer gemessenen Linie zur separaten Prüfung.
+  [Innenkonturen](data/evaluation/README.md#review-two-fallback-contours-inside-a-detected-print) ·
+  [Vorschlag am Aufnahmerand](data/evaluation/README.md#review-a-fallback-outline-crossing-the-album-edge)
 - **Echter Abzug am Aufnahmebildrand.** Beim NerdScan-Entwicklungsbild
   traf die getestete Konfiguration drei erwartete Abzüge und lieferte
   zwei zusätzliche Vorschläge. Beide Modi blieben in Prüfung.

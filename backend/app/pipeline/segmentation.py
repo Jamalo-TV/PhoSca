@@ -21,6 +21,7 @@ from app.pipeline.edge_prints import (
     clipped_fragment_needs_review, clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
     visible_capture_edge_traces,
 )
+from app.pipeline.frame_backing_review import FRAME_BACKING_COUNT_REVIEW, FRAME_BACKING_PROPOSAL, frame_backing_trace
 from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
     SOURCE_FRAGMENT_GROUP_REVIEW, SOURCE_FRAGMENT_PROPOSAL,
@@ -1335,6 +1336,61 @@ def _defer_nested_fallback_contours(
     ], list(deferred.values())
 
 
+def _defer_frame_backing_contours(
+    source: np.ndarray, selected: list[SegmentationDetection],
+) -> tuple[list[SegmentationDetection], list[dict]]:
+    height, width = source.shape[:2]
+    polygons = [_detection_polygon(item) for item in selected]
+    owners = [index for index, item in enumerate(selected)
+              if "model" in item.mask["fusion"]["proposal_families"]]
+    deferred = {}
+    held = set()
+    for index, item in enumerate(selected):
+        fusion = item.mask["fusion"]
+        if (item.mask.get("detector_source") != "contrast_region" or fusion["proposal_families"] != ["classical"]
+                or fusion["proposal_count"] != 1 or not item.geometry_valid or item.review_reasons
+                or item.mask.get("warp_quad") or item.confidence > .68 or fusion["boundary_evidence"]["score"] >= .55):
+            continue
+        polygon = polygons[index]
+        if len(polygon) != 4 or not cv2.isContourConvex(polygon):
+            continue
+        proposal = normalized_vertices_to_pixels(polygon, width, height)
+        distance = np.minimum(proposal, np.float32([width - 1, height - 1]) - proposal)
+        if np.count_nonzero(distance.min(axis=1) <= 2) != 2:
+            continue
+        overlaps = [(peer, normalized_polygon_overlap(polygon, polygons[peer])) for peer in owners
+                    if _normalized_box_overlap(item.bounding_box, selected[peer].bounding_box)[2] >= .12]
+        overlaps = [(peer, overlap) for peer, overlap in overlaps if overlap.first_containment >= .12]
+        if len(overlaps) != 1:
+            continue
+        (peer, overlap), = overlaps
+        neighbor = selected[peer]
+        if (not .55 <= overlap.first_containment <= .84 or overlap.second_containment < .86
+                or not neighbor.geometry_valid or neighbor.review_reasons or neighbor.mask.get("warp_quad")
+                or neighbor.confidence < .78 or neighbor.mask["fusion"]["boundary_evidence"]["score"] < .84):
+            continue
+        if len(polygons[peer]) != 4 or not cv2.isContourConvex(polygons[peer]):
+            continue
+        try:
+            surface = frame_backing_trace(source, proposal, normalized_vertices_to_pixels(polygons[peer], width, height))
+        except (cv2.error, ValueError):
+            continue
+        if surface is None:
+            continue
+        held.add(peer)
+        deferred[index] = {
+            "id": fusion["cluster_id"],
+            "reason": FRAME_BACKING_PROPOSAL,
+            "parent_cluster_id": neighbor.mask["fusion"]["cluster_id"],
+            "polygon": _normalized_polygon(order_quad_cyclic(proposal), width, height),
+            "surface_edge_traces": [_normalized_polygon(surface, width, height)],
+        }
+    return [
+        replace(item, review_reasons=[FRAME_BACKING_COUNT_REVIEW]) if index in held else item
+        for index, item in enumerate(selected) if index not in deferred
+    ], list(deferred.values())
+
+
 def fuse_candidate_evidence(
     image: np.ndarray,
     model_detections: list[SegmentationDetection],
@@ -1484,9 +1540,11 @@ def fuse_candidate_evidence(
 
     if ownership_source is not None:
         selected, nested = _defer_nested_fallback_contours(ownership_source, selected)
-        for offer in nested:
+        selected, backing = _defer_frame_backing_contours(ownership_source, selected)
+        for offer in (*nested, *backing):
             cluster_metadata[offer["id"]].update(decision="deferred_for_count_review", selection_reason=offer["reason"])
         deferred.extend(nested)
+        deferred.extend(backing)
         deferred.sort(key=lambda offer: offer["id"])
     selected.sort(key=lambda detection: (detection.bounding_box["y1"], detection.bounding_box["x1"]))
     return selected, {

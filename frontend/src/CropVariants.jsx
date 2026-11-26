@@ -34,12 +34,33 @@ export const adjacentPrintHint = "Prüfe am Original, ob der gestrichelte Bereic
 export const nestedPrintHint = "Prüfe am Original, ob der gestrichelte Bereich zum selben Papierabzug gehört. Bei einem Abzug bleiben alle Bilder im Motiv. Ergänze den Bereich, wenn dort ein eigener Abzug aufliegt.";
 export const deferredPrintHint = "Prüfe die violett gestrichelten Konturen am Original. Bestätige die Anzahl, wenn alle Abzüge bereits erfasst sind.";
 export const nestedFallbackProposal = "nested_fallback_contour";
-export const nestedFallbackReason = "NESTED_FALLBACK_CONTOUR_REVIEW";
-const nestedFallbackCountHint = "Die violetten Konturen liegen innerhalb erfasster Abzüge. Prüfe am Original, ob dort eigene Papierabzüge aufliegen. Sind alle Abzüge erfasst, bestätige die Anzahl.";
-export const nestedFallbackCropHint = "Prüfe am Original, ob innerhalb dieses Umrisses ein eigener Papierabzug aufliegt. Vergleiche beim Zuschneiden auch den Aussenrand des erfassten Abzugs.";
-const nestedFallbackDraftHint = "Erfasse die Innenkontur nur, wenn im Original ein eigener Papierabzug aufliegt. Setze die vier Ecken an seinen Papierrand.";
+export const frameBackingProposal = "possible_frame_backing";
 export const darkBackingProposal = "possible_dark_album_backing";
 export const standalonePrintConfirmation = "Hier liegt ein eigener Papierabzug.";
+const deferredPrintReviewHints = {
+  [nestedFallbackProposal]: {
+    countId: "nested-fallback-count-hint",
+    count: "Die markierten Innenkonturen liegen in erfassten Abzügen. Prüfe am Original, ob dort eigene Papierabzüge aufliegen. Sind alle Abzüge erfasst, bestätige die Anzahl.",
+    draft: "Erfasse die Innenkontur nur, wenn im Original ein eigener Papierabzug aufliegt. Setze die vier Ecken an seinen Papierrand.",
+    evidence: "Türkis markiert zu prüfende Abschnitte innerhalb der Abzüge.",
+  },
+  [frameBackingProposal]: {
+    countId: "frame-backing-count-hint",
+    count: "Prüfe am Original, ob der Vorschlag am Aufnahmerand über Albumseite und Untergrund läuft oder ob dort ein eigener Papierabzug liegt.",
+    draft: "Erfasse den Vorschlag nur, wenn dort ein eigener Papierabzug liegt. Setze die vier Ecken an seinen sichtbaren Papierrand.",
+    evidence: "Türkis markiert den gemessenen Materialwechsel. Prüfe auch, ob zwischen Linie und Aufnahmerand ein schmaler Papierabzug liegt.",
+  },
+};
+const deferredParentCropHints = [
+  {
+    reason: "NESTED_FALLBACK_CONTOUR_REVIEW", id: "nested-fallback-crop-hint",
+    text: "Prüfe am Original, ob innerhalb dieses Umrisses ein eigener Papierabzug aufliegt. Vergleiche beim Zuschneiden auch den Aussenrand des erfassten Abzugs.",
+  },
+  {
+    reason: "FRAME_BACKING_COUNT_REVIEW", id: "frame-backing-crop-hint",
+    text: "Prüfe am Original, wo der Papierabzug endet und der Untergrund beginnt. Achte beim Zuschneiden auf den Bildinhalt am Aufnahmerand.",
+  },
+];
 export const darkBackingReviewErrors = {
   dark_backing_confirmation_required: "Bestätige, dass hier ein eigener Papierabzug liegt.",
   dark_backing_confirmation_stale: "Dieser Vorschlag hat sich geändert. Prüfe die aktualisierte Albumseite.",
@@ -51,6 +72,9 @@ const darkBackingEvidence = [
 ];
 const nestedFallbackEvidence = [
   { key: "interior_edge_traces", label: "Zu prüfender Abschnitt innerhalb des Abzugs", color: "#0e7490", dash: [6, 4] },
+];
+const frameBackingEvidence = [
+  { key: "surface_edge_traces", label: "Gemessener Materialwechsel am Aufnahmerand", color: "#0e7490", dash: [6, 4] },
 ];
 export const sourceFragmentProposal = "possible_source_fragmented_print";
 const sourceFragmentGroupReason = "SOURCE_FRAGMENT_GROUP_REVIEW";
@@ -120,19 +144,36 @@ export function getSourceEdgeTraces(traces) {
 
 export function getDeferredPrintEvidence(proposal) {
   const styles = proposal?.reason === darkBackingProposal ? darkBackingEvidence
-    : proposal?.reason === nestedFallbackProposal ? nestedFallbackEvidence : [];
+    : proposal?.reason === nestedFallbackProposal ? nestedFallbackEvidence
+    : proposal?.reason === frameBackingProposal ? frameBackingEvidence : [];
   return styles.map((style) => ({
     ...style, traces: getSourceEdgeTraces(proposal[style.key]).filter((trace) => trace.length === 2),
   })).filter(({ traces }) => traces.length);
 }
 
-export function NestedFallbackReviewHint({ proposals, draft = false, mobile = false, id }) {
-  const nested = proposals.filter(({ reason }) => reason === nestedFallbackProposal);
-  if (!nested.length) return null;
-  return <p id={id} className={mobile ? "quad-hint" : "crop-editor-hint"}>
-    {draft ? nestedFallbackDraftHint : nestedFallbackCountHint}
-    {nested.some((proposal) => getDeferredPrintEvidence(proposal).length > 0) && " Türkis markiert zu prüfende Abschnitte innerhalb der Abzüge."}
-  </p>;
+export function standalonePrintNeedsConfirmation(reason) {
+  return reason === darkBackingProposal || reason === nestedFallbackProposal || reason === frameBackingProposal;
+}
+
+export function deferredPrintCountHintId(reason, mobile = false) {
+  const countId = deferredPrintReviewHints[reason]?.countId;
+  return countId && `${mobile ? "mobile-" : ""}${countId}`;
+}
+
+export function getDeferredParentCropHints(reviewReasons) {
+  return deferredParentCropHints.filter(({ reason }) => reviewReasons?.includes(reason));
+}
+
+export function DeferredPrintReviewHints({ proposals, draft = false, mobile = false }) {
+  return Object.entries(deferredPrintReviewHints).map(([reason, hint]) => {
+    const matching = proposals.filter((proposal) => proposal.reason === reason);
+    if (!matching.length) return null;
+    return <p key={reason} id={draft ? undefined : deferredPrintCountHintId(reason, mobile)}
+      className={mobile ? "quad-hint" : "crop-editor-hint"}>
+      {draft ? hint.draft : hint.count}
+      {matching.some((proposal) => getDeferredPrintEvidence(proposal).length > 0) && ` ${hint.evidence}`}
+    </p>;
+  });
 }
 
 export function DarkBackingEvidenceLegend({ proposals, mobile = false }) {

@@ -5413,6 +5413,97 @@ The `fusion_ownership` profile moves to revision 3. Paired API receipts,
 browser views, source masks, controls and benchmarks are local under
 `runs/crop-quality/nested-fallback-contours/`.
 
+### Review a fallback outline crossing the album edge
+
+The same Golden 26 180° JPEG75 development raster has a third false
+proposal from the contrast-region fallback. In the original orientation,
+its four corners are `(378, 0)`, `(1310, 0)`, `(915, 1096)` and
+`(293, 1120)` in native pixels. It covers most of the upper-left photo
+and extends across pale album stock into the tiled floor. The existing
+photo covers 68.37% of the proposal's native raster footprint. The
+contrast proposal has confidence 0.612 and boundary evidence 0.4182.
+
+The check considers a singleton contrast proposal below 0.55 boundary
+evidence and at most 0.68 confidence. Exactly two vertices must touch
+the same edge of the capture frame. One active, model-supported print must account
+for 55–84% of the proposed area. At least 86% of the existing print must
+also fall inside the proposal. One strongly supported inner side of
+that print must align to the proposal within 16 native px along at
+least 70% of the measured interval. Competing fits on the existing
+print can each support that comparison. The crop geometry uses its
+existing fit and checks.
+
+The source test searches a shallow band off the frame for a lightening
+transition toward pale album material. It verifies distributed support
+in five regions across both proposal side crossings and beyond them.
+An unsupported run of more than 32 native px in the interior vetoes
+the cue. The original pixels across the exposed lateral sides must show
+similar Lab color on both sides. Pale material below the transition is
+checked past a 16 px clearance from the print and proposal sides.
+A connected local difference exceeding Lab 5.5 across
+at least 1,000 native pixel equivalents can distinguish an overprint.
+The matched transition extends about 1,192 native pixels in the
+source. In the rotated upload its endpoints are approximately
+`[2311, 1782.42]` and `[1119, 1807.45]`, extending 119.85 and 171.54 px
+beyond the sides. A separate 241-station check finds median lightness
+gain of at least 19.99 L* across the five regions. Peak-gradient
+offsets have p95 values between 1.78 and 3.67 native px.
+
+A loose cross-line search accepted narrow inserted prints straddling
+the album line. The maximum-gap check rejects those controls. The
+first strong-color check missed an inserted near-pale sheet with an
+intact album line. The lower distinct-material threshold identifies
+both the lossless and re-encoded instances. A general Hough pass found
+partial album lines that missed the left continuation on the exact
+source. Source voting over admissible shallow slopes recovered the
+distributed transition.
+
+Very narrow separate stock above the transition can leave every
+measured part of it intact. The independent floor-only controls used
+15–50 px prints between the album edge and the frame. All 16 retained
+the album transition, including versions with photographic and pale
+matte content. A trial floor model found local terminating edges in
+31 of 48 additional placements. Visible grout and tilted stock still
+confounded that test, so it remains experimental. The count review
+asks the reviewer to inspect that band and identify any separate paper.
+The original four-corner proposal is still available to open, correct
+and explicitly count if a separate print is present. The turquoise
+line represents the source material transition.
+
+At IoU 0.85 the rotated normal upload has four active matches and
+zero active extras, versus four matches and one active extra in
+`107448f`. The three deferred contours remain available in count
+review. The four photo masks, stored transforms, rendered full
+previews, JPEG hashes and both crop-mode records are equal to the
+baseline. On the existing upper-left print the original-content and
+aspect checks still apply, plus the segmentation review reason for
+the count proposal. Fresh upload, individual reprocessing, manual
+addition and count confirmation were verified. Both named crop
+exports and the legacy cropped export stayed held. The count task
+accepts the current set of proposal IDs and preserves the reviewed
+source evidence in the decision record. Independent motif, metric
+aspect and landmark references for this page are still outstanding.
+For the upper-left print, the development mask IoU is 0.99628 and
+the whole-print source-footprint IoU is 0.99070. The crop omits
+0.9183% of the development source area, with 2,924 source pixel
+centres beyond the one-pixel tolerance. Foreign interpolation weight
+is 0.0416%, including 68 output pixels affected beyond that tolerance.
+The largest corner difference is 5.70 native px.
+
+Across the 12 encodings of this development page, the model and
+fallback match all 48 expected instances with zero active extras.
+The earlier revision has 48 true matches and one active extra. Across
+the five frozen reports and the contact-sheet camera replay, all
+measurement and crop-mode fields agree with the previous revision.
+The synthetic detector still matches 18/18. The independent seeded
+geometry passes 11/11 whole-print and 12/12 motif references. On the
+exact rotated case the helper takes 54.40 ms warm median process CPU
+time and 79.54 ms p95 over 20 single-thread calls.
+
+The `fusion_ownership` profile moves to revision 4. Native evidence,
+API and browser checks, benchmarks and experimental negative controls
+are local under `runs/crop-quality/frame-backing-contour/`.
+
 ### Measure seed displacement and competing print edges
 
 The frozen synthetic-control detector `c31317f…` with fallback at
