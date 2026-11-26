@@ -14,6 +14,18 @@ korrigieren und verfügbare Bilder ansehen und herunterladen.
 
 ### 1. Aufnahme, Upload und Speicherung
 
+Bei der Live-Aufnahme zeigt PhoSca das ganze Videobild zur Ausrichtung.
+Beim Auslösen fragt die App auf Desktop und Mobile ein Kamerastandbild
+über `ImageCapture.takePhoto()` an. Liefert die Kamera ein JPEG oder PNG,
+übernimmt die App diese Datei bytegleich. Die Kamera und der Browser
+bestimmen ihre Auflösung. Kann die Kamera kein verwendbares Standbild
+liefern, erfasst die App ein Videobild in dessen tatsächlicher Auflösung
+und zeigt einen Hinweis zur Aufnahmequalität. Mobile bietet zusätzlich
+**Mit Handy-Kamera aufnehmen**. Damit kann das Betriebssystem eine
+Aufnahmedatei direkt an die App übergeben.
+[Aufnahmepfad im Code](frontend/src/cameraCapture.js) ·
+[Vergleich mit einer echten Albumaufnahme](data/evaluation/README.md#preserve-camera-stills-before-page-analysis)
+
 Die React-Oberfläche legt ein Album an und sendet die Dateien an FastAPI.
 Mobil kann sie grosse Dateien in Teilen übertragen und bei fehlender
 Verbindung in IndexedDB zwischenspeichern. Der Server prüft Dateityp,

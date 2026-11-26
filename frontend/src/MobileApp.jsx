@@ -1,6 +1,7 @@
 import { Camera, Check, ChevronLeft, CircleHelp, CloudOff, Images, ListChecks, RefreshCw, Save, Upload, WandSparkles, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addManualPhoto, confirmSharedPaperGrid, createAlbum, excludeCountReviewGroup, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
+import { captureCameraImage } from "./cameraCapture.js";
 import { projectedCropAspect, resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import { heldPrintCorrectionHint, wholePrintApprovalHeld } from "./cropReviewApproval.js";
@@ -63,32 +64,64 @@ function MobileHeader({ title, onBack }) {
 function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome, uploadQueueScope }) {
   const [queue, setQueue] = useState([]); const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false);
   const [streaming, setStreaming] = useState(false); const [cameraError, setCameraError] = useState(""); const [lastCapture, setLastCapture] = useState("");
+  const [startingCamera, setStartingCamera] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [usedVideoFrame, setUsedVideoFrame] = useState(false);
   const videoRef = useRef(null); const streamRef = useRef(null);
   const refreshQueue = useCallback(() => listQueuedUploads(uploadQueueScope).then(setQueue), [uploadQueueScope]);
   useEffect(() => { refreshQueue(); }, [refreshQueue]);
-  useEffect(() => () => streamRef.current?.getTracks().forEach(track => track.stop()), []);
+  useEffect(() => () => {
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
+  }, []);
+  useEffect(() => () => { if (lastCapture) URL.revokeObjectURL(lastCapture); }, [lastCapture]);
+
+  function stopCameraForNativeCapture() {
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
+    videoRef.current.srcObject = null;
+    setStreaming(false);
+  }
 
   async function startCamera() {
     setCameraError("");
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) return setCameraError("Die Live-Kamera benötigt die HTTPS-Adresse dieser Seite.");
+    setStartingCamera(true);
+    let stream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 4096 }, height: { ideal: 3072 } }, audio: false });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 4096 }, height: { ideal: 3072 } }, audio: false });
+      const video = videoRef.current;
+      if (!video) { stream.getTracks().forEach(track => track.stop()); return; }
       streamRef.current?.getTracks().forEach(track => track.stop()); streamRef.current = stream;
-      videoRef.current.srcObject = stream; await videoRef.current.play(); setStreaming(true);
+      video.srcObject = stream;
+      await video.play();
+      if (stream === streamRef.current) setStreaming(true);
     } catch (error) {
-      setCameraError(error.name === "NotAllowedError" ? "Kamerazugriff wurde nicht erlaubt." : `Kamera konnte nicht gestartet werden: ${error.message}`);
+      if (stream && stream === streamRef.current) stopCameraForNativeCapture();
+      if (videoRef.current) setCameraError(error.name === "NotAllowedError" ? "Kamerazugriff wurde nicht erlaubt." : "Die Kamera konnte nicht gestartet werden.");
+    } finally {
+      if (videoRef.current) setStartingCamera(false);
     }
   }
 
-  function captureInBrowser() {
-    const video = videoRef.current; if (!video?.videoWidth || busy) return;
-    const canvas = document.createElement("canvas"); canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-    canvas.getContext("2d", { alpha: false }).drawImage(video, 0, 0);
-    canvas.toBlob(blob => {
-      if (!blob) return; if (lastCapture) URL.revokeObjectURL(lastCapture); setLastCapture(URL.createObjectURL(blob));
-      receive([new File([blob], `capture-${new Date().toISOString().replaceAll(":", "-")}.jpg`, { type: "image/jpeg", lastModified: Date.now() })]);
+  async function captureInBrowser() {
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!video || !stream || busy || capturing) return;
+    setCapturing(true);
+    setCameraError("");
+    try {
+      const { file, fromVideo } = await captureCameraImage(video, .96);
+      if (stream !== streamRef.current) return;
+      setUsedVideoFrame(fromVideo);
+      setLastCapture(URL.createObjectURL(file));
       navigator.vibrate?.(35);
-    }, "image/jpeg", 0.96);
+      await receive([file]);
+    } catch {
+      if (stream === streamRef.current) setCameraError("Die Aufnahme ist fehlgeschlagen. Versuche es erneut oder verwende die Handy-Kamera.");
+    } finally {
+      if (stream === streamRef.current) setCapturing(false);
+    }
   }
 
   async function addBatch() {
@@ -98,28 +131,46 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome, uplo
 
   async function receive(files) {
     if (!activeAlbumId || !files.length) return; setBusy(true); setMessage("");
-    for (const file of files) {
-      try {
-        if (!navigator.onLine) throw new Error("offline");
-        const result = file.size > 20 * 1024 * 1024 ? await uploadFileChunked(activeAlbumId, file) : await uploadFiles(activeAlbumId, [file]);
-        if (!result?.pages?.[0]?.verified) throw new Error("Serverbestätigung fehlt");
-        setMessage(result.analysis_queued ? "Auf PC gespeichert. Fotos werden automatisch ausgeschnitten." : "Auf PC gespeichert und geprüft.");
-      } catch {
-        await queueUpload(activeAlbumId, [file], uploadQueueScope); setMessage("Lokal gesichert – wartet auf Upload.");
+    try {
+      for (const file of files) {
+        try {
+          if (!navigator.onLine) throw new Error("offline");
+          const result = file.size > 20 * 1024 * 1024 ? await uploadFileChunked(activeAlbumId, file) : await uploadFiles(activeAlbumId, [file]);
+          if (!result?.pages?.[0]?.verified) throw new Error("Serverbestätigung fehlt");
+          setMessage(result.analysis_queued ? "Auf PC gespeichert. Die Albumseite wird analysiert." : "Auf PC gespeichert und geprüft.");
+        } catch {
+          await queueUpload(activeAlbumId, [file], uploadQueueScope); setMessage("Lokal gesichert – wartet auf Upload.");
+        }
       }
+      await refreshQueue();
+      if (navigator.onLine) await reload().catch(() => {});
+    } finally {
+      setBusy(false);
     }
-    await refreshQueue(); await reload(); setBusy(false);
   }
 
-  async function retry() { setBusy(true); await retryQueuedUploads(setMessage, uploadQueueScope); await refreshQueue(); await reload(); setBusy(false); }
+  async function retry() {
+    setBusy(true);
+    try {
+      await retryQueuedUploads(setMessage, uploadQueueScope);
+      await refreshQueue();
+      if (navigator.onLine) await reload().catch(() => {});
+    } finally {
+      setBusy(false);
+    }
+  }
 
+  const captureBusy = busy || startingCamera || capturing;
   return <div className="mobile-shell"><MobileHeader title="Seiten aufnehmen" onBack={goHome} /><main className="mobile-content">
-    <section className="mobile-card batch-picker"><label>Album / Batch</label><div><select value={activeAlbumId || ""} onChange={e => setActiveAlbumId(e.target.value)}><option value="" disabled>Batch auswählen</option>{albums.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select><button className="mobile-icon light" onClick={addBatch}>+</button></div></section>
+    <section className="mobile-card batch-picker"><label>Album / Batch</label><div><select value={activeAlbumId || ""} disabled={captureBusy} onChange={e => setActiveAlbumId(e.target.value)}><option value="" disabled>Batch auswählen</option>{albums.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select><button className="mobile-icon light" disabled={captureBusy} onClick={addBatch}>+</button></div></section>
     <section className="capture-stage"><div className={`live-camera ${streaming ? "streaming" : ""}`}><video ref={videoRef} autoPlay playsInline muted />{!streaming && <div className="page-guide"><Camera size={44}/><strong>Kamera direkt im Browser</strong><span>Die Aufnahme landet automatisch auf deinem PC.</span></div>}{streaming && <div className="camera-guide"><span>Ganze Albumseite mit etwas Rand ausrichten</span></div>}{lastCapture && <img className="last-capture" src={lastCapture} alt="Letzte Aufnahme" />}</div>
-      {!streaming ? <button className="capture-button" disabled={!activeAlbumId} onClick={startCamera}><Camera/><span>Kamera starten</span></button> : <button className={`shutter-button ${busy ? "busy" : ""}`} disabled={busy || !activeAlbumId} onClick={captureInBrowser} aria-label="Foto jetzt aufnehmen"><span /></button>}
-      {cameraError && <p className="camera-error">{cameraError}</p>}<label className="secondary-capture"><Images size={19}/> Aus Galerie wählen<input type="file" accept="image/jpeg,image/png" multiple disabled={!activeAlbumId || busy} onChange={e => receive([...e.target.files])}/></label>
+      {!streaming ? <button className="capture-button" disabled={!activeAlbumId || captureBusy} onClick={startCamera}><Camera/><span>Kamera starten</span></button> : <button className={`shutter-button ${captureBusy ? "busy" : ""}`} disabled={captureBusy || !activeAlbumId} onClick={captureInBrowser} aria-label="Foto jetzt aufnehmen"><span /></button>}
+      {cameraError && <p className="camera-error" role="alert">{cameraError}</p>}
+      {usedVideoFrame && <p className="camera-note" role="status">Die Browseraufnahme verwendet ein Videobild. Fehlen feine Papierkanten, nimm die Seite mit der Handy-Kamera auf.</p>}
+      <label className="secondary-capture"><Camera size={19}/> Mit Handy-Kamera aufnehmen<input type="file" accept="image/jpeg,image/png" capture="environment" disabled={!activeAlbumId || captureBusy} onClick={stopCameraForNativeCapture} onChange={e => receive([...e.target.files])}/></label>
+      <label className="secondary-capture"><Images size={19}/> Aus Galerie wählen<input type="file" accept="image/jpeg,image/png" multiple disabled={!activeAlbumId || captureBusy} onChange={e => receive([...e.target.files])}/></label>
     </section>{message && <div className="mobile-message"><Check size={18}/>{message}</div>}
-    <section className="queue-card"><div><strong>Upload-Warteschlange</strong><span>{queue.length ? `${queue.length} ausstehend` : "Alles auf dem PC gespeichert"}</span></div>{queue.length > 0 && <button onClick={retry} disabled={busy}><RefreshCw size={18}/> Erneut versuchen</button>}{queue.map(item => <div className="queue-row" key={item.id}><CloudOff/><span><b>{item.file.name}</b><small>{item.status} · Versuch {item.attempts || 0}</small></span><button onClick={() => removeQueuedUpload(item.id).then(refreshQueue)}>×</button></div>)}</section>
+    <section className="queue-card"><div><strong>Upload-Warteschlange</strong><span>{queue.length ? `${queue.length} ausstehend` : "Alles auf dem PC gespeichert"}</span></div>{queue.length > 0 && <button onClick={retry} disabled={captureBusy}><RefreshCw size={18}/> Erneut versuchen</button>}{queue.map(item => <div className="queue-row" key={item.id}><CloudOff/><span><b>{item.file.name}</b><small>{item.status} · Versuch {item.attempts || 0}</small></span><button onClick={() => removeQueuedUpload(item.id).then(refreshQueue)}>×</button></div>)}</section>
   </main></div>;
 }
 

@@ -44,6 +44,7 @@ import {
   uploadFileChunked,
   uploadFiles,
 } from "./api.js";
+import { captureCameraImage } from "./cameraCapture.js";
 import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
 import EdgeMeasurement from "./EdgeMeasurement.jsx";
@@ -2662,11 +2663,20 @@ function GalleryView({ photos, processing, onOpenPhoto = () => {} }) {
 
 function CaptureView({ albumId, refresh, uploadQueueScope }) {
   const videoRef = useRef(null);
+  const streamRef = useRef(null);
   const [streaming, setStreaming] = useState(false);
+  const [startingCamera, setStartingCamera] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [cameraMessage, setCameraMessage] = useState("");
   const [tilt, setTilt] = useState(0);
   const [batch, setBatch] = useState([]);
   const [message, setMessage] = useState("");
   const [progress, setProgress] = useState(0);
+
+  useEffect(() => () => {
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
+  }, []);
 
   useEffect(() => {
     function onOrientation(event) {
@@ -2687,26 +2697,49 @@ function CaptureView({ albumId, refresh, uploadQueueScope }) {
   }, [refresh, uploadQueueScope]);
 
   async function startCamera() {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment", width: { ideal: 3840 }, height: { ideal: 2160 } },
-      audio: false,
-    });
-    videoRef.current.srcObject = stream;
-    setStreaming(true);
+    setCameraMessage("");
+    setStartingCamera(true);
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 4096 }, height: { ideal: 3072 } },
+        audio: false,
+      });
+      const video = videoRef.current;
+      if (!video) { stream.getTracks().forEach(track => track.stop()); return; }
+      streamRef.current?.getTracks().forEach(track => track.stop());
+      streamRef.current = stream;
+      video.srcObject = stream;
+      await video.play();
+      if (stream === streamRef.current) setStreaming(true);
+    } catch {
+      if (stream && stream === streamRef.current) {
+        stream.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+        setStreaming(false);
+      }
+      if (videoRef.current) setCameraMessage("Camera could not be started. You can add an original photo to the batch.");
+    } finally {
+      if (videoRef.current) setStartingCamera(false);
+    }
   }
 
-  function captureFrame() {
+  async function captureFrame() {
     const video = videoRef.current;
-    if (!video) return;
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext("2d").drawImage(video, 0, 0);
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const file = new File([blob], `capture-${Date.now()}.jpg`, { type: "image/jpeg" });
+    const stream = streamRef.current;
+    if (!video || !stream || capturing) return;
+    setCapturing(true);
+    setCameraMessage("");
+    try {
+      const { file, fromVideo } = await captureCameraImage(video, .92);
+      if (stream !== streamRef.current) return;
       setBatch((current) => [...current, file]);
-    }, "image/jpeg", 0.92);
+      if (fromVideo) setCameraMessage("Captured a video frame. For fine paper edges, add the original camera photo to the batch.");
+    } catch {
+      if (stream === streamRef.current) setCameraMessage("The camera could not take this photo. Try again or add an original photo to the batch.");
+    } finally {
+      if (stream === streamRef.current) setCapturing(false);
+    }
   }
 
   async function uploadBatch() {
@@ -2743,24 +2776,28 @@ function CaptureView({ albumId, refresh, uploadQueueScope }) {
           {!streaming && <EmptyState label="Camera is off." />}
         </div>
         <div className="toolbar-row">
-          <button className="icon-button text-button" type="button" onClick={startCamera}>
+          <button className="icon-button text-button" type="button" disabled={startingCamera || capturing} onClick={startCamera}>
             <Camera size={16} />
             Camera
           </button>
-          <button className="icon-button text-button" type="button" disabled={!streaming || tilt > 10} onClick={captureFrame}>
+          <button className="icon-button text-button" type="button" disabled={!streaming || startingCamera || capturing || tilt > 10} onClick={captureFrame}>
             <Aperture size={16} />
             Capture
           </button>
           <span className="muted-text">Tilt {tilt} degrees</span>
         </div>
+        {cameraMessage && <p className="muted-text" role="status">{cameraMessage}</p>}
       </section>
       <section className="side-surface">
         <div className="section-title">
           <h2>Batch</h2>
           <Upload size={18} />
         </div>
-        <input type="file" accept="image/jpeg,image/png" multiple onChange={(event) => setBatch([...batch, ...event.target.files])} />
-        <button className="primary-button" type="button" disabled={!albumId || batch.length === 0} onClick={uploadBatch}>
+        <input type="file" accept="image/jpeg,image/png" multiple onChange={(event) => {
+          const files = [...event.target.files];
+          setBatch(current => [...current, ...files]);
+        }} />
+        <button className="primary-button" type="button" disabled={!albumId || capturing || batch.length === 0} onClick={uploadBatch}>
           <Upload size={16} />
           Upload {batch.length}
         </button>

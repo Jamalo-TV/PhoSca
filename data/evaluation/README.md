@@ -364,11 +364,17 @@ rights still need verification before inclusion in the final split.
 The public batch documentation maps item and resource JSON to declared
 scan files. The exact pair IDs above can be matched through the MARC
 mounted-page links before obtaining and hashing the intact TIFFs.
+The `proka.0005a.08` record also links at least two other paper prints.
+The individual images associated with `2018679192` and `2018679195`
+were made from the glass negative. References to the physical prints
+on that page are needed for complete release annotation.
 The complete 2,610-row Free to Use bulk manifest omits both print
 LCCNs and both corresponding volume LCCNs.
 [Digitization notes](https://www.loc.gov/pictures/collection/prok/digitizing.html) ·
 [LOT 10333 no. 128](https://www.loc.gov/pictures/item/2018679139/) ·
 [LOT 10334 no. 54](https://www.loc.gov/pictures/collection/prok/item/2018679194/) ·
+[MARC records for additional prints](https://www.loc.gov/pictures/item/2018679192/marc/) ·
+[Second additional print](https://www.loc.gov/pictures/item/2018679195/marc/) ·
 [Public image batch workflow](https://libraryofcongress.github.io/data-exploration/loc.gov%20JSON%20API/Accessing%20images%20for%20analysis.html) ·
 [Free to Use bulk manifest](https://data.labs.loc.gov/free-to-use/manifest.html)
 
@@ -4932,6 +4938,71 @@ one OpenCV thread and 31 warm measurements, median comparison-renderer
 CPU time was 9.15 ms for JPEG75 and 11.44 ms for PNG. The p95 values
 were 13.41 and 15.76 ms. Test reports and screenshots are local in
 `runs/crop-quality/disputed-contact-outline/`.
+
+### Preserve camera stills before page analysis
+
+The built-in camera formerly encoded its live video resolution on both
+Desktop and Mobile. The browser can negotiate a video size below the
+requested ideal, and re-encoding cannot restore the missing source
+detail. Both clients now use `ImageCapture.takePhoto()` on the active
+track if supported. A valid JPEG or PNG is transferred as returned by
+the camera. The browser and camera select the actual image dimensions.
+When a still is unavailable, the existing canvas path uses the live
+frame dimensions and JPEG quality 0.92 on Desktop or 0.96 on Mobile.
+The app identifies a video-frame fallback. The camera views keep the
+whole video frame visible for alignment. Mobile can open the device
+camera picker, releasing the preview camera first. Files from the
+picker or the gallery use the same upload and offline queue.
+[MediaStream Image Capture](https://w3c.github.io/mediacapture-image/#dom-imagecapture-takephoto)
+
+An ordinary Chromium upload replay used the pinned SteveKM camera
+JPEG as the stand-in for a camera still. SHA-256 was
+`41a5650e9d9c6e220829ec128682d94dc9005fffb311776e638cdeb7b25f8cda`.
+The live test track showed the same capture at 1,346 × 1,014. On both
+clients the camera path sent the 4,080 × 3,072, 2,677,318-byte JPEG
+without re-encoding. Server upload verification, persisted original
+bytes and the analysis raster identified the original image. The
+previous code persisted a JPEG at 1,346 × 1,014 despite the available
+still API. Desktop then counted five proposals and Mobile six.
+With the original bytes both clients count four, including the actual
+contact print and three sleeve proposals. The mixed detector and renderer
+replay used the existing development outline for comparison. A paper
+detection needs mask IoU at or above 0.85 in this replay.
+
+| Source from browser replay | Physical print matched | Mask IoU | Whole-print footprint IoU | Draft area cut off | Foreign sample weight |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Previous Mobile video, 1,346 × 1,014 | 0/1 | 0.8194 | 0.8159 | 18.41% | 0.003% |
+| Previous Desktop video, 1,346 × 1,014 | 0/1 | 0.8233 | 0.8207 | 17.91% | 0.042% |
+| Preserved camera still, 4,080 × 3,072 | 1/1 | 0.9947 | 0.9945 | 0.46% | 0.116% |
+
+The maximum corner deviations from the draft are 68.50 native px for
+the old Mobile video, 67.95 for the old Desktop video and 7.50 for the
+preserved still. The previous previews retain 1,425 and 1,490 of 1,940
+projected header ink landmarks. The still retains all 1,940 and all
+315 panel landmarks. Its rendered width-to-height ratio is 0.781.
+The fallback crops estimate 0.670 and 0.661. The development reference
+has no independent physical aspect measurement.
+
+All three inputs hold both crop modes and the trimmed download alias.
+The proposed paper geometry yields a whole-print preview. The image-only
+mode lacks a supported motif warp on these inputs. The stand-in test
+simulates the camera API. Actual sensor output size depends on the device.
+An offline Mobile capture in the same browser kept the still bytes in
+IndexedDB and persisted the exact same JPEG after reconnect and retry.
+The two browser still replays took about 32 seconds from upload to the
+analysed page with the local registered model. The older reduced captures
+took 6–8 seconds in that environment. These are single local measurements.
+Local development receipts are under `runs/crop-quality/native-still-capture/`.
+
+The separate native endcap experiment found no separation on the
+51 authentic-source variants or on 72 flush overlays. It detects
+77/150 planted 0.65-pixel gaps and 128/150 planted 2.25-pixel gaps
+across the tested backgrounds and codecs. In an independent adversarial
+check, backing-coloured lines printed across a single sheet trigger the
+same cue in 18/18 variants. Two disconnected marks at the ends also
+trigger it. The true separate strips in the clear negative sleeve can
+lack the cue. Colour at the ends alone therefore cannot settle physical
+ownership. Those cases still require inspection of the original.
 
 ### Keep manual exports held while paper proposals overlap
 
