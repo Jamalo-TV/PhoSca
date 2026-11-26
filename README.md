@@ -75,6 +75,10 @@ Geometrie haben.
 Ein zusätzlicher Vorschlag braucht auf allen vier Seiten Unterstützung
 aus den Originalpixeln und darf keine vorhandene oder ungeklärte
 Papierkontur schneiden. Er erscheint gestrichelt in der Anzahlprüfung.
+Findet die Kachelsuche einen solchen Abzug, prüft PhoSca auch die um
+90 und 270 Grad gedrehten Modellansichten. Ein weiterer Vorschlag
+braucht eine eindeutige Übereinstimmung dieser beiden Ansichten und
+vier klar messbare Papierkanten in den Originalpixeln.
 Die Anzahl erhöht sich erst, wenn du den eigenen Papierabzug am
 Original bestätigst. Danach prüfst du seine Ecken und beide Zuschnitte.
 [Kachelprüfung](data/evaluation/README.md#missing-prints-in-count-review)

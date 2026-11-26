@@ -28,3 +28,29 @@ def test_curved_tile_suggestion_requires_all_four_native_edges(monkeypatch, reas
     assert (outline is not None) == expected
     if expected:
         np.testing.assert_array_equal(outline, seed)
+
+
+def test_rotated_review_requires_unique_agreement_and_consistent_native_fit(monkeypatch):
+    image = np.zeros((240, 320, 3), dtype=np.uint8)
+    scale = np.float32([319, 239])
+    measured = np.float32([[30, 20], [270, 24], [262, 190], [29, 192]])
+    first = measured / scale
+    second = (measured + [2, 1]) / scale
+    separate = first / 4 + .65
+    monkeypatch.setattr(tile_print_review, "tile_print_outline",
+                        lambda image, shape, *, require_clear_sides: measured)
+
+    def collect(first_view, second_view):
+        return tile_print_review.opposing_view_print_outlines(image, first_view, second_view, acceptance=.70)
+
+    outline, = collect([(first, .80)], [(second, .56), (separate, .95)])
+    np.testing.assert_array_equal(outline, measured)
+    assert collect([(first, .80)], [(separate, .95)]) == []
+    assert collect([(first, .80)], [(second, .56), (first, .80)]) == []
+    assert collect([(first, .69)], [(second, .65)]) == []
+
+    def disagreeing_fit(image, shape, *, require_clear_sides):
+        return measured if shape is first else measured + [5, 0]
+
+    monkeypatch.setattr(tile_print_review, "tile_print_outline", disagreeing_fit)
+    assert collect([(first, .80)], [(second, .56)]) == []

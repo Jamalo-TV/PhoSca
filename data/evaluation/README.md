@@ -2180,6 +2180,32 @@ remain held. The lower-right tile candidate still fails native edge
 verification. The original cloth and card proposals require review.
 Local receipts are under `runs/crop-quality/spiral-card-recovery/`.
 
+#### Confirm a missing print across opposing quarter turns
+
+Revision 5 runs the 90° and 270° full-page views after the tile pass
+finds an additional outline. The masks map back to native pixel centres.
+Each candidate needs a unique partner from the other view at mask IoU
+0.80 or higher. Both masks need a model score of at least 0.55, and one
+must reach the configured acceptance threshold. The original raster must
+support four unambiguous sides at 0.90 or higher,
+and the fitted outline must reach 0.84 IoU against each view. If both
+native fits succeed, their corners must agree within four source pixels.
+Current and pending paper claims still veto overlapping suggestions.
+
+On the original souvenir card capture, both lower prints now appear
+in count review at 0.98318 and 0.98407 IoU against the draft masks.
+The possible caption card and fabric proposals still require review.
+The earlier spiral spread keeps its single offer. The cover adds none.
+Both JPEG75 derivatives retain both offers. The right print reaches
+0.98407 IoU at full size and 0.98334 at 75% scale. In the upload replay
+each extra print needed its own confirmation, and reprocessing the
+added right print kept both crop exports held.
+With three warm single-thread CPU samples per arm, median time in the
+tile review stage on this capture rose from 0.81 s to 1.19 s.
+The eight comparison runs retain the previous detection, crop and
+count-review results for their existing inputs.
+Local receipts are under `runs/crop-quality/opposing-print-views/`.
+
 ### Scalloped paper on white scanner backing
 
 The ScanCropper development fixture pins two original rasters with five loose

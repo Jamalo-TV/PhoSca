@@ -77,7 +77,9 @@ from app.pipeline.segmentation_filter import (
     paper_around_nested_print,
 )
 from app.pipeline.source_fragment_review import source_fragment_role, suggest_source_fragment_group
-from app.pipeline.tile_print_review import TILED_PRINT_PROPOSAL, tile_print_outline, tiled_outline_conflicts
+from app.pipeline.tile_print_review import (
+    TILED_PRINT_PROPOSAL, opposing_view_print_outlines, tile_print_outline, tiled_outline_conflicts,
+)
 
 _CLASSICAL_MIN_AREA_RATIO = 0.02
 _CLASSICAL_DUPLICATE_CHECK_LIMIT = 12
@@ -4490,6 +4492,32 @@ def _collect_tiled_print_offers(
     return offers
 
 
+def _collect_rotated_print_offers(
+    source: np.ndarray, image: np.ndarray, detections: list[SegmentationDetection],
+    existing_offers: list[list[dict]], infer: Callable[[np.ndarray], list[SegmentationDetection]], acceptance: float,
+) -> list[list[dict]]:
+    height, width = source.shape[:2]
+    claims = [item.mask for item in detections] + [{"polygon": outline} for outline in existing_offers]
+    observations = []
+    for turn in (1, 3):
+        shapes = []
+        for item in infer(np.ascontiguousarray(np.rot90(image, turn))):
+            if not item.geometry_valid or item.confidence < .55 or item.mask.get("source") != "yolo_seg_mask":
+                continue
+            x, y = _detection_polygon(item).T
+            mapped = np.column_stack((1 - y, x) if turn == 1 else (y, 1 - x))
+            if not tiled_outline_conflicts(_normalized_polygon(mapped, 1, 1), claims, width, height):
+                shapes.append((mapped, item.confidence))
+        observations.append(shapes)
+    offers = []
+    for outline in opposing_view_print_outlines(source, *observations, acceptance=acceptance):
+        normalized = _normalized_polygon(outline, width, height)
+        if not tiled_outline_conflicts(normalized, claims, width, height):
+            offers.append(normalized)
+            claims.append({"polygon": normalized})
+    return offers
+
+
 def _segment_album_page(
     image: np.ndarray, settings: Settings, source: np.ndarray | None = None,
     tile_offers: list[list[dict]] | None = None,
@@ -4627,7 +4655,15 @@ def _segment_album_page(
                         tile_offers.extend(_collect_tiled_print_offers(
                             source, image, detections, model_evidence, lambda frame: infer(frame)[0], inputs,
                         ))
-                    except (cv2.error, ValueError, RuntimeError) as exc:
+                        if tile_offers:
+                            # A successful tile pass justifies two extra full-page views.
+                            rotated = _collect_rotated_print_offers(
+                                source, image, detections, tile_offers, lambda frame: infer(frame)[0],
+                                settings.yolo_confidence_threshold,
+                            )
+                            tile_offers.extend(rotated)
+                            tile_review["rotated_candidates"] = len(rotated)
+                    except Exception as exc:  # Keep earlier proposals if an optional view fails.
                         tile_review["error"] = str(exc)
                     metadata["tiled_print_review"] = {
                         **tile_review, "candidates": len(tile_offers),
