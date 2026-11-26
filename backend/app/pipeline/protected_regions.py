@@ -24,6 +24,12 @@ PAGE_FACE_SUGGESTIONS = {
 }
 
 
+class ProtectedRegionRemoval(ValueError):
+    def __init__(self, mode: str, regions: list[dict[str, float]]) -> None:
+        super().__init__("protected_region_removed")
+        self.detail = {"code": str(self), "mode": mode, "regions": regions}
+
+
 def protected_region_key(region: dict) -> dict:
     return {"type": region.get("type", "unknown"), "source": region.get("source", "unknown"),
             "box": region.get("box", region)}
@@ -183,3 +189,48 @@ def validate_protected_regions(
         if not all(inside) and (require_containment or any(inside)):
             violations.append(protected_region_key(region))
     return {"passed": not violations, "violations": violations, "regions_checked": len(regions)}
+
+
+def removed_protected_regions(
+    original: np.ndarray, edited: np.ndarray, regions: list[dict], *, width: int, height: int,
+    visible: np.ndarray | None = None,
+) -> list[dict[str, float]]:
+    """Locate lost protected content in the old crop's visible footprint."""
+    if np.array_equal(original, edited):
+        return []
+    # A signed fan handles concave visibility polygons without treating gaps
+    # between observed pieces as photo content.
+    visibility = None
+    if visible is not None:
+        if cv2.isContourConvex(visible):
+            visibility = [(visible, 1)]
+        else:
+            triangles = [np.float32([visible[0], start, end]) for start, end in zip(visible[1:-1], visible[2:])]
+            orientation = 1 if cv2.contourArea(visible, oriented=True) > 0 else -1
+            visibility = [(triangle, orientation * np.sign(area)) for triangle in triangles
+                          if (area := cv2.contourArea(triangle, oriented=True))]
+    removed = []
+    for region in regions:
+        box = region_box_in_pixels(region, width, height)
+        if box is None or not np.isfinite(box).all():
+            continue
+        left, top, right, bottom = np.clip(box, 0, [width - 1, height - 1] * 2).tolist()
+        area = (right - left) * (bottom - top)
+        if area <= 1:
+            continue
+        core = np.float32([[left, top], [right, top], [right, bottom], [left, bottom]])
+        covered, owned = cv2.intersectConvexConvex(original, core)
+        if covered <= 1 or (visibility is None and is_advisory_page_face(region) and area - covered > 1):
+            continue
+        kept, retained = cv2.intersectConvexConvex(owned, edited)
+        if covered - kept <= 1:
+            continue
+        if visibility is not None:
+            loss = sum(sign * (cv2.intersectConvexConvex(piece, owned)[0]
+                       - (cv2.intersectConvexConvex(piece, retained)[0] if kept > 0 else 0))
+                       for piece, sign in visibility)
+            if loss <= 1:
+                continue
+        removed.append({"x1": left / (width - 1), "y1": top / (height - 1),
+                        "x2": right / (width - 1), "y2": bottom / (height - 1)})
+    return removed

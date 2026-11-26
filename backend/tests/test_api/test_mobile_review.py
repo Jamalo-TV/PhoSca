@@ -371,6 +371,92 @@ async def test_manual_edit_keeps_the_disputed_straight_side_in_review_until_both
     await verify_exports(404)
 
 
+async def test_manual_crop_cannot_remove_a_whole_protected_source_region(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, Page
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    image = np.full((480, 640, 3), 232, np.uint8)
+    image[85:395, 235:593] = (59, 90, 131)
+    cv2.putText(image, "A", (257, 252), cv2.FONT_HERSHEY_SIMPLEX, .8, (241, 241, 241), 2)
+    _, page_id, photo_id = await _seed_review_data(image)
+    url = f"/api/v1/photos/{photo_id}"
+
+    def shape(left, top, right, bottom):
+        return [{"x": x / 639, "y": y / 479} for x, y in [(left, top), (right, top), (right, bottom), (left, bottom)]]
+
+    async def save(outer, inner):
+        return await client.patch(f"{url}/bounding-box", json={"bounding_box": {
+            "x1": outer[0]["x"], "x2": outer[2]["x"], "y1": outer[0]["y"], "y2": outer[2]["y"],
+        }, "segmentation_mask": {
+            "source": "manual_quad", "polygon": outer, "warp_quad": outer, "image_quad": inner,
+            "print_size_mm": {"width": 160, "height": 140},
+        }})
+
+    outer, motif = shape(235, 85, 592, 394), shape(245, 97, 580, 382)
+    overextended = shape(25, 85, 592, 394)
+    text = {"type": "text", "source": "manual", "pinned": True,
+            "box": {"x1": 251, "y1": 225, "x2": 282, "y2": 258}}
+    outside = {"type": "face", "source": "opencv_haarcascade_frontalface_default",
+               "box": {"x1": 40, "y1": 150, "x2": 105, "y2": 215}}
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        page.processing_metadata = {"steps": {"protected_regions": {"enabled": True, "regions": [outside, text]}}}
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {
+            "source": "classical_boundary", "polygon": outer, "visible_polygon": outer, "warp_quad": overextended,
+        }
+        photo.bounding_box = {"x1": outer[0]["x"], "x2": outer[2]["x"], "y1": outer[0]["y"], "y2": outer[2]["y"]}
+        await session.commit()
+
+    saved = await save(outer, motif)
+    assert saved.status_code == 200, saved.text
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {**photo.segmentation_mask, "visible_polygon": shape(270, 85, 592, 394)}
+        await session.commit()
+    original = saved.json()
+    original["segmentation_mask"]["visible_polygon"] = shape(270, 85, 592, 394)
+    variants = ("full_print", "image_only")
+
+    async def exports():
+        return [await client.get(f"{url}/image", params={"variant": variant}) for variant in variants]
+
+    downloads = await exports()
+    assert [response.status_code for response in downloads] == [200, 200]
+    for lost_mode, new_outer, new_inner in (
+        ("full_print", shape(313, 85, 592, 394), shape(325, 97, 580, 382)),
+        ("image_only", outer, shape(315, 97, 580, 382)),
+    ):
+        rejected = await save(new_outer, new_inner)
+        assert rejected.status_code == 422, rejected.text
+        assert rejected.json()["detail"] == {
+            "code": "protected_region_removed", "mode": lost_mode,
+            "regions": [{"x1": 251 / 639, "y1": 225 / 479, "x2": 282 / 639, "y2": 258 / 479}],
+        }
+        current = (await client.get(url)).json()
+        assert current["segmentation_mask"] == original["segmentation_mask"]
+        assert current["enhancement_applied"]["review_provenance"] == original["enhancement_applied"]["review_provenance"]
+        repeated = await exports()
+        assert [response.status_code for response in repeated] == [200, 200]
+        assert [response.content for response in repeated] == [response.content for response in downloads]
+    assert (await save(outer, shape(246, 97, 580, 382))).status_code == 200
+
+    # A stored motif from an older release is checked again on rendering.
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {**photo.segmentation_mask, "image_quad": shape(315, 97, 580, 382)}
+        await session.commit()
+    replay = await client.post(f"{url}/reprocess")
+    assert replay.status_code == 200, replay.text
+    assert "BORDER_PROTECTED_CONTENT_VETO" in replay.json()["enhancement_applied"]["correction"]["crop_modes"]["image_only"]["reason_codes"]
+    assert [response.status_code for response in await exports()] == [200, 404]
+
+
 async def test_album_page_mark_is_bound_to_the_reviewed_crop_and_source(client, monkeypatch):
     from app.config import get_settings
     from app.database import get_session_factory

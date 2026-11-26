@@ -440,6 +440,7 @@ async def perspective_correction_task_logic(
     page_plane: PrintPagePlane | None = None,
     commit: bool = True,
     output_directories: set[Path] | None = None,
+    previous_manual_crop: dict | None = None,
 ) -> dict:
     photo = await session.scalar(
         select(ExtractedPhoto)
@@ -595,12 +596,15 @@ async def perspective_correction_task_logic(
             manual_boundary_reference=manual_boundary,
             manual_scalloped_polygon=None if paper_claim_conflicts else scalloped_outline,
             **({"reviewed_album_mark": reviewed_mark} if reviewed_mark else {}),
+            **({"previous_manual_crop": previous_manual_crop} if previous_manual_crop is not None else {}),
         )
         corrected = crop_result.image
         correction_metadata = crop_result.metadata
     except (ValueError, cv2.error) as exc:
         reason = str(exc) if isinstance(exc, ValueError) else "perspective_opencv_error"
         if reject_invalid_edit:
+            if isinstance(exc, ValueError):
+                raise
             raise ValueError(reason) from exc
         metadata = _update_photo_decision_metadata(
             photo,

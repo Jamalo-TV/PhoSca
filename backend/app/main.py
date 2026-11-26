@@ -15,7 +15,7 @@ from app.models import AuditLog
 from app.routers import albums, authentication, health, jobs, pages, photos, review, runs, search, training
 
 
-def error_response(request: Request, status_code: int, error: str, detail: str) -> JSONResponse:
+def error_response(request: Request, status_code: int, error: str, detail: str | dict) -> JSONResponse:
     request_id = getattr(request.state, "request_id", str(uuid4()))
     return JSONResponse(
         status_code=status_code,
@@ -90,7 +90,7 @@ def create_app() -> FastAPI:
             request,
             exc.status_code,
             "http_error",
-            str(exc.detail),
+            exc.detail if isinstance(exc.detail, dict) else str(exc.detail),
         )
 
     @app.exception_handler(RequestValidationError)

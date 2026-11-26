@@ -34,6 +34,9 @@ async function parseResponse(response) {
     } catch {
       detail = response.statusText;
     }
+    if (typeof detail?.code === "string") {
+      throw Object.assign(new Error(detail.code), { detail });
+    }
     throw new Error(detail);
   }
   if (response.status === 204) return null;

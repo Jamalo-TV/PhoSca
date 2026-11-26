@@ -4,8 +4,8 @@ import { createAlbum, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop,
 import { projectedCropAspect, resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import {
-  adjacentPrintHint, AlbumPageMarkReview, albumPageMarkErrors, canEditMobileMotif, captureRequiresReview,
-  captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants,
+  adjacentPrintHint, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
+  captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, cropProtectionErrors, CropVariants,
   cropModeLabels, crossingPrintHint,
   crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridReason, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
@@ -115,7 +115,8 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome, uplo
   </main></div>;
 }
 
-function DetectionOverlay({ item, editable = false, openPaperOutline, countOutlines, captureSplitGroups, filmGridGroups, paperGridGroups, onSaved }) {
+function DetectionOverlay({ item, editable = false, openPaperOutline, countOutlines, captureSplitGroups, filmGridGroups,
+  paperGridGroups, onSaved, onProtectionBlocked }) {
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
   const [showMissingEdges, setShowMissingEdges] = useState(false);
@@ -188,6 +189,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const [orientation, setOrientation] = useState(storedOrientation);
   const [savedOrientation, setSavedOrientation] = useState(storedOrientation);
   const [savedCropUrl, setSavedCropUrl] = useState(""); const [saveError, setSaveError] = useState("");
+  const [blockedCrop, setBlockedCrop] = useState(null);
   const [magnifierEnabled, setMagnifierEnabled] = useState(true);
   const [magnifier, setMagnifier] = useState({ visible: false, x: 0, y: 0 });
   useEffect(() => {
@@ -201,6 +203,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     setSavedOrientation(storedOrientation);
     setSavedCropUrl("");
     setSaveError("");
+    setBlockedCrop(null);
   }, [item.id]);
   const box = quadToBox(quad);
   const validQuad = !editable || isValidQuad(displayedQuad);
@@ -268,6 +271,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       const saved = await patchBoundingBox(item.payload.photo_id, editingMotif ? sourceBox : box, mask,
         !editingMotif && Boolean(printSuggestion), markId);
       setAlbumMarkReviewId(null);
+      setBlockedCrop(null);
       const savedDegrees = saved.segmentation_mask?.orientation_degrees ?? null;
       setOrientation(savedDegrees);
       setSavedOrientation(savedDegrees);
@@ -281,7 +285,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     } catch (error) {
       setSaveError(error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message === "print_outline_review_required" ? printOutlineSaveHint
-        : albumPageMarkErrors[error.message] || error.message || "Ausschnitt konnte nicht gespeichert werden.");
+        : cropProtectionErrors[error.message] || error.message || "Ausschnitt konnte nicht gespeichert werden.");
+      if (error.message === "protected_region_removed") {
+        setBlockedCrop(error.detail);
+        onProtectionBlocked?.(item.id);
+      }
     }
     finally { setSaving(false); }
   }
@@ -390,6 +398,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         {albumMark && <rect x={albumMark.bounds.x1 * 1000} y={albumMark.bounds.y1 * 1000}
           width={(albumMark.bounds.x2 - albumMark.bounds.x1) * 1000} height={(albumMark.bounds.y2 - albumMark.bounds.y1) * 1000}
           aria-label="Zu prüfende Schutzmarkierung" style={{ fill: "none", stroke: "#facc15", strokeWidth: 6, pointerEvents: "none" }} />}
+        {blockedCrop?.mode === editMode && blockedCrop.regions.map(({ x1, y1, x2, y2 }, index) => (
+          <rect key={index} aria-label="Geschützter Bildbereich" x={x1 * 1000} y={y1 * 1000}
+            width={(x2 - x1) * 1000} height={(y2 - y1) * 1000}
+            style={{ fill: "none", stroke: "#b91c1c", strokeWidth: 7, pointerEvents: "none" }} />
+        ))}
         {editable && motifMarginMarks.map((region, index) => (
           <polygon key={index} aria-label="Mögliche Beschriftung am Papierrand" fill="none" stroke="#b45309" strokeWidth="5"
             pointerEvents="none" points={region.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
@@ -491,7 +504,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         || (editingMotif ? !validMotif : (!validQuad || Boolean(sizeError) || crossingNeedsCorrection))}>
         <Save size={18}/>{saving ? "Richtet das Bild …" : editingMotif ? "Motivzuschnitt speichern" : "Viereck speichern & geraderichten"}
       </button>
-      {saveError && <p className="crop-save-error">{saveError}</p>}
+      {saveError && <p className="crop-save-error" role="alert">{saveError}</p>}
       {displayedQuad && !motifOutside && (comparePaperEdge && !editingPreview && !savedCropUrl
         ? <PaperEdgePreviewComparison currentUrl={item.payload.untrimmed_url} possibleUrl={comparePaperEdge}
             hint={outlinePreviewHint} />
@@ -624,6 +637,7 @@ function CropReview({ albumId, goHome }) {
   const [type, setType] = useState("segmentation"); const [index, setIndex] = useState(0); const [message, setMessage] = useState("");
   const [queue, setQueue] = useState(null);
   const [focusedPhotoId, setFocusedPhotoId] = useState(null);
+  const [blockedCropTaskId, setBlockedCropTaskId] = useState(null);
   const [answerError, setAnswerError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const returnCountId = useRef(null);
@@ -652,6 +666,7 @@ function CropReview({ albumId, goHome }) {
   const captureReviewPending = type === "geometry" && captureRequiresReview(fullPrint);
   const paperOutlinePending = type === "geometry" && paperOutlineRequiresReview(fullPrint);
   const motifReviewPending = type === "geometry" && item?.payload?.motif_review_pending;
+  const rejectedDraftPending = type === "geometry" && item?.id === blockedCropTaskId;
   const approvalHint = captureReviewPending || paperOutlinePending ? "mobile-print-edge-review-hint"
     : motifReviewPending ? "mobile-motif-review-hint" : undefined;
   const deferredProposals = getDeferredPrintProposals(item?.payload?.deferred_print_proposals);
@@ -677,10 +692,12 @@ function CropReview({ albumId, goHome }) {
     if (photoId) returnCountId.current = item.id;
     setFocusedPhotoId(photoId);
     setType(nextType);
+    setBlockedCropTaskId(null);
     setAnswerError("");
     setMessage("");
   }
   function updateSavedCropModes(saved) {
+    setBlockedCropTaskId(null);
     const cropModes = getCropModes(saved);
     if (cropModes) {
       const mask = saved.segmentation_mask;
@@ -705,7 +722,7 @@ function CropReview({ albumId, goHome }) {
         : "Vier Ecken gespeichert und Perspektive korrigiert");
   }
   async function record(value) {
-    if (!item || submitting) return;
+    if (!item || submitting || (value === "correct" && rejectedDraftPending)) return;
     setSubmitting(true);
     setAnswerError("");
     const metadata = { page_id: item.page_id, ui: "mobile-v2" };
@@ -740,7 +757,8 @@ function CropReview({ albumId, goHome }) {
     {item ? <>
       <DetectionOverlay item={item} editable={type === "geometry"} openPaperOutline={Boolean(focusedPhotoId)}
         countOutlines={countOutlines} captureSplitGroups={captureSplitGroups}
-        filmGridGroups={filmGridGroups} paperGridGroups={paperGridGroups} onSaved={updateSavedCropModes} />
+        filmGridGroups={filmGridGroups} paperGridGroups={paperGridGroups} onSaved={updateSavedCropModes}
+        onProtectionBlocked={setBlockedCropTaskId} />
       {paperGridGroups.map(({ key, parents }, groupIndex) => {
         const [parentId] = parents;
         const parent = item.payload.detections.find(row => row.photo_id === parentId);
@@ -753,7 +771,8 @@ function CropReview({ albumId, goHome }) {
       <section className="answer-grid">
         {cropAnswers[type].map(([value,label]) => (
           <button key={value} className={value === "correct" ? "good" : ""}
-            disabled={submitting || (value === "correct" && (captureReviewPending || paperOutlinePending || motifReviewPending))}
+            disabled={submitting || (value === "correct"
+              && (captureReviewPending || paperOutlinePending || motifReviewPending || rejectedDraftPending))}
             aria-describedby={value === "correct" ? approvalHint : undefined}
             onClick={() => record(value)}>
             {value === "correct" && (deferredProposals.length || countOutlines.length || captureSplitGroups.length || filmGridGroups.length || paperGridGroups.length)

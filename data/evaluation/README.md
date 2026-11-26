@@ -3156,6 +3156,50 @@ from 72,662 to 2,464. On a common 750 × 1050 comparison canvas, the p95
 projected error of five source landmarks drops from 68.06 to 1.69 px.
 Independent motif and physical dimensions are still pending.
 
+#### Protect visible source content in ordinary edits
+
+On Golden page 10 the existing protection pass identifies an actual face
+at native pixels `(1833, 580)–(1961, 708)` on the upper-right print.
+At `f2e5ca2`, moving the corners above the entire box bypassed the
+edge-crossing test and produced both named JPEGs and the legacy trimmed
+JPEG. A synthetic control with pinned lettering reproduced the same
+failure for the independent outer and motif edits. In a second control
+a concavity and a long protected text strip exposed the ownership
+problem when all four corners of the strip lie outside the old crop.
+
+For an ordinary corner edit, the server intersects each protected
+source box with the previous rendered whole-print outline, or the
+stored outline if no render supplies one, and any stored visible
+polygon. It compares that area with the part retained
+by the candidate, in square native pixels. This keeps a supported
+concavity and distinguishes adjacent material outside the old
+visibility. The explicit motif compares against the whole-print
+outline. With no recorded visible polygon, a partly intersecting
+advisory page-face box continues to use the existing boundary check.
+The individually reviewed album mark follows its source-bound decision.
+The difference threshold is one square native pixel for numeric
+tolerance. The geometry check takes a median 0.038 ms and p95 0.099 ms
+over 5,000 calls on a 640 × 480 development crop with two regions and
+a concave visibility polygon. This measures the new check alone.
+
+The product rejects a destructive edit with 422, the affected mode
+and normalized source bounds. Desktop and mobile show those bounds
+on the source. Mobile confirmation is disabled while that rejected
+draft needs a valid save. In a Golden 10 multipart replay, the rejected edit
+preserved both prior geometry records and the exact existing JPEGs.
+A valid correction can be saved again. The replay used test dimensions
+to exercise both exports. It establishes no independently measured
+aspect ratio. Reprocessing an older explicitly narrowed motif holds
+that mode when it drops known content. The whole-print JPEG can still
+be downloaded. The locked detection, seeded geometry and Golden
+development benchmarks kept their previous detection and crop results.
+
+A legacy overextended crop can contain a false face marker with no
+separate visible polygon. Such a repair can still require review.
+Independent overlap controls also reproduce source ownership conflicts
+with an automatic neighboring proposal. Those need a distinct check
+against the neighboring paper and its visible content.
+
 ### Keep an unassigned paper rim in review
 
 The mixed checkpoint on the frozen `touching_same_color` input fitted one
@@ -3228,6 +3272,17 @@ Keep these leaves in one tentative physical group. The reproduction field
 may be printed on the page, and the rights for the full native scans and
 individual crop boundaries still need confirmation. Intake records stay
 outside training, calibration and release evaluation.
+
+The Kreis family archive supplies seven full published JPEGs across
+physical volumes `SGV_10A_00031` and `SGV_10A_00050`. The paired views
+are of the same pages with and without protective sheets or loose
+inserts. Six loose positives have separately catalogued recto and
+verso files. The standalone files were unreachable from this workspace.
+The page publications are CC BY-NC 4.0, and the rights and proof of
+independence required for customer release validation remain open.
+These files did not enter training, calibration or release evaluation.
+The volume records, capture dimensions, source URLs and SHA-256 values
+are in the [Kreis source receipt](sgv-kreis-album-intake.json).
 
 ### Review partial grids inside a contact print
 

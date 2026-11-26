@@ -1,0 +1,253 @@
+{
+  "status": "actual_published_page_rasters_no_verified_loose_pair",
+  "source": "Empirische Kulturwissenschaft Schweiz (EKWS/CAS) Basel, SGV_10 family archive",
+  "provenance": "The project documents separate physical album captures with and without inserts and protective interleaves. Its level-0 IIIF JPEGs at the full published dimensions were generated from EKWS-delivered TIFFs. The GitHub JPEGs are publication derivatives, and archive TIFF bytes remain unverified.",
+  "rights": "Both exact album manifests state CC BY-NC 4.0. Preserved for source-only research. Rights for intended customer release validation remain unconfirmed.",
+  "rights_url": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "manifest_repository": "https://github.com/Participatory-Image-Archives/iiif-photoalbum/tree/7e703c6de4d62c698ff286db4a42932543dbe571",
+  "asset_repository": "https://github.com/julsraemy/hostiiing/tree/9c58521b3475f6be9b84e76fd73cbcfdea0ef3fb",
+  "physical_album_findings": {
+    "SGV_10A_00031": {
+      "page": "005",
+      "object_record": "https://github.com/Participatory-Image-Archives/iiif-photoalbum/blob/7e703c6de4d62c698ff286db4a42932543dbe571/albums/SGV_10A_00031/album.yml",
+      "observation": "Blue 1926–1928 travel album with 40 dark grey pages, glassine protection and originally mounted gelatin silver prints. Page 005 shows five mounted prints and one lower-right physical insert in the with-insert views. Its manifest lists one associated loose positive SGV_10P_09861 recto and verso. This is a strong candidate association with standalone bytes needed for exact stock and pixel correspondence."
+    },
+    "SGV_10A_00050": {
+      "page": "023",
+      "object_record": "https://github.com/Participatory-Image-Archives/iiif-photoalbum/blob/7e703c6de4d62c698ff286db4a42932543dbe571/albums/SGV_10A_00050/album.yml",
+      "observation": "1949 bound rose-pattern volume. Page 023 is empty in the base capture and has a fanned stack in the insert capture. The same physical overlapping stack was independently documented through textured interleaf. Catalog lists the rectos and versos of five loose positives SGV_10P_10624–10628. Individual print assignment and visibility of whole stock and motif need raw standalone files."
+    }
+  },
+  "assets": [
+    {
+      "physical_album_id": "SGV_10A_00031",
+      "physical_page": "005",
+      "capture_name": "SGV_10A_00031_005_mit_Schutz",
+      "dimensions_wh": [
+        3694,
+        2707
+      ],
+      "bytes": 1549797,
+      "sha256": "86d5293914afef722a2da9171a520f5d12e006c2eee1a5a4e44a848f2e6b3043",
+      "git_blob_sha1": "8361d35c50d64abff69f2d221d01d9314352068c",
+      "published_iiif_image": "https://julsraemy.ch/hostiiing/images/SGV_10A_00031_005_mit_Schutz/full/max/0/default.jpg",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00031_layers/canvas/p5",
+      "retrieval_url": "https://raw.githubusercontent.com/julsraemy/hostiiing/9c58521b3475f6be9b84e76fd73cbcfdea0ef3fb/images/SGV_10A_00031_005_mit_Schutz/full/max/0/default.jpg",
+      "filename": "SGV_10A_00031_005_mit_Schutz.jpg"
+    },
+    {
+      "physical_album_id": "SGV_10A_00031",
+      "physical_page": "005",
+      "capture_name": "SGV_10A_00031_005_mit_Zusatz",
+      "dimensions_wh": [
+        3694,
+        2707
+      ],
+      "bytes": 1055849,
+      "sha256": "e9db9dba91677334eebbe0900790493cf762019b5e5df0546c8399b9e64d4360",
+      "git_blob_sha1": "48a09d886859770b252e016be6c034fe3d45df31",
+      "published_iiif_image": "https://julsraemy.ch/hostiiing/images/SGV_10A_00031_005_mit_Zusatz/full/max/0/default.jpg",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00031_layers/canvas/p5",
+      "retrieval_url": "https://raw.githubusercontent.com/julsraemy/hostiiing/9c58521b3475f6be9b84e76fd73cbcfdea0ef3fb/images/SGV_10A_00031_005_mit_Zusatz/full/max/0/default.jpg",
+      "filename": "SGV_10A_00031_005_mit_Zusatz.jpg"
+    },
+    {
+      "physical_album_id": "SGV_10A_00031",
+      "physical_page": "005",
+      "capture_name": "SGV_10A_00031_005_mit_Zusatz_mit_Schutz",
+      "dimensions_wh": [
+        3694,
+        2707
+      ],
+      "bytes": 1560423,
+      "sha256": "52d0d96bd42ae578bbe6b1c3c073c4e70f4e1308467f41e9d8cd969e111aea14",
+      "git_blob_sha1": "a21e743bc6a6d90ea6236f67aaa560583130e29f",
+      "published_iiif_image": "https://julsraemy.ch/hostiiing/images/SGV_10A_00031_005_mit_Zusatz_mit_Schutz/full/max/0/default.jpg",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00031_layers/canvas/p5",
+      "retrieval_url": "https://raw.githubusercontent.com/julsraemy/hostiiing/9c58521b3475f6be9b84e76fd73cbcfdea0ef3fb/images/SGV_10A_00031_005_mit_Zusatz_mit_Schutz/full/max/0/default.jpg",
+      "filename": "SGV_10A_00031_005_mit_Zusatz_mit_Schutz.jpg"
+    },
+    {
+      "physical_album_id": "SGV_10A_00050",
+      "physical_page": "023",
+      "capture_name": "SGV_10A_00050_023",
+      "dimensions_wh": [
+        3766,
+        2654
+      ],
+      "bytes": 1336018,
+      "sha256": "ce6e62539b862a31d3561587f514488b71abeb7944f2228adefe98edc6dde476",
+      "git_blob_sha1": "d564b75032b819406b9ff7a6a07c064be48511c1",
+      "matches_independently_queried_github_blob_sha1": true,
+      "published_iiif_image": "https://julsraemy.ch/hostiiing/images/SGV_10A_00050_023/full/max/0/default.jpg",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00050_layers/canvas/p23",
+      "retrieval_url": "https://raw.githubusercontent.com/julsraemy/hostiiing/9c58521b3475f6be9b84e76fd73cbcfdea0ef3fb/images/SGV_10A_00050_023/full/max/0/default.jpg",
+      "filename": "SGV_10A_00050_023.jpg"
+    },
+    {
+      "physical_album_id": "SGV_10A_00050",
+      "physical_page": "023",
+      "capture_name": "SGV_10A_00050_023_mit_Schutz",
+      "dimensions_wh": [
+        3766,
+        2654
+      ],
+      "bytes": 1628517,
+      "sha256": "f262ec024f3c0e7c27d83a2091820e66ac46d198b9ddd2b5caa0e6ad9594233e",
+      "git_blob_sha1": "eee28d6300b6fbd27a72b92c6dfb037f9c3c82bc",
+      "matches_independently_queried_github_blob_sha1": true,
+      "published_iiif_image": "https://julsraemy.ch/hostiiing/images/SGV_10A_00050_023_mit_Schutz/full/max/0/default.jpg",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00050_layers/canvas/p23",
+      "retrieval_url": "https://raw.githubusercontent.com/julsraemy/hostiiing/9c58521b3475f6be9b84e76fd73cbcfdea0ef3fb/images/SGV_10A_00050_023_mit_Schutz/full/max/0/default.jpg",
+      "filename": "SGV_10A_00050_023_mit_Schutz.jpg"
+    },
+    {
+      "physical_album_id": "SGV_10A_00050",
+      "physical_page": "023",
+      "capture_name": "SGV_10A_00050_023_mit_Zusatz",
+      "dimensions_wh": [
+        3766,
+        2654
+      ],
+      "bytes": 1053167,
+      "sha256": "cb5776f2b1ac93991c84e0b08a280e24043c5c71d06905c3a3b77a4f13ff1ad2",
+      "git_blob_sha1": "c378e4900de5aebe5180ec777affc40ce3e2780b",
+      "matches_independently_queried_github_blob_sha1": true,
+      "published_iiif_image": "https://julsraemy.ch/hostiiing/images/SGV_10A_00050_023_mit_Zusatz/full/max/0/default.jpg",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00050_layers/canvas/p23",
+      "retrieval_url": "https://raw.githubusercontent.com/julsraemy/hostiiing/9c58521b3475f6be9b84e76fd73cbcfdea0ef3fb/images/SGV_10A_00050_023_mit_Zusatz/full/max/0/default.jpg",
+      "filename": "SGV_10A_00050_023_mit_Zusatz.jpg"
+    },
+    {
+      "physical_album_id": "SGV_10A_00050",
+      "physical_page": "023",
+      "capture_name": "SGV_10A_00050_023_mit_Zusatz_mit_Schutz",
+      "dimensions_wh": [
+        3766,
+        2654
+      ],
+      "bytes": 1494516,
+      "sha256": "01f0f7063487bf89e68dc6d4d3d1b54f8c016afbef9f1886d7dc7352d33e0953",
+      "git_blob_sha1": "dde73b3aace7701913cddbaf30fd6ed663fae2d2",
+      "published_iiif_image": "https://julsraemy.ch/hostiiing/images/SGV_10A_00050_023_mit_Zusatz_mit_Schutz/full/max/0/default.jpg",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00050_layers/canvas/p23",
+      "retrieval_url": "https://raw.githubusercontent.com/julsraemy/hostiiing/9c58521b3475f6be9b84e76fd73cbcfdea0ef3fb/images/SGV_10A_00050_023_mit_Zusatz_mit_Schutz/full/max/0/default.jpg",
+      "filename": "SGV_10A_00050_023_mit_Zusatz_mit_Schutz.jpg"
+    }
+  ],
+  "loose_positive_catalogues": [
+    {
+      "listed_acquisition": "SGV_10A_00031_09861_r",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00031_layers/canvas/p85",
+      "image_url": "https://media.memobase.ch/iiif/sgv-002-SGV_10P_09861_r-1/open/iiif/2/sgv-002-SGV_10P_09861_r-1.jpg/full/full/0/default.jpg",
+      "manifest_size_wh": [
+        1981,
+        2400
+      ]
+    },
+    {
+      "listed_acquisition": "SGV_10A_00031_09861_v",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00031_layers/canvas/p86",
+      "image_url": "https://sipi.participatory-archives.ch/iiif/3/SGV_10A_00031_09861_v.tif/full/max/0/default.jpg",
+      "manifest_size_wh": [
+        4184,
+        5070
+      ]
+    },
+    {
+      "listed_acquisition": "SGV_10P_00050_10624_r",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00050_layers/canvas/p41",
+      "image_url": "https://media.memobase.ch/iiif/sgv-002-SGV_10P_10624_r-1/open/iiif/2/sgv-002-SGV_10P_10624_r-1.jpg/full/full/0/default.jpg",
+      "manifest_size_wh": [
+        1775,
+        2400
+      ]
+    },
+    {
+      "listed_acquisition": "SGV_10P_00050_10624_v",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00050_layers/canvas/p42",
+      "image_url": "https://media.memobase.ch/iiif/sgv-002-SGV_10P_10624_v-1/open/iiif/2/sgv-002-SGV_10P_10624_v-1.jpg/full/full/0/default.jpg",
+      "manifest_size_wh": [
+        1775,
+        2400
+      ]
+    },
+    {
+      "listed_acquisition": "SGV_10P_00050_10625_r",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00050_layers/canvas/p43",
+      "image_url": "https://media.memobase.ch/iiif/sgv-002-SGV_10P_10625_r-1/open/iiif/2/sgv-002-SGV_10P_10625_r-1.jpg/full/full/0/default.jpg",
+      "manifest_size_wh": [
+        2400,
+        1736
+      ]
+    },
+    {
+      "listed_acquisition": "SGV_10P_00050_10625_v",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00050_layers/canvas/p44",
+      "image_url": "https://media.memobase.ch/iiif/sgv-002-SGV_10P_10625_v-1/open/iiif/2/sgv-002-SGV_10P_10625_v-1.jpg/full/full/0/default.jpg",
+      "manifest_size_wh": [
+        2400,
+        1736
+      ]
+    },
+    {
+      "listed_acquisition": "SGV_10P_00050_10626_r",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00050_layers/canvas/p45",
+      "image_url": "https://media.memobase.ch/iiif/sgv-002-SGV_10P_10626_r-1/open/iiif/2/sgv-002-SGV_10P_10626_r-1.jpg/full/full/0/default.jpg",
+      "manifest_size_wh": [
+        2400,
+        1781
+      ]
+    },
+    {
+      "listed_acquisition": "SGV_10P_00050_10626_v",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00050_layers/canvas/p46",
+      "image_url": "https://media.memobase.ch/iiif/sgv-002-SGV_10P_10626_v-1/open/iiif/2/sgv-002-SGV_10P_10626_v-1.jpg/full/full/0/default.jpg",
+      "manifest_size_wh": [
+        2400,
+        1781
+      ]
+    },
+    {
+      "listed_acquisition": "SGV_10P_00050_10627_r",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00050_layers/canvas/p47",
+      "image_url": "https://media.memobase.ch/iiif/sgv-002-SGV_10P_10627_r-1/open/iiif/2/sgv-002-SGV_10P_10627_r-1.jpg/full/full/0/default.jpg",
+      "manifest_size_wh": [
+        1731,
+        2400
+      ]
+    },
+    {
+      "listed_acquisition": "SGV_10P_00050_10627_v",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00050_layers/canvas/p48",
+      "image_url": "https://media.memobase.ch/iiif/sgv-002-SGV_10P_10627_v-1/open/iiif/2/sgv-002-SGV_10P_10627_v-1.jpg/full/full/0/default.jpg",
+      "manifest_size_wh": [
+        1731,
+        2400
+      ]
+    },
+    {
+      "listed_acquisition": "SGV_10P_00050_10628_r",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00050_layers/canvas/p49",
+      "image_url": "https://media.memobase.ch/iiif/sgv-002-SGV_10P_10628_r-1/open/iiif/2/sgv-002-SGV_10P_10628_r-1.jpg/full/full/0/default.jpg",
+      "manifest_size_wh": [
+        1734,
+        2400
+      ]
+    },
+    {
+      "listed_acquisition": "SGV_10P_00050_10628_v",
+      "canvas": "https://julsraemy.ch/hostiiing/manifests/SGV_10A_00050_layers/canvas/p50",
+      "image_url": "https://media.memobase.ch/iiif/sgv-002-SGV_10P_10628_v-1/open/iiif/2/sgv-002-SGV_10P_10628_v-1.jpg/full/full/0/default.jpg",
+      "manifest_size_wh": [
+        1734,
+        2400
+      ]
+    }
+  ],
+  "unavailable": "Declared public Memobase source for SGV_10P_09861_r returned managed HTTP 403. The checked 09861/10624 standalone paths are absent from the alternative public GitHub holdings. No legitimate standalone mirror found. Catalog says legacy PIA Sipi image service now requires VPN, which was not tried.",
+  "release_limit": "Distinct physical volumes are within one related archive. Independence from training/dev, complete stock and motif visibility, and same-print standalone matches remain unverified. No candidate inference used.",
+  "actual_published_rasters_acquired": 7,
+  "new_release_groups_qualified": 0,
+  "model_inference": false
+}

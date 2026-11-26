@@ -33,7 +33,7 @@ from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.perspective import manual_print_intersects, validate_review_quads
 from app.pipeline.presets import available_presets
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
-from app.pipeline.protected_regions import album_mark_matches_quad, album_mark_source_matches
+from app.pipeline.protected_regions import ProtectedRegionRemoval, album_mark_matches_quad, album_mark_source_matches
 from app.pipeline.variants import (
     CROP_REVIEW_PREVIEWS,
     FULL_PRINT_REVIEW_PREVIEW,
@@ -192,6 +192,7 @@ def _claim_missing_print_trace(
 async def _render_photo_edit(
     session: AsyncSession, photo_id: UUID, settings: Settings, *,
     reject_invalid_edit: bool = True, preset: str | None = "auto",
+    previous_manual_crop: dict | None = None,
 ) -> ExtractedPhoto:
     output_directories: set[Path] = set()
     try:
@@ -199,7 +200,10 @@ async def _render_photo_edit(
             correction = await perspective_correction_task_logic(
                 session, photo_id, settings, reject_invalid_edit=reject_invalid_edit,
                 commit=False, output_directories=output_directories,
+                **({"previous_manual_crop": previous_manual_crop} if previous_manual_crop is not None else {}),
             )
+        except ProtectedRegionRemoval as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.detail) from exc
         except ValueError as exc:
             if not reject_invalid_edit:
                 raise
@@ -691,7 +695,18 @@ async def update_photo_bounding_box(
         "status": PhotoStatus.pending.value,
     }
     metadata = deepcopy(photo.enhancement_applied or {})
-    if is_reviewed_non_print(metadata.get("review_rejected_detection"), photo.bounding_box, photo.segmentation_mask):
+    was_non_print = photo_is_reviewed_non_print(photo)
+    previous_crop = {}
+    if not was_non_print:
+        previous_crop = dict(original_mask)
+        if not previous_crop:
+            try:
+                previous_crop = _rect_mask_from_box(before["bounding_box"], width, height)
+            except ValueError:
+                pass  # A previously invalid box supplies no usable comparison.
+        if full_print.get("warp_quad"):
+            previous_crop["warp_quad"] = full_print["warp_quad"]
+    if was_non_print:
         page.processing_metadata = {**(page.processing_metadata or {}), "photo_count_revision": str(uuid4())}
         metadata["review_reasons"] = [
             reason for reason in metadata.get("review_reasons") or [] if reason != "GEOMETRY_REVIEW_WRONG_OBJECT"
@@ -774,7 +789,7 @@ async def update_photo_bounding_box(
     if (segmentation_mask.get("manual_added") is True or paper_claim_groups(segmentation_mask, original_prediction_mask(metadata))
             or (outer and not _same_visible_outline(prior_outer, outer))):
         await _review_overlapping_crops(session, photo, width, height)
-    return await _render_photo_edit(session, photo.id, settings)
+    return await _render_photo_edit(session, photo.id, settings, previous_manual_crop=previous_crop)
 
 
 @router.patch("/ocr/{ocr_id}", response_model=OCRRead)

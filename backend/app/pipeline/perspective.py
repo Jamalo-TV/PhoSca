@@ -65,8 +65,9 @@ from app.pipeline.print_outline_suggestion import (
 )
 from app.pipeline.print_stock import find_outer_stock_candidate
 from app.pipeline.protected_regions import (
-    PAGE_FACE_SUGGESTIONS, detect_protected_regions, is_advisory_page_face, merge_protected_regions, protected_region_key,
-    region_box_in_pixels, validate_protected_regions,
+    PAGE_FACE_SUGGESTIONS, ProtectedRegionRemoval, detect_protected_regions, is_advisory_page_face,
+    merge_protected_regions, protected_region_key, region_box_in_pixels, removed_protected_regions,
+    validate_protected_regions,
 )
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVIEW, SCALLOPED_PRINT_REVISION
 from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE, refine_visible_paper_rim
@@ -1071,8 +1072,12 @@ def _dual_crop_result(
                     image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
                 if (measured or independent or wide_rim) and not _is_rectangular_in_measured_plane(quad):
                     image_reasons.append("IMAGE_RECTANGLE_INCONSISTENT")
-                if protect_regions and not validate_protected_regions(source, page_regions, width=page_width, height=page_height)["passed"]:
-                    image_reasons.append("BORDER_PROTECTED_CONTENT_VETO")
+                if protect_regions:
+                    source_protection = validate_protected_regions(source, page_regions, width=page_width, height=page_height)
+                    if not source_protection["passed"] or (inner is not None and removed_protected_regions(
+                        source_quad, source, page_regions, width=page_width, height=page_height,
+                    )):
+                        image_reasons.append("BORDER_PROTECTED_CONTENT_VETO")
                 if not image_reasons and inner is None and (not full_reasons or independent):
                     margin_regions = motif_margin_marks(page, full_image, quad, np.linalg.inv(matrix))
                 if not image_reasons and not margin_regions and wide_rim:
@@ -1440,6 +1445,7 @@ def correct_photo_crop(
     manual_boundary_reference: dict | None = None,
     manual_scalloped_polygon: list[dict] | None = None,
     reviewed_album_mark: dict | None = None,
+    previous_manual_crop: dict | None = None,
 ) -> CropResult:
     height, width = page_image.shape[:2]
     mask = mask or {}
@@ -1467,6 +1473,24 @@ def correct_photo_crop(
         if not manual or not protect_regions or not dual_mode:
             raise ValueError("album_page_mark_review_stale")
         regions = _regions_after_album_mark_review(page_image, src_points, regions, reviewed_album_mark)
+    if manual and regions and previous_manual_crop is not None:
+        try:
+            previous = _points_from_mask(previous_manual_crop, width, height)
+        except (KeyError, TypeError, ValueError):
+            previous = None  # A corrupt historical outline cannot establish ownership.
+        if previous is not None:
+            prior_visibility = previous_manual_crop.get("visible_polygon")
+            visible_owner = _proposal_polygon({"polygon": prior_visibility}, width, height) if prior_visibility else None
+            removed = removed_protected_regions(
+                _order_points(previous), src_points, regions, width=width, height=height, visible=visible_owner,
+            )
+            if removed:
+                raise ProtectedRegionRemoval("full_print", removed)
+        inner_edit = _explicit_quad(mask, "image_quad", width, height) if dual_mode else None
+        if inner_edit is not None:
+            removed = removed_protected_regions(src_points, inner_edit, regions, width=width, height=height)
+            if removed:
+                raise ProtectedRegionRemoval("image_only", removed)
     visible = _proposal_polygon(mask, width, height) if dual_mode else None
     neighbor_polygons = [
         points for neighbor in neighbor_masks or []

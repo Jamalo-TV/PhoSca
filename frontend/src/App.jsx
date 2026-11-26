@@ -46,7 +46,7 @@ import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
 import EdgeMeasurement from "./EdgeMeasurement.jsx";
 import {
-  adjacentPrintHint, AlbumPageMarkReview, albumPageMarkErrors, captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason,
+  adjacentPrintHint, AlbumPageMarkReview, captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, cropProtectionErrors,
   CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   deferredPrintHint, filmGridCountHint, filmGridHint, filmGridReason, getDeferredPrintProposals, getSourceEdgeTraces,
@@ -1372,11 +1372,14 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const [draftShapes, setDraftShapes] = useState({});
   const [editMode, setEditMode] = useState("full_print");
   const [saveState, setSaveState] = useState(null);
+  const [blockedCrop, setBlockedCrop] = useState(null);
   const [albumMarkReviewId, setAlbumMarkReviewId] = useState(null);
   const [addition, setAddition] = useState(null);
   const [countReview, setCountReview] = useState(null);
   const dragRef = useRef(null);
   const editingImage = editMode === "image_only";
+  const blockedRegions = blockedCrop?.photoId === selectedPhotoId && blockedCrop.mode === editMode
+    ? blockedCrop.regions : null;
   const pageId = page?.id;
   const measuredTraces = measuredEdge?.pageId === pageId ? measuredEdge?.traces : null;
   const pendingMissingTraces = page?.processing_metadata?.steps?.segmentation?.missing_print_edge_traces;
@@ -1691,6 +1694,16 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       context.strokeRect(x1 * canvas.width, y1 * canvas.height, (x2 - x1) * canvas.width, (y2 - y1) * canvas.height);
       context.restore();
     }
+    if (blockedRegions?.length && !newPrint) {
+      context.save();
+      context.setLineDash([]);
+      context.strokeStyle = "#b91c1c";
+      context.lineWidth = 4;
+      for (const { x1, y1, x2, y2 } of blockedRegions) {
+        context.strokeRect(x1 * canvas.width, y1 * canvas.height, (x2 - x1) * canvas.width, (y2 - y1) * canvas.height);
+      }
+      context.restore();
+    }
     if (newPrint?.corners.length) {
       const points = newPrint.corners.map(({ x, y }) => [x * canvas.width, y * canvas.height]);
       context.strokeStyle = "#2563eb";
@@ -1709,7 +1722,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         context.fillText(String(index + 1), x + 9, y - 7);
       });
     }
-  }, [albumMark, alternateOutline, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage,
+  }, [albumMark, alternateOutline, blockedRegions, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups,
     printSuggestion,
     missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, selectedPhotoId, showMissingEdges]);
@@ -1860,11 +1873,13 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       const markId = albumMark?.id === albumMarkReviewId ? albumMarkReviewId : null;
       const result = await onSaveBox(selected.id, box, mask, Boolean(printSuggestion && !editingImage), markId);
       setAlbumMarkReviewId(null);
+      setBlockedCrop(null);
       const url = result.urls?.[editMode] || (!getCropModes(result) && !editingImage ? result.urls?.original : null);
       setSaveState({ photoId: selected.id, mode: editMode, url });
     } catch (error) {
       const message = error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
-        : error.message === "print_outline_review_required" ? printOutlineSaveHint : albumPageMarkErrors[error.message] || error.message;
+        : error.message === "print_outline_review_required" ? printOutlineSaveHint : cropProtectionErrors[error.message] || error.message;
+      setBlockedCrop(error.message === "protected_region_removed" ? { ...error.detail, photoId: selected.id } : null);
       setSaveState({ photoId: selected.id, mode: editMode, error: message });
     }
   }

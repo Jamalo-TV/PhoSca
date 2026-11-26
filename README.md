@@ -125,6 +125,16 @@ aus der Prüfung genommen. Weitere geschützte Stellen bleiben geprüft.
 Freigabe erneut geprüft. Das Seitenverhältnis wird separat bestimmt.
 [Beispiel Schutzmarkierung](data/evaluation/README.md#review-one-album-page-mark-during-a-corner-edit)
 
+Vor dem Speichern einer Korrektur prüft PhoSca geschützte Stellen
+in den Originalkoordinaten. Für **Ganzer Abzug** zählt der sichtbare
+Teil der bisherigen Abzugsfläche. Für einen ausdrücklich gesetzten
+Ausschnitt unter **Nur Bildmotiv** zählt der ganze Abzug als Grundlage.
+Würde der neue Ausschnitt geschützte Bildfläche verlieren, markiert
+der Editor die Stelle rot. Die zuletzt gespeicherten Ecken und Downloads
+stehen weiter zur Verfügung. Sie werden erst durch eine gültige
+Korrektur ersetzt.
+[Beispiel Golden 10](data/evaluation/README.md#protect-visible-source-content-in-ordinary-edits)
+
 Ein grosser Vorschlag, der wegen mehrerer innerer Konturen als
 Albumfläche verworfen wurde, kann in der Anzahlprüfung wieder zur
 Auswahl stehen. Dafür prüft PhoSca drei Aussenkanten am dunklen
