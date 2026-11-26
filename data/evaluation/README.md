@@ -2425,6 +2425,193 @@ Both trained candidates remain development artifacts. Automatic release
 still requires a separately calibrated production configuration and verified
 crop references in two independent physical album groups.
 
+### Compare sparse and dense artwork on the same physical stock
+
+On the known JPEG75 contact sheet the mixed model proposes a best
+raw mask IoU of 0.822 at 512 pixels, below the 0.85 instance threshold.
+Inference at 640, 768 and 1024 yields 0.351, 0.350 and 0.208. Masking
+the neighboring negative sleeve at each input size yields 0.816,
+0.350, 0.345 and 0.200. The lossless and JPEG55 derivatives show
+the same direction. The paired experiment keeps the registered input
+size and tests whether the training examples improve physical ownership
+when the subject has many printed subdivisions.
+
+Both 96-image training sets retain the same 40 archived camera
+derivatives and 24 procedural images. The archived train originals
+are pages 03, 23, 27, 30 and 38 in `legacy_album_context_01`. The
+original image bytes, labels and derivative hashes are in the existing
+transfer source inventory. The paired generated material provides
+16 joined sheets and 16 two-sheet controls. The controls have matching
+film artwork, physical gaps and paper rims. Each joined pair has the
+same stock mask, camera, orientation, JPEG encoding, underlying art
+and translucent sleeve. The sparse arm prints a 2 × 2 pattern and
+the dense arm prints a 5 × 7 pattern. Rebuilding produces exactly
+16 different training image hashes and byte-identical labels throughout.
+All 34 validation image and label pairs match in the two arms, including
+eight fresh layouts and the inherited validation set. The inherited
+native validation pages share the legacy album group with training.
+
+| Pinned trial input | SHA-256 |
+| --- | --- |
+| Mixed-legacy warm checkpoint | `8fa869a3fbafbac6217b8d99ed6e39f8a0c78fdd87d4128716d09851b80a0d86` |
+| Mixed-legacy input inventory | `31b7db998453c763a867aeb97d018d981fe4804f273f1367d298a94aed8b79ae` |
+| Sparse-control inventory | `9e1de68f4110f97014deb8afdee1081d2212b6b232edfdc58ad03156d3b75181` |
+| Dense-contact inventory | `4b386a34dd1455185e8f2d4dcbb1e6f5ec4157e3b18dca345c6609d090123bff` |
+| Independent procedural holdout generator | `a7a873fc578ce53be43914f03310b19497ee5c971c0e328feb2d46f0083066d5` |
+| Independent procedural holdout manifest | `1119603f7b78fc73891772224755051954b5b1ef9a2de956c8f7c37e52276ac1` |
+
+The independent procedural holdout is frozen before model scoring. It
+contains 12 layout and artwork roots with 24 rasters and 36 exact
+print ownership masks. Each root pairs one continuous dense print with
+two closely spaced papers under the same camera, rotation and JPEG
+settings. A separate negative-sleeve graphic is present in both views.
+The images, polygon labels, ownership masks and manifest reproduce byte
+for byte. Their exact hashes do not occur in either training or
+validation cohort. The real contact derivatives stay together as one
+known source outside this training experiment. The held-out groups are
+procedural scenes and qualify for synthetic development evaluation.
+
+```bash
+PYTHONPATH=backend python scripts/prepare_contact_detector_trial.py \
+  /tmp/phosca-transfer-data/mixed-legacy /tmp/phosca-contact-pair
+python scripts/prepare_contact_detector_holdout.py /tmp/phosca-contact-holdout
+for arm in sparse-control dense-contact; do
+  python scripts/train_segmentation_model.py \
+    --data "/tmp/phosca-contact-pair/$arm/data.yaml" \
+    --base-model /tmp/phosca-transfer-run/mixed-legacy/weights/best.pt \
+    --project /tmp/phosca-contact-pair/runs --name "$arm" \
+    --device cpu --imgsz 512 --batch 8 --epochs 3 --patience 3 \
+    --export "/tmp/phosca-contact-pair/models/$arm.onnx"
+done
+```
+
+Register the exported filenames and SHA-256 values at input size 512 ×
+512 using the same manifest format as the mixed-legacy transfer. Score
+the detector-only and hybrid paths with the same manifest and thresholds.
+The hybrid adds `--include-classical-fallback`. Use `--synthetic locked`
+in place of the procedural manifest to run the two-mode crop regression.
+
+```bash
+PYTHONPATH=backend python scripts/evaluate_onnx_segmentation.py \
+  --model /tmp/phosca-contact-pair/models/dense-contact.onnx \
+  --manifest /tmp/phosca-contact-pair/registry.json \
+  --dataset-manifest /tmp/phosca-contact-holdout/heldout.json \
+  --proposal-threshold 0.25 --acceptance-threshold 0.70 --iou-threshold 0.85 \
+  --output /tmp/phosca-contact-pair/dense-holdout-raw.json
+```
+
+Before scoring candidate weights, the paired experiment requires at
+least three more raw matches among the twelve joined sheets at 0.85
+IoU. Separate controls must retain their two proposals without more
+undercounted pages or extra proposals. The known JPEG75 contact sheet
+must match at the same threshold. Frozen and known real development
+replays must retain their prior detection and crop safety results. The
+proposal and acceptance thresholds stay at 0.25 and 0.70. Candidate
+weights also need independent physical album evidence and separate
+calibration before any deployment decision.
+
+The training used Ultralytics 8.3.0, PyTorch 2.7.1 CPU, OpenCV 4.10.0
+and NumPy 2.2.6. The three epochs took 61 seconds for the sparse arm
+and 79 seconds for the dense arm on four CPU threads. The shared
+validation mask mAP50–95 at the final epoch was 0.9034 and 0.8965.
+The ONNX SHA-256 values tie the evaluation to the exported artifacts.
+
+| ONNX development artifact | SHA-256 |
+| --- | --- |
+| Mixed-legacy parent | `1e95a1a90ff897df7099ff80675186ec1d8145f7bb07559fe918b3dd3a6db748` |
+| Sparse-control | `58cd17651af74997a98d09e27f8c427f0924f5501f2ea4f9d112599fa9a1e595` |
+| Dense-contact | `fbfbe014b5cbb69183f746aecae9a03ae2f8d2e0d4061bf45d50a4a89e8369b3` |
+
+| Procedural holdout at IoU ≥ 0.85 | Parent | Sparse | Dense |
+| --- | ---: | ---: | ---: |
+| Raw joined matches / 12 | 3 | 8 | 11 |
+| Raw separate matches / 24 | 5 | 18 | 21 |
+| Raw joined extra proposals | 37 | 40 | 35 |
+| Raw separate extra proposals | 36 | 29 | 22 |
+| Raw precision / recall | 9.9% / 22.2% | 27.4% / 72.2% | 36.0% / 88.9% |
+| Hybrid final joined matches / 12 | 2 | 3 | 6 |
+| Hybrid final separate matches / 24 | 6 | 18 | 21 |
+| Hybrid final extra proposals | 86 | 86 | 68 |
+
+The denser artwork added three whole-sheet matches. It removed twelve
+inside-paper fragments compared with sparse across both fixture types.
+The loose sleeve still received 30 raw proposals versus 31 for sparse.
+On separate page `1449600-separate`, sparse found both sheets. Dense
+found one and added a combined proposal covering 97.5% and 98.3% of the
+two respective ownership masks at detector confidence 0.896. The dense
+arm lost a previously correct nearby-paper case despite the aggregate
+gain. On joined page `1449610-joined`, dense still proposed four internal
+fragments. The per-case audit compares the raw detector polygon. The
+parent's source-derived visible polygon on `1449611-separate` crosses
+0.85 IoU after detection, accounting for its one additional match in
+the top-level evaluator count for the detector-only run. A second pass
+scores the pre-fusion proposals against the native PNG ownership masks.
+For all 72 model-page combinations the 0.85 detection classification
+agrees with the standard evaluator's polygon-based result.
+
+On the real JPEG75 sheet, sparse has a single proposal and reaches
+0.8930 mask IoU in both runs. Dense reaches 0.8937 with three extras
+before fusion. A weak proposal triggers the classical fallback. The
+classical inner outline overlaps the better whole-sheet proposal at
+0.9044 IoU and is ranked higher by the fused score, 0.6985 versus
+0.6455. The hybrid falls to 0.8317 with four counted extras. Against
+the development outline the sparse hybrid's whole-print preview
+excludes 8.76% of the footprint and includes 2,268 output samples with
+foreign source contributions, with 1,661 beyond the one-pixel band.
+The two modes remain in Review for every proposal in all three JPEG75
+replays. There is no approved native motif reference for this source.
+
+| Other hybrid replays, correct / expected, extra | Parent | Sparse | Dense |
+| --- | ---: | ---: | ---: |
+| Same physical contact sheet, JPEG55 | 1/1, 3 | 1/1, 3 | 0/1, 3 |
+| Same physical contact sheet, lossless PNG | 0/1, 6 | 0/1, 5 | 0/1, 4 |
+| Golden camera development pages | 29/29, 0 | 26/29, 11 | 29/29, 8 |
+| NerdScan clipped-print development variants | 3/3, 2 | 3/3, 2 | 3/3, 2 |
+| Domoritz flatbed development page | 4/4, 0 | 4/4, 0 | 4/4, 0 |
+| Earlier synthetic stock challenge | 43/46, 17 | 46/46, 13 | 46/46, 19 |
+
+All Golden proposals still require Review in both modes. The total per
+mode grows from 29 to 37 under each trained arm. The Golden pages share
+the physical legacy source group with part of the training material.
+The three encodings of the contact sheet represent one physical sheet.
+
+| Frozen synthetic hybrid | Parent | Sparse | Dense |
+| --- | ---: | ---: | ---: |
+| Correct detections / 18 | 17 | 18 | 18 |
+| Extra proposals | 4 | 1 | 0 |
+| Passing recoverable `full_print` / 11 | 9 | 5 | 6 |
+| Passing recoverable `image_only` / 12 | 10 | 6 | 7 |
+| Obstructed crops marked ready, per mode | 0 | 1 | 1 |
+| Median from image to JPEG in ms | 675 | 659 | 638 |
+
+The ordinary multipart upload and processing path was replayed for all
+three registered models in isolated local stores at the default detection
+thresholds, with automatic photo rotation disabled for the comparison.
+The JPEG75 page has 5, 1 and 4 counted proposals respectively, all held
+for Review. Each proposal allows the untrimmed preview. Before correction
+the named paper and motif downloads and the legacy download return 404.
+After rejecting the extra proposals and saving the measured test paper
+outline and 203 × 264 mm dimensions, only the named paper export opens.
+Saving the motif outline then opens the motif and legacy downloads with
+the same bytes and leaves the paper JPEG byte-identical. Both named
+JPEGs match across all three models. The corrected motif samples all
+35 image fields, 315 checked landmarks and 1,938 reference text pixels.
+These manual exports use the same known development measurements.
+
+Both trained arms mark the obstructed `touching_same_color` fixture
+ready in both modes. Their local geometric statuses precede the
+separate release policy, which stays locked. Cases such as `portrait`
+and `camera_tilt` also enter Review with ambiguous paper borders under
+both trained arms. Neither export is suitable for deployment. The
+unchanged detector control still finds 18/18 prints. The separate run
+with seeded geometry still passes 11/11 paper crops and 12/12 motif
+crops, without marking an obstructed reference ready.
+
+The next comparison can isolate how same-instance proposals are ranked,
+using original paper evidence and newly built seam, overlap and
+near-neighbor controls. Sleeve proposals merit a separate negative
+example experiment because the paired change barely affected them.
+
 ### Measure an open edge at an overextended corner
 
 The classical and mixed hybrid proposals on Golden page 31 include an extra
@@ -3562,3 +3749,23 @@ the workspace request for the native imagery returned HTTP 403.
 [Lochinvar collection](https://da.mdah.ms.gov/series/lochinvar) ·
 [Shared source record](https://da.mdah.ms.gov/series/lochinvar/detail/22535) ·
 [Rights and capture inventory](https://da.mdah.ms.gov/series/lochinvar/gentech)
+
+Cincinnati's *John Robinson’s Ten Big Shows* album was digitized both
+before and after conservation. The conservators lifted affected prints,
+lined them, and returned them to the album. The old Virtual Library
+record `1924` returned HTTP 502. The current CONTENTdm item is
+`p16998coll15/151909`, whose metadata endpoint returned HTTP 403 from
+the workspace. The reports establish a separate capture of the treated
+album. A capture of an original print during the unmounted interval
+and rights for a native pair remain unverified. Repaired visible image
+areas also differ between the two stages of conservation.
+[Pre-treatment report](https://libapps.libraries.uc.edu/liblog/2015/04/preservation-exhibit/) ·
+[Post-treatment report](https://libapps.libraries.uc.edu/thepreservationlab/2022/10/vestiges-of-color-in-an-album-of-john-robinsons-ten-big-shows) ·
+[Current album record](https://cdm16998.contentdm.oclc.org/digital/collection/p16998coll15/id/151909/)
+
+The Royal Carriages Museum conservation study records scanning original
+prints in the album with 85 pages. The public paper includes examples
+of the physical album and scanner captures. Downloadable native pairs,
+independent capture of unmounted prints and rights for the museum
+rasters remain unverified. The article itself carries CC BY 4.0.
+[Conservation study](https://isprs-archives.copernicus.org/articles/XLVIII-M-2-2023/1449/2023/)
