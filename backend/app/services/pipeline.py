@@ -387,10 +387,12 @@ async def segmentation_task_logic(
     if update_page_status:
         page.status = PageStatus.review_needed if needs_review else PageStatus.queued
     if not result.detections:
-        page.error_message = "No photos detected; manual review required."
+        if not deferred:
+            page.error_message = "No photos detected; manual review required."
+        reason = page.error_message or "Source outlines require count review."
         session.add(
             AuditLog(
-                entity_type="page", entity_id=page.id, action="review_flagged", details={"reason": page.error_message}
+                entity_type="page", entity_id=page.id, action="review_flagged", details={"reason": reason}
             )
         )
     else:

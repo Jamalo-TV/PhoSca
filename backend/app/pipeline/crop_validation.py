@@ -23,6 +23,7 @@ from app.pipeline.motif_margin import MOTIF_MARGIN_REVIEW_REVISION
 from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVISION
 from app.pipeline.print_edges import CLASSICAL_CONTOUR_REFINEMENT_REVISION, PRINT_BOUNDARY_REVISION
 from app.pipeline.print_outline_suggestion import PRINT_OUTLINE_SUGGESTION_REVISION
+from app.pipeline.projective_prints import PROJECTIVE_PRINT_REVISION
 from app.pipeline.protected_regions import PROTECTED_REGION_REVISION
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
 from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
@@ -90,6 +91,10 @@ def crop_validation_profile(settings: Settings) -> dict:
         ),
         "crossing_print_outlines": (
             CROSSING_PRINT_REVISION if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+        ),
+        "projective_print_outlines": (
+            PROJECTIVE_PRINT_REVISION
+            if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "separated_contrast_prints": (
             1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None

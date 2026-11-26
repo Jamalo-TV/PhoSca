@@ -2095,6 +2095,72 @@ whole-print and 12/12 motif passes with supplied seeds, and
 retains 14/29 matches with 15 extra proposals. Detection and
 crop-mode summaries match the disabled-trace arm.
 
+#### Review source edges after an empty line-pair search
+
+At the original 2560 × 1920 raster size, recompressing Golden 11 at
+JPEG95, JPEG75 or JPEG55 can remove the left line-pair detection. The
+detected lower line then starts at approximately x895. Its native
+paper intersection is near (819, 1750) across the original and all
+three recompressions. The x782 estimate was an average of the slanted
+left rail. The source at that position is pale album stock. A narrow
+shadow lowers the local exterior brightness without removing the
+paper-to-album transition.
+
+The additional search runs in the precise fallback when the normal
+detectors returned no candidate and recorded a rejected narrow or
+frame-touching contour. Two rails and two crossbars supply a
+perspective-aware search hypothesis. The source needs a material step
+on every side, pale exterior evidence on three, and four supported
+sides. At least two neighbouring corners need signed transitions on
+both arms that terminate at the corner. A single draft and measured
+source traces on a potential neighbour are required to offer it in
+count review. The projective hypothesis itself creates no photo row.
+
+In the three unrotated recompressions the review keeps the automatic
+count at zero, offers one violet left outline and shows the observed
+right edges as blue traces. The user can add the left draft and
+mark the right print in the desktop editor. Saving the left draft
+preserves the right trace until its print is separately added. The
+first save is a count decision. A separate geometry save must
+confirm the paper corners and pass native edge and corner support
+before the left crop can export. Reopening or reprocessing a held
+row preserves that check. The right curvature uses the existing
+source-trace guard.
+
+The left draft reaches 0.9937, 0.9930 and 0.9925 native mask IoU
+against the development annotation in JPEG95, JPEG75 and JPEG55.
+The draft's maximum corner errors against that annotation are 3.08,
+3.41 and 3.51 px. Each of these runs starts with zero active rows.
+In a separate three-quarter-turn JPEG75 control, the 90° and 270°
+runs still offer no source draft. The 180° run has one classical
+proposal and insufficient source evidence for the neighbour.
+
+Through the real JPEG75 upload and desktop editor, the active list
+goes from zero to one to two after the two manual additions. The
+temporary paper dimensions are 70 × 100 mm, and OCR and automatic
+orientation are disabled. The original bytes and the saved right
+curve are retained. Both reviewed rows give HTTP 404 for whole print,
+motif and the legacy trimmed alias, and HTTP 200 for the untrimmed
+review JPEG after reprocessing. The existing left draft remains held
+when its original corners are resubmitted as a geometry confirmation.
+
+A source inspection found up to 4.9 native pixels of omitted paper
+at the estimated lower-left corner in the recompressions. This
+excludes immediate rendering approval from that draft. On a
+controlled near-registered overlay, a one- or two-pixel step still
+triggered the projective outline in all eight source and JPEG
+variants. A four- or seven-pixel offset and two visibly different
+overlaid stocks abstained in all 16. A pixel-identical reproduction
+on one sheet still produces the evidence for manual review.
+
+The measured search for the draft and neighbour takes about
+0.49–0.55 s in individual one-thread measurements on the three
+recompressions. The full classical runs take 1.69–2.22 s of CPU time
+in the local comparison. The locked model and model-free replays,
+seeded geometry and Golden comparisons reproduce their
+instance and both mode metrics. No extra active proposal is added
+by the new count review path.
+
 ### Confirming a suggested print exactly once
 
 Before confirmation was bound to the displayed suggestion, a second editor

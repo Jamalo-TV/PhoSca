@@ -12,7 +12,7 @@ import {
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
-  mountedPrintNeedsReview, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
+  paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview,
   scannerBackingHint, scannerBackingReason,
@@ -273,7 +273,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       };
       const markId = albumMark?.id === albumMarkReviewId ? albumMarkReviewId : null;
       const saved = await patchBoundingBox(item.payload.photo_id, editingMotif ? sourceBox : box, mask,
-        !editingMotif && (Boolean(printSuggestion) || mountedPrintNeedsReview(fullPrintMode)), markId);
+        !editingMotif && (Boolean(printSuggestion) || paperOutlineNeedsConfirmation(fullPrintMode)), markId);
       setAlbumMarkReviewId(null);
       setBlockedCrop(null);
       const savedDegrees = saved.segmentation_mask?.orientation_degrees ?? null;
@@ -464,7 +464,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       </div>
     )}
     {showMissingEdges && missingTraces.length > 0 && (
-      <p className="quad-hint">{missingPrintEdgeHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>
+      <p className="quad-hint">{missingPrintEdgeHint}
+        {!deferredProposals.length && " Einen eigenen Abzug kannst du im Desktop-Editor ergänzen."}
+      </p>
     )}
     {countOutlines.length > 0 && <p className="quad-hint" id="mobile-fragment-count-review-hint">{fragmentCountHint}</p>}
     {captureSplitGroups.length > 0 && <p className="quad-hint" id="mobile-capture-split-count-hint">{captureSplitReviewHint}</p>}

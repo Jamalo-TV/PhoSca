@@ -121,6 +121,16 @@ Eine beobachtete gewölbte Papierkante bleibt auch nach der Eingabe
 von Breite und Höhe in der Geometrieprüfung.
 [Beispiel Golden 11](data/evaluation/README.md#trace-the-visible-edges-of-a-missing-neighbour)
 
+Wenn derselbe Ersatzpfad nach einer Neukompression leer bleibt,
+kann PhoSca eine Kontur aus gestützten Linien und ihren Enden im
+Original anbieten. Dazu müssen auch sichtbare Randabschnitte eines
+möglichen Nachbarabzugs vorliegen. Die violette Kontur ist ein
+Entwurf in der Anzahlprüfung. Beim Speichern zählt sie als manuell
+erfasster Abzug. Beide Zuschnittmodi bleiben in Prüfung, bis die
+vier Papierecken im Geometrie-Editor bestätigt sind und zu den
+gemessenen Kanten passen.
+[Beispiel Golden 11 nach JPEG-Neukompression](data/evaluation/README.md#review-source-edges-after-an-empty-line-pair-search)
+
 Wenn der Zuschnitt an einer Papierkante in Prüfung bleibt und zwei
 Linien im Original ausreichend gestützt sind, zeichnet **Ganzer Abzug**
 beide als gestrichelte Kanten ein. Die Linien folgen dem beobachteten

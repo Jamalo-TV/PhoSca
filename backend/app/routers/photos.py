@@ -36,6 +36,7 @@ from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.perspective import manual_print_intersects, validate_review_quads
 from app.pipeline.presets import available_presets
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
+from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
 from app.pipeline.protected_regions import ProtectedRegionRemoval, album_mark_matches_quad, album_mark_source_matches
 from app.pipeline.variants import (
     CROP_REVIEW_PREVIEWS,
@@ -534,6 +535,8 @@ async def create_manual_photo(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="deferred_print_proposal_stale")
     width, height = _source_size(page)
     mask = {"source": "manual_added", "manual_added": True, "polygon": quad, "visible_polygon": quad, "warp_quad": quad}
+    if (deferred or {}).get("reason") == PROJECTIVE_PRINT_PROPOSAL:
+        mask["projective_outline_review"] = True
     if size:
         mask["print_size_mm"] = size.model_dump()
     try:
@@ -700,11 +703,13 @@ async def update_photo_bounding_box(
         for flag in ("album_window_occluded", "manual_added", "capture_edge_clipped", REVIEWED_CROSSING_OUTLINE):
             if (photo.segmentation_mask or {}).get(flag) is True:
                 segmentation_mask[flag] = True
-        if original_mask.get("mounted_outline_review") is True:
-            segmentation_mask["mounted_outline_review"] = True
-            explicit_outline = payload.segmentation_mask is not None and payload.segmentation_mask.warp_quad is not None
-            if original_mask.get("mounted_outline_confirmed") is True or (explicit_outline and payload.confirm_print_outline):
-                segmentation_mask["mounted_outline_confirmed"] = True
+        for kind in ("mounted", "projective"):
+            review, confirmed = f"{kind}_outline_review", f"{kind}_outline_confirmed"
+            if original_mask.get(review) is True:
+                segmentation_mask[review] = True
+                explicit_outline = payload.segmentation_mask is not None and payload.segmentation_mask.warp_quad is not None
+                if original_mask.get(confirmed) is True or (explicit_outline and payload.confirm_print_outline):
+                    segmentation_mask[confirmed] = True
         if "visible_polygon" not in segmentation_mask:
             segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask.get("polygon"))
         if "warp_quad" not in segmentation_mask and len(segmentation_mask.get("polygon") or []) == 4:

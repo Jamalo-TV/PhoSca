@@ -53,7 +53,7 @@ import {
   countGroupReviewError, CountGroupReview, deferredPrintHint, filmGridCountHint, filmGridHint, filmGridReason,
   getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
-  mountedPrintNeedsReview, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
+  paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
@@ -1459,7 +1459,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
   const proposedPrintQuad = fullPrintMode?.suggested_warp_quad;
   const printSuggestion = useMemo(() => cyclicQuad(sanitizePolygon(proposedPrintQuad)), [proposedPrintQuad]);
-  const confirmOuter = Boolean(printSuggestion) || mountedPrintNeedsReview(fullPrintMode);
+  const confirmOuter = Boolean(printSuggestion) || paperOutlineNeedsConfirmation(fullPrintMode);
   const needsPrintReview = editingImage && confirmOuter;
   const motifReview = selectedModes?.image_only;
   const motifBoundaryReviewHint = getMotifBoundaryReviewHint(motifReview);

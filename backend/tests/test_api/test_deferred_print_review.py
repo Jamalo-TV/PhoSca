@@ -1,8 +1,75 @@
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import cv2
 import numpy as np
 import pytest
+
+
+async def test_recompressed_page_recovers_an_unconfirmed_print_draft_and_neighbor_traces(client, monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.pipeline.image_ops import load_image
+    from app.pipeline.projective_prints import PROJECTIVE_PRINT_OUTLINE_REVIEW, PROJECTIVE_PRINT_PROPOSAL
+    from app.services import pipeline
+
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
+    monkeypatch.setenv("MAX_UPLOAD_SIZE", "2000000")
+    monkeypatch.setenv("MAX_REQUEST_SIZE", "2100000")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("YOLO_MODEL_PATH", str(tmp_path / "absent.onnx"))
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    get_settings.cache_clear()
+    source = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_11.jpg"
+    ok, jpeg = cv2.imencode(".jpg", load_image(source), [cv2.IMWRITE_JPEG_QUALITY, 75])
+    assert ok
+    album_id = (await client.post("/api/v1/albums", json={"name": "Unconfirmed source outline"})).json()["id"]
+    album = f"/api/v1/albums/{album_id}"
+    uploaded = await client.post(f"{album}/pages/upload", files={"files": ("page-75.jpg", jpeg.tobytes(), "image/jpeg")})
+    assert uploaded.status_code == 201, uploaded.text
+    review_url = f"/api/v1/review/queue?album_id={album_id}&type=segmentation"
+    task, = (await client.get(review_url)).json()
+    initial = task["payload"]
+    assert initial["detection_count"] == 0
+    assert not task["reason"]
+    proposal, = initial["deferred_print_proposals"]
+    assert proposal["reason"] == PROJECTIVE_PRINT_PROPOSAL
+    assert len(initial["missing_print_edge_traces"]) >= 3
+
+    manual_url = f"/api/v1/pages/{task['page_id']}/manual-photos"
+    form = {"request_id": str(uuid4()), "warp_quad": proposal["polygon"], "deferred_proposal_id": proposal["id"],
+            "photo_count_revision": initial["photo_count_revision"], "print_size_mm": {"width": 70, "height": 100}}
+    saved = await client.post(manual_url, json=form)
+    assert saved.status_code == 201, saved.text
+    first = saved.json()
+    full = first["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+    assert PROJECTIVE_PRINT_OUTLINE_REVIEW in full["reason_codes"]
+    assert first["segmentation_mask"]["projective_outline_review"] is True
+    first_url = f"/api/v1/photos/{first['id']}"
+    checked = await client.patch(f"{first_url}/bounding-box", json={
+        "bounding_box": first["bounding_box"], "confirm_print_outline": True,
+        "segmentation_mask": {"source": "manual_quad", "warp_quad": form["warp_quad"], "polygon": form["warp_quad"]},
+    })
+    assert checked.status_code == 200, checked.text
+    assert checked.json()["segmentation_mask"]["projective_outline_confirmed"] is True
+    assert PROJECTIVE_PRINT_OUTLINE_REVIEW in checked.json()["enhancement_applied"]["correction"]["crop_modes"]["full_print"]["reason_codes"]
+    after = (await client.get(review_url)).json()[0]["payload"]
+    assert after["detection_count"] == 1 and after["deferred_print_proposals"] == []
+    assert after["missing_print_edge_traces"] == initial["missing_print_edge_traces"]
+
+    right = [{"x": x / 2559, "y": y / 1919} for x, y in [(1539, 765), (2311, 749), (2271, 1835), (1552, 1859)]]
+    added = await client.post(manual_url, json={
+        "request_id": str(uuid4()), "warp_quad": right, "print_size_mm": {"width": 70, "height": 100},
+    })
+    assert added.status_code == 201, added.text
+    second = added.json()
+    assert second["enhancement_applied"]["review_provenance"]["paper_trace_review"]["sides"] == [1]
+    final = (await client.get(review_url)).json()[0]["payload"]
+    assert final["detection_count"] == 2 and final["missing_print_edge_traces"] == []
+    for url in (first_url, f"/api/v1/photos/{second['id']}"):
+        assert (await client.post(f"{url}/reprocess")).status_code == 200
+        for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+            assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
+        assert (await client.get(f"{url}/image?variant=source_corrected_untrimmed")).status_code == 200
 
 
 @pytest.mark.parametrize("kind", ["film", "paper"])

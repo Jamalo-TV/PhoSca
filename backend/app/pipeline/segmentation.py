@@ -46,6 +46,7 @@ from app.pipeline.print_edges import (
     PRINT_EDGE_CONFIRMATION, _backing_color, _is_pale_stock, line_fit_omits_print_stock, refine_print_boundary,
 )
 from app.pipeline.print_outline_suggestion import suggest_outer_print_outline
+from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL, projective_print_outline
 from app.pipeline.quality import evaluate_segmentation_geometry
 from app.pipeline.scalloped_prints import (
     SCALLOPED_PRINT_CONFLICT, SCALLOPED_PRINT_REVIEW, measure_scalloped_print, possible_layer_edge, suggest_scalloped_motif,
@@ -3574,6 +3575,31 @@ def _flag_disputed_paper_joins(image: np.ndarray, result: SegmentationResult) ->
     return SegmentationResult(updated, result.metadata)
 
 
+def _offer_projective_print_review(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    metadata = result.metadata
+    fusion = metadata.get("fusion") or {}
+    rejections = metadata.get("rejected_candidates") or {}
+    if (result.detections or not metadata.get("fallback_used") or fusion.get("model_proposals")
+            or fusion.get("classical_proposals") or fusion.get("deferred_print_proposals")
+            or not {"aspect_ratio_too_tall", "aspect_ratio_too_wide", "frame_touching_container_candidate"} & rejections.keys()):
+        return result
+    try:
+        outline = projective_print_outline(image)
+        traces = staggered_print_source_traces(image, outline) if outline is not None else []
+    except (cv2.error, ValueError, np.linalg.LinAlgError):
+        return result
+    if not traces:
+        return result
+    # A common support can depict two separate items. Keep both sources of
+    # evidence in count review until the user decides what is physically visible.
+    proposal = {"id": 0, "reason": PROJECTIVE_PRINT_PROPOSAL,
+                "polygon": _normalized_polygon(outline, *image.shape[1::-1])}
+    return SegmentationResult(result.detections, {
+        **metadata, "missing_print_edge_traces": traces,
+        "fusion": {**fusion, "deferred_print_proposals": [proposal]},
+    })
+
+
 def segment_album_page(
     image: np.ndarray, settings: Settings, *, source_image: np.ndarray | None = None,
     protected_regions: list[dict] | None = None,
@@ -3598,6 +3624,7 @@ def segment_album_page(
             result = _flag_disputed_paper_grids(evidence_source, result)
             result = _flag_conflicting_film_grids(evidence_source, result)
             result = _flag_disputed_paper_joins(evidence_source, result)
+            result = _offer_projective_print_review(evidence_source, result)
     model_path = settings.visible_mask_model_path
     if not settings.enable_precise_photo_crops:
         return result

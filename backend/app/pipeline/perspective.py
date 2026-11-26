@@ -67,6 +67,7 @@ from app.pipeline.print_outline_suggestion import (
     POSSIBLE_OVEREXTENDED_PRINT_EDGE, suggest_outer_print_outline, suggest_overextended_print_outline,
 )
 from app.pipeline.print_stock import find_outer_stock_candidate
+from app.pipeline.projective_prints import PROJECTIVE_PRINT_OUTLINE_REVIEW
 from app.pipeline.protected_regions import (
     PAGE_FACE_SUGGESTIONS, ProtectedRegionRemoval, detect_protected_regions, is_advisory_page_face,
     merge_protected_regions, protected_region_key, region_box_in_pixels, removed_protected_regions,
@@ -1343,15 +1344,17 @@ def _inspect_print(
                 metrics = _validate_quad(quad, width, height)
     if dual_mode:
         manual_outline = mask.get("manual_added") is True or mask.get(REVIEWED_CROSSING_OUTLINE) is True
-        if mask.get("mounted_outline_review") is True:
+        projective = mask.get("projective_outline_review") is True
+        if projective or mask.get("mounted_outline_review") is True:
             confirmed = False
-            if mask.get("mounted_outline_confirmed") is True:
+            confirmation = "projective_outline_confirmed" if projective else "mounted_outline_confirmed"
+            if mask.get(confirmation) is True:
                 fitted, sides, unresolved = refine_print_boundary(page, quad, search_radius=3)
                 confirmed = (fitted is not None and not unresolved and np.linalg.norm(fitted - quad, axis=1).max() <= 1.
                              and all(edge["support"] >= .90 and (edge["corner_support"] or 0) >= .80
                                      for edge in sides.values()))
             if not confirmed:
-                reasons.append(MOUNTED_PRINT_OUTLINE_REVIEW)
+                reasons.append(PROJECTIVE_PRINT_OUTLINE_REVIEW if projective else MOUNTED_PRINT_OUTLINE_REVIEW)
         if not manual and mask.get("paper_edge_confirmation") is True:
             reasons.append(PRINT_EDGE_CONFIRMATION)
         scalloped = not manual and mask.get("scalloped_print") is True and visible is not None
