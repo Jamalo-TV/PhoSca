@@ -190,6 +190,18 @@ dem Original und prüfe, welcher Abzug oben liegt. Beide Zuschnittmodi
 bleiben für diesen Fall in Prüfung.
 [Überlappung und sichtbarer Papierübergang](data/evaluation/README.md#show-only-the-exposed-edge-of-an-overlapping-print)
 
+Eine helle Albumkante kann knapp ausserhalb des Abzugs liegen und
+über dessen Seitenkante hinaus weiterlaufen. Bleibt der Zuschnitt
+in Prüfung, sucht PhoSca im Original nach einem weiter innen
+liegenden Übergang vom hellen Karton zur dunkleren Fläche. Der
+Übergang muss entlang der Linie sichtbar sein und an beiden
+Querkanten enden. **Ganzer Abzug** zeigt den belegten Abschnitt
+gestrichelt. Prüfe am Original, ob die Linie die Papierkante oder
+eine Motivgrenze markiert, und verfolge den Papierrand rundum.
+Die Markierung lässt sich auch bei eingeblendeter aktueller
+Zuschnittlinie prüfen. Beide Zuschnittmodi bleiben in Prüfung.
+[Beispiel Golden-Seite 26](data/evaluation/README.md#show-an-inward-source-transition-below-an-album-edge)
+
 Bei hellen Papierrändern direkt nebeneinander kann der Zuschnitt an
 der inneren Bildkante enden. PhoSca prüft zusätzlich, ob sich der
 helle Streifen ausserhalb der Schnittkante bis zum benachbarten
@@ -825,6 +837,13 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
   enthielten beide Galerie-Downloads alle 35 Bildfelder. Im Motiv
   waren alle 1’938 vermessenen Beschriftungspunkte enthalten.
   [Kontaktabzug und Downloadpfad](data/evaluation/README.md#review-visible-markings-outside-the-proposed-motif)
+- **Zwei Abzüge auf Golden-Seite 26.** Unten rechts stimmt die
+  Fläche von **Ganzer Abzug** nahezu mit der Entwicklungsreferenz
+  überein (IoU 0,996). Oben links folgt der Zuschnitt der hellen
+  Albumkante und übernimmt rund 5,93 % Fremdpixelgewicht. Dort zeigt
+  PhoSca einen weiter innen liegenden Übergang zur Kontrolle am
+  Original. Beide Modi bleiben in Prüfung.
+  [Vergleich und Messwerte](data/evaluation/README.md#show-an-inward-source-transition-below-an-album-edge)
 - **Echter Abzug am Aufnahmebildrand.** Beim NerdScan-Entwicklungsbild
   traf die getestete Konfiguration drei erwartete Abzüge und lieferte
   zwei zusätzliche Vorschläge. Beide Modi blieben in Prüfung.

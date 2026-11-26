@@ -5238,6 +5238,84 @@ modes before enabling automatic downloads. The paired API and browser
 receipts, native masks and reprojection metrics are local under
 `runs/crop-quality/shared-rim-rotation/`.
 
+### Show an inward source transition below an album edge
+
+The original `golden_page_26` source (`133a327cefccdab318574d5e9e00ef1ebaba72cb03ab12b51c97a1f75fe1b17f`)
+contains four physical prints. The mixed detector
+(`1e95a1a90ff897df7099ff80675186ec1d8145f7bb07559fe918b3dd3a6db748`,
+512 px input, score 0.25, NMS IoU 0.70) matches all four. The upper-left
+print is already in review in both modes. Its top warp edge follows a
+bright album line that continues past the right side of the print. The
+estimated top corners sit 37.82 and 31.03 native pixels outside the
+development reference line. A strong darkening transition runs inside
+that line and ends at the observed side edges.
+
+For an automatic model proposal with a weakly supported print boundary,
+PhoSca can widen the native-pixel search on a single disputed side. The
+existing line must brighten at the band and continue beyond at least
+one end. The candidate inward line must darken consistently along its
+length and have a pale, uniform outer strip. Two independent cross-edge
+fits locate the ends. At each end the darkening must appear on the
+print side of the intersection and disappear on the other side. The
+test samples the outside band at each native-pixel depth to reject thin
+intervening lines, including tape. A competing proposal at a
+supported point vetoes that side. PhoSca emits the hint only when
+exactly one side qualifies and there is no existing correction hint.
+
+The source view draws one open, 556.78 px segment from approximately
+`[337.31, 174.13]` to `[893.70, 153.04]` in **Ganzer Abzug**. The
+separate native Lab lightness measurement over 53 stations locates the
+transition within 0.50 px median and 0.75 px p95 of the segment. Its
+ends stop about 35 and 34 px, respectively, short of the development
+reference corners. The hint asks the reviewer to determine whether
+the transition belongs to the paper or the printed motif. The rest of
+the boundary still requires inspection.
+
+| Upper-left whole-print preview against the development annotation | Before and after |
+| --- | ---: |
+| Detection mask IoU | 0.92451 |
+| Source footprint IoU | 0.93601 |
+| Maximum corner difference | 45.88 native px |
+| Visible source area omitted | 0.6614% |
+| Source pixel centres omitted beyond one pixel | 2,634 |
+| Foreign interpolation weight | 5.9265% |
+| Output pixels with foreign contributions | 38,373 |
+| Output pixels with foreign contributions beyond one source pixel | 36,481 |
+
+These figures use a development annotation. Physical aspect ratio,
+landmark correspondences and independently verified **Nur Bildmotiv**
+geometry are unavailable on this source. The review cue leaves the
+active count, masks, both transforms, rendered buffers and default
+JPEGs identical to `68c2b66`. No new mode entered review. The normal
+multipart upload and reprocessing produced the same four active
+records. The named crop exports and the legacy cropped export remained
+held. Desktop and mobile displayed the hint alongside the original.
+On the tested mobile viewport the existing number badge crosses a
+short section at the start of the dashed line.
+
+With fixed proposal evidence the helper reproduced the transition in
+24 quarter-turn, JPEG and blur controls with up to 0.75 native px of
+normal displacement. A preliminary sparse-band check accepted 23 of
+44 tape controls. The per-depth band check rejected all 44, as well as
+the additional printed line, tinted strip and lettering controls.
+Nearly identical pale material can still display a visible transition.
+With fresh inference on 12 source encodings, the target matched and
+stayed in review in both modes on all 12. Only the original produced
+the new hint. Nine variants already had a competing hint, and two
+lacked the conditions for this one. One 180° JPEG75 replay produced
+three unrelated extra proposals, including two fragments against the
+neighboring print. The original 29 detected Golden rows received one
+new hint in total. The helper took 61.89 ms median and 69.36 ms p95
+across 25 warm runs with single-threaded OpenCV on the target.
+
+All five frozen reports preserve recognition metrics, mask overlap,
+per-mode geometry and review availability. The locked detector still
+matches 18/18, with 6/11 whole-print and 7/12 motif geometry passes.
+The seeded geometry passes 11/11 and 12/12. The `print_outline_suggestion`
+profile advances to revision 3. The paired API, source overlay, browser,
+benchmarks and control receipts are local under
+`runs/crop-quality/golden26-inward-edge/`.
+
 ### Measure seed displacement and competing print edges
 
 The frozen synthetic-control detector `c31317f…` with fallback at

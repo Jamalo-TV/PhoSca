@@ -4,11 +4,12 @@ import cv2
 import numpy as np
 
 from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic
-from app.pipeline.print_edges import _PRINT_SIDES, _edge_band, _replace_quad_side, _sample_lab
+from app.pipeline.print_edges import _PRINT_SIDES, _edge_band, _line_endpoints, _replace_quad_side, _sample_lab, _side_line
 
 
-PRINT_OUTLINE_SUGGESTION_REVISION = 2
+PRINT_OUTLINE_SUGGESTION_REVISION = 3
 POSSIBLE_OVEREXTENDED_PRINT_EDGE = "possible_overextended_print_edge"
+POSSIBLE_INWARD_PRINT_EDGE = "possible_inward_print_edge"
 
 
 def _outline_at_distance(
@@ -131,6 +132,105 @@ def _continues_into_backing(image: np.ndarray, ends: np.ndarray, normal: np.ndar
             if strength >= 2.5 and np.mean(arm @ direction >= 1.5 * strength) >= .78:
                 return True
     return False
+
+
+def _inward_edge_cap(
+    image: np.ndarray, line: np.ndarray, anchor: np.ndarray, direction: np.ndarray,
+    along: np.ndarray, radius: int, length: float, *, first: bool,
+) -> np.ndarray | None:
+    inner = direction / np.linalg.norm(direction)
+    near, far = anchor + 12 * inner, anchor + .27 * length * inner
+    start, stop = (far, near) if first else (near, far)
+    side, facts = _side_line(image, start, stop, min(56, round(1.3 * radius)))
+    if side is None or facts["support"] < .90:
+        return None
+    crossing = np.cross(line, side)
+    if abs(crossing[2]) < 1e-4:
+        return None
+    corner = np.float32(crossing[:2] / crossing[2])
+    if np.linalg.norm(corner - anchor) > 1.35 * radius:
+        return None
+
+    direction = np.float32([-side[1], side[0]])
+    direction /= np.linalg.norm(direction)
+    if direction @ inner < 0:
+        direction = -direction
+    normal = np.float32([-direction[1], direction[0]])
+    if normal @ along < 0:
+        normal = -normal
+    depths = np.float32([*range(-25, -3), *range(4, 32)])
+    points = corner + depths[:, None, None] * direction + np.float32([-7, -4, -2, 3, 5, 8])[None, :, None] * normal
+    if np.any((points < 0) | (points > np.array(image.shape[1::-1]) - 1)):
+        return None
+    band = _sample_lab(image, points.reshape(-1, 2)).reshape(len(depths), 6, 3)
+    signed = np.median(band[:, :3], axis=1) - np.median(band[:, 3:], axis=1)
+    above, inside = signed[depths < 0], signed[depths > 0]
+    if (abs(np.median(above[:, 0])) > 3 or np.median(np.linalg.norm(above, axis=1)) > 3.5
+            or np.mean(inside[:, 0] >= 28) < .85):
+        return None
+    return corner
+
+
+def suggest_inward_print_edge(
+    image: np.ndarray, quad: np.ndarray, evidence: dict, neighbors: list[np.ndarray],
+) -> list[np.ndarray]:
+    """Locate observed source transitions inside a weak fitted side for review."""
+    sides = [evidence.get(name) or {} for name in _PRINT_SIDES]
+    length = float(np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min())
+    if length < 320 or not any(side.get("support", 0) >= .92 for side in sides):
+        return []
+    alternatives = []
+    for index, edge in enumerate(sides):
+        radius = edge.get("search_radius_px", 0)
+        if (radius < 14 or edge.get("ambiguous") or not .68 <= edge.get("support", 0) <= .92
+                or edge.get("corner_support") is None or edge["corner_support"] > .65
+                or (edge.get("outward_search") or {}).get("print_rim_supported")):
+            continue
+        start, stop = quad[index], quad[(index + 1) % 4]
+        direction = stop - start
+        inward = np.float32([-direction[1], direction[0]]) / np.linalg.norm(direction)
+        line, stats = _side_line(image, start, stop, min(89, round(1.65 * radius)))
+        if line is None or stats["support"] < .94 or (stats["corner_support"] or 0) < .78:
+            continue
+        anchors = np.array(_line_endpoints(start, stop, line))
+        depth = (anchors - [start, stop]) @ inward
+        if depth.min() < radius + 2 or depth.max() > 1.8 * radius:
+            continue
+
+        # The earlier brightening line must continue beyond the proposed photo on one end.
+        along = np.r_[np.linspace(.12, .88, 32), np.linspace(-.18, -.04, 18), np.linspace(1.04, 1.18, 18)]
+        rail = _edge_band(image, start, stop, [-5, -3, 3, 5], fractions=along.astype(np.float32))
+        if rail is None:
+            continue
+        increase = rail[:, 2:, 0].mean(axis=1) - rail[:, :2, 0].mean(axis=1)
+        if np.median(increase[:32]) < 24 or max(part.mean() for part in np.split(increase[32:] >= 12, 2)) < .75:
+            continue
+
+        first = _inward_edge_cap(image, line, anchors[0], quad[(index - 1) % 4] - start, direction, radius, length, first=True)
+        last = _inward_edge_cap(image, line, anchors[1], quad[(index + 2) % 4] - stop, -direction, radius, length, first=False)
+        if first is None or last is None:
+            continue
+        fractions = np.linspace(.055, .945, 176, dtype=np.float32)
+        outside_depths = range(-28, -4)
+        band = _edge_band(image, first, last, [*outside_depths, 3, 5, 8, 12], fractions=fractions)
+        if band is None:
+            continue
+        backing = band[:, :len(outside_depths)].astype(np.float32)
+        tone = np.median(backing, axis=(0, 1))
+        if (tone[0] < 190 or np.max(np.abs(tone[1:] - 128)) > 18
+                or (np.linalg.norm(backing - np.median(backing, axis=1)[:, None], axis=2) > 8).mean(axis=0).max() > .12):
+            continue
+        supported = np.median(backing[:, -12:, 0], axis=1) - np.median(band[:, len(outside_depths):, 0], axis=1) >= 25
+        if supported.mean() < .90 or min(part.mean() for part in np.array_split(supported, 4)) < .78:
+            continue
+        stations = first + fractions[:, None] * (last - first)
+        if any(any(cv2.pointPolygonTest(peer, tuple(point), False) >= 0 for point in stations[supported]) for peer in neighbors):
+            continue
+        runs = np.flatnonzero(np.diff(np.r_[False, supported, False])).reshape(-1, 2)
+        traces = [stations[[begin, end - 1]] for begin, end in runs if end - begin >= 9]
+        if traces:
+            alternatives.append(traces)
+    return alternatives[0] if len(alternatives) == 1 else []
 
 
 def suggest_overextended_print_outline(

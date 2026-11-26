@@ -28,6 +28,44 @@ def _crop(image, box, mask=None, **kwargs):
     return correct_photo_crop(image, box, mask, auto_orient=False, protect_regions=False, **kwargs)
 
 
+def test_original_album_ridge_reveals_only_the_inward_transition_for_review(monkeypatch):
+    from app.pipeline import perspective
+    from app.pipeline.print_outline_suggestion import POSSIBLE_INWARD_PRINT_EDGE, suggest_inward_print_edge
+
+    source = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_26.jpg"
+    image = cv2.imread(str(source))
+    # This mixed-model proposal follows the bright album edge above the photograph.
+    seed = [(0.10745955, 0.07166987), (0.35988846, 0.06311091),
+            (0.36741281, 0.571271), (0.11643688, 0.57810932)]
+    mask = {"polygon": [{"x": x, "y": y} for x, y in seed], "source": "yolo_seg_mask", "detector_source": "yolo_onnx"}
+    with monkeypatch.context() as baseline:
+        baseline.setattr(perspective, "suggest_inward_print_edge", lambda *_: [])
+        before = _crop(image, {}, mask, dual_mode=True, enable_classical_retry=True)
+    after = _crop(image, {}, mask, dual_mode=True, enable_classical_retry=True)
+
+    modes = after.metadata["crop_modes"]
+    original = before.metadata["crop_modes"]
+    full = modes["full_print"].copy()
+    assert full.pop("suggested_edge_source") == POSSIBLE_INWARD_PRINT_EDGE
+    trace, = full.pop("suggested_edge_traces")
+    assert full == original["full_print"] and modes["image_only"] == original["image_only"]
+    assert all(mode["status"] == "review_needed" for mode in modes.values())
+    assert "suggested_warp_quad" not in full and after.full_print_preview is None
+    np.testing.assert_array_equal(after.image, before.image)
+    np.testing.assert_array_equal(after.image_only, before.image_only)
+    height, width = image.shape[:2]
+    points = normalized_vertices_to_pixels([(p["x"], p["y"]) for p in trace], width, height)
+    np.testing.assert_allclose(points, [[337.315, 174.126], [893.698, 153.038]], atol=1.)
+
+    quad = normalized_vertices_to_pixels(seed, width, height)
+    # A competing proposal across the trace vetoes the suggestion.
+    assert not suggest_inward_print_edge(image, quad, after.metadata["boundary_refinement"], [_rect(560, 140, 630, 225)])
+    # A narrow layer midway between the old sparse offsets interrupts the backing band.
+    taped = image.copy()
+    cv2.line(taped, (302, 156), (927, 133), (235, 212, 232), 4, lineType=cv2.LINE_8)
+    assert not suggest_inward_print_edge(taped, quad, after.metadata["boundary_refinement"], [])
+
+
 def test_overlapping_print_shows_only_exposed_paper_without_changing_either_crop(monkeypatch):
     from app.evaluation.crop_fixtures import synthetic_crop_pages
     from app.pipeline import perspective

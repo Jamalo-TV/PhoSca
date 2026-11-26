@@ -71,7 +71,8 @@ from app.pipeline.print_edges import (
     suggest_partial_corner_edge,
 )
 from app.pipeline.print_outline_suggestion import (
-    POSSIBLE_OVEREXTENDED_PRINT_EDGE, suggest_outer_print_outline, suggest_overextended_print_outline,
+    POSSIBLE_INWARD_PRINT_EDGE, POSSIBLE_OVEREXTENDED_PRINT_EDGE, suggest_inward_print_edge,
+    suggest_outer_print_outline, suggest_overextended_print_outline,
 )
 from app.pipeline.print_stock import find_outer_stock_candidate
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_OUTLINE_REVIEW
@@ -2008,6 +2009,16 @@ def correct_photo_crop(
                         and validate_protected_regions(candidate, regions, width=width, height=height)["passed"]):
                     full_mode["suggested_warp_quad"] = _vertices_on_page(candidate, width, height)
                     full_mode["suggested_outline_source"] = ADJACENT_STOCK_REVIEW_SOURCE
+        if (enable_classical_retry and not manual and mask.get("detector_source") == "yolo_onnx"
+                and "PRINT_BOUNDARY_UNSUPPORTED" in full_reasons
+                and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
+                and all(mode["status"] == "review_needed" for mode in modes.values())
+                and not any(full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview"))
+                and not any(mask.get(key) for key in ("warp_quad", *_STOCK_REVIEW_CONFLICTS))):
+            spans = suggest_inward_print_edge(page_image, src_points, boundary_refinement, neighbor_polygons)
+            if spans:
+                full_mode["suggested_edge_traces"] = [_vertices_on_page(span, width, height) for span in spans]
+                full_mode["suggested_edge_source"] = POSSIBLE_INWARD_PRINT_EDGE
         if (cuts := full_mode.get("shared_rim_cut_traces")) and not any(
             full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview")
         ):

@@ -71,6 +71,7 @@ const sharedPrintRim = "shared_print_rim";
 const sharedPrintRimReason = "PRINT_SHARED_RIM_UNCERTAIN";
 const possibleBackedPaperEdge = "possible_backed_paper_edge";
 export const possibleOverextendedPrintEdge = "possible_overextended_print_edge";
+const possibleInwardPrintEdge = "possible_inward_print_edge";
 const possibleInwardPrintCorner = "possible_inward_print_corner";
 const captureAtEdgeHint = "Der Abzug reicht über den Aufnahmerand hinaus. Für einen vollständigen Zuschnitt brauchst du eine neue Aufnahme.";
 export const captureSplitReviewHint = "Die gestrichelten Linien zeigen einen möglichen gemeinsamen Papierrand. Prüfe am Original, wie viele Abzüge dort liegen.";
@@ -206,6 +207,7 @@ export function paperOutlineRequiresReview(fullPrint) {
     || fullPrint.suggested_edge_source === competingPrintEdges
     || fullPrint.suggested_edge_source === possibleBackedPaperEdge
     || fullPrint.suggested_edge_source === possibleOverextendedPrintEdge
+    || fullPrint.suggested_edge_source === possibleInwardPrintEdge
     || fullPrint.reason_codes?.some(reason => reason === "PRINT_EDGE_CONFIRMATION_REQUIRED"
       || reason === "PAPER_GRID_OVERLAP_REVIEW" || reason === manualNeighborOverlap
       || reason === sourceFragmentGroupReason || reason === sharedPrintRimReason
@@ -257,6 +259,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
     }
     if (fullPrint.suggested_edge_source === possibleOverextendedPrintEdge) {
       return "Die gestrichelten Abschnitte zeigen eine mögliche Papierkante. Prüfe am Original, ob der Streifen daneben zum Abzug gehört.";
+    }
+    if (fullPrint.suggested_edge_source === possibleInwardPrintEdge) {
+      return "Die gestrichelte Linie markiert einen weiter innen sichtbaren Abschnitt. Prüfe am Original, ob dort der Papierrand oder die Motivgrenze verläuft, und verfolge den Papierrand rundum.";
     }
     if (fullPrint.suggested_edge_source === "capture_edge_split") return captureSplitReviewHint;
     if (fullPrint.suggested_edge_source === "capture_edge_boundary") {
