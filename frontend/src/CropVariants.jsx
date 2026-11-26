@@ -39,6 +39,13 @@ export const frameBackingProposal = "possible_frame_backing";
 export const borrowedFallbackProposal = "possible_borrowed_print_edge";
 export const darkBackingProposal = "possible_dark_album_backing";
 export const projectivePrintProposal = "possible_projective_print";
+export const embossedPocketProposal = "possible_embossed_album_pocket";
+export const embossedPocketAction = "Albumtasche prüfen";
+export const embossedPocketReviewErrors = {
+  album_pocket_print_confirmation_required: "Bestätige, dass in dieser Tasche ein eigener Papierabzug liegt.",
+  album_pocket_print_confirmation_stale: "Dieser Vorschlag hat sich geändert. Prüfe die aktualisierte Albumseite.",
+  album_pocket_outline_outside_proposal: "Setze die vier Ecken an den sichtbaren Papierrand in der markierten Tasche.",
+};
 export const standalonePrintConfirmation = "Hier liegt ein eigener Papierabzug.";
 const deferredPrintReviewHints = {
   [nestedFallbackProposal]: {
@@ -64,6 +71,12 @@ const deferredPrintReviewHints = {
     count: "Prüfe am Original, ob in der gestrichelten Kontur ein weiterer Papierabzug liegt.",
     draft: "Setze die Ecken an den sichtbaren Papierrand. Bei verdeckten Ecken hilft eine Aufnahme mit frei sichtbarem Papier.",
     evidence: "Türkis markiert sichtbare Papierkanten zwischen den Fotoecken.",
+  },
+  [embossedPocketProposal]: {
+    countId: "embossed-pocket-count-hint",
+    count: "Prüfe am Original, ob in der markierten Albumtasche ein Papierabzug steckt. Ist die Tasche leer und sind alle Abzüge erfasst, bestätige die Anzahl.",
+    draft: "Ergänze den Abzug, wenn du sein Papier in der Tasche erkennst. Setze die vier Ecken an seinen Papierrand.",
+    evidence: "An den türkis gestrichelten Abschnitten setzt sich die Prägung über die Kontur hinweg fort.",
   },
 };
 const deferredParentCropHints = [
@@ -98,6 +111,9 @@ const borrowedFallbackEvidence = [
 ];
 const mountedPaperEvidence = [
   { key: "mounted_paper_edge_traces", label: "Sichtbare Papierkante", color: "#0e7490", dash: [6, 4] },
+];
+const embossedPocketEvidence = [
+  { key: "embossing_edge_traces", label: "Durchgehende Prägung der Albumtasche", color: "#0e7490", dash: [6, 4] },
 ];
 export const sourceFragmentProposal = "possible_source_fragmented_print";
 const sourceFragmentGroupReason = "SOURCE_FRAGMENT_GROUP_REVIEW";
@@ -179,7 +195,8 @@ export function getDeferredPrintEvidence(proposal) {
     : proposal?.reason === nestedFallbackProposal ? nestedFallbackEvidence
     : proposal?.reason === frameBackingProposal ? frameBackingEvidence
     : proposal?.reason === borrowedFallbackProposal ? borrowedFallbackEvidence
-    : proposal?.reason === projectivePrintProposal ? mountedPaperEvidence : [];
+    : proposal?.reason === projectivePrintProposal ? mountedPaperEvidence
+    : proposal?.reason === embossedPocketProposal ? embossedPocketEvidence : [];
   return styles.map((style) => ({
     ...style, traces: getSourceEdgeTraces(proposal[style.key]).filter((trace) => trace.length === 2),
   })).filter(({ traces }) => traces.length);
@@ -187,7 +204,7 @@ export function getDeferredPrintEvidence(proposal) {
 
 export function standalonePrintNeedsConfirmation(reason) {
   return reason === darkBackingProposal || reason === nestedFallbackProposal || reason === frameBackingProposal
-    || reason === borrowedFallbackProposal || reason === projectivePrintProposal;
+    || reason === borrowedFallbackProposal || reason === projectivePrintProposal || reason === embossedPocketProposal;
 }
 
 export function deferredPrintCountHintId(reason, mobile = false) {

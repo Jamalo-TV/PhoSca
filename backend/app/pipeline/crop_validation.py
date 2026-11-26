@@ -89,6 +89,10 @@ def crop_validation_profile(settings: Settings) -> dict:
             FUSION_OWNERSHIP_REVISION
             if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
+        "embossed_album_pocket_review": (
+            1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback
+            and visible_model is None else None
+        ),
         "classical_line_pairs": (
             (2 if settings.enable_precise_photo_crops else 1) if settings.enable_classical_segmentation_fallback else None
         ),
@@ -231,7 +235,7 @@ def detector_calibration_profile(settings: Settings, *, segmentation: dict | Non
         "print_boundary", "print_outline_suggestion",
         "classical_fallback", "fusion_ownership", "classical_line_pairs", "classical_contour_refinement",
         "classical_duplicate_contours", "adjacent_print_outlines",
-        "crossing_print_outlines", "separated_contrast_prints", "dark_album_review",
+        "crossing_print_outlines", "separated_contrast_prints", "dark_album_review", "embossed_album_pocket_review",
         "empty_drawn_frame_rejection",
         "album_window_detection", "multipanel_print_detection", "fragmented_print_detection", "scalloped_print_outline",
         "capture_edge_outline", "dense_tile_inference",

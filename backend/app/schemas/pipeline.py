@@ -135,6 +135,7 @@ class ManualPhotoCreate(StrictSchema):
     photo_count_revision: str | None = Field(default=None, min_length=1, max_length=64)
     replace_mounted_fragments: bool = False
     confirm_dark_backing: bool = False
+    confirm_album_pocket_print: bool = False
 
     @model_validator(mode="after")
     def check_suggestion(self) -> "ManualPhotoCreate":
@@ -144,6 +145,10 @@ class ManualPhotoCreate(StrictSchema):
             raise ValueError("Choose a mounted print suggestion to replace fragments.")
         if self.confirm_dark_backing and (self.deferred_proposal_id is None or self.replace_mounted_fragments):
             raise ValueError("Choose one dark album proposal to confirm as a print.")
+        if self.confirm_album_pocket_print and (
+            self.deferred_proposal_id is None or self.replace_mounted_fragments or self.confirm_dark_backing
+        ):
+            raise ValueError("Choose one album pocket proposal to confirm as a print.")
         return self
 
 

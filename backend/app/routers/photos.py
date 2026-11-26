@@ -29,6 +29,7 @@ from app.pipeline.decisions import (
     remember_ready_print_for_neighbor_review,
 )
 from app.pipeline.edge_trace import measure_edge_trace
+from app.pipeline.embossed_album_pockets import EMBOSSED_POCKET_PROPOSAL
 from app.pipeline.fragmented_prints import SOURCE_FRAGMENT_PROPOSAL
 from app.pipeline.geometry import normalized_polygon_overlap
 from app.pipeline.image_ops import load_image, normalized_box_to_pixels
@@ -382,6 +383,8 @@ def _replay_manual_photo(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="mounted_print_fragments_stale")
     if bool(creation.get("confirm_dark_backing")) != bool(creation_request.get("confirm_dark_backing")):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="dark_backing_confirmation_required")
+    if bool(creation.get("confirm_album_pocket_print")) != bool(creation_request.get("confirm_album_pocket_print")):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_pocket_print_confirmation_required")
     if photo.page_id != page_id or any(creation.get(key) != value for key, value in creation_request.items()):
         if creation_request["adjacent_suggestion"] is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="adjacent_print_suggestion_saved")
@@ -614,6 +617,8 @@ async def create_manual_photo(
         creation_request["replace_mounted_fragments"] = True
     if payload.confirm_dark_backing:
         creation_request["confirm_dark_backing"] = True
+    if payload.confirm_album_pocket_print:
+        creation_request["confirm_album_pocket_print"] = True
     # Two sessions can edit the same outline with different request UUIDs.
     # Its source and displayed coordinates identify a single addition.
     identity = str(payload.request_id)
@@ -647,6 +652,25 @@ async def create_manual_photo(
     mask = {"source": "manual_added", "manual_added": True, "polygon": quad, "visible_polygon": quad, "warp_quad": quad}
     if (deferred or {}).get("reason") == PROJECTIVE_PRINT_PROPOSAL:
         mask["projective_outline_review"] = True
+    is_pocket_offer = (deferred or {}).get("reason") == EMBOSSED_POCKET_PROPOSAL
+    if payload.confirm_album_pocket_print and not is_pocket_offer:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_pocket_print_confirmation_stale")
+    if is_pocket_offer:
+        if not payload.confirm_album_pocket_print:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_pocket_print_confirmation_required")
+        match = normalized_polygon_overlap(
+            [(point["x"], point["y"]) for point in deferred["polygon"]],
+            [(point["x"], point["y"]) for point in quad], raster_size=512,
+        )
+        if match.second_containment < .75:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="album_pocket_outline_outside_proposal")
+        mask["projective_outline_review"] = True
+    elif deferred is None and any(
+        candidate.get("reason") == EMBOSSED_POCKET_PROPOSAL
+        and _same_visible_outline(candidate.get("polygon"), quad, native_size=(width, height))
+        for candidate in pending
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_pocket_print_confirmation_required")
     is_dark_offer = (deferred or {}).get("reason") == DARK_ALBUM_PROPOSAL
     if payload.confirm_dark_backing and not is_dark_offer:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="dark_backing_confirmation_stale")

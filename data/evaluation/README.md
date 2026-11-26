@@ -6591,9 +6591,108 @@ hashes are `45c4f72fb886fcf84ca914b4c02fe8c774d31035bfdf28f0b4dad65b5527a691`
 and `9ae5f44a33eb5dce124e4efd5573f7e7b267881330eee1dde4c03f2182487534`.
 On the former, the mixed baseline has four active proposals in the
 native view and three at half size. The remaining pocket and overlap
-errors need material and count checks of their own. The page, native
+errors are tracked in the pocket analysis below. The page, native
 source traces and draft masks are recorded locally under
 `runs/crop-quality/nested-scene-fragment/`.
+
+### Review continuous embossing across an album pocket
+
+The source for scan 67 is the 4,960 × 7,014 JPEG embedded in the
+pinned PDF. Use `pdfimages -j scan-67.pdf scan-67-native` to extract
+it. The source shows one sepia print and a pale upper pocket. The
+upstream print quad is a coarse page-space development annotation.
+It supplies no separate print capture, verified motif corners or
+training independence for release. [Pinned source PDF](https://github.com/ndipatri/photoScanner/blob/1000a550af25257e53af921ba61b72b65fe54657/tests/reference/scan-67.pdf)
+
+The upper pocket has a singleton model proposal at confidence .590
+native and .586 at half size. Independent spectral measurement finds
+two common embossing directions in the interior and on exposed
+material beyond the pocket. At native size, the lateral crossing
+median correlations are .935 and .974. The real lower print has
+median correlations below .24 on all four measured sides. The
+upper welded lip interrupts the pattern. Across a pale region of
+the real print, the source phase breaks even though the
+nearby pocket and the print are similar in lightness.
+
+The deployed check considers weak model-only proposals with a single
+well-supported model peer in the same column. It uses the original
+pixels and a pale, low-chroma interior check. On a 144 × 108
+area-averaged thumbnail of the interior, the central residual after
+subtracting broad illumination must span at most 3.6 OpenCV
+eight-bit Lab lightness units from the 5th to the 95th percentile.
+The scan stayed at 2.65–2.72 across five registered source and encoding
+variants. Two faint scenes over the same film measured at least
+4.45 and 5.10 at the weakest clearly distinguishable tested levels.
+A second check finds smaller details using overlapping 22 × 24
+windows. The largest 10th-to-90th percentile span must be at most 6.
+On five versions of scan 67 the local span was 3.06–3.29. A hard
+control whose detail occupied roughly 1% of the pocket area reached
+7.78–9.23. The rule then measures two
+approximately perpendicular periods in an interior patch after
+subtracting a Gaussian-smoothed copy. It then compares native
+patches separated by the measured horizontal period at 23 stations
+on each lateral side. Each side requires at least 15 consecutive
+stations with a residual standard deviation of 3 or more and
+normalised correlation of at least .70. The measured intervals
+become the two traces in count review. The initial check applies
+to nearly upright acquisitions and abstains when the geometry or
+source signal is insufficient.
+
+A pale genuine insert under the same transparent embossed layer can
+produce the same signal. A test with visible content under the layer
+stays active, while the near-blank insert is available for explicit
+count review. Unpatterned pale surfaces and one-directional stripes
+also stay active in the controls. A pending offer retains its
+original claimed mask in neighbouring crops. A linked manual save
+requires current count evidence, explicit confirmation of a paper
+print and at least 75% of the entered outline inside the offer.
+The actual print boundary and the two crop modes then remain
+in review.
+
+| Multipart input | True prints | Active proposals before → after | Active precision before → after | Open pocket proposals added |
+| --- | ---: | ---: | ---: | ---: |
+| Original JPEG | 1 | 4 → 3 | 25% → 33% | 1 |
+| Half-size lossless AREA raster | 1 | 3 → 2 | 33% → 50% | 1 |
+
+The lower print remains detected in both views. The retained rows,
+both mode records and existing preview JPEGs matched the prior build
+byte-for-byte where applicable. The same measured traces were found
+with registered JPEG75 and JPEG55 recompressions of both raster sizes.
+Desktop and mobile show the two measured traces on the original and
+require explicit confirmation to add a print. Cancelling leaves the
+count and original crops intact. In a deliberate test, confirming a
+print adds a held row. Both export modes and the legacy trimmed route
+return 404, before and after a normal reprocess. The ordinary preview
+remains available. Exact-image helper checks on both registered source
+sizes preserve the two traces with the localized content veto enabled.
+
+| Existing lower print versus provisional visual draft | Original | Half-size |
+| --- | ---: | ---: |
+| Mask IoU | .923 | .924 |
+| Ordinary preview warp IoU | .938 | .951 |
+| Draft footprint omitted by the preview warp | .36% | .13% |
+| Corner error in pixels of the input raster | 30–135 | 3–54 |
+| Ordinary preview aspect ratio | 1.218 | 1.236 |
+| Estimated bilinear weight outside the draft | 6.0% | 5.2% |
+
+These are development estimates for the existing ordinary preview.
+A wider contour around the native upper pocket, a lower carrier
+contour at native size and an interior motif fragment at half size
+remain open detection errors. Neither named crop mode qualifies on
+this scan. Separate verified motif geometry and landmarks are still
+needed for release scoring.
+
+All eight paired regression reports match the previous revision
+on detection, geometry and both crop modes. The frozen detector
+recognises 18/18 physical prints. The seeded crop run passes 11/11
+whole prints and 12/12 motifs. The validation and calibration
+profiles include `embossed_album_pocket_review` revision 1.
+The local source, benchmark and product receipts are under
+`runs/crop-quality/embossed-album-pocket/`.
+
+```bash
+python -m pytest -q backend/tests/test_api/test_embossed_album_pocket.py
+```
 
 ### Review a fallback outline crossing the album edge
 
@@ -8056,3 +8155,14 @@ gateway returned HTTP 403 in this intake. These albums remain
 source leads. [Album AL.000638](https://collections.tepapa.govt.nz/object/1840035) ·
 [Album AL.000640](https://collections.tepapa.govt.nz/object/1840095) ·
 [Media terms](https://www.tepapa.govt.nz/learn/research/datasets/collections-api/api-terms-of-use)
+
+The Pembina Manitou Archive records the Père J. Brachet album as
+`PMA_2024_076806`. The digitization report documents an original
+flatbed capture of every complete album page and separate 300 dpi
+scans of more than 200 original photos. The later Word workbook
+rearranges the photographs and captions. Individual scans were
+adjusted to standard print sizes and tone ranges. Native page and
+print files, exact pair identifiers and rights are still needed to
+establish usable pairs. The archive record leads to a login.
+[Archive record](https://pembinamanitouarchive.ca/documents/76806) ·
+[Digitization report, page 6](https://www.mhs.mb.ca/heritage/downloads/expresssummer09.pdf)

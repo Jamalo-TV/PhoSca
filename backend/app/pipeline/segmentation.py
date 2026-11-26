@@ -27,6 +27,7 @@ from app.pipeline.edge_prints import (
     clipped_fragment_needs_review, clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
     visible_capture_edge_traces,
 )
+from app.pipeline.embossed_album_pockets import EMBOSSED_POCKET_PROPOSAL, embossed_pocket_traces
 from app.pipeline.frame_backing_review import FRAME_BACKING_COUNT_REVIEW, FRAME_BACKING_PROPOSAL, frame_backing_trace
 from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
@@ -4132,6 +4133,66 @@ def _defer_dark_album_claims(image: np.ndarray, result: SegmentationResult, acce
     }})
 
 
+def _adjacent_pocket_peer(box: dict[str, float], peer: dict[str, float]) -> bool:
+    width, depth = box["x2"] - box["x1"], box["y2"] - box["y1"]
+    x_overlap = min(box["x2"], peer["x2"]) - max(box["x1"], peer["x1"])
+    gap = max(peer["y1"] - box["y2"], box["y1"] - peer["y2"])
+    return x_overlap >= .72 * width and .03 * depth <= gap <= .38 * depth
+
+
+def _defer_embossed_pocket_claims(image: np.ndarray, result: SegmentationResult, acceptance: float) -> SegmentationResult:
+    fusion = result.metadata.get("fusion") or {}
+    if not result.metadata.get("fallback_used") or not fusion.get("model_proposals") or not 2 <= len(result.detections) <= 12:
+        return result
+    models = [
+        (index, item) for index, item in enumerate(result.detections)
+        if item.geometry_valid and not item.review_reasons and not item.mask.get("warp_quad")
+        and item.mask.get("source") == "yolo_seg_mask" and item.mask.get("detector_source") == "yolo_onnx"
+        and (item.mask.get("fusion") or {}).get("proposal_families") == ["model"]
+    ]
+    peers = [item.bounding_box for _, item in models if item.confidence >= max(.85, acceptance)]
+    if not peers:
+        return result
+    width, height = image.shape[1::-1]
+    pending = list(fusion.get("deferred_print_proposals") or [])
+    next_id = max((proposal["id"] for proposal in pending), default=-1) + 1
+    deferred = set()
+    for index, item in models:
+        provenance = item.mask["fusion"]
+        if (not .30 <= item.confidence < min(.70, acceptance) or provenance.get("proposal_count") != 1
+                or (provenance.get("boundary_evidence") or {}).get("border_contrast", 1.) > .53
+                or sum(_adjacent_pocket_peer(item.bounding_box, peer) for peer in peers) != 1):
+            continue
+        source_outline = normalized_vertices_to_pixels(_detection_polygon(item), width, height)
+        try:
+            quad, _ = quad_from_polygon(source_outline)
+            quad = order_quad_cyclic(quad)
+            traces = embossed_pocket_traces(image, quad)
+        except (ValueError, cv2.error):
+            continue
+        if not traces:
+            continue
+        # The same continuous cover could hide a genuine paper print. Preserve
+        # the proposal and its original ownership until explicit count review.
+        pending.append({
+            "id": next_id, "reason": EMBOSSED_POCKET_PROPOSAL, "polygon": _normalized_polygon(quad, width, height),
+            "visible_polygon": item.mask.get("visible_polygon") or item.mask["polygon"],
+            "embossing_edge_traces": [_normalized_polygon(trace, width, height) for trace in traces],
+            "source_mask": {key: item.mask[key] for key in ("source", "detector_source", "polygon", "visible_polygon",
+                            "visible_polygon_source", "proposal_visible_polygon") if key in item.mask},
+            "fusion_cluster_id": provenance["cluster_id"],
+            "proposal_confidence": item.confidence,
+        })
+        next_id += 1
+        deferred.add(index)
+    if not deferred:
+        return result
+    return SegmentationResult(
+        [item for index, item in enumerate(result.detections) if index not in deferred],
+        {**result.metadata, "fusion": {**fusion, "deferred_print_proposals": pending}},
+    )
+
+
 def _offer_dark_mounted_print(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
     metadata = result.metadata
     fusion = metadata.get("fusion") or {}
@@ -4228,6 +4289,7 @@ def segment_album_page(
             if source is not None:
                 result = _defer_nested_scene_fragments(source, result)
                 result = _defer_dark_album_claims(source, result, settings.yolo_confidence_threshold)
+                result = _defer_embossed_pocket_claims(source, result, settings.yolo_confidence_threshold)
             # The rim is a count-review annotation. Add it after ownership
             # and backing checks that use review reasons to skip proposals.
             result = _flag_conflicting_film_grids(evidence_source, result, require_clear_rim=True)

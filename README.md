@@ -378,6 +378,26 @@ den sichtbaren Abzug. Die Markierung dient als Orientierung bei der
 Anzahlprüfung. Die beiden Zuschnittmodi werden separat beurteilt.
 [Beispiel mit Albumkante und Untergrund](data/evaluation/README.md#review-a-fallback-outline-crossing-the-album-edge)
 
+Bei einer hellen **Albumtasche mit Prägung** kann das Modell die
+Taschenkontur als Abzug vorschlagen. PhoSca untersucht einen schwachen
+Modellvorschlag in dieser Lage, wenn ein klarer zweiter Abzug in
+derselben Spalte liegt. Die Prüfung sucht zwei Wiederholungsrichtungen
+der Struktur im Original. Entlang der beiden Seiten des Vorschlags
+muss sich das Muster durchgehend über die Kontur fortsetzen. Wenn
+die Prüfung Bildstruktur oder eine deutlich abweichende Farbe
+misst, bleibt der Vorschlag in der Abzugsliste.
+
+Der zweifelhafte Vorschlag bleibt als gestrichelte Kontur unter
+**Albumtasche prüfen** offen. Türkis zeigt die beiden gemessenen
+Abschnitte. Die gleiche Prägung kann über einem sehr blassen Foto
+liegen. Ist die Tasche leer und sind alle Abzüge erfasst, bestätige
+die Anzahl. Liegt dort ein Papierabzug, bestätige seine Existenz
+und setze die Ecken ans sichtbare Papier in der Tasche. Bis zum
+Entscheid berücksichtigt PhoSca die offene Kontur bei benachbarten
+Zuschnitten. Ein ergänzter Abzug braucht die eigene Papierprüfung
+und die Freigabe beider Zuschnittmodi.
+[Scan 67 und Gegenproben](data/evaluation/README.md#review-continuous-embossing-across-an-album-pocket)
+
 Berührt ein klassischer Kontrastvorschlag nur eine Aufnahmeecke,
 kann auch ein schwach erkannter Nachbar den Ausgangspunkt für die
 **Anzahlprüfung** liefern. Dazu müssen im Original mindestens drei

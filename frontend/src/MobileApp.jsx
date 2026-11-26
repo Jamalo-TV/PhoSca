@@ -22,6 +22,7 @@ import {
   scannerBackingHint, scannerBackingReason,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
+  embossedPocketAction, embossedPocketProposal, embossedPocketReviewErrors,
   getSourceStripReview, SourceStripOutline, SourceStripReview, offPrintAdvisorySource, useAlbumPageMarkReview,
 } from "./CropVariants.jsx";
 import {
@@ -354,6 +355,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       if (deferredDraft) {
         await addManualPhoto(item.page_id, deferredDraft.requestId, quad, size, null, deferredDraft, {
           replaceMountedFragments: sourceFragmentDraft, confirmDarkBacking: darkBackingDraft,
+          confirmAlbumPocketPrint: deferredDraft.reason === embossedPocketProposal,
         });
         onDeferredDraftClose(true);
         return;
@@ -393,7 +395,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       if (error.message === "album_page_mark_review_stale") albumMarkReview.reset();
       setSaveError(error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message === "print_outline_review_required" ? printOutlineSaveHint
-        : darkBackingReviewErrors[error.message] || sourceFragmentReviewErrors[error.message] || cropProtectionErrors[error.message]
+        : darkBackingReviewErrors[error.message] || embossedPocketReviewErrors[error.message]
+          || sourceFragmentReviewErrors[error.message] || cropProtectionErrors[error.message]
           || error.message || "Ausschnitt konnte nicht gespeichert werden.");
       if (error.message === "protected_region_removed") {
         setBlockedCrop(error.detail);
@@ -1109,6 +1112,7 @@ function CropReview({ albumId, goHome }) {
           {proposal.reason === darkBackingProposal ? `Dunkle Fläche prüfen${deferredProposals.length > 1 ? ` (${index + 1})` : ""}`
             : proposal.reason === nestedFallbackProposal ? `Innenkontur ${index + 1} prüfen`
               : proposal.reason === projectivePrintProposal ? "Vorgeschlagenen Abzug bearbeiten"
+              : proposal.reason === embossedPocketProposal ? embossedPocketAction
               : [frameBackingProposal, borrowedFallbackProposal].includes(proposal.reason) ? `Vorschlag ${index + 1} am Aufnahmerand prüfen`
                 : "Möglichen gemeinsamen Abzug prüfen"}
         </button>;

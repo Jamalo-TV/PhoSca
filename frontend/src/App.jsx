@@ -64,6 +64,7 @@ import {
   nestedFallbackProposal,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
+  embossedPocketAction, embossedPocketProposal, embossedPocketReviewErrors,
   getSourceStripReview, SourceStripReview, sourceStripColor, sourceStripContrastColor,
   offPrintAdvisorySource, useAlbumPageMarkReview,
 } from "./CropVariants.jsx";
@@ -1377,6 +1378,7 @@ const printAdditionErrors = {
   mounted_print_fragments_stale: "Die Teilvorschläge haben sich geändert. Prüfe die aktuelle Seite erneut.",
   source_print_fragments_stale: sourceFragmentReviewErrors.source_print_fragments_stale,
   dark_backing_confirmation_stale: darkBackingReviewErrors.dark_backing_confirmation_stale,
+  album_pocket_print_confirmation_stale: embossedPocketReviewErrors.album_pocket_print_confirmation_stale,
   adjacent_print_suggestion_saved: "Dieser Abzug wurde bereits gespeichert. Öffne ihn in der aktualisierten Ansicht, wenn du seine Ecken ändern möchtest.",
   adjacent_print_suggestion_stale: "Der Vorschlag wurde geändert. Prüfe die Albumseite in der aktualisierten Ansicht erneut.",
   deferred_print_proposal_saved: "Dieser Abzug wurde bereits ergänzt. Du kannst seine Ecken in der aktualisierten Ansicht ändern.",
@@ -2110,6 +2112,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         newPrint.adjacentSuggestion, newPrint.deferredProposal, {
           replaceMountedFragments: newPrint.replaceMountedFragments,
           confirmDarkBacking: darkBackingDraft && newPrint.confirmStandalonePrint,
+          confirmAlbumPocketPrint: newPrint.deferredProposal?.reason === embossedPocketProposal && newPrint.confirmStandalonePrint,
         });
       if (activePage.current !== pageId) return;
       setAddition(null);
@@ -2121,7 +2124,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         ? "Der Ausschnitt schneidet einen geschützten Bildbereich ab. Verschiebe die Ecken, bis der Bereich vollständig sichtbar ist."
         : error.message === "mounted_print_outline_excludes_fragments"
           ? "Die Ecken müssen alle markierten Teilvorschläge umfassen. Wenn sie zu verschiedenen Abzügen gehören, prüfe sie einzeln."
-          : darkBackingReviewErrors[error.message] || sourceFragmentReviewErrors[error.message] || error.message);
+          : darkBackingReviewErrors[error.message] || embossedPocketReviewErrors[error.message]
+            || sourceFragmentReviewErrors[error.message] || error.message);
       if (activePage.current === pageId) setAddition({ ...newPrint, error: message, invalidated: Boolean(stale) });
     }
   }
@@ -2181,6 +2185,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
               {proposal.reason === sourceFragmentProposal ? "Möglichen gemeinsamen Abzug prüfen"
                 : proposal.reason === darkBackingProposal ? `Dunkle Fläche prüfen${deferredProposals.length > 1 ? ` (${index + 1})` : ""}`
                 : proposal.reason === nestedFallbackProposal ? `Innenkontur ${index + 1} prüfen`
+                : proposal.reason === embossedPocketProposal ? embossedPocketAction
                 : [frameBackingProposal, borrowedFallbackProposal].includes(proposal.reason) ? `Vorschlag ${index + 1} am Aufnahmerand prüfen`
                 : proposal.reason === "possible_mounted_print" ? `Möglichen Ganzabzug ${index + 1} prüfen`
                 : `Vorschlag ${index + 1} als Abzug ergänzen`}
