@@ -1447,6 +1447,45 @@ evidence for the new check. The pinned scan's isolated scanner check took
 one OpenCV thread. Instance and both crop-mode metrics reproduced across
 the frozen, seeded, Golden, stock, flatbed and contact-sheet controls.
 
+### Retain dark chromatic stock on scanner backing
+
+Revision 7 keeps the luminance checks and also measures local chroma
+at the four existing corner windows. Both arms of an exposed corner
+must show a coherent change in the Lab a/b vector. Its magnitude must
+exceed the variation among the other three quadrants by at least three
+Lab units. All sample windows must clear neighbouring prints. An
+isolated rail or a global colour cast usually changes several quadrants
+together. The same material veto also applies to fallback ownership
+review in fusion.
+
+Six locations on the pinned NerdScan raster were challenged with a
+dark chromatic print insert in the original image, JPEG70 and a blurred
+variant. All 18 retain the scanner candidate for review. The previous
+luminance-only rule would have discarded it in 16. The unmodified scan,
+its JPEG70 and blurred derivatives, and the global casts agree with
+the previous rule. A local chromatic scanner stain can also warrant
+review. The narrow rule preserves ambiguous material, and the separate
+mixed-detector ownership conflict remains counted. Very faint neutral
+inserts still overlap the scanner colour evidence.
+
+In the classical upload path, a 167 × 112 px insert at native
+`(872, 1100)` differs by just one Lab lightness level at the median
+and 13.56 units across Lab. The unmodified scan has three rows.
+The inserted scan had three rows before the change and has four after,
+with the added row flagged `SCANNER_BACKING_UNCERTAIN`. The three known
+prints keep their masks, render matrices and both mode statuses.
+The ambiguous row returns 404 for both named downloads and the old
+trimmed alias. Its source-corrected review image returns 200. A
+general approval and reprocessing preserve the hold.
+
+The fixed-geometry scan comparison used 12 paired warm measurements
+on one OpenCV thread. Median time was 112.74 to 162.84 ms and p95 was
+172.46 to 232.76 ms with other regression checks active. The mixed path
+with unresolved ownership already retains the candidate and bypasses
+the material veto. Frozen detection and geometry, Golden, NerdScan,
+Domoritz, the contact and stock controls reproduce previous detection
+and crop metrics.
+
 ## Four neighboring loose prints on a flatbed
 
 The published 600 × 851 JPEG shows four separate prints that the author
@@ -3137,6 +3176,15 @@ the Rodgers album `PDE_0075` and 600 dpi TIFFs of removed items. Item
 `PDE_0075-059_R` has a public record. Its public image request returned
 HTTP 403. The exact mounted leaf and reuse rights remain unverified.
 [Malta archive report](https://embed-rech-01.dialog.cm/nationalarchivesmalta/docs/nam_official_annual_report_2024)
+
+The Leiden Gandhãra Album 2 conservation report documents photography
+of the mounted leaves followed by separate digitization of the removed
+albumen prints. The public derivative for page 45 cross-references
+original print `item:51876` and carries CC BY 4.0. The paired
+pre-removal page master and its rights remain unavailable. Requests
+to the published image hosts returned HTTP 403 from this workspace.
+[Conservation report](https://resources.culturalheritage.org/pmgtopics/2005-volume-eleven/11_10_Maes.html) ·
+[Print derivative](https://commons.wikimedia.org/wiki/File:Album_2_-_part_48.jpg)
 
 The Bancroft Red Album study documents a mounted, measured print on
 page 8 and a 1999 State Library of Queensland copy negative showing the

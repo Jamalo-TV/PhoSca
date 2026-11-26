@@ -9,7 +9,7 @@ from app.pipeline.geometry import order_quad_cyclic
 from app.pipeline.print_edges import _side_line
 
 
-CAPTURE_EDGE_REVISION = 6
+CAPTURE_EDGE_REVISION = 7
 CAPTURE_EDGE_SOURCE = "capture_edge_boundary"
 CAPTURE_EDGE_HOLD = "PRINT_AT_CAPTURE_EDGE"
 SCANNER_BACKING_REVIEW = "SCANNER_BACKING_UNCERTAIN"
@@ -283,14 +283,30 @@ def _has_compact_tone_change(light: np.ndarray, surface: np.ndarray, reduction: 
     return False
 
 
-def _has_local_tonal_corner(light: np.ndarray, surface: np.ndarray) -> bool:
-    reduction = min(.5, 1400 / max(light.shape))
-    width, height = (round(size * reduction) for size in light.shape[::-1])
+def _corner_quadrants(plane: np.ndarray, span: int):
+    step = 2 * span
+    top_left, top_right = plane[:-step, :-step], plane[:-step, step:]
+    bottom_left, bottom_right = plane[step:, :-step], plane[step:, step:]
+    return ((top_left, top_right, bottom_left, bottom_right), (top_right, top_left, bottom_right, bottom_left),
+            (bottom_left, bottom_right, top_left, top_right), (bottom_right, bottom_left, top_right, top_left))
+
+
+def _has_supported_corner(corner: np.ndarray, inspect: np.ndarray, min_area: int) -> bool:
+    supported = np.uint8(corner) & inspect
+    if np.count_nonzero(supported) < min_area:
+        return False
+    _, _, components, _ = cv2.connectedComponentsWithStats(supported)
+    return bool(np.any(components[1:, cv2.CC_STAT_AREA] >= min_area))
+
+
+def _has_local_material_corner(lab: np.ndarray, surface: np.ndarray) -> bool:
+    reduction = min(.5, 1400 / max(surface.shape))
+    width, height = (round(size * reduction) for size in surface.shape[::-1])
     span = 9
     if min(width, height) < 3 * span:
         return False
     size = (width, height)
-    reduced = cv2.resize(light, size, interpolation=cv2.INTER_AREA)
+    reduced = cv2.resize(lab, size, interpolation=cv2.INTER_AREA)
     clear = np.uint8(cv2.resize(255 * surface, size, interpolation=cv2.INTER_AREA) == 255)
     # Include the complete sample windows in the clearance test, even near
     # an adjacent print. The outer radius is span + span // 2.
@@ -299,26 +315,35 @@ def _has_local_tonal_corner(light: np.ndarray, surface: np.ndarray) -> bool:
     min_area = 130
     if np.count_nonzero(inspect) < min_area:
         return False
-    average = cv2.boxFilter(reduced, cv2.CV_32F, (span, span), normalize=True)
-    tl = average[:-2 * span, :-2 * span]
-    tr = average[:-2 * span, 2 * span:]
-    bl = average[2 * span:, :-2 * span]
-    br = average[2 * span:, 2 * span:]
-    corner = np.zeros_like(inspect, dtype=bool)
+    light, a, b = cv2.split(cv2.boxFilter(reduced, cv2.CV_32F, (span, span), normalize=True))
     # An isolated light or dark quadrant differs from both adjacent ones.
     # Charge the change against the variation among the other three so a
-    # single long scanner rail or a smooth gradient contributes little.
-    for target, across, down, diagonal in ((tl, tr, bl, br), (tr, tl, br, bl),
-                                           (bl, br, tl, tr), (br, bl, tr, tl)):
+    # single rail or a smooth gradient contributes little.
+    corner = np.zeros_like(inspect, dtype=bool)
+    for target, across, down, diagonal in _corner_quadrants(light, span):
         step_x, step_y = target - across, target - down
         variation = np.maximum(np.abs(diagonal - across), np.abs(diagonal - down))
-        corner |= ((step_x * step_y > 0)
-                   & (np.minimum(np.abs(step_x), np.abs(step_y)) >= 3 + variation))
-    supported = np.uint8(corner) & inspect
-    if np.count_nonzero(supported) < min_area:
+        corner |= ((step_x * step_y > 0) & (np.minimum(np.abs(step_x), np.abs(step_y)) >= 3 + variation))
+    if _has_supported_corner(corner, inspect, min_area):
+        return True
+
+    # Dark stock can have the same lightness as the scanner. Require a
+    # coherent change in the chroma vector along both arms of the corner.
+    a_min, a_max, _, _ = cv2.minMaxLoc(a, mask=clear)
+    b_min, b_max, _, _ = cv2.minMaxLoc(b, mask=clear)
+    if np.hypot(a_max - a_min, b_max - b_min) < 3:
         return False
-    _, _, components, _ = cv2.connectedComponentsWithStats(supported)
-    return bool(np.any(components[1:, cv2.CC_STAT_AREA] >= min_area))
+    corner.fill(False)
+    for (target_a, across_a, down_a, diagonal_a), (target_b, across_b, down_b, diagonal_b) in zip(
+        _corner_quadrants(a, span), _corner_quadrants(b, span), strict=True,
+    ):
+        dx_a, dx_b = target_a - across_a, target_b - across_b
+        dy_a, dy_b = target_a - down_a, target_b - down_b
+        strength = np.minimum(dx_a ** 2 + dx_b ** 2, dy_a ** 2 + dy_b ** 2)
+        variation = np.maximum((diagonal_a - across_a) ** 2 + (diagonal_b - across_b) ** 2,
+                               (diagonal_a - down_a) ** 2 + (diagonal_b - down_b) ** 2)
+        corner |= ((dx_a * dy_a + dx_b * dy_b > 0) & (strength >= (3 + np.sqrt(variation)) ** 2))
+    return _has_supported_corner(corner, inspect, min_area)
 
 
 def _has_independent_content(image: np.ndarray, occluded: np.ndarray, quad: np.ndarray) -> bool:
@@ -328,7 +353,8 @@ def _has_independent_content(image: np.ndarray, occluded: np.ndarray, quad: np.n
     region = np.s_[y:y + height, x:x + width]
     surface[occluded[region] != 0] = 0
     interior = cv2.erode(surface, np.ones((17, 17), np.uint8), borderType=cv2.BORDER_CONSTANT, borderValue=0)
-    light = cv2.cvtColor(image[region], cv2.COLOR_BGR2LAB)[..., 0]
+    lab = cv2.cvtColor(image[region], cv2.COLOR_BGR2LAB)
+    light = lab[..., 0]
     if _has_compact_tone_change(light, interior, min(1., 544 / min(image.shape[:2]))):
         return True
 
@@ -355,7 +381,7 @@ def _has_independent_content(image: np.ndarray, occluded: np.ndarray, quad: np.n
         counts = cv2.boxFilter(detail, cv2.CV_32F, window, normalize=False, borderType=cv2.BORDER_CONSTANT)[core]
         if np.any(counts[inspected] > 275):
             return True
-    return not observed or _has_local_tonal_corner(light, surface)
+    return not observed or _has_local_material_corner(lab, surface)
 
 
 def scanner_backing_evidence(

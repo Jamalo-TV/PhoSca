@@ -205,6 +205,12 @@ def scan_with_backing_rails(settings, case):
             patch[545:640, 394:490] = 10
             blur = 4
         page -= np.rint(cv2.GaussianBlur(patch, (0, 0), blur)).astype(np.uint8)[..., None]
+    if case in {"dark_chroma", "tinted_scanner"}:
+        area = np.s_[514:630, 378:480] if case == "dark_chroma" else np.s_[:, :]
+        patch = cv2.cvtColor(page[area], cv2.COLOR_BGR2LAB)
+        patch[..., 1] += 9 if case == "dark_chroma" else 6
+        patch[..., 2] -= 8 if case == "dark_chroma" else 4
+        page[area] = cv2.cvtColor(patch, cv2.COLOR_LAB2BGR)
     detections = []
     for left, top, bottom in ((454, 0, 392), (587, 404, 941), (454, 949, 1319)):
         page[top:bottom + 1, left:] = 222
@@ -226,14 +232,15 @@ def scan_with_backing_rails(settings, case):
 
 
 @pytest.mark.parametrize("case", [
-    "scanner", "single_rail", "dark_edge", "dark_detail", "dark_tone", "small_dark_corner", "model_support",
+    "scanner", "single_rail", "dark_edge", "dark_detail", "dark_tone", "small_dark_corner",
+    "dark_chroma", "tinted_scanner", "model_support",
 ])
 def test_scanner_backing_requires_native_evidence_without_an_independent_photo(case):
     settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
     page, original = scan_with_backing_rails(settings, case)
     result = segmentation._recover_capture_edge_prints(page, original, settings)
 
-    expected_rejections = int(case == "scanner")
+    expected_rejections = int(case in {"scanner", "tinted_scanner"})
     assert result.metadata["capture_edge_outlines_recovered"] == 3
     assert result.metadata.get("scanner_backing_outlines_rejected", 0) == expected_rejections
     assert sum(item.mask.get("capture_edge_clipped") is True for item in result.detections) == 3
@@ -241,7 +248,7 @@ def test_scanner_backing_requires_native_evidence_without_an_independent_photo(c
         assert len(result.detections) == 3
     else:
         assert result.detections[-1].mask == original.detections[-1].mask
-        needs_review = case in {"dark_detail", "dark_tone", "small_dark_corner"}
+        needs_review = case in {"dark_detail", "dark_tone", "small_dark_corner", "dark_chroma"}
         assert (SCANNER_BACKING_REVIEW in result.detections[-1].review_reasons) == needs_review
 
 
@@ -322,7 +329,7 @@ def test_capture_edge_hold_applies_to_stale_download_metadata():
     assert variant_path_from_photo(photo, "source_corrected_untrimmed") == "/previous-crop.jpg"
 
 
-@pytest.mark.parametrize("case", ["dark_tone", "small_dark_corner"])
+@pytest.mark.parametrize("case", ["dark_tone", "small_dark_corner", "dark_chroma"])
 async def test_dark_content_on_scanner_backing_is_kept_for_review(client, monkeypatch, case):
     from app.config import get_settings
     from app.services import pipeline

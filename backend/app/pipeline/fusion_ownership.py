@@ -8,7 +8,7 @@ from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertice
 from app.pipeline.print_edges import _edge_band, _side_line
 
 
-FUSION_OWNERSHIP_REVISION = 1
+FUSION_OWNERSHIP_REVISION = 2
 
 
 def _covered_area(quad: np.ndarray, owners: list[np.ndarray]) -> float:
