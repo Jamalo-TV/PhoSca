@@ -11,7 +11,7 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic,
 from app.pipeline.print_edges import _edge_band, _is_pale_stock, refine_print_boundary
 
 
-MULTIPANEL_PRINT_REVISION = 10
+MULTIPANEL_PRINT_REVISION = 11
 MULTIPANEL_PRINT_REVIEW = "MULTIPANEL_PRINT_REVIEW"
 FILM_GRID_REVIEW = "FILM_GRID_REVIEW"
 PAPER_GRID_REVIEW = "PAPER_GRID_REVIEW"
@@ -383,6 +383,99 @@ def film_grid_review_seam(image: np.ndarray, first: np.ndarray, second: np.ndarr
         if _perforation_rails_cross_split(light, center):
             return facing.reshape(2, 2, 2).mean(axis=0)
     return None
+
+
+def _exposed_backing_at_film_divider(
+    image: np.ndarray, seam: np.ndarray, normal: np.ndarray, backing: np.ndarray, stock: np.ndarray,
+) -> bool:
+    along = np.linspace(.07, .93, 180, dtype=np.float32)
+    span = seam[0] + along[:, None] * (seam[1] - seam[0])
+    radius = min(16, max(4, round(.009 * np.linalg.norm(seam[1] - seam[0]))))
+    offsets = np.arange(-radius, radius + .5, .5, dtype=np.float32)
+    strip = _sample_lab(image, span[:, None] + offsets[None, :, None] * normal)
+    if strip is None:
+        return True
+    chroma = strip[..., 1:]
+    matching_backing = ((np.linalg.norm(chroma - backing[1:], axis=2) <= 11)
+                        & (np.linalg.norm(chroma - stock[1:], axis=2) >= 13))
+    # Even a two-pixel backing lane may preserve the periodic film witness.
+    # Test distributed source columns rather than interpolating the work image.
+    lane = (matching_backing.mean(axis=0) >= .72) & np.all([
+        block.mean(axis=0) >= .60 for block in np.array_split(matching_backing, 6)
+    ], axis=0)
+    if np.any(lane[:-2] & lane[1:-1] & lane[2:]):
+        return True
+    # An exposed neutral underlay can differ mostly in lightness. Check the
+    # centre of the measured divider so the nearby film rails cannot vote.
+    light_gap = stock[0] - strip[:, np.abs(offsets) <= 1, 0]
+    gray = (light_gap >= 20) & (light_gap <= 67)
+    uniform = np.percentile(light_gap, 95, axis=0) - np.percentile(light_gap, 5, axis=0) <= 11
+    supported = np.all([part.mean(axis=0) >= .82 for part in np.array_split(gray, 6)], axis=0)
+    middle = supported & uniform
+    return bool(np.any(middle[:-1] & middle[1:]))
+
+
+def transparent_film_rim(
+    image: np.ndarray, parent: np.ndarray, seam: np.ndarray, peers: list[np.ndarray],
+) -> np.ndarray | None:
+    """Find a transparent lip outside the pale carrier of a disputed film grid."""
+    edges = np.roll(parent, -1, axis=0) - parent
+    lengths = np.linalg.norm(edges, axis=1)
+    if lengths.min() < 500:
+        return None
+    tangent = (seam[1] - seam[0]) / np.linalg.norm(seam[1] - seam[0])
+    normal = np.float32([-tangent[1], tangent[0]])
+    radius = min(80, round(.035 * lengths.min()))
+    depths = np.arange(-radius - 12, 20, dtype=np.float32)
+    along = np.linspace(.06, .94, 384, dtype=np.float32)
+    found = []
+    for start, edge, length in zip(parent, edges, lengths, strict=True):
+        inward = np.float32([-edge[1], edge[0]]) / length
+        if abs(inward @ tangent) < .97 or length < 650:
+            continue
+        span = start + along[:, None] * edge
+        colors = _sample_lab(image, span[:, None] + depths[None, :, None] * inward)
+        if colors is None:
+            continue
+        light = colors[..., 0]
+        stations = np.arange(12, radius + 12 - 12)
+        jump = (light[:, stations[:, None] + [-4, -3, -2]].mean(axis=2)
+                - light[:, stations[:, None] + [2, 3, 4]].mean(axis=2))
+        blocks = np.array([np.median(block, axis=0) for block in np.array_split(jump, 8)])
+        shared = np.min(blocks, axis=0)
+        mid = np.median(blocks, axis=0)
+        plausible = (shared >= 1.5) & (mid >= 2.7) & (mid <= 8.5)
+        if not plausible.any():
+            continue
+        index = stations[np.argmax(np.where(plausible, shared, -np.inf))]
+        clear_outside, clear_inside = colors[:, index - 12:index - 4], colors[:, index + 5:index + 13]
+        stock_side = colors[:, -12:-3]
+        stock = np.median(stock_side, axis=(0, 1))
+        outside = np.median(clear_outside, axis=(0, 1))
+        if (not _is_pale_stock(stock) or np.linalg.norm(stock[1:] - outside[1:]) < 18
+                or np.linalg.norm(np.median(clear_inside, axis=(0, 1))[1:] - outside[1:]) > 9):
+            continue
+        texture = np.float32([side[..., 0].mean(axis=1) for side in (clear_outside, clear_inside)])
+        details = texture - cv2.GaussianBlur(texture, (0, 1), sigmaX=7)
+        outer_rms, inner_rms = np.std(details, axis=1)
+        # A narrow specular or ink ridge can have the same signed peak. The
+        # wider plateaus must retain and attenuate the background's texture.
+        if (min(outer_rms, inner_rms) < 2.5 or not .55 <= inner_rms / outer_rms <= .93
+                or np.corrcoef(details)[0, 1] < .85 or np.median(texture[0] - texture[1]) < 2.5):
+            continue
+        rim = span[[0, -1]] + depths[index] * inward
+        corridor = np.float32([rim[0] - 12 * inward, rim[1] - 12 * inward, span[-1], span[0]])
+        if any(cv2.intersectConvexConvex(corridor, cv2.convexHull(peer))[0] > 1 for peer in peers):
+            continue
+        # Anchor the divider test in the same backing and stock at its end of
+        # the rim. Distant wood or page material can have a different color.
+        corner = np.argmin(np.abs((span - seam.mean(axis=0)) @ normal))
+        local = slice(max(0, corner - 14), corner + 15)
+        if _exposed_backing_at_film_divider(image, seam, normal, np.median(clear_outside[local], axis=(0, 1)),
+                                           np.median(stock_side[local], axis=(0, 1))):
+            continue
+        found.append(rim)
+    return found[0] if len(found) == 1 else None
 
 
 def _paper_join_edge(

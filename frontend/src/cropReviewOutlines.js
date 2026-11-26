@@ -12,9 +12,12 @@ export function getFragmentOutline(mask) {
   return { quad, weakEdge: [quad[edge], quad[next]], supportedSides: [...quad.slice(next), ...quad.slice(0, next)] };
 }
 
-export function getFilmGridSeam(mask) {
-  const line = mask?.film_grid_review_seam;
+function filmReviewLine(line) {
   return Array.isArray(line) && line.length === 2 && line.every(isNormalizedPoint) ? line : null;
+}
+
+export function getFilmGridSeam(mask) {
+  return filmReviewLine(mask?.film_grid_review_seam);
 }
 
 export function getFilmGridReviewSeams(photos) {
@@ -25,8 +28,11 @@ export function getFilmGridReviewSeams(photos) {
     const line = getFilmGridSeam(photo.segmentation_mask);
     if (!id || photo.reviewed_non_print || confidence == null || !line) continue;
     const key = JSON.stringify(line.map(({ x, y }) => [x, y]));
-    if (!groups.has(key)) groups.set(key, { key, line, photoIds: new Set() });
-    groups.get(key).photoIds.add(id);
+    const rim = filmReviewLine(photo.segmentation_mask?.film_grid_review_rim);
+    if (!groups.has(key)) groups.set(key, { key, line, rim, photoIds: new Set() });
+    const group = groups.get(key);
+    if (JSON.stringify(group.rim) !== JSON.stringify(rim)) group.rim = null;
+    group.photoIds.add(id);
   }
   return [...groups.values()].filter(({ photoIds }) => photoIds.size > 1);
 }

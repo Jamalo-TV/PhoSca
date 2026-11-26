@@ -7,7 +7,7 @@ import {
   actionableCountGroups, adjacentPrintHint, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
   captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, cropProtectionErrors, CropVariants,
   cropModeLabels, crossingPrintHint,
-  countGroupReviewError, CountGroupReview, crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint,
+  countGroupReviewError, CountGroupReview, crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridRimHint,
   filmGridReason, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints, frameBackingProposal,
@@ -384,10 +384,13 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       {traces.map((line, index) => <polyline key={index} points={line.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />)}
     </g>
   ));
-  const filmGridOverlay = (filmGrid ? [{ key: "selected-grid", line: filmGrid }] : filmGridGroups).map(({ key, line }) => (
-    <polyline key={key} aria-label="Zwischenraum im Raster" fill="none" stroke="#0e7490"
-      strokeWidth="7" strokeDasharray="14 8" pointerEvents="none"
-      points={line.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
+  const filmGridOverlay = (filmGrid ? [{ key: "selected-grid", line: filmGrid }] : filmGridGroups).map(({ key, line, rim }) => (
+    <g key={key} fill="none" stroke="#0e7490" strokeWidth="7" pointerEvents="none">
+      <polyline aria-label="Zwischenraum im Raster" strokeDasharray="14 8"
+        points={line.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
+      {rim && <polyline aria-label="Möglicher durchsichtiger Saum" strokeDasharray="3 10"
+        points={rim.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />}
+    </g>
   ));
   const countGroupOverlay = selectedCountGroup && (
     <g aria-label={selectedCountGroup.kind === "film" ? "Vorschläge zur Prüfung der Negativhülle" : "Vorschläge zur Prüfung der Papierkante"}
@@ -525,7 +528,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     )}
     {countOutlines.length > 0 && <p className="quad-hint" id="mobile-fragment-count-review-hint">{fragmentCountHint}</p>}
     {captureSplitGroups.length > 0 && <p className="quad-hint" id="mobile-capture-split-count-hint">{captureSplitReviewHint}</p>}
-    {filmGridGroups.length > 0 && <p className="quad-hint" id="mobile-film-grid-count-hint">{filmGridCountHint}</p>}
+    {filmGridGroups.length > 0 && <p className="quad-hint" id="mobile-film-grid-count-hint">
+      {filmGridCountHint}{filmGridGroups.some(({ rim }) => rim) && ` ${filmGridRimHint}`}
+    </p>}
     {paperGridGroups.length > 0 && <p className="quad-hint" id="mobile-paper-grid-count-hint">{paperGridCountHint}</p>}
     {paperJoinGroups.length > 0 && <p className="quad-hint" id="mobile-paper-join-count-hint">{paperJoinCountHint}</p>}
     {editable && motifTraces.length > 0 && <p className="quad-hint" id="mobile-motif-seam-hint">

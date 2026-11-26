@@ -52,7 +52,7 @@ import {
   CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   countGroupReviewError, CountGroupReview, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints,
-  filmGridCountHint, filmGridHint, filmGridReason, frameBackingProposal,
+  filmGridCountHint, filmGridHint, filmGridReason, filmGridRimHint, frameBackingProposal,
   getDeferredPrintEvidence, getDeferredPrintProposals, getDeferredParentCropHints, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
@@ -1724,6 +1724,15 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         context.lineTo(end.x * canvas.width, end.y * canvas.height);
         context.stroke();
       }
+      context.setLineDash([2, 6]);
+      for (const { rim } of filmGridGroups) {
+        if (!rim) continue;
+        const [start, end] = rim;
+        context.beginPath();
+        context.moveTo(start.x * canvas.width, start.y * canvas.height);
+        context.lineTo(end.x * canvas.width, end.y * canvas.height);
+        context.stroke();
+      }
       context.restore();
     }
     if (!newPrint && !editingImage && (paperGridGroups.length || paperGrid?.cut)) {
@@ -2120,7 +2129,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         id="paper-grid-count-result">{paperGridCountSaved}</p>}
       {countOutlines.length > 0 && <p className="crop-editor-hint" id="fragment-count-review-hint">{fragmentCountHint}</p>}
       {captureSplitGroups.length > 0 && <p className="crop-editor-hint" id="capture-split-count-hint">{captureSplitReviewHint}</p>}
-      {filmGridGroups.length > 0 && <p className="crop-editor-hint" id="film-grid-count-hint">{filmGridCountHint}</p>}
+      {filmGridGroups.length > 0 && <p className="crop-editor-hint" id="film-grid-count-hint">
+        {filmGridCountHint}{filmGridGroups.some(({ rim }) => rim) && ` ${filmGridRimHint}`}
+      </p>}
       {paperJoinGroups.length > 0 && <p className="crop-editor-hint" id="paper-join-count-hint">{paperJoinCountHint}</p>}
       <CountGroupReview groups={countGroups} selected={selectedCountGroup}
         busy={!canAddPhoto || Boolean(saveState?.saving || currentCountReview?.saving)}

@@ -162,6 +162,64 @@ def test_film_grid_divider_aligns_quads_with_different_first_corners():
     np.testing.assert_allclose(line, [[116, 483.5], [642, 483.5]], atol=1e-3)
 
 
+@pytest.mark.parametrize("material", ["clear_lip", "bare", "specular_line", "exposed_backing", "neutral_underlay",
+                                         "known_neighbor", "paper_under_common_protector"])
+def test_strong_film_carrier_rim_adds_only_reversible_source_evidence(material):
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    page, seed = conflicting_film_grid(settings)
+    height, width = page.shape[:2]
+    rows = np.arange(height, dtype=np.float32)
+    grain = 13 * np.sin(rows / 3.2) + 7 * np.cos(rows / 5.8) + 4 * np.sin(rows / 2.3)
+    wood = np.float32([94, 145, 176]) + grain[:, None]
+    wood = np.uint8(np.clip(wood, 0, 255))
+    original = np.broadcast_to(wood[:, None], page.shape).copy()
+    original[120:907, 71:668] = page[120:907, 71:668]
+    if material == "specular_line":
+        original[120:907, 51:54] = np.minimum(wood[120:907, None].astype(int) + 10, 255)
+    elif material != "bare":
+        lip = (wood.astype(np.float32) - np.float32([94, 145, 176])) * .77 + np.float32([89, 140, 171])
+        original[120:907, 54:71] = np.uint8(lip[120:907, None])
+    if material == "exposed_backing":
+        original[481:486, 71:668] = wood[481:486, None]
+    if material == "neutral_underlay":
+        original[481:486, 71:668] = (174, 174, 174)
+    if material == "paper_under_common_protector":
+        original[481:486, 71:668] = (205, 210, 215)
+
+    def edge_detection(quad):
+        item = segmentation._make_detection(
+            box={}, points=np.float32(quad), confidence=.9, image_width=width, image_height=height, settings=settings,
+            source="classical_border_quad", detector_source="edge_contour",
+        )
+        return replace(item, mask={**item.mask, "boundary_evidence": {"score": .95}})
+
+    parent = edge_detection([[71, 120], [667, 120], [667, 906], [71, 906]])
+    right = edge_detection([[703, 150], [915, 150], [915, 886], [703, 886]])
+    detections = [parent, *seed.detections[1:], right]
+    if material == "known_neighbor":
+        detections.append(edge_detection([[20, 170], [59, 170], [59, 850], [20, 850]]))
+    before = replace(seed, detections=detections)
+    children = [segmentation.normalized_vertices_to_pixels(segmentation._detection_polygon(item), width, height)
+                for item in detections[1:3]]
+    assert film_grid_review_seam(original, *children) is not None
+
+    result = segmentation._flag_conflicting_film_grids(original, before, require_clear_rim=True)
+
+    if material not in {"clear_lip", "paper_under_common_protector"}:
+        assert result is before
+        return
+    first, *others = result.detections[:3]
+    rim = first.mask["film_grid_review_rim"]
+    actual = segmentation.normalized_vertices_to_pixels([(point["x"], point["y"]) for point in rim], width, height)
+    np.testing.assert_allclose(actual[:, 0], 54, atol=2)
+    assert np.ptp(actual[:, 1]) > 680
+    assert all(item.mask["film_grid_review_rim"] == rim for item in others)
+    assert all(item.review_reasons == [FILM_GRID_REVIEW] for item in result.detections[:3])
+    assert [item.bounding_box for item in result.detections] == [item.bounding_box for item in detections]
+    assert [item.mask["polygon"] for item in result.detections] == [item.mask["polygon"] for item in detections]
+    assert result.detections[3:] == detections[3:]
+
+
 def test_valid_paper_separator_does_not_absorb_a_third_separate_print():
     settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
     original, _, proposals = page_and_proposals(settings, 4, 0, mixed=True)

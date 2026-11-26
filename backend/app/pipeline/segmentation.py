@@ -45,7 +45,7 @@ from app.pipeline.multipanel_prints import (
     FILM_GRID_REVIEW, GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW,
     RECOVERED_STOCK_SOURCE,
     film_grid_review_seam, grid_fragment_on_shared_stock, nested_print_on_shared_stock, paper_grid_review_seam,
-    paper_join_review_traces, recover_shared_stock_outline, shared_stock_outline,
+    paper_join_review_traces, recover_shared_stock_outline, shared_stock_outline, transparent_film_rim,
 )
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.print_edges import (
@@ -3622,13 +3622,16 @@ def _flag_disputed_paper_grids(image: np.ndarray, result: SegmentationResult) ->
     return SegmentationResult(updated, result.metadata) if disputes else result
 
 
-def _flag_conflicting_film_grids(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+def _flag_conflicting_film_grids(
+    image: np.ndarray, result: SegmentationResult, *, require_clear_rim: bool = False,
+) -> SegmentationResult:
     detections = result.detections
     if not result.metadata.get("fallback_used") or not 3 <= len(detections) <= _MULTIPANEL_GROUP_LIMIT:
         return result
+    minimum_model_edge = .65 if require_clear_rim else .70
     model_indices = {index for index, item in enumerate(detections)
                      if item.geometry_valid and not item.review_reasons and item.mask.get("source") == "yolo_seg_mask"
-                     and (item.mask.get("boundary_evidence") or {}).get("score", 0) >= .70}
+                     and (item.mask.get("boundary_evidence") or {}).get("score", 0) >= minimum_model_edge}
     if len(model_indices) < 2:
         return result
     height, width = image.shape[:2]
@@ -3636,15 +3639,21 @@ def _flag_conflicting_film_grids(image: np.ndarray, result: SegmentationResult) 
     disputes = {}
     for index, item in enumerate(detections):
         outline = outlines[index]
-        if (not item.geometry_valid or item.review_reasons or item.mask.get("detector_source") != "contrast_region"
-                or (item.mask.get("boundary_evidence") or {}).get("score", 1) >= .70
+        source = item.mask.get("detector_source")
+        edge = item.mask.get("boundary_evidence") or {}
+        if require_clear_rim:
+            carrier = (source == "edge_contour" and item.mask.get("source") == "classical_border_quad"
+                       and edge.get("score", 0) >= .90)
+        else:
+            carrier = source == "contrast_region" and edge.get("score", 1) < .70
+        if (not item.geometry_valid or item.review_reasons or not carrier
                 or len(outline) != 4 or not cv2.isContourConvex(outline)):
             continue
         owners = {other: overlap for other, shape in enumerate(outlines) if other != index
                   and (overlap := normalized_polygon_overlap(outline, shape)).first_containment >= .10}
         if (len(owners) != 2 or not owners.keys() <= model_indices
-                or min(match.second_containment for match in owners.values()) < .80
-                or sum(match.first_containment for match in owners.values()) < .88):
+                or min(match.second_containment for match in owners.values()) < (.985 if require_clear_rim else .80)
+                or sum(match.first_containment for match in owners.values()) < (.78 if require_clear_rim else .88)):
             continue
         first, second = owners
         if normalized_polygon_overlap(outlines[first], outlines[second]).iou > .005:
@@ -3656,22 +3665,32 @@ def _flag_conflicting_film_grids(image: np.ndarray, result: SegmentationResult) 
             if seam is None:
                 continue
             broad = order_quad_cyclic(normalized_vertices_to_pixels(outline, width, height))
-            _, sides, _ = refine_print_boundary(image, broad)
+            markers = {"film_grid_review_seam": _normalized_polygon(seam, width, height)}
+            if require_clear_rim:
+                peers = [normalized_vertices_to_pixels(shape, width, height) for other, shape in enumerate(outlines)
+                         if other not in {index, first, second} and len(shape) >= 3]
+                rim = transparent_film_rim(image, broad, seam, peers)
+                if rim is None:
+                    continue
+                markers["film_grid_review_rim"] = _normalized_polygon(rim, width, height)
+            else:
+                _, sides, _ = refine_print_boundary(image, broad)
+                if sum(side["support"] < .40 for side in sides.values()) < 2:
+                    continue
         except (cv2.error, ValueError):
             continue
-        if sum(side["support"] < .40 for side in sides.values()) >= 2:
-            disputes[index, first, second] = _normalized_polygon(seam, width, height)
+        disputes[index, first, second] = markers
     degree = Counter(i for group in disputes for i in group)
     markers = {}
-    for group, line in disputes.items():
+    for group, evidence in disputes.items():
         if all(degree[index] == 1 for index in group):
-            markers.update(dict.fromkeys(group, line))
+            markers.update(dict.fromkeys(group, evidence))
     if not markers:
         return result
     updated = detections.copy()
-    for index, seam in markers.items():
+    for index, evidence in markers.items():
         item = updated[index]
-        updated[index] = replace(item, mask={**item.mask, "film_grid_review_seam": seam},
+        updated[index] = replace(item, mask={**item.mask, **evidence},
                                  review_reasons=[FILM_GRID_REVIEW, *item.review_reasons])
     return SegmentationResult(updated, result.metadata)
 
@@ -3891,9 +3910,9 @@ def segment_album_page(
     protected_regions: list[dict] | None = None,
 ) -> SegmentationResult:
     source = source_image if source_image is not None and source_image.shape == image.shape else None
+    evidence_source = source if source is not None else image
     result = _segment_album_page(image, settings, source)
     if settings.enable_classical_segmentation_fallback:
-        evidence_source = source if source is not None else image
         if settings.enable_precise_photo_crops and (
             result.metadata.get("fallback_used") or (result.metadata.get("model_set_risk") or {}).get("risky")
         ):
@@ -3917,9 +3936,13 @@ def segment_album_page(
     if not settings.enable_precise_photo_crops:
         return result
     if model_path is None:
-        result = _refine_source_contours(source if source is not None else image, result, settings, protected_regions)
-        if source is not None and settings.enable_classical_segmentation_fallback:
-            result = _defer_dark_album_claims(source, result, settings.yolo_confidence_threshold)
+        result = _refine_source_contours(evidence_source, result, settings, protected_regions)
+        if settings.enable_classical_segmentation_fallback:
+            if source is not None:
+                result = _defer_dark_album_claims(source, result, settings.yolo_confidence_threshold)
+            # The rim is a count-review annotation. Add it after ownership
+            # and backing checks that use review reasons to skip proposals.
+            result = _flag_conflicting_film_grids(evidence_source, result, require_clear_rim=True)
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
@@ -3955,15 +3978,18 @@ def segment_album_page(
         details = {"model_sha256": digest, "refined_detections": sum(
             original is not refined for original, refined in zip(result.detections, updated, strict=True)
         )}
-        return SegmentationResult(updated, {**result.metadata, "visible_mask_refinement": details})
+        result = SegmentationResult(updated, {**result.metadata, "visible_mask_refinement": details})
     except UnresolvedMaskOwnership:
-        return SegmentationResult(result.detections, {
+        result = SegmentationResult(result.detections, {
             **result.metadata, "visible_mask_refinement": {"ownership_unresolved": True},
         })
     except Exception as exc:  # ONNX provider errors preserve the initial proposals for review.
-        return SegmentationResult(result.detections, {
+        result = SegmentationResult(result.detections, {
             **result.metadata, "visible_mask_refinement": {"error": str(exc)},
         })
+    if settings.enable_classical_segmentation_fallback:
+        result = _flag_conflicting_film_grids(evidence_source, result, require_clear_rim=True)
+    return result
 
 
 def _segment_album_page(image: np.ndarray, settings: Settings, source: np.ndarray | None = None) -> SegmentationResult:

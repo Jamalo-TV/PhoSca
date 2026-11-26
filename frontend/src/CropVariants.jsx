@@ -14,6 +14,7 @@ export const scannerBackingHint = "Prüfe am Original, ob die Markierung einen A
 export const filmGridReason = "FILM_GRID_REVIEW";
 export const filmGridHint = "Gehört der Vorschlag zur Negativhülle, wähle «Falsches Objekt». Liegt dort ein Papierabzug, setze unter «Ganzer Abzug» die Ecken an seinen Papierrand.";
 export const filmGridCountHint = "Prüfe die Vorschläge beidseits der türkis gestrichelten Linie im Original. Sind dort Papierabzüge oder Teile einer Negativhülle markiert?";
+export const filmGridRimHint = "Die gepunktete Linie markiert einen möglichen durchsichtigen Saum. Prüfe dort, ob der Untergrund durchscheint. Eine gemeinsame Schutzfolie kann auch mehrere Papierabzüge bedecken.";
 export const countGroupReviewError = "Die Vorschläge haben sich geändert. Prüfe die aktualisierte Albumseite.";
 export const paperJoinCountHint = "Die gestrichelten Abschnitte zeigen Materialwechsel am äusseren Rand. Prüfe, ob die beiden Vorschläge zu einem Gegenstand gehören und ob er ein Fotoabzug ist.";
 export const paperJoinReason = "PAPER_JOIN_REVIEW";
@@ -201,7 +202,7 @@ const groupReviewLabels = {
   film: {
     open: "Negativhülle prüfen",
     confirm: "Drei Vorschläge aus der Abzugsliste nehmen",
-    prompt: "Prüfe im Original, ob alle drei türkis markierten Vorschläge zur Negativhülle gehören.",
+    prompt: "Prüfe im Original, ob alle drei türkis markierten Vorschläge zur Negativhülle gehören. Bei einem Papierabzug oder bei Unsicherheit wähle «Abbrechen».",
   },
   paper: {
     open: "Gemeinsame Papierkante prüfen",

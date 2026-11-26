@@ -66,6 +66,21 @@ test("a film divider appears once while multiple active proposals still mark it"
   ]), []);
 });
 
+test("only a rim shared by all of the active film proposals is displayed", () => {
+  const line = [{ x: .1, y: .48 }, { x: .7, y: .49 }];
+  const rim = [{ x: .04, y: .2 }, { x: .03, y: .8 }];
+  const rows = ["a", "b", "c"].map(id => ({ id, confidence: .7,
+    segmentation_mask: { film_grid_review_seam: line, film_grid_review_rim: structuredClone(rim) } }));
+  const [agreed] = getFilmGridReviewSeams(rows);
+  assert.deepEqual(agreed.rim, rim);
+  assert.deepEqual(agreed.photoIds, new Set(["a", "b", "c"]));
+
+  rows[1].segmentation_mask.film_grid_review_rim = [{ x: -.02, y: .2 }, rim[1]];
+  const [disputed] = getFilmGridReviewSeams(rows);
+  assert.equal(disputed.rim, null);
+  assert.deepEqual(disputed.photoIds, agreed.photoIds);
+});
+
 test("a shared capture corner shows only its measured sides while proposals are unresolved", () => {
   const traces = [[{ x: 0, y: .65 }, { x: .6, y: .66 }], [{ x: .6, y: .66 }, { x: .59, y: 1 }]];
   const first = { id: "a", segmentation_confidence: .7, segmentation_mask: { capture_split_review_traces: traces } };

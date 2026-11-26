@@ -109,13 +109,23 @@ Geometrie separat.
 Bei drei verknüpften Vorschlägen für eine mögliche Negativhülle öffnet
 **Negativhülle prüfen** eine Auswahl in der Anzahlprüfung. Desktop und
 Mobile markieren die drei Konturen türkis auf der Originalseite.
+Die gestrichelte Linie zeigt den gemessenen Zwischenraum im Filmraster.
+Bei einer klaren Aussenkante sucht PhoSca zusätzlich nach einem
+durchsichtigen Saum neben dem hellen Träger. Dafür müssen die Textur
+des Untergrunds auf beiden Seiten des Saums zusammenpassen und ihre
+Kontraste unter dem Saum schwächer werden. Ein erkannter Nachbar im
+Messstreifen oder sichtbarer Untergrund zwischen den beiden Rasterteilen
+verhindert diesen zusätzlichen Hinweis. Die gepunktete Linie markiert
+den möglichen Saum. Eine gemeinsame Schutzfolie kann ebenso echte
+Papierabzüge bedecken. Prüfe daher alle drei markierten Vorschläge am
+Original und brich bei Unsicherheit ab.
 Bestätigt der Reviewer, dass alle drei zur Hülle gehören, speichert
 PhoSca einen gemeinsamen Entscheid und entfernt die drei Vorschläge
 aus der aktiven Abzugsliste. Die vorherigen Masken und Quellvorschauen
 bleiben in der Geometrieprüfung nachvollziehbar. Die Anzahlprüfung
 bleibt auf derselben Seite offen. Für einen daneben liegenden
 Papierabzug gelten weiterhin seine eigenen Konturen und Zuschnittregeln.
-[Beispiel und Gegenprobe](data/evaluation/README.md#confirm-a-negative-sleeve-in-count-review)
+[Beispiel auf der Aufnahme in Originalauflösung](data/evaluation/README.md#review-a-clear-sleeve-rim-on-the-native-contact-page)
 
 Bei zwei strittigen Vorschlägen kann PhoSca kurze, am Original
 gemessene Randabschnitte beidseits der vermuteten Teilung einzeichnen.

@@ -383,6 +383,19 @@ remain source leads beside the paired-geometry preflight.
 [Princeton record](https://artmuseum.princeton.edu/art/collections/objects/129854) ·
 [Smithsonian record](https://collections.si.edu/search/detail/edanmdm:nmaahc_2020.10.3?print=yes)
 
+Third-party catalogues identify the exact Suna reproduction `02032` and
+the Venice control print `02023`. The Suna catalogue links a JPEG
+republication and attributes the TIFF master to the Library of Congress.
+The workspace requests for that JPEG and the Venice archive index
+returned HTTP 403. No native leaf and print files could be hashed there.
+Figueres lists five physical Rubaudonadeu volumes and offers a Public
+Domain Mark TIFF for volume I print `0000299293` / `J.M.C. 1167`, an
+18 × 13 cm albumen print. Its TIFF request returned HTTP 403. A separate
+native whole-leaf acquisition for that print is still unverified.
+[Suna index](https://ps-spb2008.narod.ru/murm_suna1.htm) ·
+[Venice catalogue](https://prokudin-gorsky.org/gallery/photo/1176) ·
+[Figueres album catalogue](https://www.bibgirona.cat/regira/municipis/figueres/colleccions/album-rubaudonadeu)
+
 The source-only preflight at `eccc049` rechecked seven tracked drafts.
 On this workspace it reported 26 missing pinned page rasters and 12
 missing independent scan assets. The drafts account for 15 final-split
@@ -4509,6 +4522,78 @@ The frozen detector replay retains all 18 instances. The seeded
 geometry replay retains 11/11 whole-print and 12/12 motif passes. The
 Golden development replay retains 29/29 instances. The detector,
 geometry, per-mode and availability summaries match the previous runs.
+
+### Review a clear sleeve rim on the native contact page
+
+The native 4080 × 3072 SteveKM development capture shows a 35-frame
+paper contact print on the right and a negative sleeve on the left.
+The mixed-legacy detector with classical fallback returns four active
+proposals. The three left proposals are the sleeve carrier contour and
+two model masks for groups of film strips. The carrier has boundary
+score 0.9616, the children have scores 0.7016 and 0.6737, and their
+footprints cover 81.48% of the carrier. The previous weak-contour path
+missed this group. The real paper print has draft mask IoU 0.99472.
+
+Multipanel revision 11 adds a separate path for a strongly supported
+classical contour with exactly two substantially contained model
+claims. The claims must be disjoint and account for at least 78% of
+the carrier. The existing grid test verifies spacing and perforations
+across the disputed divider. The new path also samples 384 stations
+along each eligible carrier side perpendicular to the divider. Eight
+blocks must agree on a weak outward lightness step at a common offset.
+Across it, backing texture must correlate at least 0.85 and keep
+55% to 93% of its outer contrast inside the possible lip. Wider
+plateaus must keep the same lightness step. The pale interior and
+exposed exterior need distinct chroma. A known neighboring mask in
+the measurement corridor vetoes that side. An exposed backing band,
+or a uniform midtone band centred on the divider, vetoes the group.
+Only one eligible rim can supply the hint.
+The marker is added after ownership and backing checks on the final
+proposal list, so it cannot keep an otherwise deferred candidate active.
+
+On the native sample the dashed divider joins `(353.5, 1470.5)` and
+`(1953.0, 1470.5)`. The dotted rim joins `(179.08, 530.24)` and
+`(161.38, 2598.89)`. At the rim the wider lightness step is 5.88
+OpenCV Lab L levels, texture correlation is 0.940 and the inner-to-outer
+contrast ratio is 0.862. An independently fitted trace confirms this
+optical transition. The gap to the neighboring paper is 36.61 native
+pixels at the median. The dashed and dotted lines locate separate
+features on the original.
+
+Bare backing, a narrow surface reflection, a supplied neighbor and
+five-pixel visible backing gaps are regression controls. With fixed
+native proposals the colour veto catches 3- and 6-pixel wood gaps on
+the decoded and JPEG75 images. A two-pixel wood gap still passes
+after JPEG75. The added lightness test catches all eight decoded and
+JPEG75 treatments of a 2, 3, 6 or 11 pixel grey underlay. All eight
+matching pale bands preserve the cue. A simulated clear protector
+with two real paper prints and a pale seam produces the same witness.
+Across 144 fixed-proposal controls, the marker appears in all six
+textured sleeve treatments and abstains in all six untextured ones.
+It abstains in 72 amber, grey and tinted gap treatments. It still
+appears in all 60 pale, pale-with-glare and printed-divider controls.
+The group remains a review decision. All four detections keep their
+geometries, and the paper on the right keeps its own nested suggestion.
+
+Desktop and mobile show the same three proposals and source lines.
+Cancelling the selection preserves the current count. Confirming the
+sleeve leaves one active paper print and records the three exclusions
+in one review event. The detector comparison is still 1 true positive,
+3 false proposals and 0 missed prints before a human decision.
+The right whole-print footprint IoU stays at 0.99450 against the
+development outline and its motif still needs a separate boundary.
+The two named downloads and legacy cropped alias stay held.
+Paired evaluation against `9e39961` preserves detection and crop metrics
+in seven runs. This includes the frozen 18/18 detections, 11/11 seeded
+whole-print and 12/12 seeded motif recoveries, 29/29 Golden matches, and
+48/48 matches at the 12 rotated and encoded Golden 26 views. Only the
+three sleeve proposals gain a review reason on the native contact page.
+The added review stage measures 162 ms median and 218 ms p95 on
+25 warm calls for this source, with one OpenCV thread and concurrent
+verification load. Other pages skip the pixel measurements unless a
+strong carrier and two disjoint model claims qualify.
+Paired source, benchmark and review receipts are local under
+`runs/crop-quality/native-film-sleeve/`.
 
 ### Compare the whole contact print with its counted fragments
 
