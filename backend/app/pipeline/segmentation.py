@@ -26,7 +26,10 @@ from app.pipeline.fragmented_prints import (
     SOURCE_FRAGMENT_GROUP_REVIEW, SOURCE_FRAGMENT_PROPOSAL,
     measure_extended_print_outline, measure_fragmented_print, suggest_dark_mounted_outline, suggest_fragmented_outline,
 )
-from app.pipeline.fusion_ownership import _covered_area, unsupported_fallback_ownership
+from app.pipeline.fusion_ownership import (
+    NESTED_FALLBACK_CONTOUR, NESTED_FALLBACK_CONTOUR_REVIEW, _covered_area,
+    nested_fallback_contour_spans, unsupported_fallback_ownership,
+)
 from app.pipeline.geometry import (
     PolygonOverlap,
     normalized_polygon_overlap,
@@ -1255,6 +1258,83 @@ def _fusion_score(detection: SegmentationDetection, boundary: dict[str, float]) 
     return round(0.62 * boundary["score"] + 0.28 * detection.confidence + 0.10 * geometry_score, 4)
 
 
+def _defer_nested_fallback_contours(
+    source: np.ndarray, selected: list[SegmentationDetection],
+) -> tuple[list[SegmentationDetection], list[dict]]:
+    models = []
+    contours = []
+    for index, item in enumerate(selected):
+        if not item.geometry_valid or item.review_reasons or item.mask.get("warp_quad"):
+            continue
+        fusion = item.mask["fusion"]
+        detector = item.mask.get("detector_source")
+        score = fusion["boundary_evidence"]["score"]
+        if (fusion["proposal_families"] == ["model"] and detector == "yolo_onnx"
+                and item.mask.get("source") == "yolo_seg_mask" and item.confidence >= .86 and score >= .78):
+            models.append(index)
+        if (fusion["proposal_count"] == 1 and fusion["proposal_families"] == ["classical"]
+                and detector == "edge_contour" and item.confidence >= .60 and score >= .65):
+            contours.append(index)
+    if not models or len(contours) < 2:
+        return selected, []
+
+    groups: dict[int, list[tuple[int, float]]] = {index: [] for index in models}
+    polygons = [_detection_polygon(item) for item in selected]
+    modeled = [index for index, item in enumerate(selected) if "model" in item.mask["fusion"]["proposal_families"]]
+    for index in contours:
+        owners = []
+        for parent in models:
+            if _normalized_box_overlap(selected[index].bounding_box, selected[parent].bounding_box)[2] < .95:
+                continue
+            overlap = normalized_polygon_overlap(polygons[index], polygons[parent])
+            if overlap.first_containment >= .975:
+                owners.append((parent, overlap.second_containment))
+        if len(owners) != 1:
+            continue
+        parent, fraction = owners[0]
+        if not .25 <= fraction <= .58 or any(
+            _normalized_box_overlap(selected[index].bounding_box, selected[peer].bounding_box)[2] >= .15
+            and normalized_polygon_overlap(polygons[index], polygons[peer]).first_containment >= .15
+            for peer in modeled if peer != parent
+        ):
+            continue
+        groups[parent].append((index, fraction))
+
+    height, width = source.shape[:2]
+    deferred = {}
+    held = set()
+    for parent, children in groups.items():
+        if len(children) != 2:
+            continue
+        (first, first_fraction), (second, second_fraction) = children
+        if not .65 <= first_fraction + second_fraction <= .95:
+            continue
+        if normalized_polygon_overlap(polygons[first], polygons[second]).iou > .035:
+            continue
+        try:
+            spans = nested_fallback_contour_spans(source, polygons[parent], [polygons[first], polygons[second]])
+        except (cv2.error, ValueError):
+            continue
+        if not spans:
+            continue
+        held.add(parent)
+        parent_id = selected[parent].mask["fusion"]["cluster_id"]
+        for index, span in zip((first, second), spans, strict=True):
+            deferred[index] = {
+                "id": selected[index].mask["fusion"]["cluster_id"],
+                "reason": NESTED_FALLBACK_CONTOUR,
+                "parent_cluster_id": parent_id,
+                "polygon": _normalized_polygon(
+                    order_quad_cyclic(normalized_vertices_to_pixels(polygons[index], width, height)), width, height,
+                ),
+                "interior_edge_traces": [_normalized_polygon(span, width, height)],
+            }
+    return [
+        replace(item, review_reasons=[NESTED_FALLBACK_CONTOUR_REVIEW]) if index in held else item
+        for index, item in enumerate(selected) if index not in deferred
+    ], list(deferred.values())
+
+
 def fuse_candidate_evidence(
     image: np.ndarray,
     model_detections: list[SegmentationDetection],
@@ -1402,6 +1482,12 @@ def fuse_candidate_evidence(
             }
         )
 
+    if ownership_source is not None:
+        selected, nested = _defer_nested_fallback_contours(ownership_source, selected)
+        for offer in nested:
+            cluster_metadata[offer["id"]].update(decision="deferred_for_count_review", selection_reason=offer["reason"])
+        deferred.extend(nested)
+        deferred.sort(key=lambda offer: offer["id"])
     selected.sort(key=lambda detection: (detection.bounding_box["y1"], detection.bounding_box["x1"]))
     return selected, {
         "strategy": "mask_aware_staged_evidence_v1",

@@ -10,14 +10,15 @@ import {
   countGroupReviewError, CountGroupReview, crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint,
   filmGridReason, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
-  deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
+  deferredPrintHint, getDeferredPrintEvidence, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview,
+  nestedFallbackCropHint, nestedFallbackProposal, nestedFallbackReason, NestedFallbackReviewHint,
   scannerBackingHint, scannerBackingReason,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
-  darkBackingConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors, getDarkBackingEvidence,
+  standalonePrintConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
@@ -120,10 +121,15 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome, uplo
   </main></div>;
 }
 
+function nestedFallbackParentRequiresReview(fullPrint, reviewReasons) {
+  return fullPrint?.status === "review_needed" && reviewReasons?.includes(nestedFallbackReason);
+}
+
 function DetectionOverlay({ item, editable = false, openPaperOutline, countOutlines, captureSplitGroups, filmGridGroups,
   selectedCountGroup, paperGridGroups, paperJoinGroups, onSaved, onProtectionBlocked, deferredDraft, onDeferredDraftClose }) {
   const sourceFragmentDraft = deferredDraft?.reason === sourceFragmentProposal;
   const darkBackingDraft = deferredDraft?.reason === darkBackingProposal;
+  const standaloneDraft = darkBackingDraft || deferredDraft?.reason === nestedFallbackProposal;
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
   const [showMissingEdges, setShowMissingEdges] = useState(false);
@@ -298,7 +304,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       setSavedOrientation(savedDegrees);
       const cropModes = getCropModes(saved);
       setMotifQuad(cyclicReviewQuad(sanitizeReviewPolygon(getStoredMotifQuad(saved, cropModes?.image_only))));
-      const held = captureRequiresReview(cropModes?.full_print) || paperOutlineRequiresReview(cropModes?.full_print);
+      const held = captureRequiresReview(cropModes?.full_print) || paperOutlineRequiresReview(cropModes?.full_print)
+        || nestedFallbackParentRequiresReview(cropModes?.full_print, item.payload?.review_reasons);
       const cropUrl = editingMotif ? saved.crop_download_urls?.image_only
         : !held && `/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`;
       setSavedCropUrl(cropUrl || "");
@@ -341,21 +348,22 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       points={polygon.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="10 6" pointerEvents="none" />
   )) : !deferredDraft && deferredProposals.map(({ id, visible_polygon: polygon, uncertain_edge: uncertainEdge, reason }, index) => (
-    <g key={id} aria-label={reason === darkBackingProposal ? `Dunkle Fläche ${index + 1}` : "Möglicher Abzug"}
+    <g key={id} aria-label={reason === darkBackingProposal ? `Dunkle Fläche ${index + 1}`
+      : reason === nestedFallbackProposal ? `Innenkontur ${index + 1}` : "Möglicher Abzug"}
       stroke="#7e22ce" strokeWidth="6" pointerEvents="none">
       {polygon.map(({ x, y }, side) => {
         const next = polygon[(side + 1) % polygon.length];
         return <line key={side} x1={x * 1000} y1={y * 1000} x2={next.x * 1000} y2={next.y * 1000}
           strokeDasharray={side === uncertainEdge ? "4 10" : "18 10"} />;
       })}
-      {reason === darkBackingProposal && deferredProposals.length > 1 && (
+      {(reason === darkBackingProposal || reason === nestedFallbackProposal) && deferredProposals.length > 1 && (
         <text className="dark-backing-proposal-label" x={Math.min(polygon[0].x * 1000 + 12, 945)}
           y={Math.max(polygon[0].y * 1000 - 12, 35)}>{`?${index + 1}`}</text>
       )}
     </g>
   ));
-  const backingEvidenceOffers = deferredDraft ? [deferredDraft] : deferredProposals;
-  const backingOverlay = backingEvidenceOffers.flatMap((proposal) => getDarkBackingEvidence(proposal).flatMap(
+  const deferredEvidenceOffers = deferredDraft ? [deferredDraft] : deferredProposals;
+  const deferredEvidenceOverlay = deferredEvidenceOffers.flatMap((proposal) => getDeferredPrintEvidence(proposal).flatMap(
     ({ key, label, color, dash, traces }) => traces.map(([first, last], index) => (
       <line key={`${proposal.id}-${key}-${index}`} aria-label={label}
         x1={first.x * 1000} y1={first.y * 1000} x2={last.x * 1000} y2={last.y * 1000}
@@ -473,7 +481,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           )}
           <text x={box.x1 * 1000 + 12} y={box.y1 * 1000 + 38}>{index + 1}</text>
         </g>)}
-        {nestedOverlay}{deferredOverlay}{backingOverlay}{fragmentCountOverlay}{captureSplitOverlay}{countGroupOverlay}
+        {nestedOverlay}{deferredOverlay}{deferredEvidenceOverlay}{fragmentCountOverlay}{captureSplitOverlay}{countGroupOverlay}
         {filmGridOverlay}{paperGridOverlay}{paperJoinOverlay}
         {albumMark && <rect x={albumMark.bounds.x1 * 1000} y={albumMark.bounds.y1 * 1000}
           width={(albumMark.bounds.x2 - albumMark.bounds.x1) * 1000} height={(albumMark.bounds.y2 - albumMark.bounds.y1) * 1000}
@@ -524,9 +532,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     {nestedOutlines.length > 0 && <p className="quad-hint">{nestedPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
     {!darkBackingDraft && deferredProposals.some(({ reason }) => reason === sourceFragmentProposal)
       && <p className="quad-hint">{sourceFragmentCountHint}</p>}
-    {!deferredDraft && deferredProposals.some(({ reason }) => reason !== sourceFragmentProposal && reason !== darkBackingProposal)
+    {!deferredDraft && deferredProposals.some(({ reason }) => reason !== sourceFragmentProposal
+      && reason !== darkBackingProposal && reason !== nestedFallbackProposal)
       && <p className="quad-hint">{deferredPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
-    <DarkBackingEvidenceLegend proposals={backingEvidenceOffers} mobile />
+    <DarkBackingEvidenceLegend proposals={deferredEvidenceOffers} mobile />
+    <NestedFallbackReviewHint proposals={deferredEvidenceOffers} draft={Boolean(deferredDraft)} mobile id="mobile-nested-fallback-count-hint" />
     {measurementPage && measurementPage === item.page_id && <EdgeMeasurement key={item.page_id} pageId={item.page_id}
       onClose={() => setMeasurementPage(null)} onMeasured={(traces) => setMeasuredEdge({ pageId: item.page_id, traces })} />}
     {editable && <>
@@ -542,6 +552,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         && <p className="quad-hint">{paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint}</p>}
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
+      {!reviewedNonPrint && item.payload?.review_reasons?.includes(nestedFallbackReason)
+        && <p className="quad-hint" id="mobile-nested-fallback-crop-hint">{nestedFallbackCropHint}</p>}
       {printEdgeReviewHint && <p className="quad-hint" id="mobile-print-edge-review-hint">{printEdgeReviewHint}</p>}
       {!editingMotif && <NeighborContentReview fullPrint={fullPrintMode} sourceUrl={item.preview_url} />}
       {albumMark && <AlbumPageMarkReview mark={albumMark} sourceUrl={item.preview_url}
@@ -599,12 +611,12 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       {deferredDraft && <label className="mounted-print-fragment-review">
         <input type="checkbox" checked={confirmDeferredDraft} disabled={saving}
           onChange={event => setConfirmDeferredDraft(event.target.checked)} />
-        {darkBackingDraft ? darkBackingConfirmation : "Beide violett markierten Teilvorschläge gehören zu diesem Abzug."}
+        {standaloneDraft ? standalonePrintConfirmation : "Beide violett markierten Teilvorschläge gehören zu diesem Abzug."}
       </label>}
       <button className="save-crop" onClick={save} disabled={saving
         || (deferredDraft && !confirmDeferredDraft)
         || (editingMotif ? !validMotif : (!validQuad || Boolean(sizeError) || crossingNeedsCorrection))}>
-        <Save size={18}/>{saving ? "Richtet das Bild …" : darkBackingDraft ? "Als Abzug erfassen" : sourceFragmentDraft ? "Als einen Abzug speichern"
+        <Save size={18}/>{saving ? "Richtet das Bild …" : standaloneDraft ? "Als Abzug erfassen" : sourceFragmentDraft ? "Als einen Abzug speichern"
           : editingMotif ? "Motivzuschnitt speichern" : "Viereck speichern & geraderichten"}
       </button>
       {deferredDraft && <button type="button" className="magnifier-toggle" disabled={saving}
@@ -774,10 +786,11 @@ function CropReview({ albumId, goHome }) {
   const fullPrint = item?.payload?.crop_modes?.full_print;
   const captureReviewPending = type === "geometry" && captureRequiresReview(fullPrint);
   const paperOutlinePending = type === "geometry" && paperOutlineRequiresReview(fullPrint);
+  const nestedFallbackPending = type === "geometry" && nestedFallbackParentRequiresReview(fullPrint, item?.payload?.review_reasons);
   const motifReviewPending = type === "geometry" && item?.payload?.motif_review_pending;
   const rejectedDraftPending = type === "geometry" && item?.id === blockedCropTaskId;
   const approvalHint = captureReviewPending || paperOutlinePending ? "mobile-print-edge-review-hint"
-    : motifReviewPending ? "mobile-motif-review-hint" : undefined;
+    : nestedFallbackPending ? "mobile-nested-fallback-crop-hint" : motifReviewPending ? "mobile-motif-review-hint" : undefined;
   const deferredProposals = getDeferredPrintProposals(item?.payload?.deferred_print_proposals);
   const activeDeferredDraft = deferredDraft?.pageId === item?.id ? deferredDraft : null;
   const countOutlines = type === "segmentation" ? getFragmentReviewOutlines(item?.payload?.detections || []) : [];
@@ -840,12 +853,13 @@ function CropReview({ albumId, goHome }) {
       }) } : current);
     }
     setMessage(captureRequiresReview(cropModes?.full_print) || paperOutlineRequiresReview(cropModes?.full_print)
+      || nestedFallbackParentRequiresReview(cropModes?.full_print, item.payload?.review_reasons)
       ? "Vier Ecken gespeichert. Die Papierkante bleibt in Prüfung."
       : saved.motif_review_pending ? "Vier Ecken gespeichert. Der Motivzuschnitt bleibt in Prüfung."
         : "Vier Ecken gespeichert und Perspektive korrigiert");
   }
   async function record(value) {
-    if (!item || submitting || (value === "correct" && rejectedDraftPending)) return;
+    if (!item || submitting || (value === "correct" && (rejectedDraftPending || nestedFallbackPending))) return;
     setSubmitting(true);
     setAnswerError("");
     const metadata = { page_id: item.page_id, ui: "mobile-v2" };
@@ -907,7 +921,7 @@ function CropReview({ albumId, goHome }) {
     {answerError && <p role="alert">{answerError}</p>}
     {paperGridConfirmed && !activeDeferredDraft && <p role="status" id="mobile-paper-grid-count-result">{paperGridCountSaved}</p>}
     {savedDeferredDraft && savedDeferredDraft.pageId === item?.id && !activeDeferredDraft && <p role="status">
-      {savedDeferredDraft.reason === darkBackingProposal ? "Abzug erfasst." : "Ein gemeinsamer Abzug gespeichert."}
+      {savedDeferredDraft.reason === sourceFragmentProposal ? "Ein gemeinsamer Abzug gespeichert." : "Abzug erfasst."}
       {" Die Papierkanten bleiben in Prüfung."}
     </p>}
     {item ? <>
@@ -920,14 +934,16 @@ function CropReview({ albumId, goHome }) {
         onProtectionBlocked={setBlockedCropTaskId} />
       {!activeDeferredDraft && <>
       {deferredProposals.map((proposal, index) => {
-        if (proposal.reason !== sourceFragmentProposal && proposal.reason !== darkBackingProposal) return null;
+        if (![sourceFragmentProposal, darkBackingProposal, nestedFallbackProposal].includes(proposal.reason)) return null;
         return <button key={proposal.id} className="magnifier-toggle" type="button"
+          aria-describedby={proposal.reason === nestedFallbackProposal ? "mobile-nested-fallback-count-hint" : undefined}
           disabled={submitting} onClick={() => {
             const polygon = cyclicReviewQuad(sanitizeReviewPolygon(proposal.polygon));
             if (polygon) setDeferredDraft({ ...proposal, polygon, revision: item.payload.photo_count_revision,
               pageId: item.id, requestId: crypto.randomUUID() });
           }}>
           {proposal.reason === darkBackingProposal ? `Dunkle Fläche prüfen${deferredProposals.length > 1 ? ` (${index + 1})` : ""}`
+            : proposal.reason === nestedFallbackProposal ? `Innenkontur ${index + 1} prüfen`
             : "Möglichen gemeinsamen Abzug prüfen"}
         </button>;
       })}
@@ -951,7 +967,8 @@ function CropReview({ albumId, goHome }) {
         {cropAnswers[type].map(([value,label]) => (
           <button key={value} className={value === "correct" ? "good" : ""}
             disabled={submitting || (value === "correct"
-              && (captureReviewPending || paperOutlinePending || motifReviewPending || rejectedDraftPending || selectedCountGroup))}
+              && (captureReviewPending || paperOutlinePending || nestedFallbackPending || motifReviewPending
+                || rejectedDraftPending || selectedCountGroup))}
             aria-describedby={value === "correct" ? approvalHint : undefined}
             onClick={() => record(value)}>
             {value === "correct" && (deferredProposals.length || item.payload?.missing_print_edge_traces?.length

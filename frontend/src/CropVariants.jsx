@@ -33,8 +33,13 @@ const scallopedOwnershipHint = "Prüfe am Original, ob im markierten Bereich ein
 export const adjacentPrintHint = "Prüfe am Original, ob der gestrichelte Bereich ein eigener Abzug ist und ob der helle Streifen zu seinem Papier gehört.";
 export const nestedPrintHint = "Prüfe am Original, ob der gestrichelte Bereich zum selben Papierabzug gehört. Bei einem Abzug bleiben alle Bilder im Motiv. Ergänze den Bereich, wenn dort ein eigener Abzug aufliegt.";
 export const deferredPrintHint = "Prüfe die violett gestrichelten Konturen am Original. Bestätige die Anzahl, wenn alle Abzüge bereits erfasst sind.";
+export const nestedFallbackProposal = "nested_fallback_contour";
+export const nestedFallbackReason = "NESTED_FALLBACK_CONTOUR_REVIEW";
+const nestedFallbackCountHint = "Die violetten Konturen liegen innerhalb erfasster Abzüge. Prüfe am Original, ob dort eigene Papierabzüge aufliegen. Sind alle Abzüge erfasst, bestätige die Anzahl.";
+export const nestedFallbackCropHint = "Prüfe am Original, ob innerhalb dieses Umrisses ein eigener Papierabzug aufliegt. Vergleiche beim Zuschneiden auch den Aussenrand des erfassten Abzugs.";
+const nestedFallbackDraftHint = "Erfasse die Innenkontur nur, wenn im Original ein eigener Papierabzug aufliegt. Setze die vier Ecken an seinen Papierrand.";
 export const darkBackingProposal = "possible_dark_album_backing";
-export const darkBackingConfirmation = "Hier liegt ein eigener Papierabzug.";
+export const standalonePrintConfirmation = "Hier liegt ein eigener Papierabzug.";
 export const darkBackingReviewErrors = {
   dark_backing_confirmation_required: "Bestätige, dass hier ein eigener Papierabzug liegt.",
   dark_backing_confirmation_stale: "Dieser Vorschlag hat sich geändert. Prüfe die aktualisierte Albumseite.",
@@ -43,6 +48,9 @@ export const darkBackingReviewErrors = {
 const darkBackingEvidence = [
   { key: "dark_backing_traces", label: "Ähnlich dunkles Material beidseits", color: "#0891b2", dash: [9, 4] },
   { key: "borrowed_edge_traces", label: "Bereich am hellen Rand eines Nachbarabzugs", color: "#c2410c", dash: [2, 4] },
+];
+const nestedFallbackEvidence = [
+  { key: "interior_edge_traces", label: "Zu prüfender Abschnitt innerhalb des Abzugs", color: "#0e7490", dash: [6, 4] },
 ];
 export const sourceFragmentProposal = "possible_source_fragmented_print";
 const sourceFragmentGroupReason = "SOURCE_FRAGMENT_GROUP_REVIEW";
@@ -110,18 +118,28 @@ export function getSourceEdgeTraces(traces) {
     && trace.every((point) => [point?.x, point?.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1))) : [];
 }
 
-export function getDarkBackingEvidence(proposal) {
-  if (proposal?.reason !== darkBackingProposal) return [];
-  return darkBackingEvidence.map((style) => ({
+export function getDeferredPrintEvidence(proposal) {
+  const styles = proposal?.reason === darkBackingProposal ? darkBackingEvidence
+    : proposal?.reason === nestedFallbackProposal ? nestedFallbackEvidence : [];
+  return styles.map((style) => ({
     ...style, traces: getSourceEdgeTraces(proposal[style.key]).filter((trace) => trace.length === 2),
   })).filter(({ traces }) => traces.length);
+}
+
+export function NestedFallbackReviewHint({ proposals, draft = false, mobile = false, id }) {
+  const nested = proposals.filter(({ reason }) => reason === nestedFallbackProposal);
+  if (!nested.length) return null;
+  return <p id={id} className={mobile ? "quad-hint" : "crop-editor-hint"}>
+    {draft ? nestedFallbackDraftHint : nestedFallbackCountHint}
+    {nested.some((proposal) => getDeferredPrintEvidence(proposal).length > 0) && " Türkis markiert zu prüfende Abschnitte innerhalb der Abzüge."}
+  </p>;
 }
 
 export function DarkBackingEvidenceLegend({ proposals, mobile = false }) {
   const backing = proposals.filter(({ reason }) => reason === darkBackingProposal);
   if (!backing.length) return null;
   const evidence = darkBackingEvidence.filter(({ key }) => backing.some(
-    (proposal) => getDarkBackingEvidence(proposal).some((style) => style.key === key),
+    (proposal) => getDeferredPrintEvidence(proposal).some((style) => style.key === key),
   ));
   return <div className={`dark-backing-evidence ${mobile ? "quad-hint" : "crop-editor-hint"}`}>
     <p>Prüfe am Original, ob die dunkle Fläche zur Albumseite gehört oder ein eigener Papierabzug ist.</p>

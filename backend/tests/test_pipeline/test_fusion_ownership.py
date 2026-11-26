@@ -7,11 +7,15 @@ import pytest
 from app.config import Settings
 from app.evaluation.crop_fixtures import _photograph
 from app.pipeline.enhancement import prepare_for_cutout
+from app.pipeline.fusion_ownership import (
+    NESTED_FALLBACK_CONTOUR, NESTED_FALLBACK_CONTOUR_REVIEW, nested_fallback_contour_spans,
+)
 from app.pipeline.image_ops import load_image
 from app.pipeline.segmentation import _make_detection, fuse_candidate_evidence
 
 
 _PAGE_04 = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_04.jpg"
+_PAGE_26 = _PAGE_04.with_name("page_26.jpg")
 # Native proposals captured from the mixed development checkpoint and the
 # classical detector. The image evidence, not these coordinates, decides ownership.
 _MODEL_OUTLINES = (
@@ -25,6 +29,13 @@ _FALLBACK_OUTLINES = (
     [(1797, 730), (2362, 724), (2559, 1919), (1855, 1818)],
     [(130, 1863), (1620, 729), (2356, 853), (2299, 1860)],
 )
+_NESTED_MODEL = [(1273, 843), (1175, 860), (625, 860), (617, 1187), (642, 1512), (615, 1812),
+                 (1302, 1787), (1302, 1274)]
+_NESTED_CHILDREN = (
+    [(617, 855), (1278, 848), (1181, 1249), (625, 1195)],
+    [(638, 1502), (1283, 1159), (1288, 1789), (647, 1770)],
+)
+_NEARBY_PRINT = [(400, 142), (1390, 125), (1395, 803), (431, 817)]
 
 
 def _proposals(image, turn):
@@ -92,3 +103,81 @@ def test_genuine_print_with_same_overlap_keeps_classical_candidate(outline_index
 
     assert len(selected) == 4
     assert not evidence.get("deferred_print_proposals")
+
+
+@pytest.mark.parametrize("added_paper", [False, True])
+def test_nested_fallback_contours_from_rotated_album_offer_individual_count_review(added_paper):
+    source = np.ascontiguousarray(np.rot90(load_image(_PAGE_26), 2))
+    encoded, jpeg = cv2.imencode(".jpg", source, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    assert encoded
+    source = cv2.imdecode(jpeg, cv2.IMREAD_COLOR)
+    height, width = source.shape[:2]
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+
+    def make(points, confidence, *, model=False):
+        item = _make_detection(
+            box={}, points=np.float32(points), confidence=confidence, image_width=width, image_height=height,
+            settings=settings, source="yolo_seg_mask" if model else "classical_border_quad",
+            detector_source="yolo_onnx" if model else "edge_contour",
+        )
+        assert item is not None
+        return item
+
+    parent = make(_NESTED_MODEL, .923, model=True)
+    first, second = [make(quad, confidence) for quad, confidence in zip(_NESTED_CHILDREN, (.753, .759), strict=True)]
+    neighbor = make(_NEARBY_PRINT, .873)
+    prepared, _ = prepare_for_cutout(source)
+    previous, baseline = fuse_candidate_evidence(prepared, [parent], [first, second, neighbor])
+    if added_paper:
+        # The same projected outline now covers a visible independent paper layer.
+        claimed = np.zeros(source.shape[:2], np.uint8)
+        cv2.fillConvexPoly(claimed, np.int32(_NESTED_CHILDREN[0]), 1)
+        source[claimed != 0] = np.clip(source[claimed != 0].astype(np.int16) + 20, 0, 255)
+    selected, evidence = fuse_candidate_evidence(
+        prepared, [parent], [first, second, neighbor], ownership_source=source,
+        model_evidence={0: baseline["clusters"][0]["boundary_evidence"]},
+    )
+    if added_paper:
+        assert selected == previous and not evidence.get("deferred_print_proposals")
+        return
+
+    assert [item.mask["polygon"] for item in selected] == [neighbor.mask["polygon"], parent.mask["polygon"]]
+    assert selected[1].review_reasons == [NESTED_FALLBACK_CONTOUR_REVIEW]
+    assert selected[1].mask == next(item.mask for item in previous if item.mask["fusion"]["cluster_id"] == 0)
+    offers = evidence["deferred_print_proposals"]
+    assert [(item["id"], item["parent_cluster_id"], item["reason"]) for item in offers] == [
+        (1, 0, NESTED_FALLBACK_CONTOUR), (2, 0, NESTED_FALLBACK_CONTOUR),
+    ]
+    assert all(len(item["polygon"]) == 4 and len(item["interior_edge_traces"][0]) == 2 for item in offers)
+    assert [evidence["clusters"][index]["decision"] for index in (1, 2)] == ["deferred_for_count_review"] * 2
+
+
+def test_an_oblique_one_pixel_gap_preserves_two_prints_with_inset_contours():
+    height, width = 1004, 1080
+    x, y = np.meshgrid(np.arange(width, dtype=np.float32), np.arange(height, dtype=np.float32))
+    noise = np.random.default_rng(408726).normal(0, 9, (50, 55)).astype(np.float32)
+    texture = cv2.resize(noise, (width, height)) + 8 * np.sin(x / 55) + 5 * np.sin(y / 63)
+    shading = 48 / (1 + np.exp((y - 552 + .21 * (x - 220)) / 42))
+    colors = np.stack([124 + texture + shading, 103 + .8 * texture + shading, 81 + .5 * texture + .4 * shading], axis=2)
+    source = np.full((height, width, 3), 221, np.uint8)
+    source[111:948, 225:856] = np.uint8(np.clip(colors[111:948, 225:856], 0, 255))
+    scale = np.float32([width - 1, height - 1])
+    parent = np.float32([[225, 111], [855, 111], [855, 947], [225, 947]]) / scale
+    children = [np.float32(points) / scale for points in (
+        [[225, 127], [855, 127], [855, 458], [225, 320]],
+        [[290, 698], [855, 560], [855, 947], [225, 947]],
+    )]
+
+    def jpeg75(image):
+        encoded, buffer = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 75])
+        assert encoded
+        return cv2.imdecode(buffer, cv2.IMREAD_COLOR)
+
+    assert len(nested_fallback_contour_spans(jpeg75(source), parent, children)) == 2
+    columns = np.arange(225, 856)
+    position = (columns - 540) / 315
+    for bow in (0, 8):
+        separated = source.copy()
+        rows = np.rint(530 + .075 * (columns - 540) + bow * (1 - position ** 2)).astype(int)
+        separated[rows, columns] = 221
+        assert not nested_fallback_contour_spans(jpeg75(separated), parent, children)

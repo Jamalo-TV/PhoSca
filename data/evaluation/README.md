@@ -361,9 +361,13 @@ candidates with exact leaf links include LOT 10333 no. 128
 returned HTTP 403 from the network proxy. The catalog records nominal dimensions and the
 rasters may include material beyond the print. Both boundaries and usage
 rights still need verification before inclusion in the final split.
+The public batch documentation maps item and resource JSON to declared
+scan files. The exact pair IDs above can be matched through the MARC
+mounted-page links before obtaining and hashing the intact TIFFs.
 [Digitization notes](https://www.loc.gov/pictures/collection/prok/digitizing.html) ·
 [LOT 10333 no. 128](https://www.loc.gov/pictures/item/2018679139/) ·
-[LOT 10334 no. 54](https://www.loc.gov/pictures/collection/prok/item/2018679194/)
+[LOT 10334 no. 54](https://www.loc.gov/pictures/collection/prok/item/2018679194/) ·
+[Public image batch workflow](https://libraryofcongress.github.io/data-exploration/loc.gov%20JSON%20API/Accessing%20images%20for%20analysis.html)
 
 The source-only preflight at `eccc049` rechecked seven tracked drafts.
 On this workspace it reported 26 missing pinned page rasters and 12
@@ -5316,6 +5320,99 @@ profile advances to revision 3. The paired API, source overlay, browser,
 benchmarks and control receipts are local under
 `runs/crop-quality/golden26-inward-edge/`.
 
+### Review two fallback contours inside a detected print
+
+The Golden 26 development image from the preceding case has four prints.
+Reversing both image axes and encoding with OpenCV JPEG75 gives
+`5f047fdc4abdf9c6d1d7fed3bee636b8a019364e5f55dab40ba35f1a725815c9`.
+The same mixed ONNX checkpoint still proposes all four prints. The
+original lower-left print falls to 0.726 model confidence and triggers
+classical fallback. In `53d9b84` three additional singleton classical
+proposals survived fusion. One crosses the frame and backing. Two
+outline parts of the original upper-right photo and close through its
+motif. They contain 35.58% and 45.61% of the model parent's area, with
+98.49% and 99.82% containment by the parent and 0.0037 mutual IoU.
+Disabling classical fallback removes all three extras on this derivative
+and reduces the mean mask IoU of the four matches from 0.98225 to 0.93449.
+
+Count review first requires a strong, active model-only outline with
+exactly two eligible classical contour children. Each must occupy
+25–58% of its area and be at least 97.5% contained. Another model
+claim of at least 15% child coverage vetoes the group. The children must
+occupy 65–95% of the parent together, with mutual IoU at most 0.035.
+The parent is then fitted at native resolution and must have a
+supported quadrilateral with at least 0.90 IoU to its original mask.
+For each child, at least 85% of stations on each of two distinct fitted
+sides must lie within five native pixels of different measured parent
+sides. The other sides must lack a strong independent fit. One side
+must run inside the measured parent, with a weak line fit and no
+coherent narrow transition across its tested original-pixel band.
+
+The search also tests for a gap through the parent in both directions,
+independently of the two proposed interior sides. It preserves native
+sampling depth across the gap. The vote requires opposed Lab contrast
+at both shoulders for pale or dark material, or a coherent bilateral
+color step toward a neutral centre. A straight, oblique or connected
+gently curved path must have original votes at 87% of stations and at
+least 76% per quarter. The curved path uses a bounded cubic fit to a
+connected band and checks the original votes within two raster rows.
+A reconstructed curve may bend at most 28 rows from its end-to-end
+line and must fit the nominated centres with p90 residual at most 2 rows.
+A detected gap or an independent supported interior edge keeps both
+children active. A thin overprint with identical content can still
+produce the same pixel evidence as a single sheet.
+
+The independent control set preserved all 54 straight and oblique gaps
+under lossless, JPEG75, keystone and skewed capture. The combined
+color step was needed for three compressed grey rails. A straight-line
+search detected 12 of 40 one- and three-pixel bowed controls. The
+connected-band check preserves all 40, including centre deflections
+of 2–12 source pixels. Six single-stock optical controls still show
+the two contours in review. The real neighboring lower-right print
+and the visible same-art overlay controls stay separate. An exact
+same-raster overlay alias stays ambiguous. On the real positive case,
+median warm one-thread process CPU time was 248 ms across eight runs.
+The whole-parent gap check accounted for 73 ms median in isolation.
+
+On the rotated source the two contours become separately selectable
+count proposals. Their original quadrilaterals are preserved. The
+turquoise lines mark 446.89 and 584.42 native pixels to inspect inside
+the parent. Four correct detections and one independent frame-crossing
+false proposal stay active. At IoU 0.85 precision on this derivative
+increases from 4/7 to 4/5 and recall stays at 4/4. The 12 encodings of
+this one development page contain 48 true matches and one active false
+proposal after the change. The original source remains at four of four.
+
+Multipart upload and reprocessing preserve the masks, perspective
+matrices, shapes, rendered full previews and preview JPEG bytes of all
+five retained records. Both named crop downloads and the legacy cropped
+download are held. The parent loses the earlier occlusion reason for
+the two removed active claims. Its content cutoff and aspect concerns
+persist, and the segmentation reason records the disputed count.
+The parent mask IoU is 0.95576 and **Ganzer Abzug** source-footprint IoU
+is 0.99188 against the development annotation. Its maximum corner error
+is 6.62 native px, omitted source area 0.0868% and foreign interpolation
+weight 0.9540%. There are 152 omitted source centres and 4,529 output
+pixels with foreign contributions beyond the one-pixel band. Independent
+motif geometry, physical dimensions and landmark references are unavailable.
+
+Desktop and mobile require a deliberate confirmation of an independent
+paper print when adding either proposal. In an isolated browser replay,
+one test addition consumed only its proposal and kept both crop exports
+held. The other proposed outline intersected protected content and the
+API kept its proposal open with a correction message. Current count
+acknowledgement clears the open proposals, preserves all five active
+photos and stores the shown evidence in the review record.
+All five frozen reports agree with the baseline in both modes and
+all non-timing results. The synthetic detector matches 18/18, with
+6/11 whole-print and 7/12 motif geometry passes. The seeded geometry
+passes 11/11 and 12/12. The original Golden model run stays at 29/29.
+The separate contact-sheet camera replay retains its one correct
+print and three existing extra proposals, with both modes in review.
+The `fusion_ownership` profile moves to revision 3. Paired API receipts,
+browser views, source masks, controls and benchmarks are local under
+`runs/crop-quality/nested-fallback-contours/`.
+
 ### Measure seed displacement and competing print edges
 
 The frozen synthetic-control detector `c31317f…` with fallback at
@@ -5797,10 +5894,17 @@ rights designation is No Copyright – United States.
 The 1908 Hungarian family album on Commons separately catalogues 17
 mounted page JPEGs and 68 individual TIFFs. The uploader links print
 001 to page 1. The public derivatives show a nine-minute interval in
-their scan records. The native pixels are still needed to distinguish
+their scan records. The catalogue lists page 01 at 10,970 × 14,816
+with SHA-1 `ab172e358af0c7de96ae55c73e37e12cee3f55d3` and print 001
+TIFF at 3,694 × 4,836 with SHA-1 `299834405988e550651762c4704cebf5eef3a802`.
+MediaWiki image info and the public Your.Org mirror requests returned 403
+from this workspace. PICRYL indexes derivatives via GetArchive. Native
+raster identity is unverified. The native pixels are still needed to distinguish
 separate exposure from a transformed copy and to verify the visible
 paper and motif for both modes.
-[Hungarian album](https://commons.wikimedia.org/wiki/Category:Photograph_album_of_an_unknown_Hungarian_family_(1908))
+[Hungarian album](https://commons.wikimedia.org/wiki/Category:Photograph_album_of_an_unknown_Hungarian_family_(1908)) ·
+[Page 01](https://commons.wikimedia.org/wiki/File:Hungarian_family_photo_album_1908,_page_01.jpg) ·
+[Print 001](https://commons.wikimedia.org/wiki/File:Hungarian_family_photo_album_1908,_image_001.tif)
 
 The Bancroft Red Album study documents a mounted, measured print on
 page 8 and a 1999 State Library of Queensland copy negative showing the

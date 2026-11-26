@@ -52,13 +52,14 @@ import {
   CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   countGroupReviewError, CountGroupReview, deferredPrintHint, filmGridCountHint, filmGridHint, filmGridReason,
-  getDeferredPrintProposals, getSourceEdgeTraces,
+  getDeferredPrintEvidence, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, scannerBackingHint, scannerBackingReason,
+  nestedFallbackCropHint, nestedFallbackProposal, nestedFallbackReason, NestedFallbackReviewHint,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
-  darkBackingConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors, getDarkBackingEvidence,
+  standalonePrintConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
@@ -1401,7 +1402,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const activePage = useRef(pageId);
   const newPrint = addition?.pageId === pageId ? addition : null;
   const darkBackingDraft = newPrint?.deferredProposal?.reason === darkBackingProposal;
-  const needsPrintAdditionConfirmation = darkBackingDraft ? !newPrint.confirmDarkBacking
+  const standaloneDraft = darkBackingDraft || newPrint?.deferredProposal?.reason === nestedFallbackProposal;
+  const needsPrintAdditionConfirmation = standaloneDraft ? !newPrint.confirmStandalonePrint
     : newPrint?.deferredProposal?.reason === sourceFragmentProposal && !newPrint.replaceMountedFragments;
   const currentCountReview = countReview?.pageId === pageId ? countReview : null;
   const paperGridConfirmed = reviewingCount && currentCountReview?.paperGridEventId != null
@@ -1446,6 +1448,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     [reviewingCount, newPrint, editingImage, photos]);
   const captureSplitReview = selected?.segmentation_confidence != null && !rejectedDetection
     && selected.segmentation_mask?.capture_split_review_traces?.length === 2;
+  const nestedFallbackReview = !rejectedDetection
+    && selected?.enhancement_applied?.segmentation_review_reasons?.includes(nestedFallbackReason);
   const detectionReviewHint = (crossingReview && crossingPrintHint) || (scannerReview && scannerBackingHint)
     || (overlapReview && clippedOverlapHint) || (filmGridSeam && filmGridHint) || (paperJoinReview && paperJoinHint)
     || (paperGrid && (paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint)) || (fragmentReview && fragmentOutlineHint)
@@ -1676,7 +1680,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         const label = `?${index + 1}`;
         const x = Math.min(left + 6, canvas.width - 28);
         const y = Math.max(top - 6, 16);
-        if (reason === darkBackingProposal) {
+        if (reason === darkBackingProposal || reason === nestedFallbackProposal) {
           context.save();
           context.setLineDash([]);
           context.lineWidth = 4;
@@ -1801,7 +1805,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       const offers = newPrint ? [newPrint.deferredProposal] : deferredProposals;
       context.save();
       context.lineWidth = 3;
-      for (const { color, dash, traces } of offers.flatMap(getDarkBackingEvidence)) {
+      for (const { color, dash, traces } of offers.flatMap(getDeferredPrintEvidence)) {
         context.strokeStyle = color;
         context.setLineDash(dash);
         for (const [first, last] of traces) {
@@ -2026,7 +2030,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     try {
       const photo = await onAddPhoto(pageId, newPrint.requestId, newPrint.corners, additionSize.size,
         newPrint.adjacentSuggestion, newPrint.deferredProposal, {
-          replaceMountedFragments: newPrint.replaceMountedFragments, confirmDarkBacking: newPrint.confirmDarkBacking,
+          replaceMountedFragments: newPrint.replaceMountedFragments,
+          confirmDarkBacking: darkBackingDraft && newPrint.confirmStandalonePrint,
         });
       if (activePage.current !== pageId) return;
       setAddition(null);
@@ -2083,18 +2088,22 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             {photos.filter((photo) => !photo.reviewed_non_print).length} erfasste Abzüge, {deferredProposals.length === 1
               ? "1 unklarer Vorschlag" : `${deferredProposals.length} unklare Vorschläge`}.
             {deferredProposals.some(({ reason }) => reason === sourceFragmentProposal) && ` ${sourceFragmentCountHint}`}
-            {deferredProposals.some(({ reason }) => reason !== sourceFragmentProposal && reason !== darkBackingProposal)
+            {deferredProposals.some(({ reason }) => reason !== sourceFragmentProposal
+              && reason !== darkBackingProposal && reason !== nestedFallbackProposal)
               && ` ${deferredPrintHint}`}
           </p>
           <DarkBackingEvidenceLegend proposals={deferredProposals} />
+          <NestedFallbackReviewHint proposals={deferredProposals} id="nested-fallback-count-hint" />
           {deferredProposals.map((proposal, index) => (
             <button className="text-button compact" key={proposal.id} type="button"
               onClick={() => startAddition(proposal.polygon, null, { ...proposal, revision: page.processing_metadata?.photo_count_revision,
                 fragmentPolygons: getSourceEdgeTraces(proposal.fragment_polygons).filter(part => part.length >= 4),
               })}
+              aria-describedby={proposal.reason === nestedFallbackProposal ? "nested-fallback-count-hint" : undefined}
               disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving}>
               {proposal.reason === sourceFragmentProposal ? "Möglichen gemeinsamen Abzug prüfen"
                 : proposal.reason === darkBackingProposal ? `Dunkle Fläche prüfen${deferredProposals.length > 1 ? ` (${index + 1})` : ""}`
+                : proposal.reason === nestedFallbackProposal ? `Innenkontur ${index + 1} prüfen`
                 : proposal.reason === "possible_mounted_print" ? `Möglichen Ganzabzug ${index + 1} prüfen`
                 : `Vorschlag ${index + 1} als Abzug ergänzen`}
             </button>
@@ -2157,6 +2166,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         </>
       )}
       {!newPrint && !editingImage && printEdgeReviewHint && <p className="crop-editor-hint">{printEdgeReviewHint}</p>}
+      {!newPrint && nestedFallbackReview && <p className="crop-editor-hint">{nestedFallbackCropHint}</p>}
       {!newPrint && !editingImage && <NeighborContentReview fullPrint={fullPrintMode} sourceUrl={`/api/v1/pages/${pageId}/image`} />}
       {albumMark && <AlbumPageMarkReview mark={albumMark} sourceUrl={`/api/v1/pages/${pageId}/image`}
         checked={albumMarkReviewId === albumMark.id} disabled={saveState?.saving}
@@ -2221,13 +2231,14 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       )}
       {newPrint && (
         <div className="manual-print-actions">
-          {darkBackingDraft && <>
-            <DarkBackingEvidenceLegend proposals={[newPrint.deferredProposal]} />
+          {standaloneDraft && <>
+            {darkBackingDraft ? <DarkBackingEvidenceLegend proposals={[newPrint.deferredProposal]} />
+              : <NestedFallbackReviewHint proposals={[newPrint.deferredProposal]} draft />}
             <label className="mounted-print-fragment-review">
-              <input type="checkbox" checked={Boolean(newPrint.confirmDarkBacking)}
-                onChange={event => setAddition(current => ({ ...current, confirmDarkBacking: event.target.checked, error: null }))}
+              <input type="checkbox" checked={Boolean(newPrint.confirmStandalonePrint)}
+                onChange={event => setAddition(current => ({ ...current, confirmStandalonePrint: event.target.checked, error: null }))}
                 disabled={newPrint.saving || newPrint.invalidated} />
-              {darkBackingConfirmation}
+              {standalonePrintConfirmation}
             </label>
           </>}
           {newPrint.deferredProposal?.fragmentPolygons?.length >= 2 && (
@@ -2247,7 +2258,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           <button className="primary-button compact" type="button" onClick={saveNewPrint}
             disabled={newPrint.saving || newPrint.invalidated || newPrint.corners.length !== 4 || Boolean(additionSize.error)
               || needsPrintAdditionConfirmation}>
-            {newPrint.saving ? "Abzug wird berechnet …" : darkBackingDraft ? "Als Abzug erfassen"
+            {newPrint.saving ? "Abzug wird berechnet …" : standaloneDraft ? "Als Abzug erfassen"
               : newPrint.replaceMountedFragments ? "Als einen Abzug speichern" : "Abzug speichern"}
           </button>
           <button className="text-button compact" type="button" onClick={() => startAddition([], newPrint.adjacentSuggestion, newPrint.deferredProposal)}

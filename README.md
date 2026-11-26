@@ -240,6 +240,26 @@ separate Bestätigung und Messung der Papierkanten im Original sowie
 die üblichen Prüfungen von Geometrie, Bildinhalt und Pixelquellen.
 [Beispiel Willett 99 und Gegenproben](data/evaluation/README.md#review-a-dark-album-backing-proposal)
 
+Bei der klassischen Kantensuche können Bilddetails zwei scheinbare
+Abzüge innerhalb eines bereits erkannten Abzugs bilden. PhoSca prüft
+solche Paare an den Originalpixeln. Jede Innenkontur muss zwei
+gemessene Aussenkanten des vollständigen Abzugs teilen. An der
+fraglichen Seite im Inneren muss eine eigenständige Papierkante
+schwach gestützt sein. Eine durchgehende Trennlinie zwischen zwei
+Abzügen oder ein belegter Rand eines aufgelegten Fotos lässt die
+möglichen Einzelabzüge in der aktiven Liste. Die Suche prüft auch
+schräge und leicht gewölbte Trennlinien.
+
+In der **Anzahlprüfung** erscheinen die beiden fraglichen
+Innenkonturen einzeln in Violett. Türkis zeigt den Abschnitt, an dem
+der Vorschlag im Bild endet. Prüfe am Original, ob dort tatsächlich
+ein eigener Papierabzug liegt. Du kannst jede Kontur einzeln öffnen
+und nach bewusster Bestätigung mit ihren tatsächlichen Papierecken
+erfassen. Sind alle physischen Abzüge bereits erfasst, schliesst die
+Bestätigung der Anzahl diese Vorschläge. Beide Zuschnittmodi des
+übergeordneten Abzugs brauchen weiterhin die eigene Zuschnittprüfung.
+[Gedrehte Golden-Seite 26 und Gegenproben](data/evaluation/README.md#review-two-fallback-contours-inside-a-detected-print)
+
 Wenn ein klassisch erkannter Umriss eine Ecke diagonal abschneidet,
 kann **Ganzer Abzug** eine zweite Vorschau anbieten. PhoSca verlängert
 die beiden betroffenen Seiten in einem begrenzten Suchbereich und
@@ -844,6 +864,11 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
   PhoSca einen weiter innen liegenden Übergang zur Kontrolle am
   Original. Beide Modi bleiben in Prüfung.
   [Vergleich und Messwerte](data/evaluation/README.md#show-an-inward-source-transition-below-an-album-edge)
+- **Golden-Seite 26 gedreht und komprimiert.** Alle vier echten
+  Abzüge bleiben erfasst. Zwei Teilkonturen innerhalb des oberen
+  rechten Abzugs erscheinen zur Anzahlprüfung. Ein falscher, bis
+  zum Aufnahmebildrand reichender Vorschlag bleibt in der aktiven
+  Liste. [Erkennung und Korrekturablauf](data/evaluation/README.md#review-two-fallback-contours-inside-a-detected-print)
 - **Echter Abzug am Aufnahmebildrand.** Beim NerdScan-Entwicklungsbild
   traf die getestete Konfiguration drei erwartete Abzüge und lieferte
   zwei zusätzliche Vorschläge. Beide Modi blieben in Prüfung.
