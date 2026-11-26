@@ -1712,6 +1712,154 @@ async def test_new_overlapping_print_reopens_existing_downloads_for_review(clien
     assert reprocessed.status_code == 200 and not reprocessed.json()["crop_download_urls"]["full_print"]
 
 
+@pytest.mark.parametrize("render_neighbor", [False, True])
+async def test_ordinary_preview_cannot_export_paper_shared_with_an_active_neighbor(client, monkeypatch, render_neighbor):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, PhotoStatus
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    get_settings.cache_clear()
+    source = np.full((310, 480, 3), 35, dtype=np.uint8)
+    source[40:260, 28:242] = (67, 111, 144)
+    source[70:280, 245:435] = (118, 90, 55)
+    album_id, page_id, photo_id = await _seed_review_data(source)
+
+    def outline(left, top, right, bottom):
+        return [{"x": x / 479, "y": y / 309} for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
+
+    def bounds(quad):
+        return {"x1": quad[0]["x"], "y1": quad[0]["y"], "x2": quad[2]["x"], "y2": quad[2]["y"]}
+
+    async def save(photo, outer, inner):
+        return await client.patch(f"/api/v1/photos/{photo}/bounding-box", json={
+            "bounding_box": bounds(outer), "segmentation_mask": {
+                "source": "manual_quad", "polygon": outer, "visible_polygon": outer, "warp_quad": outer,
+                "image_quad": inner, "print_size_mm": {"width": 120, "height": 140},
+            },
+        })
+
+    async def exports(photo):
+        return [(await client.get(f"/api/v1/photos/{photo}/image", params={"variant": mode})).status_code
+                for mode in ("full_print", "image_only", "source_corrected_trimmed", "source_corrected_untrimmed")]
+
+    left, left_motif = outline(28, 40, 241, 259), outline(39, 52, 228, 246)
+    right, right_motif = outline(245, 70, 434, 279), outline(256, 82, 423, 267)
+    async with get_session_factory()() as session:
+        base = await session.get(ExtractedPhoto, photo_id)
+        other = ExtractedPhoto(
+            page_id=page_id, album_id=album_id, storage_path=base.storage_path,
+            bounding_box=bounds(right), segmentation_mask={"source": "yolo_seg_mask", "polygon": right},
+            segmentation_confidence=.89, geometry_valid=True, status=PhotoStatus.review_needed,
+        )
+        session.add(other)
+        await session.flush()
+        other_id = other.id
+        await session.commit()
+    assert (await save(photo_id, left, left_motif)).status_code == 200
+    assert await exports(photo_id) == [200, 200, 200, 200]
+    if render_neighbor:
+        assert (await save(other_id, right, right_motif)).status_code == 200
+        assert await exports(other_id) == [200, 200, 200, 200]
+
+    contender = await save(photo_id, outline(28, 40, 291, 259), left_motif)
+    assert contender.status_code == 200, contender.text
+    assert await exports(photo_id) == [404, 404, 404, 200]
+    modes = contender.json()["enhancement_applied"]["correction"]["crop_modes"]
+    assert all(mode["status"] == "review_needed" and "PRINT_POSSIBLY_OCCLUDED" in mode["reason_codes"]
+               for mode in modes.values())
+    if render_neighbor:
+        assert await exports(other_id) == [404, 404, 404, 200]
+        narrowed_neighbor = await save(other_id, outline(293, 70, 434, 279), outline(305, 82, 423, 267))
+        assert narrowed_neighbor.status_code == 200
+        full = narrowed_neighbor.json()["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+        assert "MANUAL_NEIGHBOR_CONTENT_LOSS" in full["reason_codes"]
+        assert await exports(other_id) == [404, 404, 404, 200]
+    for _ in range(2):
+        assert (await client.post(f"/api/v1/photos/{photo_id}/reprocess")).status_code == 200
+        assert await exports(photo_id) == [404, 404, 404, 200]
+    approval = await client.post("/api/v1/review/events", json={
+        "task_type": "geometry", "task_id": str(photo_id), "answer": "correct", "idempotency_key": str(uuid4()),
+    })
+    assert approval.status_code == 409
+    too_narrow = await save(photo_id, outline(28, 40, 184, 259), outline(39, 52, 173, 246))
+    assert too_narrow.status_code == 200
+    for result in (too_narrow, await client.post(f"/api/v1/photos/{photo_id}/reprocess")):
+        assert result.status_code == 200
+        crop = result.json()["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+        assert "MANUAL_NEIGHBOR_CONTENT_LOSS" in crop["reason_codes"]
+        assert crop["neighbor_content_loss_outlines"]
+    assert await exports(photo_id) == [404, 404, 404, 200]
+    assert (await save(photo_id, left, left_motif)).status_code == 200
+    assert await exports(photo_id) == [200, 200, 200, 200]
+    assert (await save(other_id, right, right_motif)).status_code == 200
+    assert await exports(other_id) == [200, 200, 200, 200]
+    if render_neighbor:
+        async with get_session_factory()() as session:
+            existing = await session.get(ExtractedPhoto, photo_id)
+            existing.segmentation_mask = {**existing.segmentation_mask, "warp_quad": outline(28, 40, 291, 259)}
+            await session.commit()
+        assert (await client.post(f"/api/v1/photos/{photo_id}/reprocess")).status_code == 200
+        assert await exports(photo_id) == await exports(other_id) == [404, 404, 404, 200]
+
+
+async def test_avoiding_an_overlap_cannot_omit_visible_parts_of_the_old_photo(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    source = np.full((320, 480, 3), 30, dtype=np.uint8)
+    source[40:270, 35:265] = (67, 111, 144)
+    source[100:229, 205:380] = (118, 90, 55)
+    album_id, page_id, photo_id = await _seed_review_data(source)
+
+    def outline(left, top, right, bottom):
+        return [{"x": x / 479, "y": y / 319} for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
+
+    def bounds(quad):
+        return {"x1": quad[0]["x"], "y1": quad[0]["y"], "x2": quad[2]["x"], "y2": quad[2]["y"]}
+
+    old = outline(35, 40, 264, 269)
+    neighbor = outline(205, 100, 379, 228)
+    inward = outline(35, 40, 202, 269)
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.bounding_box = bounds(old)
+        photo.segmentation_mask = {"source": "yolo_seg_mask", "polygon": old, "visible_polygon": old, "warp_quad": old}
+        photo.enhancement_applied = {"correction": {"crop_modes": {"full_print": {
+            "warp_quad": old, "status": "review_needed", "reason_codes": ["PRINT_POSSIBLY_OCCLUDED"],
+        }}}}
+        session.add(ExtractedPhoto(page_id=page_id, album_id=album_id, storage_path=photo.storage_path,
+                                  bounding_box=bounds(neighbor), geometry_valid=True, segmentation_confidence=.89,
+                                  segmentation_mask={"source": "yolo_seg_mask", "polygon": neighbor}))
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    saved = await client.patch(f"{url}/bounding-box", json={"bounding_box": bounds(inward), "segmentation_mask": {
+        "source": "manual_quad", "polygon": inward, "warp_quad": inward, "print_size_mm": {"width": 120, "height": 145},
+    }})
+    assert saved.status_code == 200, saved.text
+    reprocessed = await client.post(f"{url}/reprocess")
+    assert reprocessed.status_code == 200, reprocessed.text
+    for response in (saved, reprocessed):
+        modes = response.json()["enhancement_applied"]["correction"]["crop_modes"]
+        assert all(mode["status"] == "review_needed" for mode in modes.values())
+        full = modes["full_print"]
+        assert "MANUAL_NEIGHBOR_CONTENT_LOSS" in full["reason_codes"]
+        regions = full["neighbor_content_loss_outlines"]
+        assert len(regions) == 2 and all(region[0] == region[-1] for region in regions)
+        assert all(point["x"] > inward[1]["x"] for region in regions for point in region)
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image", params={"variant": variant})).status_code == 404
+    assert (await client.get(f"{url}/image?variant=source_corrected_untrimmed")).status_code == 200
+
+
 @pytest.mark.parametrize("claim", ["paper_grid", "scalloped"])
 async def test_measured_crop_stays_held_while_a_linked_proposal_overlaps(client, monkeypatch, claim) -> None:
     from app.config import get_settings
@@ -2138,9 +2286,12 @@ async def test_review_can_remove_a_false_nested_candidate_from_occlusion_evidenc
     reviewed = await client.patch(f"{whole}/bounding-box", json=edit(21, 18, 271, 181))
     assert reviewed.status_code == 200, reviewed.text
     full_mode = reviewed.json()["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
-    assert full_mode["reason_codes"] == ["PRINT_POSSIBLY_OCCLUDED"]
+    assert full_mode["reason_codes"] == ["PRINT_POSSIBLY_OCCLUDED", "MANUAL_NEIGHBOR_OVERLAP"]
+    expected = nested_edit["segmentation_mask"]["warp_quad"]
+    for actual, point in zip(full_mode["neighbor_overlap_outline"][:-1], expected, strict=True):
+        assert actual == pytest.approx(point)
     assert (await client.patch(f"{nested}/bounding-box", json=nested_edit)).status_code == 200
-    assert (await client.get(f"{nested}/image?variant=full_print")).status_code == 200
+    assert (await client.get(f"{nested}/image?variant=full_print")).status_code == 404
 
     rejection = await client.post("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": str(nested_id), "answer": "wrong_object", "idempotency_key": str(uuid4()),

@@ -135,6 +135,16 @@ stehen weiter zur Verfügung. Sie werden erst durch eine gültige
 Korrektur ersetzt.
 [Beispiel Golden 10](data/evaluation/README.md#protect-visible-source-content-in-ordinary-edits)
 
+Bei einer manuellen Korrektur vergleicht PhoSca die Fläche zwischen
+den vier Ecken mit den aktiven Nachbarabzügen. Eine deutliche Überdeckung
+hält beide Zuschnittmodi zurück. Die violette Kontur zeigt den
+konkurrierenden Nachbarvorschlag im Original. Gehört beim Ausweichen
+ein ausgelassener Streifen laut bisheriger sichtbarer Kontur zum
+Abzug, markiert der Editor auch diesen möglichen Inhaltsverlust.
+Bei tatsächlich verdeckten Papierkanten hilft eine zweite Aufnahme
+mit getrennten Abzügen.
+[Beispiel Golden 05](data/evaluation/README.md#check-ordinary-corner-edits-at-neighboring-prints)
+
 Ein grosser Vorschlag, der wegen mehrerer innerer Konturen als
 Albumfläche verworfen wurde, kann in der Anzahlprüfung wieder zur
 Auswahl stehen. Dafür prüft PhoSca drei Aussenkanten am dunklen

@@ -23,6 +23,19 @@ class ReviewReason(str, Enum):
 
 
 MOTIF_MARGIN_MARKS_REVIEW = "IMAGE_MARGIN_MARKS_REVIEW"
+MANUAL_NEIGHBOR_OVERLAP = "MANUAL_NEIGHBOR_OVERLAP"
+MANUAL_NEIGHBOR_CONTENT_LOSS = "MANUAL_NEIGHBOR_CONTENT_LOSS"
+
+
+def remember_ready_print_for_neighbor_review(metadata: dict, quad: list[dict]) -> None:
+    provenance = dict(metadata.get("review_provenance") or {})
+    provenance.setdefault("ready_before_neighbor_overlap", {
+        "print_warp_quad": quad, "segmentation_mask": {"visible_polygon": quad},
+        "ready_before_edit": True,
+    })
+    metadata["review_provenance"] = provenance
+
+
 _MOTIF_GEOMETRY_REASONS = frozenset({
     "IMAGE_BOUNDARY_CURVED",
     "IMAGE_BOUNDARY_UNCERTAIN",

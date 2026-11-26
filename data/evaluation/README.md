@@ -3196,9 +3196,73 @@ development benchmarks kept their previous detection and crop results.
 
 A legacy overextended crop can contain a false face marker with no
 separate visible polygon. Such a repair can still require review.
-Independent overlap controls also reproduce source ownership conflicts
-with an automatic neighboring proposal. Those need a distinct check
-against the neighboring paper and its visible content.
+
+#### Check ordinary corner edits at neighboring prints
+
+The previous ordinary manual path allowed the edited rectangle to
+double as its own visibility mask. The neighbor check therefore
+ignored most pixels shared between that rectangle and a neighbor.
+An independently raster-labelled control exported 8,569 foreign
+source centers in the edited crop. The same geometry was held when
+the neighbor was a manually added print. An attempted correction
+that moved the edge inward instead dropped 7,599 exposed source
+centers of the rear print and still exported both modes.
+
+The ordinary manual path now checks the complete rectangle against
+active neighboring proposals. It uses the detector's visible
+polygon for an automatic neighbor and current corners for a
+manually edited neighbor. A conflicting save or explicit reprocess
+also reopens a neighbor whose existing rendered rectangle shares
+material area. The inherited overlap check ignores a thin boundary
+band and applies an area threshold. Both edited modes stay in
+review, the source-corrected preview remains available, and the
+original shows the competing outline. Ambiguous contained proposals
+receive the same review until the count or geometry is corrected.
+
+When an automatic render already reported possible occlusion, the
+first manual correction records that evidence with the prior warp.
+An inward edit clears the overlap check only after a separate check
+compares that previous warp and its visible mask against the new
+rectangle and current neighbors. The native raster subtracts the
+new rectangle, neighboring footprints and a one-pixel outline
+band. Material remaining areas appear as closed outlines. Both
+named downloads stay held. Reprocessing uses the same original
+prediction snapshot. If a later manual edit introduces the conflict
+after a ready crop, PhoSca keeps the last ready whole-print outline
+for either affected print. That outline also remains an active
+neighbor claim until the conflict is resolved. The first control's
+outline marked 6,935 of 7,599 missing source centers. The later
+manual-conflict control marked 24,026 of 24,319 missing centers.
+Both outlines excluded all labelled foreign centers. The native
+subtraction alone took 2.12 ms
+median and 6.56 ms p95 in 300 calls on a 2560 × 1920 development
+frame containing a roughly 930 × 930 work area.
+
+Golden page 05 has two lower prints with a measured median gap of
+17.49 source pixels. A 31 px overrun produced 9,920 px² intersection
+with the neighbor. The normal registered-model multipart upload,
+then desktop and mobile review, preserved four active detections
+and held both named exports and the legacy trimmed alias. Old
+versioned crop links returned 404, while the original and the
+source-corrected preview remained available. The exact safe
+correction restored the previous JPEGs byte for byte. Both
+separate prints could then be saved and reprocessed independently
+with both named downloads available. The test used sample
+dimensions solely to exercise the exports.
+
+The independently measured correction on Golden 10 retains the
+separate prints across an 8.01 px median album gutter. A 4–5 px
+overrun in that case can meet an inflated automatic neighbor claim
+before it reaches the other physical print. The control already
+includes album backing and is routed to review. Another synthetic
+case with an inflated automatic neighbor holds a geometrically
+correct crop. A prior visibility overrun can also flag pure album
+backing as possible loss. The original pixels remain available
+to judge both cases. Golden
+11 has no confirmed separating strip across 887 sampled source
+rows. Automatic decisions about contour ownership require more
+source evidence there. Frozen detection, seeded geometry and
+Golden development metrics matched `6ff54ee`.
 
 ### Keep an unassigned paper rim in review
 
@@ -3283,6 +3347,17 @@ independence required for customer release validation remain open.
 These files did not enter training, calibration or release evaluation.
 The volume records, capture dimensions, source URLs and SHA-256 values
 are in the [Kreis source receipt](sgv-kreis-album-intake.json).
+
+The Australian War Memorial publishes two related public-domain
+items. Its catalogue describes the loose object as a hand-coloured,
+cropped version. That object lacks the same paper and complete
+motif needed for a reference. [Mounted print](https://collection.awm.gov.au/C2119201)
+· [Loose object](https://www.awm.gov.au/collection/C2119189)
+
+The Finca Vigía restoration temporarily lifted and digitized
+original prints in the Hemingway albums. Whole-page capture IDs,
+matching loose capture IDs, downloadable originals and rights
+for both are unconfirmed. [Restoration report](https://resources.culturalheritage.org/conservators-converse/2014/06/27/42nd-annual-meeting-photographic-materials-session-may-30-preserving-ernest-hemingways-photograph-albums-and-scrapbooks-at-the-finca-vigia-by-monique-fischer-an/)
 
 ### Review partial grids inside a contact print
 

@@ -357,6 +357,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     <polyline key={index} points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />
   ));
+  const [neighborOutline] = getSourceEdgeTraces([fullPrintMode?.neighbor_overlap_outline]);
+  const missingPaperOutlines = getSourceEdgeTraces(fullPrintMode?.neighbor_content_loss_outlines);
   return <>
     {canEditMotif && <div className="task-switch" role="group" aria-label="Ausschnitt bearbeiten">
       {Object.entries(cropModeLabels).map(([mode, label]) => (
@@ -381,6 +383,14 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
             fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9" />}
           <polygon className="editable-quad" points={displayedQuad.map(point => `${point.x * 1000},${point.y * 1000}`).join(" ")} />
           {!editingMotif && <>{uncertainLine}{alternateOverlay}{paperTraceOverlay}</>}
+          {!editingMotif && neighborOutline && <polyline aria-label="Überlappender Nachbarabzug"
+            points={neighborOutline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
+            fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />}
+          {!editingMotif && missingPaperOutlines.map((outline, index) => (
+            <polyline key={index} aria-label="Möglicherweise fehlende Fläche"
+              points={outline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
+              fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />
+          ))}
           {motifTraces.length > 0 && <g aria-label="Gemessene Abschnitte einer möglichen Motivkante" fill="none"
             stroke="#2563eb" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none">
             {motifTraces.map((trace, index) => <polyline key={index}

@@ -166,12 +166,15 @@ async def test_nested_capture_candidate_reaches_review_without_a_download(client
                                   "image_quad": outer, "print_size_mm": {"width": 150., "height": 95.}},
         })
         assert corrected.status_code == 200, corrected.text
+        modes = corrected.json()["enhancement_applied"]["correction"]["crop_modes"]
         for mode, url in corrected.json()["crop_download_urls"].items():
-            assert url, corrected.json()["enhancement_applied"]["correction"]["crop_modes"][mode]
-            download = await client.get(url)
-            assert download.status_code == 200
-            rendered = cv2.imdecode(np.frombuffer(download.content, np.uint8), cv2.IMREAD_COLOR)
-            assert abs(rendered.shape[1] / rendered.shape[0] - 150 / 95) < .02
+            assert url is None
+            assert "MANUAL_NEIGHBOR_OVERLAP" in modes[mode]["reason_codes"]
+            assert (await client.get(f"{photo_url}/image?variant={mode}")).status_code == 404
+        preview = await client.get(f"{photo_url}/image?variant=source_corrected_untrimmed")
+        assert preview.status_code == 200
+        rendered = cv2.imdecode(np.frombuffer(preview.content, np.uint8), cv2.IMREAD_COLOR)
+        assert abs(rendered.shape[1] / rendered.shape[0] - 150 / 95) < .02
         return
     rejected = await client.post(events, json={**body, "answer": "wrong_object", "metadata": {"ui": "desktop"}})
     assert rejected.status_code == 201, rejected.text

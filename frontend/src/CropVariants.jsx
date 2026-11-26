@@ -50,6 +50,8 @@ const curvedMotifReviewReason = "IMAGE_BOUNDARY_CURVED";
 const curvedMotifReviewHint = "Die Motivkante verläuft unregelmässig. Prüfe am Original, welche Bildfelder und Beschriftungen zum Motiv gehören.";
 const markedMotifMarginReason = "IMAGE_MARGIN_MARKS_REVIEW";
 const markedMotifMarginHint = "Am Papierrand sind mögliche Beschriftungen sichtbar. Prüfe den ganzen Rand am Original und nimm alle zum Bild gehörenden Beschriftungen in den Zuschnitt auf.";
+const manualNeighborOverlap = "MANUAL_NEIGHBOR_OVERLAP";
+const manualNeighborContentLoss = "MANUAL_NEIGHBOR_CONTENT_LOSS";
 const printEdgeReviewHints = {
   PRINT_EDGE_CONFIRMATION_REQUIRED: printOutlineSaveHint,
   PRINT_SHADOW_EDGE_REVIEW: "Prüfe die markierte Kante am Original. Achte darauf, wo der Schatten endet und der Abzug beginnt.",
@@ -63,6 +65,8 @@ const printEdgeReviewHints = {
   [captureOutlineReviewReason]: "Die vollständige Papierkante ist noch unklar. Vergleiche die Ecken mit der Aussenkante im Original. Bei einer verdeckten oder gewölbten Kante hilft eine neue Aufnahme mit sichtbarem Rand rundum.",
   [captureAtEdgeReason]: captureAtEdgeHint,
   PAPER_GRID_OVERLAP_REVIEW: "Zwei Vorschläge überdecken dieselbe Stelle. Kläre zuerst die überlappenden Vorschläge am Original und berechne den Zuschnitt danach erneut.",
+  [manualNeighborOverlap]: "Die violette Kontur zeigt den überlappenden Nachbarabzug. Prüfe beide Papierkanten im Original. Wenn ein Abzug den anderen verdeckt, fotografiere sie getrennt.",
+  [manualNeighborContentLoss]: "Die violetten Flächen zeigen sichtbare Teile, die im Zuschnitt fehlen könnten. Vergleiche sie mit dem Original und prüfe die Papierkante. Verdeckt ein Abzug den anderen, fotografiere sie getrennt.",
 };
 
 export function getSourceEdgeTraces(traces) {
@@ -86,10 +90,18 @@ export function paperOutlineRequiresReview(fullPrint) {
   return fullPrint?.status === "review_needed" && (fullPrint.suggested_edge_source === competingPrintEdges
     || fullPrint.suggested_edge_source === possibleBackedPaperEdge
     || fullPrint.suggested_edge_source === possibleOverextendedPrintEdge
-    || fullPrint.reason_codes?.some(reason => reason === "PRINT_EDGE_CONFIRMATION_REQUIRED" || reason === "PAPER_GRID_OVERLAP_REVIEW"));
+    || fullPrint.reason_codes?.some(reason => reason === "PRINT_EDGE_CONFIRMATION_REQUIRED"
+      || reason === "PAPER_GRID_OVERLAP_REVIEW" || reason === manualNeighborOverlap
+      || reason === manualNeighborContentLoss));
 }
 
 export function getPrintEdgeReviewHint(fullPrint) {
+  if (fullPrint?.reason_codes?.includes(manualNeighborContentLoss)) {
+    return printEdgeReviewHints[manualNeighborContentLoss];
+  }
+  if (fullPrint?.reason_codes?.includes(manualNeighborOverlap)) {
+    return printEdgeReviewHints[manualNeighborOverlap];
+  }
   if (fullPrint?.reason_codes?.includes(scallopedOwnershipReason)) {
     return scallopedOwnershipHint;
   }

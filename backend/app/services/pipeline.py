@@ -46,7 +46,10 @@ from app.pipeline.crop_validation import (
     segmentation_matches_crop_profile,
 )
 from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE
-from app.pipeline.decisions import ReviewReason, component_review_reasons, confidence_components, is_reviewed_non_print
+from app.pipeline.decisions import (
+    MANUAL_NEIGHBOR_OVERLAP, ReviewReason, component_review_reasons, confidence_components, is_reviewed_non_print,
+    remember_ready_print_for_neighbor_review,
+)
 from app.pipeline.dedup import compute_phash, hamming_distance
 from app.pipeline.degradation import analyze_degradation
 from app.pipeline.dl_enhancement import dl_enhance_photo
@@ -467,7 +470,12 @@ async def perspective_correction_task_logic(
     if automatic_detection:
         paper_claims.pop(PAPER_GRID_OVERLAP_REVIEW, None)
     current_quad = mask.get("warp_quad") or mask.get("polygon")
-    reviewed_mark = None if automatic_detection else (metadata.get("review_provenance") or {}).get("reviewed_album_mark")
+    review_provenance = metadata.get("review_provenance") or {}
+    reviewed_mark = None if automatic_detection else review_provenance.get("reviewed_album_mark")
+    original = review_provenance.get("original_prediction") or {}
+    prior_neighbor = None if automatic_detection else review_provenance.get("ready_before_neighbor_overlap")
+    if not automatic_detection and prior_neighbor is None and original.get("neighbor_occlusion_unverified"):
+        prior_neighbor = original
     stale_mark = reviewed_mark and (
         not settings.enable_protected_region_guard
         or not album_mark_source_matches(reviewed_mark, photo.page.file_hash_sha256, photo.page.processing_metadata)
@@ -540,6 +548,7 @@ async def perspective_correction_task_logic(
                 ExtractedPhoto.segmentation_confidence,
                 ExtractedPhoto.enhancement_applied["correction"],
                 ExtractedPhoto.enhancement_applied["review_provenance"]["original_prediction"]["segmentation_mask"],
+                ExtractedPhoto.enhancement_applied["review_provenance"]["ready_before_neighbor_overlap"]["print_warp_quad"],
             ).where(
                 ExtractedPhoto.page_id == photo.page_id,
                 ExtractedPhoto.id != photo.id,
@@ -547,10 +556,18 @@ async def perspective_correction_task_logic(
             )
         )
         width, height = page_image.shape[1::-1]
-        for other_id, other_mask, box, rejection, confidence, correction, original_mask in rows:
+        for other_id, other_mask, box, rejection, confidence, correction, original_mask, prior_quad in rows:
             if not other_mask or is_reviewed_non_print(rejection, box, other_mask):
                 continue
-            neighbor_masks.append(other_mask)
+            if not automatic_detection and confidence is None and other_mask.get("warp_quad"):
+                # A reviewer can narrow the physical outline while keeping the old
+                # detector polygon for context. Only the current corners claim paper.
+                neighbor_masks.append({**other_mask, "visible_polygon": other_mask["warp_quad"],
+                                       "visible_polygon_source": None})
+                if prior_quad and prior_quad != other_mask["warp_quad"]:
+                    neighbor_masks.append({"polygon": prior_quad})
+            else:
+                neighbor_masks.append(other_mask)
             if paper_claims.keys() - paper_claim_conflicts:
                 neighbor_groups = paper_claim_groups(other_mask, original_mask)
                 paper_claim_conflicts.update(overlapping_paper_claims(
@@ -597,6 +614,7 @@ async def perspective_correction_task_logic(
             manual_scalloped_polygon=None if paper_claim_conflicts else scalloped_outline,
             **({"reviewed_album_mark": reviewed_mark} if reviewed_mark else {}),
             **({"previous_manual_crop": previous_manual_crop} if previous_manual_crop is not None else {}),
+            **({"manual_neighbor_reference": prior_neighbor} if prior_neighbor else {}),
         )
         corrected = crop_result.image
         correction_metadata = crop_result.metadata
@@ -806,6 +824,14 @@ async def perspective_correction_task_logic(
     metadata["variants"] = variants
     metadata["selected_variant"] = "source_corrected"
     metadata["correction"] = correction_metadata
+    if full_mode and not automatic_detection:
+        if (previous_manual_crop and previous_manual_crop.get("ready_before_edit")
+                and MANUAL_NEIGHBOR_OVERLAP in full_mode.get("reason_codes", ())):
+            remember_ready_print_for_neighbor_review(metadata, previous_manual_crop["warp_quad"])
+        elif full_ready and "ready_before_neighbor_overlap" in review_provenance:
+            provenance = dict(review_provenance)
+            provenance.pop("ready_before_neighbor_overlap", None)
+            metadata["review_provenance"] = provenance
     photo.enhancement_applied = metadata
     photo.segmentation_mask = apply_refined_visibility(photo.segmentation_mask, correction_metadata)
     session.add(

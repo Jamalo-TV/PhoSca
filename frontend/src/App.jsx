@@ -1453,7 +1453,11 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const imageSuggestion = cyclicQuad(sanitizePolygon(motifReview?.suggested_warp_quad));
   const seamTraces = motifReview?.suggested_seam_traces;
   const traces = editingImage ? seamTraces : fullPrintMode?.suggested_edge_traces;
-  const edgeTraces = useMemo(() => getSourceEdgeTraces(traces), [traces]);
+  const neighborOutline = editingImage ? null : fullPrintMode?.neighbor_overlap_outline;
+  const missingPaperOutlines = editingImage ? null : fullPrintMode?.neighbor_content_loss_outlines;
+  const edgeTraces = useMemo(() => [
+    ...getSourceEdgeTraces(traces), ...getSourceEdgeTraces([neighborOutline]), ...getSourceEdgeTraces(missingPaperOutlines),
+  ], [traces, neighborOutline, missingPaperOutlines]);
   const motifPreview = selected?.variant_urls?.image_only_preview || selected?.urls?.image_only_preview;
   const fullPrintPreview = selected?.variant_urls?.full_print_preview || selected?.urls?.full_print_preview;
   const untrimmedPrint = selected?.untrimmed_url || selected?.variant_urls?.source_corrected_untrimmed;

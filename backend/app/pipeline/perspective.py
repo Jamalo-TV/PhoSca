@@ -9,7 +9,7 @@ from app.pipeline.album_windows import (
 )
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
-from app.pipeline.decisions import MOTIF_MARGIN_MARKS_REVIEW
+from app.pipeline.decisions import MANUAL_NEIGHBOR_CONTENT_LOSS, MANUAL_NEIGHBOR_OVERLAP, MOTIF_MARGIN_MARKS_REVIEW
 from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CAPTURE_SPLIT_REVIEW_SOURCE, capture_edge_requires_review,
 )
@@ -676,12 +676,12 @@ def _clipped_visible_corner(quad: np.ndarray, visible: np.ndarray | None) -> boo
     return False
 
 
-def _neighbor_occlusion(
+def _occluding_neighbor(
     page_image: np.ndarray, src_points: np.ndarray, own: np.ndarray | None, neighbors: list[np.ndarray],
     *, inferred_sides: tuple[int, ...] = (), observed_sides: dict[int, tuple[np.ndarray, float]] | None = None,
-) -> bool:
+) -> np.ndarray | None:
     if not neighbors:
-        return False
+        return None
     low = src_points.min(axis=0)
     high = src_points.max(axis=0)
     ratio = min(1.0, 380.0 / float(np.max(high - low)))
@@ -705,12 +705,12 @@ def _neighbor_occlusion(
             overlap = raster(polygon) & exposed
             if np.count_nonzero(overlap) >= minimum_overlap:
                 if own is None or not observed_sides:
-                    return True
+                    return polygon
                 rows, columns = np.nonzero(overlap)
                 claimed = np.column_stack((columns, rows)) / ratio + low
                 confirmed_stock = observed_rim_points(page_image, src_points, claimed, observed_sides)
                 if np.count_nonzero(~confirmed_stock) >= minimum_overlap:
-                    return True
+                    return polygon
             # A single exterior contour can cover an interior occluder hole.
             # A distinct, substantially smaller enclosed proposal is review evidence.
             if np.all(lower > low) and np.all(upper < high):
@@ -718,15 +718,58 @@ def _neighbor_occlusion(
                 if minimum_overlap <= area <= 0.80 * footprint_area and all(
                     cv2.pointPolygonTest(src_points, tuple(point), True) >= reach for point in polygon
                 ):
-                    return True
+                    return polygon
         # Paper color can continue across two touching prints and make the other
         # print's ink edge appear to be this print's physical boundary.
         if any(
             sum(cv2.pointPolygonTest(polygon, tuple(point), True) >= -reach for point in samples) >= 8
             for samples in inferred_edge_samples
         ):
-            return True
-    return False
+            return polygon
+    return None
+
+
+def _lost_visible_paper(
+    page: np.ndarray, current: np.ndarray, reference: dict, neighbors: list[np.ndarray],
+) -> list[list[dict]]:
+    height, width = page.shape[:2]
+    previous = _explicit_quad({"warp_quad": reference["print_warp_quad"]}, "warp_quad", width, height)
+    visible = _proposal_polygon({"polygon": (reference.get("segmentation_mask") or {}).get("visible_polygon")},
+                                width, height)
+    if previous is None or visible is None:
+        return []
+    if not reference.get("ready_before_edit") and _occluding_neighbor(page, previous, None, neighbors) is None:
+        return []
+    low = np.maximum(0, np.floor(previous.min(axis=0)).astype(int) - 1)
+    high = np.minimum([width, height], np.ceil(previous.max(axis=0)).astype(int) + 2)
+    shape = tuple((high - low)[::-1])
+    owned = np.zeros(shape, np.uint8)
+    excluded = np.zeros(shape, np.uint8)
+
+    def draw(bitmap, polygon, color):
+        points = np.rint((polygon - low) * 256).astype(np.int32)
+        cv2.fillPoly(bitmap, [points], color, shift=8)
+
+    draw(owned, previous, 1)
+    draw(excluded, visible, 1)
+    owned &= excluded
+    excluded.fill(0)
+    draw(excluded, current, 1)
+    if not reference.get("ready_before_edit"):
+        for neighbor in neighbors:
+            draw(excluded, neighbor, 1)
+    # A one-pixel band absorbs sampling noise at the competing outlines.
+    owned[cv2.dilate(excluded, np.ones((3, 3), np.uint8)) != 0] = 0
+    minimum = max(6, round(0.002 * cv2.contourArea(previous)))
+    if cv2.countNonZero(owned) < minimum:
+        return []
+    contours, _ = cv2.findContours(owned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    outlines = []
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:3]:
+        if cv2.contourArea(contour) >= minimum:
+            points = cv2.approxPolyDP(contour, 0.5, True).reshape(-1, 2) + low
+            outlines.append(_vertices_on_page(np.vstack((points, points[0])), width, height))
+    return outlines
 
 
 def _orient_crop(
@@ -1232,6 +1275,7 @@ class _PrintInspection:
     reasons: list[str]
     corner_mount: bool
     protection: dict
+    occluding_neighbor: np.ndarray | None = None
 
 
 def _inspect_print(
@@ -1246,6 +1290,7 @@ def _inspect_print(
     reasons: list[str] = []
     corner_mount = False
     edge_confirmation = False
+    manual_neighbor = None
     if dual_mode and not manual and mask.get("warp_quad") is None:
         refined, boundary, reasons = refine_print_boundary(page, quad, collect_curve_segments=collect_curve_segments)
         if refined is not None and mask.get("detector_source") == CONTRAST_COMPONENT_SOURCE:
@@ -1329,15 +1374,24 @@ def _inspect_print(
             and (evidence.get("corner_support") or 0) >= 0.8
             and "observed_rim_lab" in evidence and index not in inferred
         }
-        occluded = _neighbor_occlusion(
-            page, quad, None if manual_outline else visible, neighbors,
+        occluding_neighbor = _occluding_neighbor(
+            page, quad, None if manual or manual_outline else visible, neighbors,
             inferred_sides=inferred, observed_sides=observed,
         )
+        occluded = occluding_neighbor is not None
+        if manual and occluded:
+            manual_neighbor = occluding_neighbor
         if not occluded and manual_neighbors:
             target = _vertices_on_page(quad, width, height)
-            occluded = any(manual_print_intersects(target, mark, width, height) for mark in manual_neighbors)
+            mark = next((mark for mark in manual_neighbors if manual_print_intersects(target, mark, width, height)), None)
+            if mark is not None:
+                occluded = True
+                if manual:
+                    manual_neighbor = _explicit_quad({"warp_quad": mark}, "warp_quad", width, height)
         if (not scalloped and _clipped_visible_corner(quad, visible)) or occluded:
             reasons.append("PRINT_POSSIBLY_OCCLUDED")
+        if manual_neighbor is not None:
+            reasons.append(MANUAL_NEIGHBOR_OVERLAP)
         if not reasons and neighbors:
             # An observed outward strip may still lack an assignable paper edge.
             for index, evidence in enumerate(sides):
@@ -1365,7 +1419,7 @@ def _inspect_print(
         reasons.append("POSSIBLE_CONTENT_CUTOFF")
     if edge_confirmation and not reasons:
         reasons.append(PRINT_EDGE_CONFIRMATION)
-    return _PrintInspection(quad, metrics, boundary, reasons, corner_mount, protection)
+    return _PrintInspection(quad, metrics, boundary, reasons, corner_mount, protection, manual_neighbor)
 
 
 def _source_visible_outline(
@@ -1446,6 +1500,7 @@ def correct_photo_crop(
     manual_scalloped_polygon: list[dict] | None = None,
     reviewed_album_mark: dict | None = None,
     previous_manual_crop: dict | None = None,
+    manual_neighbor_reference: dict | None = None,
 ) -> CropResult:
     height, width = page_image.shape[:2]
     mask = mask or {}
@@ -1509,6 +1564,11 @@ def correct_photo_crop(
     )
     src_points, quad_metrics = inspection.quad, inspection.metrics
     boundary_refinement, full_reasons = inspection.boundary, inspection.reasons.copy()
+    missing_paper = []
+    if dual_mode and manual and manual_neighbor_reference and inspection.occluding_neighbor is None and neighbor_polygons:
+        missing_paper = _lost_visible_paper(page_image, src_points, manual_neighbor_reference, neighbor_polygons)
+        if missing_paper:
+            full_reasons.append(MANUAL_NEIGHBOR_CONTENT_LOSS)
     curve_segments = [segment for edge in boundary_refinement.values() if isinstance(edge, dict)
                       for segment in edge.pop("curve_segments", [])]
     competing_segments = []
@@ -1698,6 +1758,11 @@ def correct_photo_crop(
             if print_outline is not None and trim_border else None,
         )
         modes = result.metadata["crop_modes"]
+        if inspection.occluding_neighbor is not None:
+            contour = _vertices_on_page(inspection.occluding_neighbor, width, height)
+            modes["full_print"]["neighbor_overlap_outline"] = [*contour, contour[0]]
+        if missing_paper:
+            modes["full_print"]["neighbor_content_loss_outlines"] = missing_paper
         if backed_edge and manual_boundary_hold:
             modes["full_print"]["suggested_edge_source"] = POSSIBLE_BACKED_PAPER_EDGE
         split_traces = mask.get("capture_split_review_traces")

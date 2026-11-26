@@ -889,7 +889,7 @@ def test_neighbor_mask_spill_on_verified_stock_preserves_both_crop_modes() -> No
 
 @pytest.mark.parametrize("cover", [None, "edge", "stock_break", "same_stock_outside"])
 def test_neighbor_claim_requires_continuous_source_stock_and_an_exterior_transition(cover) -> None:
-    from app.pipeline.perspective import _neighbor_occlusion
+    from app.pipeline.perspective import _occluding_neighbor
 
     page = np.full((300, 420, 3), 65, dtype=np.uint8)
     page[40:261, 45:376] = 235
@@ -901,10 +901,11 @@ def test_neighbor_claim_requires_continuous_source_stock_and_an_exterior_transit
         page[75:225, 376:390] = 235
 
     stock = cv2.cvtColor(page[48:49, 60:61], cv2.COLOR_BGR2LAB)[0, 0].astype(np.float32)
-    assert _neighbor_occlusion(
+    conflict = _occluding_neighbor(
         page, _rect(45, 40, 375, 260), _rect(45, 40, 363, 260), [_rect(364, 80, 400, 220)],
         observed_sides={1: (stock, 12.)},
-    ) is (cover is not None)
+    )
+    assert (conflict is not None) is (cover is not None)
 
 
 def test_enclosed_neighbor_keeps_outer_print_in_review_even_with_filled_model_mask() -> None:

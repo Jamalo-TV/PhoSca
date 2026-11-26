@@ -21,7 +21,9 @@ from app.database import get_async_session
 from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PageStatus, PhotoStatus, ProcessingRun, StageRun
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
 from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE, reviewed_outline_covers_traces
-from app.pipeline.decisions import is_reviewed_non_print, photo_is_reviewed_non_print
+from app.pipeline.decisions import (
+    MANUAL_NEIGHBOR_OVERLAP, is_reviewed_non_print, photo_is_reviewed_non_print, remember_ready_print_for_neighbor_review,
+)
 from app.pipeline.edge_trace import measure_edge_trace
 from app.pipeline.image_ops import load_image, normalized_box_to_pixels
 from app.pipeline.manual_paper_boundary import (
@@ -278,22 +280,24 @@ async def _review_overlapping_crops(
                 session.add(AuditLog(entity_type="photo", entity_id=neighbor.id, action="crop_review_reopened",
                                      details={"reason": min(conflicts), "overlapping_photo_id": str(photo.id)}))
                 continue
-        if quad is None or (mask.get("manual_added") is not True and mask.get(REVIEWED_CROSSING_OUTLINE) is not True
-                and (neighbor.segmentation_mask or {}).get(REVIEWED_CROSSING_OUTLINE) is not True):
+        if quad is None:
             continue
         if not any(mode.get("status") == "ready" for mode in modes.values()):
             continue
         neighbor_quad = full_mode.get("warp_quad")
         if not manual_print_intersects(neighbor_quad, quad, width, height):
             continue
-        reason = "PRINT_POSSIBLY_OCCLUDED"
-        route_ready_crop_modes_to_review(modes, [reason])
-        metadata["review_reasons"] = list(dict.fromkeys([*(metadata.get("review_reasons") or []), reason]))
+        if neighbor.segmentation_confidence is None and full_mode.get("status") == "ready":
+            remember_ready_print_for_neighbor_review(metadata, neighbor_quad)
+        reasons = ["PRINT_POSSIBLY_OCCLUDED", MANUAL_NEIGHBOR_OVERLAP]
+        route_ready_crop_modes_to_review(modes, reasons)
+        full_mode["neighbor_overlap_outline"] = [*quad, quad[0]]
+        metadata["review_reasons"] = list(dict.fromkeys([*(metadata.get("review_reasons") or []), *reasons]))
         neighbor.enhancement_applied = metadata
         neighbor.status = PhotoStatus.review_needed
         session.add(AuditLog(
             entity_type="photo", entity_id=neighbor.id, action="crop_review_reopened",
-            details={"reason": reason, "overlapping_photo_id": str(photo.id)},
+                             details={"reason": MANUAL_NEIGHBOR_OVERLAP, "overlapping_photo_id": str(photo.id)},
         ))
 
 
@@ -706,6 +710,8 @@ async def update_photo_bounding_box(
                 pass  # A previously invalid box supplies no usable comparison.
         if full_print.get("warp_quad"):
             previous_crop["warp_quad"] = full_print["warp_quad"]
+            if before["segmentation_confidence"] is None and full_print.get("status") == "ready":
+                previous_crop["ready_before_edit"] = True
     if was_non_print:
         page.processing_metadata = {**(page.processing_metadata or {}), "photo_count_revision": str(uuid4())}
         metadata["review_reasons"] = [
@@ -736,6 +742,8 @@ async def update_photo_bounding_box(
         print_mode = (previous_correction.get("crop_modes") or {}).get("full_print") or {}
         if len(print_mode.get("warp_quad") or []) == 4:
             before["print_warp_quad"] = deepcopy(print_mode["warp_quad"])
+            if "PRINT_POSSIBLY_OCCLUDED" in (print_mode.get("reason_codes") or []):
+                before["neighbor_occlusion_unverified"] = True
         if print_mode:
             before["capture_outline_unverified"] = capture_outline_review_required(print_mode)
         curve = paper_curve_review_reference(previous_correction)
@@ -826,5 +834,9 @@ async def reprocess_photo(
     settings: Settings = Depends(get_settings),
     principal: Principal | None = Depends(require_write_principal),
 ) -> ExtractedPhoto:
-    _, photo = await _locked_review_photo(session, photo_id, principal)
+    page, photo = await _locked_review_photo(session, photo_id, principal)
+    existing_modes = ((photo.enhancement_applied or {}).get("correction") or {}).get("crop_modes")
+    if (photo.segmentation_confidence is None and (photo.segmentation_mask or {}).get("warp_quad")
+            and (settings.enable_precise_photo_crops or existing_modes) and not photo_is_reviewed_non_print(photo)):
+        await _review_overlapping_crops(session, photo, *_source_size(page))
     return await _render_photo_edit(session, photo.id, settings, reject_invalid_edit=False, preset=preset)
