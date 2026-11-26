@@ -3316,6 +3316,62 @@ whole-print and 12/12 motif passes, and the mixed Golden replay
 retains 29/29 matches.
 The classical Golden replay still has 14/29 matches with 15 extras.
 
+#### Isolate the missing lower-right instance on Golden 05
+
+The model-free detector emits an oblique left fragment and a
+rotated rectangle that extends to the bottom of the capture. Their
+mask IoUs against the lower-right print draft are about 0.45 and
+0.39. Both originate in edge contours, and both survive the later
+selection stages. The expected outer contour is already missing
+from the prepared-image candidates. On the unprepared capture it
+is present. In component isolation a BGR-to-Lab-to-BGR round trip
+alone lowers the best initial proposal from 0.969 to 0.533 at a
+1,024-pixel comparison resolution. Bilateral filtering alone
+preserves the 0.969 contour. The combined production preparation
+and classical selection leave the strongest fragment at 0.450.
+
+A shadow test fed original pixels into the existing classical
+detector, keeping its options and all later stages. This makes
+Golden 05 a perfect detection page with four matches and zero
+extra proposals. Across Golden it adds two matches and reduces
+extras from 15 to nine, while losing a detection on Golden 11.
+The frozen model-free run falls from 13 to 12 matches and from
+7/11 to 4/11 whole-print passes and 8/12 to 5/12 motif passes.
+The shadow configuration is rejected. The frozen mixed model
+still has 18/18 matches and 6/11 and 7/12 passing crops.
+
+A source-only diagnostic searches the padded union of the two
+observed fragments. Canny on the original grayscale crop followed
+by the existing contour closing and quadrilateral extraction
+finds an outline with 0.991 mask IoU. The same four points appear
+at four paddings from 40 to 144 source pixels and under each of
+the three tested threshold and closing combinations. The ROI
+pass takes about 20–24 ms on one OpenCV thread in four trials.
+Neither the annotated outline nor the detector model is used as
+input. An independent signed fit supports the top, left and
+bottom along their length. The upper part of the right side
+has weaker evidence, and covering the lower-right corner can
+leave the long fitted lines in place. The original corner pixels
+must independently support the proposal.
+
+The candidate contains almost all of the first fragment and about
+91% of the frame-touching second fragment. Both are required to
+explain the count error. The existing fragment review requires
+at least 93% of each fragment after fitting and a separate
+continuous-scene divider test, which also fails here. A distinct
+clipped print in the same crossing geometry has the same overlap
+but reveals two supported, intersecting arms in its visible part.
+This control rules out choosing the replacement by overlap or
+requiring a complete competing perimeter. The real lower-left
+neighbor and a separate narrow print with a gap to the right
+have zero overlap with the recovered candidate. A third print
+crossing the proposed boundary has its own supported perimeter.
+The source search and ownership controls are development trials.
+The next product step is a single editable group suggestion that
+keeps both underlying observations until the reviewer resolves
+the physical count. No count or crop change from this diagnostic
+is enabled.
+
 ### Show the visible spans of an interrupted paper edge
 
 On the sigma 1.2 blurred Domoritz flatbed derivative, the bottom-right
