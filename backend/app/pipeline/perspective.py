@@ -16,7 +16,7 @@ from app.pipeline.bowed_edge_review import (
     suggest_bowed_print_preview, suggest_displaced_print_preview,
 )
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
-from app.pipeline.dark_album_review import DARK_BACKING_OUTLINE_REVIEW
+from app.pipeline.dark_album_review import DARK_BACKING_OUTLINE_REVIEW, DARK_MOUNTED_EDGE_SOURCE
 from app.pipeline.decisions import (
     MANUAL_NEIGHBOR_CONTENT_LOSS, MANUAL_NEIGHBOR_OVERLAP, MOTIF_MARGIN_MARKS_REVIEW, MOUNTED_PRINT_OUTLINE_REVIEW,
 )
@@ -2141,6 +2141,9 @@ def correct_photo_crop(
                         pixels, modes["full_print"]["outline_preview"] = preview
                         result = replace(result, full_print_preview=pixels)
         full_mode = modes["full_print"]
+        if PROJECTIVE_PRINT_OUTLINE_REVIEW in full_reasons and (mounted_traces := mask.get("mounted_paper_edge_traces")):
+            full_mode["suggested_edge_traces"] = mounted_traces
+            full_mode["suggested_edge_source"] = DARK_MOUNTED_EDGE_SOURCE
         if (competing_segments and not manual and "PRINT_BOUNDARY_AMBIGUOUS" in full_reasons
                 and not full_mode.get("suggested_edge_traces") and not full_mode.get("suggested_warp_quad")
                 and not (mask.get("film_grid_review_seam") or mask.get("paper_grid_review"))

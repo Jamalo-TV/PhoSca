@@ -23,7 +23,10 @@ from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
 
 
 @pytest.mark.parametrize("turn", [0, 1])
-@pytest.mark.parametrize("case", ["photo", "existing_claim", "unmounted", "paper_notice", "light_backing", "inside_mount"])
+@pytest.mark.parametrize("case", [
+    "photo", "existing_claim", "unmounted", "paper_notice", "light_backing", "inside_mount",
+    "truncated_claim", "complete_claim", "truncated_with_neighbor",
+])
 def test_red_mount_proposal_requires_distinct_photo_and_original_paper_edges(turn, case):
     image = np.full((520, 800, 3), 183 if case == "light_backing" else 31, np.uint8)
     if case == "paper_notice":
@@ -47,9 +50,15 @@ def test_red_mount_proposal_requires_distinct_photo_and_original_paper_edges(tur
         image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
     scale = np.float32(image.shape[1::-1]) - 1
     claim = corners * .87 + .13 * corners.mean(axis=0)
-    result = find_dark_mounted_print_review(image, [claim / scale] if case == "existing_claim" else [])
+    partial = None
+    if case in {"truncated_claim", "truncated_with_neighbor"}:
+        partial = claim / scale
+    elif case == "complete_claim":
+        partial = corners / scale
+    claims = [claim / scale] if case in {"existing_claim", "truncated_with_neighbor"} else []
+    result = find_dark_mounted_print_review(image, claims, partial_claim=partial)
 
-    if case == "photo":
+    if case in {"photo", "truncated_claim"}:
         assert result is not None
         outline, spans = result
         np.testing.assert_allclose(outline, corners, atol=1)

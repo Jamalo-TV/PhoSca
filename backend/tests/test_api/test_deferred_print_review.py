@@ -9,6 +9,9 @@ import pytest
 
 async def test_recompressed_page_recovers_an_unconfirmed_print_draft_and_neighbor_traces(client, monkeypatch, tmp_path):
     from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.dark_album_review import DARK_MOUNTED_EDGE_SOURCE
     from app.pipeline.image_ops import load_image
     from app.pipeline.projective_prints import PROJECTIVE_PRINT_OUTLINE_REVIEW, PROJECTIVE_PRINT_PROPOSAL
     from app.services import pipeline
@@ -45,14 +48,25 @@ async def test_recompressed_page_recovers_an_unconfirmed_print_draft_and_neighbo
     full = first["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
     assert PROJECTIVE_PRINT_OUTLINE_REVIEW in full["reason_codes"]
     assert first["segmentation_mask"]["projective_outline_review"] is True
+    # Supply measured metadata as it would be stored on an existing mounted
+    # print. This source lets the unchanged-corner PATCH reach the save path.
+    spans = [full["warp_quad"][:2]]
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, UUID(first["id"]))
+        photo.segmentation_mask = {**photo.segmentation_mask, "mounted_paper_edge_traces": spans}
+        await session.commit()
     first_url = f"/api/v1/photos/{first['id']}"
     checked = await client.patch(f"{first_url}/bounding-box", json={
         "bounding_box": first["bounding_box"], "confirm_print_outline": True,
-        "segmentation_mask": {"source": "manual_quad", "warp_quad": form["warp_quad"], "polygon": form["warp_quad"]},
+        "segmentation_mask": {"source": "manual_quad", "warp_quad": full["warp_quad"], "polygon": full["warp_quad"]},
     })
     assert checked.status_code == 200, checked.text
     assert checked.json()["segmentation_mask"]["projective_outline_confirmed"] is True
-    assert PROJECTIVE_PRINT_OUTLINE_REVIEW in checked.json()["enhancement_applied"]["correction"]["crop_modes"]["full_print"]["reason_codes"]
+    assert checked.json()["segmentation_mask"]["mounted_paper_edge_traces"] == spans
+    checked_mode = checked.json()["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+    assert PROJECTIVE_PRINT_OUTLINE_REVIEW in checked_mode["reason_codes"]
+    assert checked_mode["suggested_edge_traces"] == spans
+    assert checked_mode["suggested_edge_source"] == DARK_MOUNTED_EDGE_SOURCE
     after = (await client.get(review_url)).json()[0]["payload"]
     assert after["detection_count"] == 1 and after["deferred_print_proposals"] == []
     assert after["missing_print_edge_traces"] == initial["missing_print_edge_traces"]

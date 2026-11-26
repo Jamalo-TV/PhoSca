@@ -7573,6 +7573,63 @@ receipts are recorded locally under
 python -m pytest -q backend/tests/test_pipeline/test_fragmented_prints.py -k red_mount
 ```
 
+### Show the visible paper edges of an already counted mounted print
+
+In the 6,016 × 3,812 Willett 95 source, the active upper-left
+classical contour omits parts of the dam photograph. The four
+holder centres enclose 99.19% of that contour. The contour covers
+85.03% of the provisional holder quadrilateral. The ordinary upload
+adds seven measured spans. Three lie wholly outside the old outline
+by at least 177.7 px on top, 90.2 px on the right and 76.1 px below.
+The top span alone is about 699 native pixels long.
+[Native scan and catalogue](https://historycenter.mld.org/willett_album/items/col003_p95.html)
+
+When the count search finds no independent offer, the algorithm can
+attach measured spans to one weak classical claim. The existing
+claim must be at least 97% inside the holder quadrilateral and
+cover 60–90% of it. At least two measured spans must lie outside
+the claim with clearance at both ends and at the midpoint. Other
+photo claims and open count proposals still veto an overlap.
+The editor draws the native measurements on the original page.
+Both modes use the projective-outline review until the physical
+corners can be verified. An unchanged geometry confirmation keeps
+the open spans. A replacement outline gets its own geometry check.
+The active count, source mask contour and current warp are kept on
+upload. The mounted edges contribute only to the review overlay.
+
+The native multipart replay gives three active rows and seven
+segments on the clipped print. Desktop and mobile each display the
+same seven segments. A normal reprocess preserves all three ordinary
+JPEGs byte-for-byte. The explicit same-corner save on this source is
+rejected by the protected-content check. The overlay and current
+warp remain available for review, and both download modes and the
+legacy trimmed download remain held. A separate API fixture covers
+the accepted same-geometry save and checks that the spans persist
+in the held mode.
+
+The provisional geometry cannot establish the paper underneath the
+holders. A separate experiment fit a quadrilateral through the four
+rails. Against the native development draft, it recovered 771,210
+visible source pixel centres and reduced omitted visible paper from
+18.03% to 1.21%. A comparison with the second copy on Willett 80
+found three distinct bridge landmarks missing in the old crop.
+All three fall inside the experimental outline. The larger warp
+also includes about 49,262 holder pixel centres. Its estimated
+foreign bilinear sample weight is 1.26%. The preview guard rejects
+the render because a new face-detector region crosses the upper-left
+holder. The review shows the measured open spans on the original.
+
+In 40 paired registered replays, this annotation appeared only on
+native Willett 95. Both smaller Willett 95 count offers matched the
+baseline, as did all active polygons and pending count records across
+the replay. The partial check ran 12 times. Its median and p95 elapsed
+times on one OpenCV thread were 73.9 and 290.8 ms under shared load.
+Whole-print and motif scoring agree across all eight paired regression
+reports. The frozen detector matches 18/18 prints and the seeded
+geometry run passes 11/11 whole prints and 12/12 motifs.
+`dark_album_review` advances to revision 3. Receipts remain local
+under `runs/crop-quality/truncated-dark-mount-review/`.
+
 ### Preview a motif with one disputed paper edge
 
 The `white_margin` and `camera_tilt` controls already had a supported
@@ -7919,3 +7976,11 @@ returned HTTP 403. Both collections remain source leads.
 [Digitization project](https://greyroots.com/collections-and-research/archives/tweedsmuirs) ·
 [Aberdeen](https://greyroots.com/sites/default/files/aberdeen_tweedsmuir_vol._1.pdf) ·
 [Woodford](https://greyroots.com/sites/default/files/woodford_tweedsmuir_history_vol._1_part_1.pdf)
+
+An exact-byte inventory recheck examined 13,070 readable local image
+files and 22 image members in 11 archives against the seven tracked
+reference packets. It found none of the 26 pinned page images or the
+12 separate reference files. Direct attempts to restore all 18 pages
+from the parked Getty, Rijksmuseum and Met calibration manifest
+received HTTP 403 from the network tunnel before any image arrived.
+No image was scored and the draft split roles are unchanged.

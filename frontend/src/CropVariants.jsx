@@ -387,6 +387,9 @@ export function paperOutlineNeedsConfirmation(fullPrint) {
 }
 
 export function getPrintEdgeReviewHint(fullPrint) {
+  if (fullPrint?.suggested_edge_source === "dark_mounted_paper_edges") {
+    return "Die gestrichelten Abschnitte zeigen sichtbare Papierkanten ausserhalb und entlang des bisherigen Zuschnitts. Prüfe den Rand am Original. Die Fotoecken verdecken die Papierspitzen. Für den vollständigen Zuschnitt hilft eine Aufnahme mit frei sichtbarem Papierrand.";
+  }
   if (fullPrint?.reason_codes?.includes(darkBackingOutlineReason)) {
     return printEdgeReviewHints[darkBackingOutlineReason];
   }

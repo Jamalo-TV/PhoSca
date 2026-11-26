@@ -865,6 +865,10 @@ async def update_photo_bounding_box(
             segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask.get("polygon"))
         if "warp_quad" not in segmentation_mask and len(segmentation_mask.get("polygon") or []) == 4:
             segmentation_mask["warp_quad"] = deepcopy(segmentation_mask["polygon"])
+        if original_mask.get("mounted_paper_edge_traces") and _same_visible_outline(
+            full_print.get("warp_quad"), segmentation_mask.get("warp_quad"), native_size=(width, height),
+        ):
+            segmentation_mask["mounted_paper_edge_traces"] = deepcopy(original_mask["mounted_paper_edge_traces"])
         size = payload.segmentation_mask.print_size_mm if payload.segmentation_mask else None
         edited_fields = payload.segmentation_mask.model_fields_set if payload.segmentation_mask else set()
         previous_mask = (photo.segmentation_mask or {}) if photo.segmentation_confidence is None else {}

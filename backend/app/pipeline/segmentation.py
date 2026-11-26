@@ -4148,7 +4148,7 @@ def _offer_dark_mounted_print(image: np.ndarray, result: SegmentationResult) -> 
             claims.append(np.float32([(point["x"], point["y"]) for point in polygon]))
     suggestion = find_dark_mounted_print_review(image, claims)
     if suggestion is None:
-        return result
+        return _review_truncated_dark_mount(image, result, claims)
     outline, traces = suggestion
     height, width = image.shape[:2]
     pending.append({
@@ -4160,6 +4160,36 @@ def _offer_dark_mounted_print(image: np.ndarray, result: SegmentationResult) -> 
     return SegmentationResult(result.detections, {
         **metadata, "fusion": {**fusion, "deferred_print_proposals": pending},
     })
+
+
+def _review_truncated_dark_mount(
+    image: np.ndarray, result: SegmentationResult, claims: list[np.ndarray],
+) -> SegmentationResult:
+    candidates = [
+        index for index, item in enumerate(result.detections)
+        if item.geometry_valid and not item.review_reasons and len(claims[index]) == 4
+        and not (item.mask.get("visible_polygon") or item.mask.get("warp_quad"))
+        and item.mask.get("source") == "classical_border_quad" and item.mask.get("detector_source") == "edge_contour"
+        and .55 <= item.confidence <= .74
+        and (item.mask.get("fusion") or {}).get("proposal_families") == ["classical"]
+        and (item.mask.get("boundary_evidence") or {}).get("score", 1.) <= .58
+    ]
+    if len(candidates) != 1:
+        return result
+    index, = candidates
+    evidence = find_dark_mounted_print_review(image, [*claims[:index], *claims[index + 1:]], partial_claim=claims[index])
+    if evidence is None:
+        return result
+    _, spans = evidence
+    height, width = image.shape[:2]
+    detections = result.detections.copy()
+    original = detections[index]
+    detections[index] = replace(original, mask={
+        **original.mask,
+        "projective_outline_review": True,
+        "mounted_paper_edge_traces": [_normalized_polygon(span, width, height) for span in spans],
+    })
+    return SegmentationResult(detections, result.metadata)
 
 
 def segment_album_page(

@@ -11,9 +11,10 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic
 from app.pipeline.print_edges import _edge_band, _line_endpoints, _sample_lab, _side_line
 
 
-DARK_ALBUM_REVIEW_REVISION = 2
+DARK_ALBUM_REVIEW_REVISION = 3
 DARK_ALBUM_PROPOSAL = "possible_dark_album_backing"
 DARK_BACKING_OUTLINE_REVIEW = "DARK_BACKING_OUTLINE_REVIEW"
+DARK_MOUNTED_EDGE_SOURCE = "dark_mounted_paper_edges"
 
 _UNIT = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
 _CORE_AXIS = np.linspace(.08, .92, 104, dtype=np.float32)
@@ -70,9 +71,9 @@ def _dark_mounted_side_traces(image: np.ndarray, outline: np.ndarray) -> list[np
 
 
 def find_dark_mounted_print_review(
-    image: np.ndarray, claims: list[np.ndarray],
+    image: np.ndarray, claims: list[np.ndarray], *, partial_claim: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[np.ndarray]] | None:
-    """Offer one possible independent print with contrasting mounts covering its tips."""
+    """Measure visible edges of one mounted print with its tips under contrasting holders."""
     height, width = image.shape[:2]
     if max(height, width) < 640 or min(height, width) < 380:
         return None
@@ -83,6 +84,7 @@ def find_dark_mounted_print_review(
         return None
     working_scale = np.float32(working.shape[1::-1]) - 1
     native_scale = np.float32([width - 1, height - 1])
+    active_outline = partial_claim * native_scale if partial_claim is not None else None
     choices = []
     for indices in combinations(range(len(centers)), 4):
         try:
@@ -105,10 +107,25 @@ def find_dark_mounted_print_review(
         normalized = seed / working_scale
         if any(normalized_polygon_overlap(normalized, claim).first_containment > .025 for claim in claims):
             continue
+        if partial_claim is not None:
+            match = normalized_polygon_overlap(normalized, partial_claim)
+            if match.second_containment < .97 or not .60 <= match.first_containment <= .90:
+                continue
         if not _photo_texture(working, seed):
             continue
         outline = normalized * native_scale
         spans = _dark_mounted_side_traces(image, outline)
+        if active_outline is not None:
+            shortest = np.linalg.norm(np.roll(outline, -1, axis=0) - outline, axis=1).min()
+            clearance = max(12., .02 * shortest)
+            outside_count = sum(
+                all(
+                    cv2.pointPolygonTest(active_outline, tuple(point), True) < -clearance
+                    for point in (*path, path.mean(axis=0))
+                ) for path in spans
+            )
+            if outside_count < 2:
+                continue
         if spans:
             choices.append((outline, spans))
             if len(choices) > 1:
