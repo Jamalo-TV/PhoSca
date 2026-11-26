@@ -47,7 +47,6 @@ from app.pipeline.crop_validation import (
     segmentation_matches_crop_profile,
 )
 from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE
-from app.pipeline.dark_album_review import dark_album_neighbor_masks
 from app.pipeline.decisions import (
     MANUAL_NEIGHBOR_OVERLAP, ReviewReason, component_review_reasons, confidence_components, is_reviewed_non_print,
     remember_ready_print_for_neighbor_review,
@@ -59,6 +58,7 @@ from app.pipeline.edge_prints import capture_edge_requires_review
 from app.pipeline.enhancement import conservative_enhance_photo, prepare_for_cutout
 from app.pipeline.exif import write_caption_exif
 from app.pipeline.fragmented_prints import SOURCE_FRAGMENT_PROPOSAL
+from app.pipeline.fusion_ownership import deferred_neighbor_masks
 from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels
 from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, save_png, sha256_file
 from app.pipeline.manual_paper_boundary import (
@@ -603,7 +603,7 @@ async def perspective_correction_task_logic(
             reference = _measured_print_reference(other_id, other_mask, confidence, correction, width, height)
             if reference is not None:
                 measured_references.append(reference)
-        pending_neighbors = dark_album_neighbor_masks(page_steps.get("segmentation") or {})
+        pending_neighbors = deferred_neighbor_masks(page_steps.get("segmentation") or {})
     else:
         pending_neighbors = []
     try:

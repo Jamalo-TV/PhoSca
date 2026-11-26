@@ -542,7 +542,7 @@ def _legacy_mode(vertices, image, source_shape, rotation):
 
 
 def _render_crops(image, proposals, settings, temporary, *, protected=None, include_previews=False, segmentation=None):
-    from app.pipeline.dark_album_review import dark_album_neighbor_masks
+    from app.pipeline.fusion_ownership import deferred_neighbor_masks
     from app.pipeline.image_ops import save_jpeg
     from app.pipeline.perspective import correct_photo_crop, page_plane_from_prints
     from app.pipeline.protected_regions import detect_protected_regions
@@ -552,7 +552,7 @@ def _render_crops(image, proposals, settings, temporary, *, protected=None, incl
     page_plane = None
     if settings.enable_precise_photo_crops:
         page_plane = page_plane_from_prints(image, None, [mask for _, mask, _ in proposals if mask])
-    pending_neighbors = dark_album_neighbor_masks(segmentation or {})
+    pending_neighbors = deferred_neighbor_masks(segmentation or {})
     rendered = []
     for index, (box, mask, geometry_valid) in enumerate(proposals):
         try:

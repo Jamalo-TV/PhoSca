@@ -28,8 +28,8 @@ from app.pipeline.fragmented_prints import (
     measure_extended_print_outline, measure_fragmented_print, suggest_dark_mounted_outline, suggest_fragmented_outline,
 )
 from app.pipeline.fusion_ownership import (
-    NESTED_FALLBACK_CONTOUR, NESTED_FALLBACK_CONTOUR_REVIEW, _covered_area,
-    nested_fallback_contour_spans, unsupported_fallback_ownership,
+    BORROWED_FALLBACK_EDGE, NESTED_FALLBACK_CONTOUR, NESTED_FALLBACK_CONTOUR_REVIEW, _covered_area,
+    borrowed_fallback_edge_traces, nested_fallback_contour_spans, unsupported_fallback_ownership,
 )
 from app.pipeline.geometry import (
     PolygonOverlap,
@@ -1391,6 +1391,58 @@ def _defer_frame_backing_contours(
     ], list(deferred.values())
 
 
+def _defer_borrowed_fallback_contours(
+    source: np.ndarray, selected: list[SegmentationDetection],
+) -> tuple[list[SegmentationDetection], list[dict]]:
+    models = [index for index, item in enumerate(selected) if "model" in item.mask["fusion"]["proposal_families"]]
+    if not any(.40 <= selected[index].confidence < .70 for index in models):
+        return selected, []
+    height, width = source.shape[:2]
+    polygons = [_detection_polygon(item) for item in selected]
+    deferred = {}
+    for index, item in enumerate(selected):
+        fusion = item.mask["fusion"]
+        if (item.mask.get("detector_source") != "contrast_region" or fusion["proposal_families"] != ["classical"]
+                or fusion["proposal_count"] != 1 or not item.geometry_valid or item.review_reasons
+                or item.mask.get("warp_quad") or item.confidence > .68 or fusion["boundary_evidence"]["score"] >= .55):
+            continue
+        polygon = polygons[index]
+        overlaps = [(peer, normalized_polygon_overlap(polygon, polygons[peer])) for peer in models
+                    if _normalized_box_overlap(item.bounding_box, selected[peer].bounding_box)[2] >= .12]
+        overlaps = [(peer, overlap) for peer, overlap in overlaps if overlap.first_containment >= .12]
+        if len(overlaps) != 1:
+            continue
+        (peer, overlap), = overlaps
+        anchor = selected[peer]
+        boundary = anchor.mask["fusion"]["boundary_evidence"]
+        if (not .70 <= overlap.first_containment <= .90 or not .55 <= overlap.second_containment <= .82
+                or anchor.mask.get("source") != "yolo_seg_mask" or anchor.mask.get("detector_source") != "yolo_onnx"
+                or not anchor.geometry_valid or anchor.review_reasons or anchor.mask.get("warp_quad")
+                or not .40 <= anchor.confidence < .70 or boundary["score"] < .65 or boundary.get("border_contrast", 0) < .70):
+            continue
+        proposal = normalized_vertices_to_pixels(polygon, width, height)
+        owner = normalized_vertices_to_pixels(polygons[peer], width, height)
+        try:
+            traces = borrowed_fallback_edge_traces(source, proposal, owner)
+        except (cv2.error, ValueError):
+            continue
+        if traces is None:
+            continue
+        shared, interior, exposed = traces
+        deferred[index] = {
+            "id": fusion["cluster_id"],
+            "reason": BORROWED_FALLBACK_EDGE,
+            "parent_cluster_id": anchor.mask["fusion"]["cluster_id"],
+            "polygon": item.mask["polygon"],
+            "borrowed_edge_traces": [_normalized_polygon(shared, width, height)],
+            "interior_edge_traces": [_normalized_polygon(interior, width, height)],
+            "exposed_edge_traces": [_normalized_polygon(exposed, width, height)],
+            "source_mask": {key: item.mask[key] for key in ("source", "detector_source", "polygon", "visible_polygon",
+                            "visible_polygon_source", "proposal_visible_polygon") if key in item.mask},
+        }
+    return [item for index, item in enumerate(selected) if index not in deferred], list(deferred.values())
+
+
 def fuse_candidate_evidence(
     image: np.ndarray,
     model_detections: list[SegmentationDetection],
@@ -1541,10 +1593,10 @@ def fuse_candidate_evidence(
     if ownership_source is not None:
         selected, nested = _defer_nested_fallback_contours(ownership_source, selected)
         selected, backing = _defer_frame_backing_contours(ownership_source, selected)
-        for offer in (*nested, *backing):
+        selected, borrowed = _defer_borrowed_fallback_contours(ownership_source, selected)
+        for offer in (*nested, *backing, *borrowed):
             cluster_metadata[offer["id"]].update(decision="deferred_for_count_review", selection_reason=offer["reason"])
-        deferred.extend(nested)
-        deferred.extend(backing)
+        deferred.extend((*nested, *backing, *borrowed))
         deferred.sort(key=lambda offer: offer["id"])
     selected.sort(key=lambda detection: (detection.bounding_box["y1"], detection.bounding_box["x1"]))
     return selected, {

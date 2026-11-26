@@ -334,6 +334,27 @@ den sichtbaren Abzug. Die Markierung dient als Orientierung bei der
 Anzahlprüfung. Die beiden Zuschnittmodi werden separat beurteilt.
 [Beispiel mit Albumkante und Untergrund](data/evaluation/README.md#review-a-fallback-outline-crossing-the-album-edge)
 
+Berührt ein klassischer Kontrastvorschlag nur eine Aufnahmeecke,
+kann auch ein schwach erkannter Nachbar den Ausgangspunkt für die
+**Anzahlprüfung** liefern. Dazu müssen im Original mindestens drei
+Seiten des erfassten Nachbarn klar gestützt sein. Eine davon muss
+mit der einzigen klar gestützten Seite des Vorschlags übereinstimmen.
+An einer weiteren Seite muss der Vorschlag innerhalb des Motivs
+enden. An der exponierten Seite muss auf beiden Seiten ähnlich
+helles Material sichtbar sein. Eine durchgehende schmale Farbspur
+kann einen eigenen Papierrand anzeigen und verhindert diesen Hinweis.
+
+Der Vorschlag erscheint als offene violette Kontur. Orange zeigt die
+gemeinsame Kante, Türkis den Abschnitt im erfassten Abzug und Blau
+den Abschnitt mit ähnlich hellem Material. Prüfe am Original, ob
+ein eigener Abzug aufliegt. Wenn du dort Papier erkennst, kannst du
+den Vorschlag öffnen, seine Existenz bestätigen und vier Papierecken
+setzen. Bis zur Entscheidung berücksichtigt PhoSca die ursprüngliche
+Fläche bei den Zuschnittprüfungen der Nachbarn. Die Anzahlbestätigung
+entscheidet über die Vorschläge. Für den Export braucht jeder
+Zuschnittmodus seine eigene Freigabe.
+[Beispiel Golden 04 bei 270° und JPEG75](data/evaluation/README.md#review-a-fallback-contour-sharing-a-weakly-detected-print-edge)
+
 Wenn ein klassisch erkannter Umriss eine Ecke diagonal abschneidet,
 kann **Ganzer Abzug** eine zweite Vorschau anbieten. PhoSca verlängert
 die beiden betroffenen Seiten in einem begrenzten Suchbereich und

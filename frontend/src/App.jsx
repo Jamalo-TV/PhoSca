@@ -52,7 +52,7 @@ import {
   CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   countGroupReviewError, CountGroupReview, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints,
-  filmGridCountHint, filmGridHint, filmGridReason, filmGridRimHint, frameBackingProposal,
+  borrowedFallbackProposal, filmGridCountHint, filmGridHint, filmGridReason, filmGridRimHint, frameBackingProposal,
   getDeferredPrintEvidence, getDeferredPrintProposals, getDeferredParentCropHints, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
@@ -2113,7 +2113,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
               {proposal.reason === sourceFragmentProposal ? "Möglichen gemeinsamen Abzug prüfen"
                 : proposal.reason === darkBackingProposal ? `Dunkle Fläche prüfen${deferredProposals.length > 1 ? ` (${index + 1})` : ""}`
                 : proposal.reason === nestedFallbackProposal ? `Innenkontur ${index + 1} prüfen`
-                : proposal.reason === frameBackingProposal ? `Vorschlag ${index + 1} am Aufnahmerand prüfen`
+                : [frameBackingProposal, borrowedFallbackProposal].includes(proposal.reason) ? `Vorschlag ${index + 1} am Aufnahmerand prüfen`
                 : proposal.reason === "possible_mounted_print" ? `Möglichen Ganzabzug ${index + 1} prüfen`
                 : `Vorschlag ${index + 1} als Abzug ergänzen`}
             </button>

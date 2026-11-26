@@ -23,13 +23,6 @@ class DarkBackingEvidence:
     borrowed_traces: list[np.ndarray]
 
 
-def dark_album_neighbor_masks(segmentation: dict) -> list[dict]:
-    """Keep pending areas in the source coverage checked by adjacent crops."""
-    pending = (segmentation.get("fusion") or {}).get("deferred_print_proposals") or []
-    return [offer["source_mask"] for offer in pending if offer.get("reason") == DARK_ALBUM_PROPOSAL
-            and isinstance(offer.get("source_mask"), dict)]
-
-
 def _dark_core(image: np.ndarray, quad: np.ndarray) -> bool:
     points = cv2.perspectiveTransform(_CORE_GRID, cv2.getPerspectiveTransform(_UNIT, quad))[0]
     lab = _sample_lab(image, points)

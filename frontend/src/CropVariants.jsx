@@ -36,6 +36,7 @@ export const nestedPrintHint = "Prüfe am Original, ob der gestrichelte Bereich 
 export const deferredPrintHint = "Prüfe die violett gestrichelten Konturen am Original. Bestätige die Anzahl, wenn alle Abzüge bereits erfasst sind.";
 export const nestedFallbackProposal = "nested_fallback_contour";
 export const frameBackingProposal = "possible_frame_backing";
+export const borrowedFallbackProposal = "possible_borrowed_print_edge";
 export const darkBackingProposal = "possible_dark_album_backing";
 export const standalonePrintConfirmation = "Hier liegt ein eigener Papierabzug.";
 const deferredPrintReviewHints = {
@@ -50,6 +51,12 @@ const deferredPrintReviewHints = {
     count: "Prüfe am Original, ob der Vorschlag am Aufnahmerand über Albumseite und Untergrund läuft oder ob dort ein eigener Papierabzug liegt.",
     draft: "Erfasse den Vorschlag nur, wenn dort ein eigener Papierabzug liegt. Setze die vier Ecken an seinen sichtbaren Papierrand.",
     evidence: "Türkis markiert den gemessenen Materialwechsel. Prüfe auch, ob zwischen Linie und Aufnahmerand ein schmaler Papierabzug liegt.",
+  },
+  [borrowedFallbackProposal]: {
+    countId: "borrowed-edge-count-hint",
+    count: "Der Vorschlag folgt einer Kante eines erfassten Abzugs und reicht bis zum Aufnahmerand. Prüfe am Original, ob dort ein eigener Papierabzug liegt.",
+    draft: "Setze die vier Ecken an den sichtbaren Papierrand, wenn du hier einen eigenen Abzug erkennst.",
+    evidence: "Orange markiert die gemeinsame Kante, Türkis die Linie im erfassten Abzug und Blau den Abschnitt mit ähnlich hellem Material auf beiden Seiten.",
   },
 };
 const deferredParentCropHints = [
@@ -76,6 +83,11 @@ const nestedFallbackEvidence = [
 ];
 const frameBackingEvidence = [
   { key: "surface_edge_traces", label: "Gemessener Materialwechsel am Aufnahmerand", color: "#0e7490", dash: [6, 4] },
+];
+const borrowedFallbackEvidence = [
+  { key: "borrowed_edge_traces", label: "Gemeinsame Kante mit einem erfassten Abzug", color: "#c2410c", dash: [3, 4] },
+  { key: "interior_edge_traces", label: "Zu prüfender Abschnitt innerhalb des Abzugs", color: "#0e7490", dash: [6, 4] },
+  { key: "exposed_edge_traces", label: "Ähnlich helles Material auf beiden Seiten", color: "#2563eb", dash: [8, 4] },
 ];
 export const sourceFragmentProposal = "possible_source_fragmented_print";
 const sourceFragmentGroupReason = "SOURCE_FRAGMENT_GROUP_REVIEW";
@@ -150,14 +162,16 @@ export function getSourceEdgeTraces(traces) {
 export function getDeferredPrintEvidence(proposal) {
   const styles = proposal?.reason === darkBackingProposal ? darkBackingEvidence
     : proposal?.reason === nestedFallbackProposal ? nestedFallbackEvidence
-    : proposal?.reason === frameBackingProposal ? frameBackingEvidence : [];
+    : proposal?.reason === frameBackingProposal ? frameBackingEvidence
+    : proposal?.reason === borrowedFallbackProposal ? borrowedFallbackEvidence : [];
   return styles.map((style) => ({
     ...style, traces: getSourceEdgeTraces(proposal[style.key]).filter((trace) => trace.length === 2),
   })).filter(({ traces }) => traces.length);
 }
 
 export function standalonePrintNeedsConfirmation(reason) {
-  return reason === darkBackingProposal || reason === nestedFallbackProposal || reason === frameBackingProposal;
+  return reason === darkBackingProposal || reason === nestedFallbackProposal || reason === frameBackingProposal
+    || reason === borrowedFallbackProposal;
 }
 
 export function deferredPrintCountHintId(reason, mobile = false) {

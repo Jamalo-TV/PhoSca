@@ -11,9 +11,16 @@ from app.pipeline.geometry import (
 from app.pipeline.print_edges import _edge_band, _line_endpoints, _side_line, refine_print_boundary
 
 
-FUSION_OWNERSHIP_REVISION = 4
+FUSION_OWNERSHIP_REVISION = 5
 NESTED_FALLBACK_CONTOUR = "nested_fallback_contour"
 NESTED_FALLBACK_CONTOUR_REVIEW = "NESTED_FALLBACK_CONTOUR_REVIEW"
+BORROWED_FALLBACK_EDGE = "possible_borrowed_print_edge"
+
+
+def deferred_neighbor_masks(segmentation: dict) -> list[dict]:
+    """Keep disputed source claims in neighboring crops until count review."""
+    pending = (segmentation.get("fusion") or {}).get("deferred_print_proposals") or []
+    return [offer["source_mask"] for offer in pending if isinstance(offer.get("source_mask"), dict)]
 
 
 def _covered_area(quad: np.ndarray, owners: list[np.ndarray]) -> float:
@@ -148,6 +155,100 @@ def _weak_interior_span(
         if np.mean(peaks >= 5, axis=0).max() >= .45:
             return False
     return True
+
+
+def _has_faint_chroma_seam(image: np.ndarray, start: np.ndarray, end: np.ndarray) -> bool:
+    """Veto a coherent tinted rail that can have little luminance contrast."""
+    fractions = np.linspace(.08, .92, 128, dtype=np.float32)
+    edge = end - start
+    normal = np.abs(np.float32([-edge[1], edge[0]]) / np.linalg.norm(edge))
+    stations = start + fractions[:, None] * edge
+    clearance = np.minimum(stations, np.float32(image.shape[1::-1]) - 1 - stations)
+    usable = (clearance >= 32 * normal).all(axis=1)
+    if usable.mean() < .80:
+        return True
+    fractions = fractions[usable]
+    band = _edge_band(image, start, end, list(range(-32, 33)), fractions=fractions)
+    if band is None:
+        return True
+    chroma = band[:, :, 1:]
+    rows = np.arange(len(fractions))[:, None]
+    offsets = np.arange(12, 53)[None, :]
+    for drift in (-12, -8, -4, 0, 4, 8, 12):
+        columns = offsets + np.rint(drift * (fractions[:, None] - .5)).astype(int)
+        center = np.mean([chroma[rows, columns + delta] for delta in (-1, 0, 1)], axis=0)
+        for shoulder in (3, 5, 7):
+            before = center - chroma[rows, columns - shoulder]
+            after = center - chroma[rows, columns + shoulder]
+            axis = np.median((before + after) / 2, axis=0)
+            magnitude = np.linalg.norm(axis, axis=1)
+            if not np.any(magnitude >= 3):
+                continue
+            axis /= np.maximum(magnitude[:, None], 1)
+            support = np.minimum((before * axis).sum(axis=2), (after * axis).sum(axis=2)) >= 2.5
+            quarters = [part.mean(axis=0) for part in np.array_split(support, 4)]
+            if np.any((magnitude >= 3) & (support.mean(axis=0) >= .72) & (np.min(quarters, axis=0) >= .60)):
+                return True
+    return False
+
+
+def borrowed_fallback_edge_traces(
+    image: np.ndarray, proposal: np.ndarray, owner: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """Find source evidence for count review when a weak model supplies a neighboring outline."""
+    if len(proposal) != 4 or not cv2.isContourConvex(proposal):
+        return None
+    quad = order_quad_cyclic(proposal)
+    gap = np.minimum(quad, np.float32(image.shape[1::-1]) - 1 - quad)
+    if np.count_nonzero(gap.min(axis=1) <= 2) != 1 or not np.any(np.all(gap <= 2, axis=1)):
+        return None
+    shortest = float(np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min())
+    if shortest < 240:
+        return None
+
+    radius = int(np.clip(round(.032 * shortest), 7, 36))
+    fractions = np.linspace(.08, .92, 64, dtype=np.float32)
+    borrowed = []
+    interior = []
+    exposed = []
+    for start, end in zip(quad, np.roll(quad, -1, axis=0), strict=True):
+        line, evidence = _side_line(image, start, end, radius)
+        if evidence["ambiguous"]:
+            return None
+        if line is not None:
+            if evidence["support"] < .90 or borrowed:
+                return None
+            first, last = _line_endpoints(start, end, line)
+            borrowed.append(first + fractions[:, None] * (last - first))
+            continue
+        if evidence["support"] >= .45:
+            return None
+        stations = start + fractions[:, None] * (end - start)
+        distances = np.array([cv2.pointPolygonTest(owner, tuple(point), True) for point in stations])
+        if (distances > 18).mean() >= .95 and _weak_interior_span(image, start, end, fractions):
+            if _has_faint_chroma_seam(image, start, end):
+                return None
+            interior.append(stations[[0, -1]])
+        clear = distances < -14
+        if clear.mean() >= .85 and _continues_across_paper(image, start, end, clear, fractions):
+            if _has_faint_chroma_seam(image, start, end):
+                return None
+            exposed.append(stations[clear][[0, -1]])
+    if len(borrowed) != 1 or len(interior) != 1 or len(exposed) != 1:
+        return None
+
+    seed, method = quad_from_polygon(owner)
+    if method == "minimum_area_rect":
+        return None
+    owner_shortest = float(np.linalg.norm(np.roll(seed, -1, axis=0) - seed, axis=1).min())
+    fitted, sides, _ = refine_print_boundary(image, seed, search_radius=int(np.clip(round(.042 * owner_shortest), 7, 42)))
+    if fitted is None or any(side["ambiguous"] for side in sides.values()):
+        return None
+    strong = [side["support"] >= .88 for side in sides.values()]
+    shared = _borrowed_side(borrowed[0], fitted)
+    if sum(strong) < 3 or shared is None or not strong[shared]:
+        return None
+    return borrowed[0][[0, -1]], interior[0], exposed[0]
 
 
 def _distributed_stock_rail(votes: np.ndarray) -> bool:

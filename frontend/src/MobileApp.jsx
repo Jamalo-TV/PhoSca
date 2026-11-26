@@ -10,7 +10,7 @@ import {
   countGroupReviewError, CountGroupReview, crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridRimHint,
   filmGridReason, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
-  deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints, frameBackingProposal,
+  borrowedFallbackProposal, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints, frameBackingProposal,
   getDeferredParentCropHints, getDeferredPrintEvidence, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
@@ -351,7 +351,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   )) : !deferredDraft && deferredProposals.map(({ id, visible_polygon: polygon, uncertain_edge: uncertainEdge, reason }, index) => (
     <g key={id} aria-label={reason === darkBackingProposal ? `Dunkle Fläche ${index + 1}`
       : reason === nestedFallbackProposal ? `Innenkontur ${index + 1}`
-        : reason === frameBackingProposal ? `Vorschlag ${index + 1} am Aufnahmerand` : "Möglicher Abzug"}
+        : [frameBackingProposal, borrowedFallbackProposal].includes(reason) ? `Vorschlag ${index + 1} am Aufnahmerand` : "Möglicher Abzug"}
       stroke="#7e22ce" strokeWidth="6" pointerEvents="none">
       {polygon.map(({ x, y }, side) => {
         const next = polygon[(side + 1) % polygon.length];
@@ -953,7 +953,7 @@ function CropReview({ albumId, goHome }) {
           }}>
           {proposal.reason === darkBackingProposal ? `Dunkle Fläche prüfen${deferredProposals.length > 1 ? ` (${index + 1})` : ""}`
             : proposal.reason === nestedFallbackProposal ? `Innenkontur ${index + 1} prüfen`
-              : proposal.reason === frameBackingProposal ? `Vorschlag ${index + 1} am Aufnahmerand prüfen`
+              : [frameBackingProposal, borrowedFallbackProposal].includes(proposal.reason) ? `Vorschlag ${index + 1} am Aufnahmerand prüfen`
                 : "Möglichen gemeinsamen Abzug prüfen"}
         </button>;
       })}

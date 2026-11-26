@@ -9,7 +9,8 @@ from app.evaluation.crop_fixtures import _photograph
 from app.pipeline.enhancement import prepare_for_cutout
 from app.pipeline.frame_backing_review import FRAME_BACKING_COUNT_REVIEW, FRAME_BACKING_PROPOSAL
 from app.pipeline.fusion_ownership import (
-    NESTED_FALLBACK_CONTOUR, NESTED_FALLBACK_CONTOUR_REVIEW, nested_fallback_contour_spans,
+    BORROWED_FALLBACK_EDGE, NESTED_FALLBACK_CONTOUR, NESTED_FALLBACK_CONTOUR_REVIEW,
+    deferred_neighbor_masks, nested_fallback_contour_spans,
 )
 from app.pipeline.image_ops import load_image
 from app.pipeline.segmentation import _make_detection, fuse_candidate_evidence
@@ -233,3 +234,66 @@ def test_frame_backing_crossing_is_reviewable_and_keeps_distinct_print_evidence(
     trace, = offer["surface_edge_traces"]
     points = np.array([[p["x"], p["y"]] for p in trace]) * [width - 1, height - 1]
     np.testing.assert_allclose(points, [[2311, 1782.42], [1119, 1807.45]], atol=2)
+
+
+@pytest.mark.parametrize("separate_rim", [None, "bright", "faint_tinted"])
+def test_model_with_weak_score_can_anchor_a_count_review_without_releasing_neighbor_claim(separate_rim):
+    source = np.ascontiguousarray(np.rot90(load_image(_PAGE_04), 3))
+    ok, jpeg = cv2.imencode(".jpg", source, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    assert ok
+    source = cv2.imdecode(jpeg, cv2.IMREAD_COLOR)
+    height, width = source.shape[:2]
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+
+    def make(points, confidence, detector):
+        detection = _make_detection(
+            box={}, points=np.float32(points), confidence=confidence, image_width=width, image_height=height,
+            settings=settings, source="yolo_seg_mask" if detector == "yolo_onnx" else "classical_border_quad",
+            detector_source=detector,
+        )
+        assert detection is not None
+        return detection
+
+    owner = make([(98, 1605), (98, 2298), (451, 2309), (536, 2353), (1188, 2352), (1195, 1605),
+                  (561, 1605), (1021, 1632), (578, 1654), (400, 1605)], .432, "yolo_onnx")
+    other = make([(40, 860), (537, 852), (1171, 1866), (60, 2300)], .768, "edge_contour")
+    outline = [(101, 1856), (1189, 1797), (1195, 2362), (0, 2559)]
+    suspect = make(outline, .579, "contrast_region")
+    prepared, _ = prepare_for_cutout(source)
+    before, baseline = fuse_candidate_evidence(prepared, [owner], [other, suspect])
+    if separate_rim == "bright":
+        paper = np.zeros(source.shape[:2], np.uint8)
+        cv2.fillConvexPoly(paper, np.int32(outline), 255)
+        rim = paper - cv2.erode(paper, np.ones((3, 3), np.uint8))
+        source[rim != 0] = (209, 223, 234)
+    elif separate_rim == "faint_tinted":
+        # A perspective-shifted reproduction with the same artwork but a
+        # narrow tinted perimeter survives JPEG mainly in chroma.
+        physical_outline = np.float32([[89.638, 1849.683], [1200.317, 1790.253], [1194.663, 2366.828], [0, 2559]])
+        paper = np.zeros(source.shape[:2], np.uint8)
+        cv2.fillConvexPoly(paper, np.rint(physical_outline * 256).astype(np.int32), 255, cv2.LINE_AA, shift=8)
+        rim = paper - cv2.erode(paper, np.ones((13, 13), np.uint8))
+        exposed = rim > 0
+        source[exposed] = np.uint8(np.clip(source[exposed] + rim[exposed, None] / 255 * [-13.5, 0, 11.25], 0, 255))
+        blur = cv2.GaussianBlur(source, (0, 0), .85)
+        ok, jpeg = cv2.imencode(".jpg", blur, [cv2.IMWRITE_JPEG_QUALITY, 75])
+        assert ok
+        source = cv2.imdecode(jpeg, cv2.IMREAD_COLOR)
+
+    after, evidence = fuse_candidate_evidence(prepared, [owner], [other, suspect], ownership_source=source)
+    if separate_rim:
+        assert after == before
+        assert "deferred_print_proposals" not in evidence
+        return
+    assert after == [item for item in before if item.mask["fusion"]["cluster_id"] != 2]
+    assert evidence["clusters"][:2] == baseline["clusters"][:2]
+    assert evidence["clusters"][2]["decision"] == "deferred_for_count_review"
+    offer, = evidence["deferred_print_proposals"]
+    assert (offer["id"], offer["parent_cluster_id"], offer["reason"]) == (2, 0, BORROWED_FALLBACK_EDGE)
+    assert offer["polygon"] == suspect.mask["polygon"]
+    for key in ("borrowed_edge_traces", "interior_edge_traces", "exposed_edge_traces"):
+        trace, = offer[key]
+        assert len(trace) == 2 and trace[0] != trace[1]
+    assert deferred_neighbor_masks({"fusion": evidence}) == [
+        {key: suspect.mask[key] for key in ("source", "detector_source", "polygon")},
+    ]

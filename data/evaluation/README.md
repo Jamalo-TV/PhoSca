@@ -423,14 +423,22 @@ pending. This intake adds no verified release group. [Romanov edition](https://s
 Columbia catalogs the Barbara Curtis Adachi collection's page scans
 before album dismantling and preserves the unmounted regular prints
 as a separate series. Album-page records `01-12` and `46-38` identify
-different physical albums. The published images carry a nonprofit
-educational-use license, and matching print captures with sufficient
-geometry and usage rights remain open. The Ermakov archive instead
+different physical albums. The archive documents 400 ppi, 48-bit
+page TIFFs captured before dismounting. The full public catalog at
+`70c830d` contains 13,476 slide images, 1,750 album pages, 54 other
+objects and zero individual paper-print captures. Its `images.json`
+SHA-256 is `24506dc33a19361c7fd9aedf0ec8fcb2197f701ddeb94fe2360f57513fe8c461`.
+The published JPEGs carry a nonprofit educational-use license.
+The archives hold dismounted prints numbered on their backs. A
+request would need the capture and placement of the same numbered
+piece of paper, a use authorization, and a check excluding the
+273 later impressions from negatives. The Ermakov archive
 matches sales-album images and individual stock prints by negative
 number. Those matches can be different impressions from the same
 negative and cannot establish physical paper identity. [Columbia finding aid](https://www.columbia.edu/cu/lweb/eresources/archives/eastasian/adachi/ldpd.6226404.001b.html) ·
 [Adachi page `01-12`](https://bunraku.library.columbia.edu/images/44986/) ·
 [Adachi page `46-38`](https://bunraku.library.columbia.edu/images/46513/) ·
+[Columbia image catalog](https://github.com/cul/ldpd-bunraku/blob/70c830d07d93cd22ed2010473a4635138025e456/_data/images.json) ·
 [Columbia license](https://bunraku.library.columbia.edu/rights/) ·
 [Ermakov conservation report](https://resources.culturalheritage.org/pmgtopics/2011-volume-fourteen/14-17_Maes.html)
 
@@ -5896,6 +5904,108 @@ detections and the seeded control retains 11/11 whole prints and
 and two existing extra proposals on the 270° JPEG75 case.
 Receipts and the exact sampling comparison are local under
 `runs/crop-quality/continuing-album-layer/`.
+
+### Review a fallback contour sharing a weakly detected print edge
+
+Golden 04 at 270° and JPEG75 originally returned three model masks
+for three physical prints, plus two classical fallback proposals.
+The right print's model confidence is 0.432 and its pre-fusion
+boundary score is 0.6898. The additional contrast-region proposal
+has confidence 0.579 and score 0.4153. Its footprint includes part
+of that print, pale album material and at least 42,712 floor pixel
+centres in a conservative visually checked region. The older
+ownership check excludes the model below confidence 0.70. The
+older backing rule requires two frame vertices instead of the one
+observed capture-corner vertex.
+
+The new review cue considers a single contrast proposal with score
+below 0.55, confidence at most 0.68 and exactly one corner on the
+capture frame. It requires one overlapping YOLO segmentation mask
+with confidence in `[0.40, 0.70)`, boundary score at least 0.65 and
+border contrast at least 0.70. The overlapping areas must cover
+70–90% of the proposal and 55–82% of the model outline. On this
+source the values are 77.23% and 70.78%. These are nomination
+checks for the pixel comparison.
+
+The original must support exactly one side of the proposed
+quadrilateral at 0.90 or higher. That side must coincide within
+five native pixels of an independently fitted model side at at
+least 85% of the stations. The model must have at least three
+unambiguous sides at support 0.88 or higher. A second side of the
+proposal must cross the model interior with locally changing image
+structure and insufficient evidence of an independent paper seam.
+A third side must have clear access to the pale material outside
+the model and retain the same material across the line. The actual
+one-shared-side fit has support 1.00. The remaining three proposal
+side supports are 0.1696, 0.1250 and 0.1607.
+
+The two unsupported spans are checked for a faint chromatic band
+across both shoulders. The check samples up to 128 stations at
+native normal offsets, allows up to 12 px end-to-end drift, and
+requires coherent Lab chroma evidence in all four quarters. Only
+stations inside the capture can vote. A span with less than 80%
+sampleable stations prevents the cue. The chroma veto retains the
+simulated separate 6 px rim with 15 intensity levels, 13 px seed
+displacement, Gaussian blur 0.85 px and JPEG75. The first version
+missed it. Across 50 targeted alternative-material controls the
+cue is still ambiguous in four cases, including one identical
+raster, two very faint rims and a compressed narrow gutter. Forty
+perspective-stamped separate-print gap and overlap controls keep
+their active proposals. Twenty-two nominated real-source
+perturbations preserve the cue.
+
+The violet proposal remains individually accessible in count
+review. Orange marks the shared edge, teal the span inside the
+already detected print and blue the span across pale material.
+A reviewer can check that a separate print is visible and correct
+its outline, or confirm the count with the current set of proposal
+IDs. The pending proposal retains its exact native mask as a
+neighbor claim during crop checks and reprocessing. Fresh upload
+and reprocessing keep the other four masks, crop transforms, mode
+records and preview JPEGs. Both crop-mode downloads and the legacy
+cropped download remain held. The mobile and desktop editors show
+the measured traces. The count action checks the current revision
+and can be safely replayed.
+
+The exact case improves from three matches and two active extras
+to three matches, one active extra and one pending proposal. The
+four tested encodings have 12 matches and one active extra at
+IoU 0.85. The retained matched masks and rendered crop records
+agree with profile 4. Against the rough, rotated page annotations,
+the three whole-print source-footprint IoUs are 0.97297, 0.98963
+and 0.98559. The respective maximum corner errors are 30.15, 8.98
+and 10.45 native px. Strict content omissions are 4,126, 1,727
+and 4,623 source centres. Output pixels with foreign contributions
+beyond the one-pixel tolerance number 18,739, 4,727 and 4,538.
+These errors still need correction. All three motifs remain held
+without a rendered motif transform. Physical aspect measurements
+and independent landmark pairs remain unavailable for this page.
+
+The other extra crosses two true scenes on diagonal lines and
+borrows a real print side and a continuing album edge. If its
+neighbor mask is omitted, both crop modes lose an occlusion
+warning on the middle and right prints. A separate partly hidden
+print with six visible rows and 1,980 visible source centres evades
+the existing independent-content veto. This proposal and its
+neighbor claim therefore remain active while the two source
+scenes and album continuation are investigated.
+
+The `fusion_ownership` calibration profile moves to revision 5.
+The seven paired control reports retain their detection, scoring
+and crop records. The frozen detector remains at 18/18 detections,
+and the seeded geometry keeps all 11 whole-print and 12 motif
+passes. On the exact case, the gated helper takes 111 ms median
+and 123 ms p95 process CPU time across 31 warm single-thread runs.
+Mobile still shows an enabled geometry confirmation on the
+uncertain neighboring print. Its server verification rejects the
+confirmation, and both download routes stay held.
+Native, benchmark and browser receipts are local under
+`runs/crop-quality/borrowed-fallback-edge/`.
+The local reference check covers seven manifests, including Golden,
+the paired-reference drafts and both archive calibration drafts.
+It reports zero verified crops in either mode and zero shared
+verified physical groups. The Adachi archive catalog and this
+regression set add no release references or calibration scores.
 
 ### Measure seed displacement and competing print edges
 
