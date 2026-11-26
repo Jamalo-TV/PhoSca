@@ -10,7 +10,7 @@ from app.pipeline.faint_margin import faint_margin_region
 from app.pipeline.margin_stroke_shapes import isolated_margin_strokes
 
 
-MOTIF_MARGIN_REVIEW_REVISION = 4
+MOTIF_MARGIN_REVIEW_REVISION = 5
 
 
 def _mark_clusters(lightness: np.ndarray, owned: np.ndarray) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
@@ -63,7 +63,7 @@ def _add_region(regions: list[np.ndarray], region: np.ndarray) -> None:
 def motif_margin_marks(
     page: np.ndarray, full: np.ndarray, motif: np.ndarray, inverse: np.ndarray,
 ) -> list[np.ndarray]:
-    """Return at most one marked paper region per side, in native page pixels."""
+    """Return source coordinates for confirmed strong and faint rim markings."""
     if motif.shape != (4, 2) or not np.isfinite(motif).all():
         return []
     height, width = full.shape[:2]
@@ -101,9 +101,8 @@ def motif_margin_marks(
         if paper_lightness < 172:
             continue
         project = partial(_to_source, origin=origin + x0 * along + y0 * down, along=along, down=down, inverse=inverse)
-        if paper_lightness >= 191 and end - start >= 30 and max(depth) >= 8:
-            faint_strips.append((lab, owned, project))
         background, labels, clusters = _mark_clusters(lightness, owned)
+        strong_box = None
         checked = set()
         for block in clusters:
             key = tuple(block)
@@ -127,10 +126,22 @@ def motif_margin_marks(
             if bottom > top and right > left:
                 box = np.array([[left, top], [right, top], [right, bottom], [left, bottom]])
                 _add_region(result, project(box))
+                strong_box = (left, top, right, bottom)
                 break
-    if not result and faint_strips:
+        if paper_lightness >= 191 and end - start >= 30 and max(depth) >= 8:
+            faint_strips.append((lab, owned, project, background, strong_box))
+    if faint_strips:
+        already_marked = bool(result)
         forward = np.linalg.inv(inverse)
-        for lab, owned, project in faint_strips:
+        for lab, owned, project, background, strong_box in faint_strips:
+            if already_marked:
+                if strong_box is not None:
+                    left, top, right, bottom = strong_box
+                    # Keep a halo clear so the same mark cannot seed a faint group.
+                    owned = owned.copy()
+                    owned[max(0, top - 4):bottom + 5, max(0, left - 4):right + 5] = False
+                if np.count_nonzero(owned & (background.astype(np.int16) - lab[:, :, 0] >= 9)) < 15:
+                    continue
             region = faint_margin_region(page, lab, owned, project, forward, (width, height), motif)
             if region is not None:
                 _add_region(result, region)

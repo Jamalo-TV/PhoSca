@@ -3089,6 +3089,55 @@ small strips with one OpenCV thread. Very faint graphite, isolated
 characters and connected handwriting remain open cases. The validation
 fingerprint now binds this check.
 
+### Find separate faint markings after a strong heading
+
+Margin review revision 5 keeps the strong-mark result and also checks
+eligible pale strips for a separate mark. Each strip contributes at most
+one region from the existing faint-stroke detector. A confirmed strong
+box is masked with a four-pixel halo in the rectified paper plane. In
+this additional pass the remaining strip needs at least 15 pixels with
+a Lab luminance residual of nine levels. Every candidate still requires
+matching stock on both sides of its original strokes. The decision to
+hold the motif was already made by the strong mark, so this pass adds
+source hints for the reviewer.
+
+The normal contact-sheet replay maps the original heading region to
+approximately `(829, 161)` through `(996, 178)` in both versions. The
+new hint points to the handwritten number immediately to its right.
+On JPEG75 the second region spans approximately `(1077, 145)` through
+`(1170, 161)`. The two regions cover 552 of 1,938 independently sampled
+header pixels, up from 344. The lossless variant confirms only the
+leading handwritten number. JPEG55 keeps its original heading region.
+The whole-print preview remains ready and byte-identical. Both geometry
+editors show the two source regions while the motif remains held until
+the deliberate edit.
+
+In 120 date transfers onto the JPEG75 and lossless sources, regions
+covering more than 45% of the injected ink centres increase from 8 to 22.
+Each derivative contributes 11 hits after the change, up from 5 and 3.
+The previous hits remain. None of the 408 controls gained an extra
+mark. Of those controls, 114 had the strong marker needed to exercise
+the amended path. Small 14-level graphite and the transverse writing
+along the left-side test cases still lack reliable hints. In the
+diagnostic that supplies the correct stroke locations, original-pixel
+corroboration passes for 76 of 88 misses by the three-pass prototype.
+Those misses motivate checking the candidate contrast and grouping
+before opening up the original-pixel validation.
+
+On one OpenCV thread in 45 interleaved warm pairs, the median margin
+check went from 4.73 to 24.64 ms on JPEG75 and 4.67 to 26.29 ms on PNG.
+The new p95 values were 31.83 and 43.15 ms. Multiple faint passes per
+strip recover more injected dates in the comparison but take longer.
+The new crop fingerprint records the one-pass revision.
+
+Frozen, seeded, Golden, NerdScan, Domoritz, stock and contact-sheet
+replays reproduce detection and both crop-mode aggregates. The frozen
+control retains 18/18 detections. The seeded geometry retains 11/11
+whole prints and 12/12 motifs. The normal JPEG75 and PNG uploads keep
+both motif and legacy trimmed routes held until the intentional edit.
+After that edit both exports retain all 35 sampled fields and all of
+the reference header points on their respective source.
+
 ### Hold motif trims for isolated strong strokes
 
 The new component check handles cases with fewer independent strokes

@@ -182,10 +182,14 @@ verbundenen blassen Zeichen zieht der Detektor den lokalen
 Papiermedian ab und sucht ausgerichtete Strichblöcke mit gemeinsamer
 Schriftlinie. Auch offene Zeichen können zu diesem Signal beitragen.
 Die bestätigenden Originalpixel müssen auf demselben Papier und
-ausserhalb des Motivs liegen. Ein bestätigter Fund setzt für
+ausserhalb des Motivs liegen. Nach einem deutlich bestätigten Fund
+sucht PhoSca auf hellen Papierstreifen weiter. Es spart die bereits
+gefundene Stelle samt vier Pixeln Abstand in der Papierebene aus. So
+kann eine blasse Beschriftung neben der Kopfzeile oder auf einer anderen
+Seite einen eigenen Hinweis erhalten. Ein bestätigter Fund setzt für
 **Nur Bildmotiv** den
-Prüfgrund `IMAGE_MARGIN_MARKS_REVIEW` und speichert eine
-Fundstelle in Koordinaten der Quelle. Der Hinweis fordert dazu auf,
+Prüfgrund `IMAGE_MARGIN_MARKS_REVIEW` und speichert die Fundstellen in
+Koordinaten der Quelle. Der Hinweis fordert dazu auf,
 den gesamten Rand zu prüfen. Die Prüfung verändert die Geometrie und
 die Pixel von **Ganzer Abzug** nicht. Wenn
 Fotoecken Papier verdecken, kann **Ganzer Abzug** in Prüfung liegen,

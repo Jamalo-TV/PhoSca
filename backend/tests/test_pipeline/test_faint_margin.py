@@ -55,6 +55,39 @@ def test_faint_date_is_held_and_located_on_the_original(contrast) -> None:
     assert crop.image_only is None and crop.image_only_preview is None
 
 
+@pytest.mark.parametrize("case", ["same_rim", "opposite_rim", "pips", "ruling"])
+def test_visible_heading_does_not_hide_an_independent_faint_date(case) -> None:
+    page = _white_print()
+    cv2.putText(page, "AUGUST 1954", (86, 49), cv2.FONT_HERSHEY_SIMPLEX, .26, (62, 61, 60), 1, cv2.LINE_AA)
+    expected = [[114, 46.5]]
+    if case in {"same_rim", "opposite_rim"}:
+        glyphs = np.zeros((13, 85), np.uint8)
+        cv2.putText(glyphs, "SEP 1954", (2, 9), cv2.FONT_HERSHEY_SIMPLEX, .26, 255, 1, cv2.LINE_AA)
+        if case == "opposite_rim":
+            glyphs = np.rot90(glyphs, 2)
+            position = np.s_[179:192, 151:236]
+            expected.append([213, 185])
+        else:
+            position = np.s_[40:53, 171:256]
+            expected.append([193, 46])
+        page[position] -= np.rint(glyphs[..., None] * (38 / 255)).astype(np.uint8)
+    elif case == "pips":
+        for index in range(6):
+            cv2.ellipse(page, (170 + 9 * index, 46 - index % 2), (2, 1), 0, 0, 360, (223, 224, 222), -1, cv2.LINE_AA)
+    else:
+        cv2.line(page, (168, 43), (217, 44), (227, 223, 229), 1, cv2.LINE_AA)
+
+    polygon = [{"x": x / 339, "y": y / 229} for x, y in [(42, 38), (287, 37), (286, 194), (43, 193)]]
+    crop = correct_photo_crop(page, {}, {"polygon": polygon}, dual_mode=True, auto_orient=False)
+    full, motif = (crop.metadata["crop_modes"][name] for name in ("full_print", "image_only"))
+    assert full["status"] == "ready" and "margin_mark_regions" not in full
+    assert motif["reason_codes"] == [MOTIF_MARGIN_MARKS_REVIEW]
+    assert crop.image_only is None and crop.image_only_preview is None
+    centers = [np.mean([[point["x"] * 339, point["y"] * 229] for point in region], axis=0)
+               for region in motif["margin_mark_regions"]]
+    np.testing.assert_allclose(centers, expected, atol=1.5)
+
+
 @pytest.mark.parametrize("control", ["separate_pips", "blue_ruling", "paper_tone_step"])
 def test_faint_non_text_patterns_do_not_mark_the_paper(control) -> None:
     page = _white_print()
