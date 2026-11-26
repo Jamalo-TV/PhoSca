@@ -14,6 +14,7 @@ PRINT_OUTER_EDGE_CONFLICT_REVIEW = "PRINT_OUTER_EDGE_CONFLICT_REVIEW"
 PRINT_SHARED_RIM_UNCERTAIN = "PRINT_SHARED_RIM_UNCERTAIN"
 PRINT_EDGE_CONFIRMATION = "PRINT_EDGE_CONFIRMATION_REQUIRED"
 COMPETING_PRINT_EDGES = "competing_print_edges"
+POSSIBLE_BACKED_PAPER_EDGE = "possible_backed_paper_edge"
 PRINT_BOUNDARY_REVISION = 11
 CLASSICAL_CONTOUR_REFINEMENT_REVISION = 1
 _PRINT_SIDES = ("top", "right", "bottom", "left")
@@ -895,6 +896,107 @@ def suggest_missing_pale_backing_edge(
         return None
     side = {**observed, "review_pale_backing_fit": {"native_transition_support": round(support, 4)}}
     return candidate, {**evidence, names[index]: side}
+
+
+def suggest_partial_backed_edge(
+    image: np.ndarray, quad: np.ndarray, evidence: dict, neighbors: list[np.ndarray],
+) -> list[np.ndarray]:
+    """Show interrupted source evidence alongside a disputed pale gutter."""
+    sides = [evidence.get(name) or {} for name in _PRINT_SIDES]
+    weak = [index for index, side in enumerate(sides) if side.get("corner_support") is None]
+    if not neighbors or len(weak) != 1 or any(side.get("ambiguous") for side in sides):
+        return []
+    index, = weak
+    if (not .55 <= sides[index].get("support", 0) < .80
+            or any(side.get("support", 0) < .90 or (side.get("corner_support") or 0) < .85
+                   for other, side in enumerate(sides) if index != other)):
+        return []
+
+    edges = np.roll(quad, -1, axis=0) - quad
+    shortest = float(np.linalg.norm(edges, axis=1).min())
+    if shortest < 160:
+        return []
+    backing = _backing_color(image)
+    if not _is_pale_stock(backing):
+        return []
+
+    opposite = edges[(index + 2) % 4]
+    normal = np.float32([opposite[1], -opposite[0]]) / np.linalg.norm(opposite)
+    divergence = float(edges[index] @ normal)
+    if not max(6., shortest * .019) <= abs(divergence) <= shortest * .08:
+        return []
+    following = (index + 1) % 4
+    start, end = quad[[index, following]] + np.float32([.5, -.5])[:, None] * divergence * normal
+    radius = int(np.clip(round(shortest * .036), 6, 16))
+    hulls = [cv2.convexHull(neighbor) for neighbor in neighbors]
+    if any(cv2.intersectConvexConvex(quad, hull)[0] > 1 for hull in hulls):
+        return []
+    candidates = []
+    for search in (radius - 2, radius, radius + 2):
+        line, side = _side_line(image, start, end, search)
+        if line is None or side["support"] < .69 or side["corner_support"] < .86:
+            return []
+        candidate = _replace_quad_side(quad, index, line, max(radius, abs(divergence)), image.shape)
+        if candidate is None or any(cv2.intersectConvexConvex(candidate, hull)[0] > 1 for hull in hulls):
+            return []
+        shift = (candidate[[index, following]] - quad[[index, following]]) @ normal
+        if shift.min() < -.75 or shift.max() < 5:
+            return []
+        candidates.append(candidate)
+    candidate = candidates[1]
+    if (any(np.linalg.norm(candidate - other, axis=1).max() > .75 for other in candidates)
+            or not _only_pale_backing_removed(image, quad, candidate, index, backing)):
+        return []
+
+    for flank, at_end in (((index - 1) % 4, True), (following, False)):
+        first, last = candidate[flank], candidate[(flank + 1) % 4]
+        fraction = np.float32([-9, -7, -5, -3, 3, 5, 7, 9]) / np.linalg.norm(last - first)
+        collar = _edge_band(image, first, last, [-8, -6, -4, 4, 6, 8],
+                            fractions=1 + fraction if at_end else -fraction)
+        if collar is None:
+            return []
+        outside, inside = (np.linalg.norm(np.median(part, axis=1) - backing, axis=1)
+                           for part in (collar[:, :3], collar[:, 3:]))
+        step = inside - outside
+        if (np.median(step[:4]) < 15 or abs(np.median(step[4:])) > 3
+                or np.count_nonzero((inside[4:] <= 12) & (outside[4:] <= 12) & (abs(step[4:]) <= 5)) < 3):
+            return []
+
+    return _observed_backed_edge_spans(image, candidate[index], candidate[following], backing)
+
+
+def _observed_backed_edge_spans(
+    image: np.ndarray, start: np.ndarray, end: np.ndarray, backing: np.ndarray,
+) -> list[np.ndarray]:
+    edge = end - start
+    length = float(np.linalg.norm(edge))
+    inset = min(.05, 6 / length)
+    fractions = np.linspace(inset, 1 - inset, int(np.clip(round(length), 72, 700)), dtype=np.float32)
+    samples = _edge_band(image, start, end, list(range(-9, 10)), fractions=fractions)
+    if samples is None:
+        return []
+    exterior = np.median(samples[:, 1:6], axis=1)
+    interior = np.median(samples[:, 13:18], axis=1)
+    outside = np.linalg.norm(exterior - backing, axis=1)
+    difference = np.linalg.norm(interior - backing, axis=1) - outside
+    uniform = (outside <= 12) & (np.linalg.norm(samples[:, 1:6] - backing, axis=2).max(axis=1) <= 17)
+    transition = interior - exterior
+    direction = transition / np.maximum(np.linalg.norm(transition, axis=1, keepdims=True), 1)
+    slopes = (np.diff(samples, axis=1) * direction[:, None]).sum(axis=2)[:, 5:13]
+    peak = np.argmax(slopes, axis=1) + 5
+    measured = uniform & (difference >= 12) & (peak >= 7) & (peak <= 10) & (slopes.max(axis=1) >= 3)
+    if measured.mean() < .45 or uniform.mean() < .95 or np.mean(difference >= 5) < .90:
+        return []
+    # Leave a gap in the overlay wherever the source no longer shows a step.
+    intervals = np.flatnonzero(np.diff(np.r_[False, measured, False])).reshape(-1, 2)
+    spans = [(fractions[first], fractions[stop - 1]) for first, stop in intervals
+             if stop - first >= 3 and fractions[stop - 1] - fractions[first] >= .035]
+    prefix = [span for span in spans if span[0] < .20]
+    suffix = [span for span in spans if span[1] > .80]
+    if not prefix or not suffix:
+        return []
+    longest = {max(group, key=lambda span: span[1] - span[0]) for group in (prefix, suffix)}
+    return [start + np.float32(span)[:, None] * edge for span in sorted(longest)]
 
 
 def _quad_from_lines(lines: np.ndarray) -> np.ndarray | None:

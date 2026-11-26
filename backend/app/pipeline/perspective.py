@@ -43,6 +43,7 @@ from app.pipeline.page_plane import (
 )
 from app.pipeline.print_edges import (
     COMPETING_PRINT_EDGES,
+    POSSIBLE_BACKED_PAPER_EDGE,
     PRINT_EDGE_CONFIRMATION,
     PRINT_FAINT_RIM_REVIEW,
     PRINT_SHADOW_EDGE_REVIEW,
@@ -56,6 +57,7 @@ from app.pipeline.print_edges import (
     retry_ambiguous_stock_edge,
     suggest_ambiguous_stock_edge,
     suggest_missing_pale_backing_edge,
+    suggest_partial_backed_edge,
     suggest_partial_corner_edge,
 )
 from app.pipeline.print_outline_suggestion import suggest_outer_print_outline
@@ -1658,6 +1660,16 @@ def correct_photo_crop(
                 _vertices_on_page(np.asarray(segment), width, height) for segment in competing_segments
             ]
             full_mode["suggested_edge_source"] = COMPETING_PRINT_EDGES
+        elif (enable_classical_retry and not manual and "PRINT_BOUNDARY_UNSUPPORTED" in full_reasons
+              and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
+              and all(mode["status"] == "review_needed" for mode in modes.values())
+              and not full_mode.get("suggested_edge_traces") and not full_mode.get("suggested_warp_quad")
+              and not any(mask.get(key) for key in ("warp_quad", "paper_grid_review", "film_grid_review_seam",
+                                                  "crossing_print_suggestion", "fragment_outline_suggestion"))):
+            traces = suggest_partial_backed_edge(page_image, src_points, boundary_refinement, neighbor_polygons)
+            if traces:
+                full_mode["suggested_edge_traces"] = [_vertices_on_page(trace, width, height) for trace in traces]
+                full_mode["suggested_edge_source"] = POSSIBLE_BACKED_PAPER_EDGE
         return result
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:

@@ -127,6 +127,41 @@ def test_competing_paper_edge_traces_keep_the_existing_review_warp(ownership_cue
     np.testing.assert_allclose(native_rows, [413.8, 425.5], atol=.5)
 
 
+def test_backed_edge_review_draws_observed_spans_without_changing_crops(monkeypatch) -> None:
+    from app.pipeline import perspective
+
+    page = np.full((570, 670, 3), 242, np.uint8)
+    page[74:413, 330:551] = (47, 68, 81)
+    page[123:225, 490:551] = 232
+    page[82:389, 49:304] = (65, 89, 120)
+    page = cv2.GaussianBlur(page, (0, 0), 1.2)
+    proposal = np.float32([[330, 74], [550, 74], [560, 412], [330, 412]])
+    mask = {"source": "yolo_seg_mask", "polygon": _vertices(proposal, page)}
+    neighbor = {"polygon": _vertices(_rect(49, 82, 303, 388), page)}
+    options = {"dual_mode": True, "enable_classical_retry": True, "neighbor_masks": [neighbor]}
+    with monkeypatch.context() as disabled:
+        disabled.setattr(perspective, "suggest_partial_backed_edge", lambda *_: [])
+        baseline = _crop(page, {}, mask, **options)
+    annotated = _crop(page, {}, mask, **options)
+    modes = annotated.metadata["crop_modes"]
+    assert all(mode["status"] == "review_needed" for mode in modes.values())
+    full = modes["full_print"].copy()
+    assert full.pop("suggested_edge_source") == "possible_backed_paper_edge"
+    traces = [np.float32([(point["x"], point["y"]) for point in trace]) * (np.float32(page.shape[1::-1]) - 1)
+              for trace in full.pop("suggested_edge_traces")]
+    assert len(traces) == 2
+    np.testing.assert_allclose(np.float32(traces)[..., 0], 550, atol=.65)
+    assert traces[0][-1, 1] < 132 and traces[1][0, 1] > 216
+    assert {**modes, "full_print": full} == baseline.metadata["crop_modes"]
+    for name in ("rectified_untrimmed", "image", "image_only", "full_print_preview", "image_only_preview"):
+        np.testing.assert_array_equal(getattr(annotated, name), getattr(baseline, name))
+
+    competing_claim = {"polygon": _vertices(_rect(553, 270, 580, 390), page)}
+    options["neighbor_masks"].append(competing_claim)
+    occupied = _crop(page, {}, mask, **options)
+    assert "suggested_edge_source" not in occupied.metadata["crop_modes"]["full_print"]
+
+
 def test_faint_outer_edge_extends_review_preview_unless_a_neighbor_claims_the_band() -> None:
     from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE
 

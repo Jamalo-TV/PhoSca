@@ -35,6 +35,7 @@ export const printOutlineSaveHint = "Prüfe und speichere zuerst die Papierkontu
 export const captureOutlineReviewReason = "PRINT_CAPTURE_OUTLINE_REVIEW";
 const captureAtEdgeReason = "PRINT_AT_CAPTURE_EDGE";
 const competingPrintEdges = "competing_print_edges";
+const possibleBackedPaperEdge = "possible_backed_paper_edge";
 const captureAtEdgeHint = "Der Abzug reicht über den Aufnahmerand hinaus. Für einen vollständigen Zuschnitt brauchst du eine neue Aufnahme.";
 export const captureSplitReviewHint = "Die gestrichelten Linien zeigen einen möglichen gemeinsamen Papierrand. Prüfe am Original, wie viele Abzüge dort liegen.";
 export const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
@@ -76,6 +77,7 @@ export function captureRequiresReview(fullPrint) {
 
 export function paperOutlineRequiresReview(fullPrint) {
   return fullPrint?.status === "review_needed" && (fullPrint.suggested_edge_source === competingPrintEdges
+    || fullPrint.suggested_edge_source === possibleBackedPaperEdge
     || fullPrint.reason_codes?.some(reason => reason === "PRINT_EDGE_CONFIRMATION_REQUIRED" || reason === "PAPER_GRID_OVERLAP_REVIEW"));
 }
 
@@ -92,6 +94,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
   if (getSourceEdgeTraces(fullPrint?.suggested_edge_traces).length) {
     if (fullPrint.suggested_edge_source === competingPrintEdges) {
       return "Die gestrichelten Linien zeigen mögliche Kanten im Original. Prüfe, welche das Fotopapier begrenzt.";
+    }
+    if (fullPrint.suggested_edge_source === possibleBackedPaperEdge) {
+      return "Die gestrichelten Abschnitte zeigen eine mögliche Papierkante im Original. Prüfe auch den Abschnitt dazwischen.";
     }
     if (fullPrint.suggested_edge_source === "capture_edge_split") return captureSplitReviewHint;
     if (fullPrint.suggested_edge_source === "capture_edge_boundary") {

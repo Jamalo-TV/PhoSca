@@ -375,6 +375,14 @@ disjointness and the additional samples behind the historical registered
 ONNX remain unverified. The preflight performs no inference on the
 release drafts.
 
+All 17 archived legacy JPEGs retain the same capture signature. The
+relative `DateTimeOriginal` values follow the numbered page sequence
+across the original train, validation and Golden sets within 242 seconds.
+Treat these rows as one conservative source group. The EXIF supports
+a shared capture session. The exact volume and 23 unarchived originals
+still lack source evidence. A local census of 9,544 unique image and
+model files found none of the 39 missing pinned file hashes.
+
 ## Precise crop validation
 
 The frozen end-to-end test passes the rendered pixel, corner and aspect
@@ -2797,6 +2805,44 @@ contact-sheet group hints retain precedence, including the competing
 negative-sleeve and paper-grid proposals. All encoded crops and previews
 of those 11 rows are byte-identical to the trace-disabled reference.
 
+### Show the visible spans of an interrupted paper edge
+
+On the sigma 1.2 blurred Domoritz flatbed derivative, the bottom-right
+print has one unsupported right side. The current preview's lower-right
+corner is about 9.48 native pixels outside the source-fitted line. An
+opposite-side direction opens a narrow native search window. Three
+search radii must agree, nearby print polygons must clear both the
+current and measured shape, and the disputed band must match the pale
+backing. Both adjacent paper-to-backing transitions must end where the
+new line meets their corners. The hint draws source spans with a localized
+step and leaves a gap over the low-contrast sky. The overlay is provisional
+because a paper extension matching the scanner backing exactly still
+produces the same evidence.
+
+The two spans reproduced through all four quarter turns with at most
+0.54 native pixels of cross-track disagreement from the independent
+line fit. Lifted pale stock, an outward ink extension and a neighboring
+print claiming the band suppress the hint. JPEG75 recompression of the
+blurred target can remove enough transition support to suppress it.
+The source check took 24.91 ms warm median and 46.10 ms at p95 in 40
+direct one-thread trials. Both modes stay in review. The warp, aspect,
+sampling, preview pixels and active print count match the baseline.
+The normal upload and review queue expose the same two spans. The
+untrimmed preview JPEG is byte-identical. Both named exports and the
+legacy trimmed alias return HTTP 404 and premature approval returns
+HTTP 409. Mobile disables the completion action on this geometry task
+and associates the two-span hint with that action. Desktop keeps the
+editor available for a deliberate correction.
+
+The shadow comparison produced exactly one new hint across 97 crops
+from the frozen, Golden, Domoritz, NerdScan, contact and ScanCropper
+controls. The final synthetic-control replay retains 18/18 detector
+matches, zero extras, 6/11 full and 7/12 motif passes. The seeded replay
+retains 11/11 and 12/12. Final Golden retains 29/29 matches, and the 12
+blurred Domoritz prints retain the exact baseline metrics in both modes.
+The draft-only measures and scratch re-render comparison are recorded
+with the [near-neighbor edge trials](#compare-paper-edge-previews-beside-a-neighboring-proposal).
+
 ### Compare a large mounted print with album-container proposals
 
 The Willett Album development set pins six native album-page JPEGs
@@ -2883,6 +2929,26 @@ single paired page replays took 11.2 and 11.8 seconds in segmentation
 and 44.7 and 50.6 seconds from source to JPEG. Those totals are individual
 development runs and include other stages and system load.
 
+The remaining page 100 proposal is a six-vertex model mask inside a
+classical whole-print outline. The detector scores the child at 0.949
+with boundary evidence of 0.296. Its right side lands about 120 native
+pixels out in plain stock beyond the ink. Three remeasured ink sides
+have median optical widths of 4.25–4.50 pixels. The outer paper sides
+measure 2.75–3.25 pixels in the same scan. These measures recovered an
+approximate inner outline in one scratch comparison. A rectification
+phase shift of less than half a native pixel moves its projected tilt
+from 0.01980 to 0.02027 across the existing 0.020 cutoff. Two separate
+near-identical print controls pass the material checks and only fail
+that cutoff at 0.02001–0.02003. A looser threshold would admit them.
+
+An independently frozen 160-view set covers 40 generated paper
+layouts, with 80 layered views and 80 flat ones. Six pairs have
+pixel-identical sources with different paper counts. The existing
+four-corner shared-stock route keeps all 160 inner contours as review
+suggestions outside the active count. The new remeasurement prototype
+abstained on all 160 inputs and also on the native page 100 replay at
+each quarter turn. The page 100 count and existing proposals are unchanged.
+
 The frozen hybrid retains 18/18 detection matches and zero extra
 proposals, with 6/11 whole-print and 7/12 motif passes. Supplying the
 reference contours retains 11/11 and 12/12 respectively. Golden retains
@@ -2891,6 +2957,24 @@ results. These are regression checks. Separate production calibration
 and verified independent reference groups are still required.
 [Willett archive](https://historycenter.mld.org/willett_album/) ·
 [Pinned source tree](https://github.com/historycenter-mld/willett_album/tree/f02315fbb8ab62f491c1003ce06614daf30cf617)
+
+#### Diagnose the newspaper and drawing proposals
+
+On page 98, model-only and hybrid inference both retain the same 0.803
+confidence proposal. It covers a printed newspaper illustration and its
+caption. A native Fourier check finds the 9.05-pixel diagonal print
+screen in all 42 sampled regions. A separate OCR diagnostic finds 23
+regular lines of body text beside the proposal and five caption lines
+inside it. The pipeline applies OCR later and the source has no OCR
+sidecar. A separately mounted facsimile of the illustration preserves
+the same screen and caption context, so those cues can guide review.
+
+Page 109 retains both true prints and two proposals for the folded
+butterfly drawing. Both detectors propose pieces of the drawing before
+fusion. Its two fold flanks differ by a median 10.55 Lab units and the
+actual cardstock-to-backing edge differs by 47.97. A real photo on the
+same page has a 7.28-unit fold. The source cues tested here leave the
+ownership and export decisions in place.
 
 ### Measure an open edge at an overextended corner
 
@@ -3992,6 +4076,17 @@ pre-removal page master and its rights remain unavailable. Requests
 to the published image hosts returned HTTP 403 from this workspace.
 [Conservation report](https://resources.culturalheritage.org/pmgtopics/2005-volume-eleven/11_10_Maes.html) ·
 [Print derivative](https://commons.wikimedia.org/wiki/File:Album_2_-_part_48.jpg)
+
+Museums Victoria catalogues two McKenna albums as `ST 40219` and
+`ST 40220` and marks their catalogue media as public domain. The sample
+from `ST 40219` is a hinged print measuring 108 × 84 mm on a 174 × 141 mm
+page, with media IDs 510624 (recto), 1944157 (mounted view) and 1944161
+(verso). The workspace received HTTP 403 on the archive API. The source
+pixels and separate acquisition of the recto remain unverified. Both
+accessions stay in intake.
+[ST 40219](https://collections.museumsvictoria.com.au/items/384572) ·
+[ST 40220](https://collections.museumsvictoria.com.au/items/407538) ·
+[Hinged print](https://collections.museumsvictoria.com.au/items/1561811)
 
 The Bancroft Red Album study documents a mounted, measured print on
 page 8 and a 1999 State Library of Queensland copy negative showing the

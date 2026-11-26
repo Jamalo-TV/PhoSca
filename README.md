@@ -99,6 +99,14 @@ Downloadfreigabe bleiben beim Einblenden der Linien gleich. Ein bereits
 vorhandener Umriss- oder Kantenhinweis hat Vorrang.
 [Kantenvergleich](data/evaluation/README.md#show-competing-edges-in-review)
 
+Ist eine Seite neben hellem Untergrund nur abschnittsweise sichtbar,
+kann **Ganzer Abzug** an beiden Enden gestrichelte Hinweise zeigen.
+PhoSca prüft dazu die sichtbaren Materialwechsel, das Ende der
+angrenzenden Kanten und die Fläche zum nächsten Abzug. Die unklare
+Stelle bleibt zwischen den Linien offen. Die Ecken im Editor sind
+weiterhin die bisher gespeicherten Ecken, bis sie bewusst geändert werden.
+[Beispiel unscharfer Scan](data/evaluation/README.md#show-the-visible-spans-of-an-interrupted-paper-edge)
+
 Ein grosser Vorschlag, der wegen mehrerer innerer Konturen als
 Albumfläche verworfen wurde, kann in der Anzahlprüfung wieder zur
 Auswahl stehen. Dafür prüft PhoSca drei Aussenkanten am dunklen
