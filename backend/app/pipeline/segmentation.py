@@ -2819,8 +2819,13 @@ def _mounted_container_review(
             continue
         if quad is None or normalized_polygon_overlap(polygon, pixel_vertices_to_normalized(quad, width, height)).iou < .90:
             continue
-        candidates.append({"reason": "possible_mounted_print", "polygon": _normalized_polygon(quad, width, height),
-                           "visible_polygon": item.mask.get("visible_polygon") or item.mask["polygon"]})
+        parts = [detections[child].mask.get("polygon") for child in claims]
+        candidates.append({
+            "reason": "possible_mounted_print",
+            "polygon": _normalized_polygon(quad, width, height),
+            "visible_polygon": item.mask.get("visible_polygon") or item.mask["polygon"],
+            **({"fragment_polygons": parts} if all(parts) else {}),
+        })
     return candidates[0] if len(candidates) == 1 else None
 
 

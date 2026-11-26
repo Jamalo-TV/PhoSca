@@ -1,0 +1,557 @@
+{
+  "scope": "Separate development comparison on identical available source files. The historical nine-view cohort was not recovered.",
+  "independent_release_evidence": false,
+  "instance_iou_threshold": 0.85,
+  "model_sha256": "1e95a1a90ff897df7099ff80675186ec1d8145f7bb07559fe918b3dd3a6db748",
+  "proposal_threshold": 0.25,
+  "acceptance_threshold": 0.7,
+  "native_stage_score_sha256": "018c1896cb8310b8a5141ab2cfc4d45243fea0e8718566e812e53d8e8f5d18e3",
+  "sources": [
+    {
+      "page_id": "domoritz-2021-loose-flatbed",
+      "scope": "draft7",
+      "source_group": "domoritz-loose-prints-physical-album-unconfirmed",
+      "width": 600,
+      "height": 851,
+      "image_sha256": "c0228db8de84c6277e03b2f6871124eac9377f57204731893700c33e50915b81",
+      "labels_sha256": "1246d6bc1e345aa9e7b6e4563781d3e43e90798f1a11357418b6cd8095325bd9",
+      "manifest": "domoritz-flatbed-development.json",
+      "manifest_sha256": "3d2e0688cc160163115dc735970fd1c7bd7a646470210056a4ce1750b78df91d"
+    },
+    {
+      "page_id": "domoritz-2021-loose-flatbed-blur-sigma1",
+      "scope": "draft7",
+      "source_group": "domoritz-loose-prints-physical-album-unconfirmed",
+      "width": 600,
+      "height": 851,
+      "image_sha256": "2a83d780f5fc57b4a9de86f31932a2f008a5701e1a50bd9a556aec602171dffd",
+      "labels_sha256": "1246d6bc1e345aa9e7b6e4563781d3e43e90798f1a11357418b6cd8095325bd9",
+      "manifest": "domoritz-flatbed-blur-development.json",
+      "manifest_sha256": "fb6a9f8d1b9a65fcc1b7892458bc248809f00525c20cf82c71b048352049c2e7"
+    },
+    {
+      "page_id": "domoritz-2021-loose-flatbed-blur-sigma1-2",
+      "scope": "draft7",
+      "source_group": "domoritz-loose-prints-physical-album-unconfirmed",
+      "width": 600,
+      "height": 851,
+      "image_sha256": "b7ce7ff1b0062b6facf4f508faed13619d2edf8f45c20731c30528514f8aebc2",
+      "labels_sha256": "1246d6bc1e345aa9e7b6e4563781d3e43e90798f1a11357418b6cd8095325bd9",
+      "manifest": "domoritz-flatbed-blur-development.json",
+      "manifest_sha256": "fb6a9f8d1b9a65fcc1b7892458bc248809f00525c20cf82c71b048352049c2e7"
+    },
+    {
+      "page_id": "domoritz-2021-loose-flatbed-blur-sigma1-jpeg75",
+      "scope": "draft7",
+      "source_group": "domoritz-loose-prints-physical-album-unconfirmed",
+      "width": 600,
+      "height": 851,
+      "image_sha256": "dc77e562cb85849f864d1e2d86b55380486e56703ac52ad656f8258af2163420",
+      "labels_sha256": "1246d6bc1e345aa9e7b6e4563781d3e43e90798f1a11357418b6cd8095325bd9",
+      "manifest": "domoritz-flatbed-blur-development.json",
+      "manifest_sha256": "fb6a9f8d1b9a65fcc1b7892458bc248809f00525c20cf82c71b048352049c2e7"
+    },
+    {
+      "page_id": "scancropper-earlier-loose-flatbed",
+      "scope": "draft7",
+      "source_group": "scancropper-loose-prints-physical-album-unconfirmed",
+      "width": 4816,
+      "height": 6871,
+      "image_sha256": "245b167fdbc261f22931b6048949d19fe3ec788c8a720b32a1de91cc5d364226",
+      "labels_sha256": "58a64f21e3997fd52496644d43e3f7f73cb70d6095e22319f8074521c303f3d4",
+      "manifest": "scancropper-flatbed-development.json",
+      "manifest_sha256": "e395ae34268910977877d035b0ca5a247525025551ac9a6f8e57aed0faf68a6f"
+    },
+    {
+      "page_id": "scancropper-embedded-original-loose-flatbed",
+      "scope": "draft7",
+      "source_group": "scancropper-loose-prints-physical-album-unconfirmed",
+      "width": 4816,
+      "height": 6870,
+      "image_sha256": "ad17e20dbb3338ae7fd9eefa4f5385757953751c497db63f428c709ef7c23b49",
+      "labels_sha256": "c59211da5944b43859d9c9586c859ee159bb4d9a6ac7e546593d3b498d2f7f6d",
+      "manifest": "scancropper-flatbed-development.json",
+      "manifest_sha256": "e395ae34268910977877d035b0ca5a247525025551ac9a6f8e57aed0faf68a6f"
+    },
+    {
+      "page_id": "nerdscan-2025-04-29-0022",
+      "scope": "draft7",
+      "source_group": "nerdscan-example-physical-album-unknown",
+      "width": 2179,
+      "height": 3000,
+      "image_sha256": "cfefac6b174db5ff7a5dd40b736a7f15c25992e20d4d09c0fcee008e16091ba4",
+      "labels_sha256": "b26c067a0dbd60f4a3da68f630a2b50062727f3ea02d24d2a191cd18f7d8c813",
+      "manifest": "nerdscan-clipped-development.json",
+      "manifest_sha256": "ba2c13d00b5f223f4be71435863f978107e84e9b8665be6a3ee4a0ab198822bd"
+    },
+    {
+      "page_id": "stevekm-contact-sheet-camera-33-q75",
+      "scope": "contact",
+      "source_group": "stevekm-contact-sheet-35mm-print-01",
+      "width": 1346,
+      "height": 1014,
+      "image_sha256": "a3c019249af7ce646813de4e5ec6555699cc1785730b5016994d13206d70988e",
+      "labels_sha256": "3c7fc39b7554f6e2b3e1db8bbf2da85c51f3ced9dee2afa630bee5d6e7ee9d3a",
+      "manifest": "contact33-q75.json",
+      "manifest_sha256": "df444432fc9e9db4890cc0571731213ff44b33949de9eedce9aeea30b13060f4"
+    }
+  ],
+  "runs": {
+    "edf1287-mixed": {
+      "domoritz-2021-loose-flatbed": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9661216968498795
+      },
+      "domoritz-2021-loose-flatbed-blur-sigma1": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9599100924444185
+      },
+      "domoritz-2021-loose-flatbed-blur-sigma1-2": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9589433363777906
+      },
+      "domoritz-2021-loose-flatbed-blur-sigma1-jpeg75": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9611665932606901
+      },
+      "scancropper-earlier-loose-flatbed": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.970765139872863
+      },
+      "scancropper-embedded-original-loose-flatbed": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9777180011851705
+      },
+      "nerdscan-2025-04-29-0022": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 2,
+          "fp": 3,
+          "fn": 1
+        },
+        "final_mean_matched_mask_iou": 0.8749360128632975
+      },
+      "stevekm-contact-sheet-camera-33-q75": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 0,
+          "fp": 4,
+          "fn": 1
+        },
+        "final_counts": {
+          "tp": 0,
+          "fp": 5,
+          "fn": 1
+        },
+        "final_mean_matched_mask_iou": 0.8317388480315125
+      }
+    },
+    "edf1287-classical": {
+      "domoritz-2021-loose-flatbed": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9597561546786214
+      },
+      "domoritz-2021-loose-flatbed-blur-sigma1": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 3,
+          "fp": 2,
+          "fn": 1
+        },
+        "final_counts": {
+          "tp": 3,
+          "fp": 2,
+          "fn": 1
+        },
+        "final_mean_matched_mask_iou": 0.8667256950226161
+      },
+      "domoritz-2021-loose-flatbed-blur-sigma1-2": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 3,
+          "fp": 4,
+          "fn": 1
+        },
+        "final_counts": {
+          "tp": 3,
+          "fp": 4,
+          "fn": 1
+        },
+        "final_mean_matched_mask_iou": 0.8019341338299957
+      },
+      "domoritz-2021-loose-flatbed-blur-sigma1-jpeg75": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 2,
+          "fp": 6,
+          "fn": 2
+        },
+        "final_counts": {
+          "tp": 2,
+          "fp": 6,
+          "fn": 2
+        },
+        "final_mean_matched_mask_iou": 0.7151802922921414
+      },
+      "scancropper-earlier-loose-flatbed": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 2,
+          "fp": 1,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 2,
+          "fp": 1,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9104803998757295
+      },
+      "scancropper-embedded-original-loose-flatbed": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9782652411000902
+      },
+      "nerdscan-2025-04-29-0022": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 1,
+          "fp": 3,
+          "fn": 2
+        },
+        "final_counts": {
+          "tp": 1,
+          "fp": 3,
+          "fn": 2
+        },
+        "final_mean_matched_mask_iou": 0.7311258030832862
+      },
+      "stevekm-contact-sheet-camera-33-q75": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 1
+        },
+        "final_counts": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 1
+        },
+        "final_mean_matched_mask_iou": 0.8317388480315125
+      }
+    },
+    "cb290c7-mixed": {
+      "domoritz-2021-loose-flatbed": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9661216968498795
+      },
+      "domoritz-2021-loose-flatbed-blur-sigma1": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9599100924444185
+      },
+      "domoritz-2021-loose-flatbed-blur-sigma1-2": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9589433363777906
+      },
+      "domoritz-2021-loose-flatbed-blur-sigma1-jpeg75": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9611665932606901
+      },
+      "scancropper-earlier-loose-flatbed": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9988040386838646
+      },
+      "scancropper-embedded-original-loose-flatbed": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9839844770604632
+      },
+      "nerdscan-2025-04-29-0022": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 3,
+          "fp": 2,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9928058075755276
+      },
+      "stevekm-contact-sheet-camera-33-q75": {
+        "initial_record_stage": "_parse_simple_box_outputs",
+        "initial_counts": {
+          "tp": 0,
+          "fp": 4,
+          "fn": 1
+        },
+        "final_counts": {
+          "tp": 0,
+          "fp": 5,
+          "fn": 1
+        },
+        "final_mean_matched_mask_iou": 0.8317388480315125
+      }
+    },
+    "cb290c7-classical": {
+      "domoritz-2021-loose-flatbed": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.984693115867835
+      },
+      "domoritz-2021-loose-flatbed-blur-sigma1": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9837900534148913
+      },
+      "domoritz-2021-loose-flatbed-blur-sigma1-2": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 3,
+          "fp": 4,
+          "fn": 1
+        },
+        "final_counts": {
+          "tp": 3,
+          "fp": 4,
+          "fn": 1
+        },
+        "final_mean_matched_mask_iou": 0.8019341338299957
+      },
+      "domoritz-2021-loose-flatbed-blur-sigma1-jpeg75": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 3,
+          "fp": 4,
+          "fn": 1
+        },
+        "final_counts": {
+          "tp": 3,
+          "fp": 4,
+          "fn": 1
+        },
+        "final_mean_matched_mask_iou": 0.8082418802682687
+      },
+      "scancropper-earlier-loose-flatbed": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 2,
+          "fp": 1,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.9988040386838646
+      },
+      "scancropper-embedded-original-loose-flatbed": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_counts": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.993001131175704
+      },
+      "nerdscan-2025-04-29-0022": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 1,
+          "fp": 3,
+          "fn": 2
+        },
+        "final_counts": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "final_mean_matched_mask_iou": 0.998959931905162
+      },
+      "stevekm-contact-sheet-camera-33-q75": {
+        "initial_record_stage": "detect_photos_classical",
+        "initial_counts": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 1
+        },
+        "final_counts": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 1
+        },
+        "final_mean_matched_mask_iou": 0.8317388480315125
+      }
+    }
+  }
+}

@@ -25,6 +25,7 @@ from app.pipeline.decisions import (
     MANUAL_NEIGHBOR_OVERLAP, is_reviewed_non_print, photo_is_reviewed_non_print, remember_ready_print_for_neighbor_review,
 )
 from app.pipeline.edge_trace import measure_edge_trace
+from app.pipeline.geometry import normalized_polygon_overlap
 from app.pipeline.image_ops import load_image, normalized_box_to_pixels
 from app.pipeline.manual_paper_boundary import (
     PAPER_GRID_OVERLAP_REVIEW, backed_edge_review_reference, capture_outline_review_required, hold_overlapping_paper_claim_modes,
@@ -306,6 +307,8 @@ def _replay_manual_photo(
 ) -> ExtractedPhoto:
     provenance = (photo.enhancement_applied or {}).get("review_provenance") or {}
     creation = provenance.get("manual_creation") or {}
+    if bool(creation.get("replace_mounted_fragments")) != bool(creation_request.get("replace_mounted_fragments")):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="mounted_print_fragments_stale")
     if photo.page_id != page_id or any(creation.get(key) != value for key, value in creation_request.items()):
         if creation_request["adjacent_suggestion"] is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="adjacent_print_suggestion_saved")
@@ -498,6 +501,8 @@ async def create_manual_photo(
         "deferred_proposal_id": deferred_id,
         "photo_count_revision": payload.photo_count_revision,
     }
+    if payload.replace_mounted_fragments:
+        creation_request["replace_mounted_fragments"] = True
     # Two sessions can edit the same outline with different request UUIDs.
     # Its source and displayed coordinates identify a single addition.
     identity = str(payload.request_id)
@@ -544,6 +549,27 @@ async def create_manual_photo(
             (photo.enhancement_applied or {}).get("review_rejected_detection"), photo.bounding_box, photo.segmentation_mask,
         )
     ]
+    replaced_fragments = []
+    if payload.replace_mounted_fragments:
+        polygons = (deferred or {}).get("fragment_polygons") or []
+        if (deferred or {}).get("reason") != "possible_mounted_print" or not 3 <= len(polygons) <= 6:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="mounted_print_fragments_stale")
+        crop_points = [(point["x"], point["y"]) for point in quad]
+        for polygon in polygons:
+            candidates = [
+                fragment for fragment in active if fragment.segmentation_confidence is not None
+                and (fragment.segmentation_mask or {}).get("polygon") == polygon
+                and not variant_path_from_photo(fragment, "full_print")
+                and not variant_path_from_photo(fragment, "image_only")
+            ]
+            if len(candidates) != 1 or candidates[0] in replaced_fragments:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="mounted_print_fragments_stale")
+            fragment_points = [(point["x"], point["y"]) for point in polygon]
+            if normalized_polygon_overlap(fragment_points, crop_points).first_containment < .98:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    detail="mounted_print_outline_excludes_fragments")
+            replaced_fragments.append(candidates[0])
+        mask["mounted_outline_review"] = True
     suggestion_key = "nested_print_suggestion" if suggestion and suggestion.kind == "nested" else "adjacent_print_suggestion"
     anchor = None
     if suggestion:
@@ -586,6 +612,20 @@ async def create_manual_photo(
         **deepcopy(creation_request),
         "recorded_at": datetime.now(timezone.utc).isoformat(),
     }
+    if replaced_fragments:
+        creation["replaced_fragment_ids"] = [str(fragment.id) for fragment in replaced_fragments]
+        for fragment in replaced_fragments:
+            metadata = deepcopy(fragment.enhancement_applied or {})
+            metadata["review_rejected_detection"] = {
+                "bounding_box": deepcopy(fragment.bounding_box), "segmentation_mask": deepcopy(fragment.segmentation_mask),
+            }
+            metadata["review_reasons"] = list(dict.fromkeys([
+                *(metadata.get("review_reasons") or []), "GEOMETRY_REVIEW_WRONG_OBJECT",
+            ]))
+            fragment.enhancement_applied = metadata
+            fragment.status = PhotoStatus.review_needed
+            session.add(AuditLog(entity_type="photo", entity_id=fragment.id, action="mounted_print_fragment_reviewed",
+                                 details={"replacement_photo_id": str(photo_id), "deferred_proposal_id": deferred_id}))
     review_provenance = {
         "manual_creation": creation,
         "prediction_provenance": await _prediction_provenance(session, photo),
@@ -660,6 +700,11 @@ async def update_photo_bounding_box(
         for flag in ("album_window_occluded", "manual_added", "capture_edge_clipped", REVIEWED_CROSSING_OUTLINE):
             if (photo.segmentation_mask or {}).get(flag) is True:
                 segmentation_mask[flag] = True
+        if original_mask.get("mounted_outline_review") is True:
+            segmentation_mask["mounted_outline_review"] = True
+            explicit_outline = payload.segmentation_mask is not None and payload.segmentation_mask.warp_quad is not None
+            if original_mask.get("mounted_outline_confirmed") is True or (explicit_outline and payload.confirm_print_outline):
+                segmentation_mask["mounted_outline_confirmed"] = True
         if "visible_polygon" not in segmentation_mask:
             segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask.get("polygon"))
         if "warp_quad" not in segmentation_mask and len(segmentation_mask.get("polygon") or []) == 4:
@@ -794,7 +839,8 @@ async def update_photo_bounding_box(
     prior_crop_modes = (metadata.get("correction") or {}).get("crop_modes") or {}
     prior_outer = prior_mask.get("warp_quad") or (prior_crop_modes.get("full_print") or {}).get("warp_quad")
     outer = segmentation_mask.get("warp_quad")
-    if (segmentation_mask.get("manual_added") is True or paper_claim_groups(segmentation_mask, original_prediction_mask(metadata))
+    if (was_non_print or segmentation_mask.get("manual_added") is True
+            or paper_claim_groups(segmentation_mask, original_prediction_mask(metadata))
             or (outer and not _same_visible_outline(prior_outer, outer))):
         await _review_overlapping_crops(session, photo, width, height)
     return await _render_photo_edit(session, photo.id, settings, previous_manual_crop=previous_crop)

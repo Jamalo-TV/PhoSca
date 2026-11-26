@@ -132,11 +132,14 @@ class ManualPhotoCreate(StrictSchema):
     adjacent_suggestion: AdjacentPrintSuggestion | None = None
     deferred_proposal_id: int | None = Field(default=None, ge=0)
     photo_count_revision: str | None = Field(default=None, min_length=1, max_length=64)
+    replace_mounted_fragments: bool = False
 
     @model_validator(mode="after")
     def check_suggestion(self) -> "ManualPhotoCreate":
         if self.adjacent_suggestion is not None and self.deferred_proposal_id is not None:
             raise ValueError("Choose one print suggestion.")
+        if self.replace_mounted_fragments and self.deferred_proposal_id is None:
+            raise ValueError("Choose a mounted print suggestion to replace fragments.")
         return self
 
 

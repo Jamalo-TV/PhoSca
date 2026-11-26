@@ -11,7 +11,7 @@ import {
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
-  NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
+  mountedPrintNeedsReview, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperOutlineRequiresReview,
   scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
@@ -269,7 +269,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       };
       const markId = albumMark?.id === albumMarkReviewId ? albumMarkReviewId : null;
       const saved = await patchBoundingBox(item.payload.photo_id, editingMotif ? sourceBox : box, mask,
-        !editingMotif && Boolean(printSuggestion), markId);
+        !editingMotif && (Boolean(printSuggestion) || mountedPrintNeedsReview(fullPrintMode)), markId);
       setAlbumMarkReviewId(null);
       setBlockedCrop(null);
       const savedDegrees = saved.segmentation_mask?.orientation_degrees ?? null;

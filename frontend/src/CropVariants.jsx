@@ -52,6 +52,7 @@ const markedMotifMarginReason = "IMAGE_MARGIN_MARKS_REVIEW";
 const markedMotifMarginHint = "Am Papierrand sind mögliche Beschriftungen sichtbar. Prüfe den ganzen Rand am Original und nimm alle zum Bild gehörenden Beschriftungen in den Zuschnitt auf.";
 const manualNeighborOverlap = "MANUAL_NEIGHBOR_OVERLAP";
 const manualNeighborContentLoss = "MANUAL_NEIGHBOR_CONTENT_LOSS";
+const mountedPrintOutlineReason = "MOUNTED_PRINT_OUTLINE_REVIEW";
 const printEdgeReviewHints = {
   PRINT_EDGE_CONFIRMATION_REQUIRED: printOutlineSaveHint,
   PRINT_SHADOW_EDGE_REVIEW: "Prüfe die markierte Kante am Original. Achte darauf, wo der Schatten endet und der Abzug beginnt.",
@@ -67,6 +68,7 @@ const printEdgeReviewHints = {
   PAPER_GRID_OVERLAP_REVIEW: "Zwei Vorschläge überdecken dieselbe Stelle. Kläre zuerst die überlappenden Vorschläge am Original und berechne den Zuschnitt danach erneut.",
   [manualNeighborOverlap]: "Die violette Kontur zeigt den überlappenden Nachbarabzug. Prüfe beide Papierkanten im Original. Wenn ein Abzug den anderen verdeckt, fotografiere sie getrennt.",
   [manualNeighborContentLoss]: "Die violetten Flächen zeigen sichtbare Teile, die im Zuschnitt fehlen könnten. Vergleiche sie mit dem Original und prüfe die Papierkante. Verdeckt ein Abzug den anderen, fotografiere sie getrennt.",
+  [mountedPrintOutlineReason]: "Die Teilvorschläge sind als ein Abzug erfasst. Prüfe die vier Papierkanten am Original und speichere die Ecken. Bei verdecktem Papier hilft eine Aufnahme ohne Fotoecken.",
 };
 
 export function getSourceEdgeTraces(traces) {
@@ -92,7 +94,11 @@ export function paperOutlineRequiresReview(fullPrint) {
     || fullPrint.suggested_edge_source === possibleOverextendedPrintEdge
     || fullPrint.reason_codes?.some(reason => reason === "PRINT_EDGE_CONFIRMATION_REQUIRED"
       || reason === "PAPER_GRID_OVERLAP_REVIEW" || reason === manualNeighborOverlap
-      || reason === manualNeighborContentLoss));
+      || reason === manualNeighborContentLoss || reason === mountedPrintOutlineReason));
+}
+
+export function mountedPrintNeedsReview(fullPrint) {
+  return Boolean(fullPrint?.reason_codes?.includes(mountedPrintOutlineReason));
 }
 
 export function getPrintEdgeReviewHint(fullPrint) {

@@ -156,8 +156,16 @@ Auswahl stehen. Dafür prüft PhoSca drei Aussenkanten am dunklen
 Albumuntergrund und Motivstrukturen, die über die geschätzten
 Innenkanten hinweg verlaufen. Der Editor zeigt die ursprüngliche
 Kontur und lädt auf Wunsch einen separaten Entwurf mit vier Ecken.
-Der Reviewer entscheidet über die vorhandenen Vorschläge und speichert
-einen zusätzlichen Abzug bewusst.
+Bei einem möglichen Ganzabzug markiert der Desktop-Editor die
+zugeordneten Teilvorschläge violett. Gehören alle zu demselben Papier,
+kann der Reviewer sie zusammen mit den vier geprüften Ecken als
+einen Abzug speichern. PhoSca prüft, ob die markierten Vorschläge
+noch aktuell sind und innerhalb der neuen Kontur liegen. Die
+ursprünglichen Vorschläge bleiben in der Prüfungshistorie.
+Anschliessend prüft PhoSca den Zuschnitt separat. Beim Speichern
+der Ecken vergleicht es alle vier Papierseiten mit dem Original.
+Verdeckte oder schwach belegte Papierkanten halten beide Downloads
+in Prüfung.
 [Beispiel Willett-Album](data/evaluation/README.md#compare-a-large-mounted-print-with-album-container-proposals)
 
 Die ONNX-Koordinaten werden nach dem Entfernen des Letterbox-Paddings

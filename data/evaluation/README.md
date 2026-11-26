@@ -1817,8 +1817,36 @@ and `nerdscan-clipped-development.json` manifests with the evaluation script.
 The classical arm uses `--classical-only` and an absent `--model`. The mixed
 arm uses its registered scratch weights from the transfer receipt, with
 `--include-classical-fallback`. Weights and release configuration stay under
-the existing acceptance criteria. The mixed NerdScan replay cuts off 35.3%
-of the draft footprint at one clipped print, and both modes remain in review.
+the existing acceptance criteria. The mixed NerdScan replay at that
+revision cuts off 35.3% of the draft footprint at one clipped print.
+Both modes remain in review.
+
+On the same seven source and label hashes, a matched code replay
+compared `edf1287` with `cb290c7` at native mask IoU 0.85.
+Both mixed arms used `1e95a1a9…`, 512 × 512 inference, proposal
+threshold 0.25 and acceptance threshold 0.70. The original
+nine-view cohort still lacks its source and label files and
+registered checkpoint. Its reported 22 of 28 matches and 17
+extra proposals stay separate from this comparison.
+
+| Seven development views | Matches | False proposals | Misses |
+| --- | ---: | ---: | ---: |
+| Mixed at `edf1287` | 23/24 | 3 | 1 |
+| Mixed at `cb290c7` | 24/24 | 2 | 0 |
+| Classical at `edf1287` | 18/24 | 16 | 6 |
+| Classical at `cb290c7` | 22/24 | 8 | 2 |
+
+All eight initial mixed model records and first fused selections
+matched, including a separate contact-sheet stress case. In
+NerdScan the upper print starts at 0.92093 model mask IoU. Fusion
+selects a 0.64749 contour on both revisions. The current
+capture-edge recovery brings it back at 0.99900. Two ambiguous
+proposals remain active in review. On the JPEG75 contact-sheet
+control both revisions still show zero matched prints and five
+active nonmatches. Its best active outline scores 0.83174, while
+the observed paper envelope offered in review scores 0.98862.
+The scan does not establish which competing parts share one paper.
+[Per-source hashes and counts](development-detector-replay.json)
 
 ### Scalloped paper on white scanner backing
 
@@ -2971,6 +2999,36 @@ a confirmation without the proposal ID with HTTP 409, and accepted an
 explicit count acknowledgement without saving any draft geometry. Both
 named exports and the legacy trimmed export returned HTTP 404 for all
 six entries. The untrimmed inspection images returned HTTP 200.
+
+#### Save a reviewed mounted print from its fragment proposals
+
+For the possible mounted whole, the desktop editor shows the
+fragment polygons captured with the candidate. The checkbox
+starts unchecked. Selecting it and saving the four corners
+explicitly replaces those fragment rows in the active count.
+The server locks the page, checks the count revision and exact
+fragment polygons, and requires each fragment to lie inside the
+reviewed outline. Already edited or downloadable rows cause
+a conflict. The new photograph and the excluded snapshots are
+written together, with an audit link from each fragment. A
+failed render rolls back all changes. Repeating the exact request
+returns the same record. Restoring a fragment reopens conflicting
+downloads for review.
+
+On the original Willett page 6, the action turns six active
+proposals into one manually saved whole and the same unrelated
+proposal. The five fragment images and masks stay in history.
+The original model output and automatic count remain the same.
+The initial rectified JPEG is still useful for review. It shows
+black photo corners and an unwanted sliver of album backing.
+The count correction keeps both named modes and the legacy
+trimmed export held. A separate geometry save must confirm
+the paper outline, with all four native side fits at 90%
+support and corner support at 80% or higher. The maximum
+change to the marked corners in that fit is one native pixel.
+The existing paper coverage and motif checks still apply. The
+regression can export both modes for a source with four clear
+edges after this confirmation.
 
 The exact implementation still finds all three separate prints on page
 100 at IoU 0.85. One nested false proposal remains and no new count hint

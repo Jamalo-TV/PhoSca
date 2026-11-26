@@ -51,7 +51,7 @@ import {
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   deferredPrintHint, filmGridCountHint, filmGridHint, filmGridReason, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
-  NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
+  mountedPrintNeedsReview, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
 import {
@@ -1357,6 +1357,7 @@ function TrainingAnnotationView() {
 }
 
 const printAdditionErrors = {
+  mounted_print_fragments_stale: "Die Teilvorschläge haben sich geändert. Prüfe die aktuelle Seite erneut.",
   adjacent_print_suggestion_saved: "Dieser Abzug wurde bereits gespeichert. Öffne ihn in der aktualisierten Ansicht, wenn du seine Ecken ändern möchtest.",
   adjacent_print_suggestion_stale: "Der Vorschlag wurde geändert. Prüfe die Albumseite in der aktualisierten Ansicht erneut.",
   deferred_print_proposal_saved: "Dieser Abzug wurde bereits ergänzt. Du kannst seine Ecken in der aktualisierten Ansicht ändern.",
@@ -1446,7 +1447,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
   const proposedPrintQuad = fullPrintMode?.suggested_warp_quad;
   const printSuggestion = useMemo(() => cyclicQuad(sanitizePolygon(proposedPrintQuad)), [proposedPrintQuad]);
-  const needsPrintReview = editingImage && Boolean(printSuggestion);
+  const confirmOuter = Boolean(printSuggestion) || mountedPrintNeedsReview(fullPrintMode);
+  const needsPrintReview = editingImage && confirmOuter;
   const motifReview = selectedModes?.image_only;
   const motifBoundaryReviewHint = getMotifBoundaryReviewHint(motifReview);
   const motifMarginMarks = useMemo(() => getMotifMarginMarks(motifReview), [motifReview]);
@@ -1709,6 +1711,22 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       context.restore();
     }
     if (newPrint?.corners.length) {
+      if (newPrint.deferredProposal?.fragmentPolygons?.length) {
+        context.save();
+        context.strokeStyle = "#a21caf";
+        context.fillStyle = "rgba(162, 28, 175, 0.12)";
+        context.lineWidth = 2;
+        context.setLineDash([5, 3]);
+        for (const [first, ...points] of newPrint.deferredProposal.fragmentPolygons) {
+          context.beginPath();
+          context.moveTo(first.x * canvas.width, first.y * canvas.height);
+          points.forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
+          context.closePath();
+          context.fill();
+          context.stroke();
+        }
+        context.restore();
+      }
       const points = newPrint.corners.map(({ x, y }) => [x * canvas.width, y * canvas.height]);
       context.strokeStyle = "#2563eb";
       context.fillStyle = "#2563eb";
@@ -1875,7 +1893,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     setSaveState({ photoId: selected.id, mode: editMode, saving: true });
     try {
       const markId = albumMark?.id === albumMarkReviewId ? albumMarkReviewId : null;
-      const result = await onSaveBox(selected.id, box, mask, Boolean(printSuggestion && !editingImage), markId);
+      const result = await onSaveBox(selected.id, box, mask, confirmOuter && !editingImage, markId);
       setAlbumMarkReviewId(null);
       setBlockedCrop(null);
       const url = result.urls?.[editMode] || (!getCropModes(result) && !editingImage ? result.urls?.original : null);
@@ -1922,7 +1940,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     setAddition({ ...newPrint, saving: true, error: null });
     try {
       const photo = await onAddPhoto(pageId, newPrint.requestId, newPrint.corners, additionSize.size,
-        newPrint.adjacentSuggestion, newPrint.deferredProposal);
+        newPrint.adjacentSuggestion, newPrint.deferredProposal, newPrint.replaceMountedFragments);
       if (activePage.current !== pageId) return;
       setAddition(null);
       onSelectPhoto(photo.id);
@@ -1931,7 +1949,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       const stale = printAdditionErrors[error.message];
       const message = stale || (error.message === "protected_region_cut"
         ? "Der Ausschnitt schneidet einen geschützten Bildbereich ab. Verschiebe die Ecken, bis der Bereich vollständig sichtbar ist."
-        : error.message);
+        : error.message === "mounted_print_outline_excludes_fragments"
+          ? "Die Ecken müssen alle markierten Teilvorschläge umfassen. Wenn sie zu verschiedenen Abzügen gehören, prüfe sie einzeln."
+          : error.message);
       if (activePage.current === pageId) setAddition({ ...newPrint, error: message, invalidated: Boolean(stale) });
     }
   }
@@ -1976,9 +1996,11 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             {photos.filter((photo) => !photo.reviewed_non_print).length} erfasste Abzüge, {deferredProposals.length === 1
               ? "1 unklarer Vorschlag" : `${deferredProposals.length} unklare Vorschläge`}. {deferredPrintHint}
           </p>
-          {deferredProposals.map(({ id, polygon, reason }, index) => (
+          {deferredProposals.map(({ id, polygon, reason, fragment_polygons: parts }, index) => (
             <button className="text-button compact" key={id} type="button"
-              onClick={() => startAddition(polygon, null, { id, revision: page.processing_metadata?.photo_count_revision })}
+              onClick={() => startAddition(polygon, null, { id, revision: page.processing_metadata?.photo_count_revision,
+                fragmentPolygons: reason === "possible_mounted_print" ? getSourceEdgeTraces(parts).filter(part => part.length >= 4) : [],
+              })}
               disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving}>
               {reason === "possible_mounted_print" ? `Möglichen Ganzabzug ${index + 1} prüfen`
                 : `Vorschlag ${index + 1} als Abzug ergänzen`}
@@ -2097,6 +2119,14 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       )}
       {newPrint && (
         <div className="manual-print-actions">
+          {newPrint.deferredProposal?.fragmentPolygons?.length >= 3 && (
+            <label className="mounted-print-fragment-review">
+              <input type="checkbox" checked={Boolean(newPrint.replaceMountedFragments)}
+                onChange={event => setAddition(current => ({ ...current, replaceMountedFragments: event.target.checked, error: null }))}
+                disabled={newPrint.saving || newPrint.invalidated} />
+              Alle violett markierten Teilvorschläge gehören zu diesem Abzug.
+            </label>
+          )}
           {newPrint.corners.length === 4 && <PrintSizeFields
             value={newPrint.printSizeFields}
             onChange={(fields) => setAddition((current) => ({ ...current, printSizeFields: fields, error: null }))}
@@ -2105,7 +2135,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           />}
           <button className="primary-button compact" type="button" onClick={saveNewPrint}
             disabled={newPrint.saving || newPrint.invalidated || newPrint.corners.length !== 4 || Boolean(additionSize.error)}>
-            {newPrint.saving ? "Abzug wird berechnet …" : "Abzug speichern"}
+            {newPrint.saving ? "Abzug wird berechnet …" : newPrint.replaceMountedFragments ? "Als einen Abzug speichern" : "Abzug speichern"}
           </button>
           <button className="text-button compact" type="button" onClick={() => startAddition([], newPrint.adjacentSuggestion, newPrint.deferredProposal)}
             disabled={newPrint.saving || newPrint.invalidated || newPrint.corners.length === 0}>
@@ -2210,10 +2240,10 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
     return detail;
   }
 
-  async function addPhoto(pageId, requestId, corners, printSize, adjacentSuggestion, deferredProposal) {
+  async function addPhoto(pageId, requestId, corners, printSize, adjacentSuggestion, deferredProposal, replaceMountedFragments) {
     let photo;
     try {
-      photo = await addManualPhoto(pageId, requestId, corners, printSize, adjacentSuggestion, deferredProposal);
+      photo = await addManualPhoto(pageId, requestId, corners, printSize, adjacentSuggestion, deferredProposal, replaceMountedFragments);
     } catch (error) {
       if (printAdditionErrors[error.message]) await refreshCorrections().catch(() => {});
       throw error;

@@ -9,7 +9,9 @@ from app.pipeline.album_windows import (
 )
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
-from app.pipeline.decisions import MANUAL_NEIGHBOR_CONTENT_LOSS, MANUAL_NEIGHBOR_OVERLAP, MOTIF_MARGIN_MARKS_REVIEW
+from app.pipeline.decisions import (
+    MANUAL_NEIGHBOR_CONTENT_LOSS, MANUAL_NEIGHBOR_OVERLAP, MOTIF_MARGIN_MARKS_REVIEW, MOUNTED_PRINT_OUTLINE_REVIEW,
+)
 from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CAPTURE_SPLIT_REVIEW_SOURCE, capture_edge_requires_review,
 )
@@ -1341,6 +1343,15 @@ def _inspect_print(
                 metrics = _validate_quad(quad, width, height)
     if dual_mode:
         manual_outline = mask.get("manual_added") is True or mask.get(REVIEWED_CROSSING_OUTLINE) is True
+        if mask.get("mounted_outline_review") is True:
+            confirmed = False
+            if mask.get("mounted_outline_confirmed") is True:
+                fitted, sides, unresolved = refine_print_boundary(page, quad, search_radius=3)
+                confirmed = (fitted is not None and not unresolved and np.linalg.norm(fitted - quad, axis=1).max() <= 1.
+                             and all(edge["support"] >= .90 and (edge["corner_support"] or 0) >= .80
+                                     for edge in sides.values()))
+            if not confirmed:
+                reasons.append(MOUNTED_PRINT_OUTLINE_REVIEW)
         if not manual and mask.get("paper_edge_confirmation") is True:
             reasons.append(PRINT_EDGE_CONFIRMATION)
         scalloped = not manual and mask.get("scalloped_print") is True and visible is not None

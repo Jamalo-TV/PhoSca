@@ -671,6 +671,22 @@ select {
   flex-basis: 100%;
 }
 
+.mounted-print-fragment-review {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-basis: 100%;
+  min-height: 44px;
+  color: #43204e;
+}
+
+.mounted-print-fragment-review input {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  accent-color: #a21caf;
+}
+
 .crop-editor-hint {
   margin: 0 0 10px;
   color: #40534e;

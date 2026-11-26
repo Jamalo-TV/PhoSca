@@ -138,7 +138,7 @@ export async function patchBoundingBox(photoId, boundingBox, segmentationMask = 
   );
 }
 
-export async function addManualPhoto(pageId, requestId, warpQuad, printSize, adjacentSuggestion, deferredProposal) {
+export async function addManualPhoto(pageId, requestId, warpQuad, printSize, adjacentSuggestion, deferredProposal, replaceMountedFragments) {
   return parseResponse(await apiFetch(`/api/v1/pages/${pageId}/manual-photos`, {
     method: "POST",
     headers: jsonHeaders,
@@ -146,6 +146,7 @@ export async function addManualPhoto(pageId, requestId, warpQuad, printSize, adj
       request_id: requestId, warp_quad: warpQuad,
       print_size_mm: printSize, adjacent_suggestion: adjacentSuggestion,
       deferred_proposal_id: deferredProposal?.id, photo_count_revision: deferredProposal?.revision,
+      ...(replaceMountedFragments ? { replace_mounted_fragments: true } : {}),
     }),
   }));
 }

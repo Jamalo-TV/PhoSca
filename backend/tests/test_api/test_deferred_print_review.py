@@ -135,3 +135,117 @@ async def test_fusion_proposals_stay_uncounted_until_manually_added_or_dismissed
     async with get_session_factory()() as session:
         event = await session.get(ReviewEvent, UUID(accepted.json()["id"]))
         assert event.event_metadata["snapshot"]["provenance"]["segmentation"]["fusion"]["deferred_print_proposals"] == remaining
+
+
+async def test_review_can_replace_mounted_fragments_with_one_print(client, monkeypatch):
+    from app.config import get_settings
+    from app.pipeline.segmentation import SegmentationDetection, SegmentationResult
+    from app.routers import photos
+    from app.services import pipeline
+
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
+    monkeypatch.setenv("MAX_UPLOAD_SIZE", "1048576")
+    monkeypatch.setenv("MAX_REQUEST_SIZE", "2097152")
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    get_settings.cache_clear()
+    image = np.full((260, 400, 3), 34, np.uint8)
+    image[30:191, 28:236] = (232, 238, 239)
+    image[42:178, 41:222] = (105, 95, 138)
+    image[90:220, 267:375] = (67, 102, 148)
+
+    def outline(x1, y1, x2, y2):
+        return [{"x": x / 399, "y": y / 259} for x, y in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))]
+
+    def bounds(quad):
+        return {"x1": quad[0]["x"], "x2": quad[2]["x"], "y1": quad[0]["y"], "y2": quad[2]["y"]}
+
+    outer = outline(28, 30, 235, 190)
+    fragments = [outline(41, 42, 98, 177), outline(102, 42, 156, 177), outline(160, 42, 221, 177)]
+    independent = outline(267, 90, 374, 219)
+    detections = [
+        SegmentationDetection(bounds(quad), {"source": "yolo_seg_mask", "polygon": quad}, .88, 1.0, True, [])
+        for quad in [*fragments, independent]
+    ]
+    pending = [{"id": 3, "reason": "possible_mounted_print", "polygon": outer, "fragment_polygons": fragments}]
+    monkeypatch.setattr(pipeline, "segment_album_page", lambda *_, **__: SegmentationResult(
+        detections, {"fusion": {"deferred_print_proposals": pending}},
+    ))
+    ok, png = cv2.imencode(".png", image)
+    assert ok
+    album_id = (await client.post("/api/v1/albums", json={"name": "Mounted print review"})).json()["id"]
+    base = f"/api/v1/albums/{album_id}"
+    upload = await client.post(f"{base}/pages/upload", files={"files": ("page.png", png.tobytes(), "image/png")})
+    assert upload.status_code == 201
+    page, = (await client.get(f"{base}/pages")).json()
+    manual_url = f"/api/v1/pages/{page['id']}/manual-photos"
+    photo_list = f"{base}/photos"
+    review_url = f"/api/v1/review/queue?album_id={album_id}&type=segmentation"
+    before = (await client.get(review_url)).json()[0]["payload"]
+    initial = (await client.get(photo_list)).json()
+    fragment_ids = {row["id"] for row in initial if row["segmentation_mask"]["polygon"] in fragments}
+    independent_id, = {row["id"] for row in initial} - fragment_ids
+    assert before["detection_count"] == 4 and len(fragment_ids) == 3
+    body = {
+        "request_id": str(uuid4()), "deferred_proposal_id": 3, "warp_quad": outer,
+        "photo_count_revision": before["photo_count_revision"], "replace_mounted_fragments": True,
+        "print_size_mm": {"width": 132, "height": 102},
+    }
+    excluded = await client.post(manual_url, json={**body, "warp_quad": outline(28, 30, 166, 190)})
+    assert excluded.status_code == 422 and excluded.json()["detail"] == "mounted_print_outline_excludes_fragments"
+
+    async def fail_render(*_, **__):
+        raise ValueError("simulated invalid crop")
+
+    with monkeypatch.context() as faults:
+        faults.setattr(photos, "perspective_correction_task_logic", fail_render)
+        failed = await client.post(manual_url, json=body)
+    assert failed.status_code == 422
+    assert (await client.get(photo_list)).json() == initial
+    assert (await client.get(review_url)).json()[0]["payload"] == before
+
+    saved = await client.post(manual_url, json=body)
+    assert saved.status_code == 201, saved.text
+    replacement = saved.json()
+    replacement_id = replacement["id"]
+    assert replacement["crop_download_urls"] == {"full_print": None, "image_only": None}
+    assert "MOUNTED_PRINT_OUTLINE_REVIEW" in replacement["enhancement_applied"]["correction"]["crop_modes"]["full_print"]["reason_codes"]
+    creation = replacement["enhancement_applied"]["review_provenance"]["manual_creation"]
+    assert set(creation["replaced_fragment_ids"]) == fragment_ids
+    assert {row["id"] for row in (await client.get(photo_list)).json()} == {replacement_id, independent_id}
+    after = (await client.get(review_url)).json()[0]["payload"]
+    assert after["detection_count"] == 2 and after["deferred_print_proposals"] == []
+    for fragment in fragment_ids:
+        row = (await client.get(f"/api/v1/photos/{fragment}")).json()
+        assert row["reviewed_non_print"]
+        assert row["segmentation_mask"]["polygon"] in fragments
+    repeated = await client.post(manual_url, json=body)
+    assert repeated.status_code == 200 and repeated.json()["id"] == replacement_id
+    changed = await client.post(manual_url, json={**body, "replace_mounted_fragments": False})
+    assert changed.status_code == 409
+
+    motif = outline(41, 42, 221, 177)
+    photo_url = f"/api/v1/photos/{replacement_id}"
+    edit = {
+        "bounding_box": bounds(outer),
+        "segmentation_mask": {"source": "manual_quad", "polygon": outer, "warp_quad": outer, "image_quad": motif},
+    }
+    unconfirmed = await client.patch(f"{photo_url}/bounding-box", json=edit)
+    assert unconfirmed.status_code == 200 and not unconfirmed.json()["crop_download_urls"]["full_print"]
+    corrected = await client.patch(f"{photo_url}/bounding-box", json={**edit, "confirm_print_outline": True})
+    assert corrected.status_code == 200, corrected.text
+    for mode in ("full_print", "image_only"):
+        assert (await client.get(f"{photo_url}/image", params={"variant": mode})).status_code == 200
+
+    fragment_id = next(row["id"] for row in initial if row["segmentation_mask"]["polygon"] == fragments[0])
+    fragment_url = f"/api/v1/photos/{fragment_id}"
+    restored = await client.patch(f"{fragment_url}/bounding-box", json={
+        "bounding_box": bounds(fragments[0]),
+        "segmentation_mask": {"source": "manual_quad", "polygon": fragments[0], "warp_quad": fragments[0]},
+    })
+    assert restored.status_code == 200 and not restored.json()["reviewed_non_print"]
+    assert {row["id"] for row in (await client.get(photo_list)).json()} == {replacement_id, independent_id, fragment_id}
+    for mode in ("full_print", "image_only"):
+        assert (await client.get(f"{photo_url}/image", params={"variant": mode})).status_code == 404
