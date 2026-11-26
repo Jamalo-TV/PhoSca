@@ -4,6 +4,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from app.pipeline.adjacent_stock_review import ADJACENT_STOCK_REVIEW_SOURCE, suggest_adjacent_stock_outline
 from app.pipeline.album_windows import (
     ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves,
 )
@@ -83,6 +84,9 @@ _LOCALIZED_OCCLUSION_REASONS = {"PRINT_CORNERS_UNCERTAIN", "PRINT_POSSIBLY_OCCLU
 _CROP_PREVIEW_REASONS = {PRINT_EDGE_CONFIRMATION, PRINT_ASPECT_REFERENCE_REVIEW, FRAGMENTED_PRINT_REVIEW,
                          SCALLOPED_PRINT_REVIEW, PRINT_SHADOW_EDGE_REVIEW, PRINT_FAINT_RIM_REVIEW,
                          EXTENDED_PRINT_OUTLINE_REVIEW, PRINT_SHARED_RIM_UNCERTAIN}
+_STOCK_REVIEW_CONFLICTS = ("paper_grid_review", "film_grid_review_seam", "paper_join_review_traces",
+                           "crossing_print_suggestion", "fragment_outline_suggestion", "capture_edge_clipped",
+                           "scalloped_print", "scalloped_ownership_outline")
 
 
 def _pale_backing_review_fit(boundary: dict) -> bool:
@@ -658,6 +662,37 @@ def apply_refined_visibility(mask: dict | None, correction: dict) -> dict | None
     elif prior:
         updated["visible_polygon"] = prior
     return updated
+
+
+def _adjacent_stock_neighbor(
+    seed: np.ndarray, masks: list[dict], width: int, height: int,
+) -> np.ndarray | None:
+    shortest = np.linalg.norm(np.roll(seed, -1, axis=0) - seed, axis=1).min()
+    if shortest < 100:
+        return None
+    low, high = seed.min(axis=0), seed.max(axis=0)
+    nearby = []
+    for mask in masks:
+        visible = _proposal_polygon(mask, width, height)
+        if visible is None:
+            continue
+        separation = np.maximum(0, np.maximum(visible.min(axis=0) - high, low - visible.max(axis=0)))
+        if np.linalg.norm(separation) <= .08 * shortest:
+            nearby.append(mask)
+    if len(nearby) != 1:
+        return None
+    neighbor, = nearby
+    if neighbor.get("warp_quad") or any(neighbor.get(name) for name in _STOCK_REVIEW_CONFLICTS):
+        return None
+    try:
+        points = _points_from_mask(neighbor, width, height)
+        if points is None:
+            return None
+        points = _order_points(points)
+        _validate_quad(points, width, height)
+        return points
+    except (KeyError, TypeError, ValueError, cv2.error):
+        return None
 
 
 def _clipped_visible_corner(quad: np.ndarray, visible: np.ndarray | None) -> bool:
@@ -1910,6 +1945,21 @@ def correct_photo_crop(
                     full_mode["suggested_edge_traces"] = [_vertices_on_page(trace, width, height) for trace in traces]
                     full_mode["suggested_edge_source"] = POSSIBLE_OVEREXTENDED_PRINT_EDGE
                     result = replace(result, full_print_preview=pixels)
+        if (enable_classical_retry and not manual and full_reasons == ["PRINT_BOUNDARY_AMBIGUOUS"]
+                and not stock_suggestion and neighbor_masks and not full_mode.get("suggested_warp_quad")
+                and not any(mask.get(name) for name in _STOCK_REVIEW_CONFLICTS)):
+            neighbor_seed = _adjacent_stock_neighbor(seed_points, neighbor_masks, width, height)
+            if neighbor_seed is not None:
+                candidate = suggest_adjacent_stock_outline(
+                    page_image, seed_points, src_points, boundary_refinement, neighbor_seed,
+                )
+                if (candidate is not None
+                        and not any(cv2.intersectConvexConvex(candidate, cv2.convexHull(neighbor))[0] > 1
+                                    for neighbor in neighbor_polygons)
+                        and _keeps_protected_preview_content(page_image, src_points, candidate, regions, protection)
+                        and validate_protected_regions(candidate, regions, width=width, height=height)["passed"]):
+                    full_mode["suggested_warp_quad"] = _vertices_on_page(candidate, width, height)
+                    full_mode["suggested_outline_source"] = ADJACENT_STOCK_REVIEW_SOURCE
         return result
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:

@@ -129,6 +129,46 @@ def test_competing_paper_edge_traces_keep_the_existing_review_warp(ownership_cue
     np.testing.assert_allclose(native_rows, [413.8, 425.5], atol=.5)
 
 
+@pytest.mark.parametrize("neighbor_group", [None, "existing_review", "extra_claim", "invalid_outline"])
+def test_adjacent_stock_outline_is_an_editable_alternative(monkeypatch, neighbor_group):
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+    from app.pipeline import perspective
+
+    fixture = next(page for page in synthetic_crop_pages("locked") if page.name == "touching")
+    image = fixture.image
+    seeds = (np.float32([[86, 196], [413, 196], [414, 420], [86, 420]]), _rect(419, 230, 697, 425))
+    masks = [{"source": "yolo_seg_mask", "polygon": _vertices(seed, image)} for seed in seeds]
+    for index, mask in enumerate(masks):
+        neighbor = masks[1 - index].copy()
+        neighbors = [neighbor]
+        if neighbor_group == "existing_review":
+            neighbor["film_grid_review_seam"] = _vertices([(419, 300), (697, 300)], image)
+        elif neighbor_group == "extra_claim":
+            neighbors.append({"polygon": _vertices(_rect(408, 210, 444, 350), image)})
+        elif neighbor_group == "invalid_outline":
+            neighbor["polygon"] = [*neighbor["polygon"][:3], neighbor["polygon"][2]]
+        options = {"dual_mode": True, "enable_classical_retry": True, "neighbor_masks": neighbors}
+        with monkeypatch.context() as disabled:
+            disabled.setattr(perspective, "suggest_adjacent_stock_outline", lambda *_: None)
+            baseline = _crop(image, {}, mask, **options)
+        observed = _crop(image, {}, mask, **options)
+        modes = observed.metadata["crop_modes"]
+        assert all(mode["status"] == "review_needed" for mode in modes.values())
+        assert observed.image_only is None and observed.full_print_preview is None
+        np.testing.assert_array_equal(observed.rectified_untrimmed, baseline.rectified_untrimmed)
+        outline = modes["full_print"].pop("suggested_warp_quad", None)
+        source = modes["full_print"].pop("suggested_outline_source", None)
+        assert modes == baseline.metadata["crop_modes"]
+        if neighbor_group is None:
+            expected = fixture.prints[index].reference_modes["full_print"].corners
+            assert outline is not None
+            assert source == "adjacent_paper_stock"
+            pixels = normalized_vertices_to_pixels([(p["x"], p["y"]) for p in outline], *image.shape[1::-1])
+            assert np.linalg.norm(pixels - expected, axis=1).max() < .7
+        else:
+            assert outline is None
+
+
 def test_backed_edge_review_draws_observed_spans_without_changing_crops(monkeypatch) -> None:
     from app.pipeline import perspective
 

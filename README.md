@@ -164,6 +164,19 @@ Downloadfreigabe bleiben beim Einblenden der Linien gleich. Ein bereits
 vorhandener Umriss- oder Kantenhinweis hat Vorrang.
 [Kantenvergleich](data/evaluation/README.md#show-competing-edges-in-review)
 
+Bei zwei eng benachbarten Abzügen mit unterscheidbarem Papier
+kann der Editor einen zusätzlichen Aussenumriss anbieten. PhoSca
+schätzt den Papierton für jeden Abzug aus seinen gestützten Seiten.
+Es prüft die Übergänge an beiden Umrissen im Original und verlangt
+auch an den Ecken belegte Materialwechsel. Die bisherigen Ecken
+dürfen höchstens 0,75 Originalpixel ausserhalb des Entwurfs liegen.
+Der Vorschlag darf keine Fläche eines anderen Vorschlags
+beanspruchen. Mit **Aussenumriss in den Editor
+laden** lässt sich der zusätzliche Streifen direkt am Original
+prüfen. Erst die ausdrückliche Bestätigung speichert die Korrektur.
+Beide Abzüge behalten ihre eigene Anzahl und ihren eigenen Prüfstatus.
+[Beispiel mit eng anliegenden Abzügen](data/evaluation/README.md#offer-editable-edges-for-distinct-adjacent-paper-stocks)
+
 Ist eine Seite neben hellem Untergrund nur abschnittsweise sichtbar,
 kann **Ganzer Abzug** an beiden Enden gestrichelte Hinweise zeigen.
 PhoSca prüft dazu die sichtbaren Materialwechsel, das Ende der

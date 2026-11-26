@@ -11,6 +11,7 @@ import cv2
 
 from app.config import Settings
 from app.pipeline.adjacent_prints import ADJACENT_PRINT_REVISION
+from app.pipeline.adjacent_stock_review import ADJACENT_STOCK_REVIEW_REVISION
 from app.pipeline.crop_sampling import OWNED_BILINEAR
 from app.pipeline.confidence import is_sha256, load_confidence_calibration
 from app.pipeline.crossing_prints import CROSSING_PRINT_REVISION
@@ -88,6 +89,10 @@ def crop_validation_profile(settings: Settings) -> dict:
         ),
         "adjacent_print_outlines": (
             ADJACENT_PRINT_REVISION if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+        ),
+        "adjacent_stock_review": (
+            ADJACENT_STOCK_REVIEW_REVISION
+            if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "crossing_print_outlines": (
             CROSSING_PRINT_REVISION if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None

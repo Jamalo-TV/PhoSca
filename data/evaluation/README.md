@@ -3114,6 +3114,60 @@ contact-sheet group hints retain precedence, including the competing
 negative-sleeve and paper-grid proposals. All encoded crops and previews
 of those 11 rows are byte-identical to the trace-disabled reference.
 
+#### Offer editable edges for distinct adjacent paper stocks
+
+For one held crop with a single nearby proposal, each physical
+paper hypothesis needs two or three independently supported sides.
+PhoSca learns the two pale paper tones from their own fitted edges
+and looks for the third, local album tone. The rim-aware source
+search tests the uncertain sides. At least part of each outline
+must border the other print's independently measured stock.
+Both final outlines need supported flanks around their full lengths
+and at both ends of each side. The hypotheses must be disjoint.
+The candidate preserves the existing outline within a native
+pixel tolerance and clears other active masks and protected pixels.
+An invalid peer or an existing ownership review takes priority.
+
+The resulting outline is editable in desktop and mobile review.
+The committed warp, original count, competing-edge spans and
+untrimmed JPEGs are unchanged until an explicit paper confirmation.
+In the frozen differently toned pair, the two editable candidates
+have maximum corner errors of 0.624 and 0.522 px. They recover
+1,655 and 1,158 native source centres in the known synthetic
+references, with zero added foreign or neighbour centres there.
+The model-free detection with just one row and geometries already
+ready in the mixed and seeded controls keep their original paths.
+
+The normal upload with the synthetic-control model returns two
+independent held rows. Opening and loading the proposed outlines
+writes nothing. General approval and a corner request without the
+paper confirmation are rejected. Saving the left with the known
+166 × 114 mm test dimensions opens its named exports. The right
+record and its untrimmed JPEG are byte-identical before and after,
+and its exports stay in review.
+
+| Left after explicit correction | Footprint IoU | Maximum corner error | Landmark p95 |
+| --- | ---: | ---: | ---: |
+| Whole print | 0.99844 | 0.624 px | 0.523 px |
+| Motif | 0.99187 | 0.093 px | 0.065 px |
+
+The manual renders have zero measured aspect error, zero
+content cutoff beyond one source pixel and zero foreign
+interpolation contributors in this test. The isolated paired
+fit takes 28 ms median and 33 ms p95 over 20 warm measurements
+on one OpenCV thread.
+
+On the 66 paired development renders, the candidate output changes
+only two editable cue records. Existing previews and both mode
+statuses reproduce. Occlusion, same-tone stock, competing ownership
+and malformed-peer checks abstain. In the same-palette strip
+controls, eight of 16 inputs can still offer an outline. These
+include synthetic examples with 331–993 centres belonging to a
+separate strip. A second visible colour may locate an edge while
+the reviewer still has to assign the added area to a physical print.
+The tested Golden ambiguous cases also have other held reasons
+and do not meet this path's entry condition.
+
 ### Show the visible spans of an interrupted paper edge
 
 On the sigma 1.2 blurred Domoritz flatbed derivative, the bottom-right

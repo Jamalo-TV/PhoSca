@@ -157,6 +157,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
   if (fullPrint?.reason_codes?.includes(scallopedOwnershipReason)) {
     return scallopedOwnershipHint;
   }
+  if (fullPrint?.suggested_outline_source === "adjacent_paper_stock") {
+    return "Prüfe am Original, ob der zusätzlich vorgeschlagene Papierstreifen zu diesem Abzug gehört.";
+  }
   if (fullPrint?.suggested_warp_quad?.length === 4) {
     return "Vergleiche den vorgeschlagenen Aussenumriss mit dem Original. Setze die Ecken an die sichtbare Papierkante.";
   }

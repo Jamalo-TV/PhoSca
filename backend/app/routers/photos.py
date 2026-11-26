@@ -19,6 +19,7 @@ from app.config import Settings, get_settings
 from app.core.auth import Principal, get_principal, require_write_principal
 from app.database import get_async_session
 from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PageStatus, PhotoStatus, ProcessingRun, StageRun
+from app.pipeline.adjacent_stock_review import ADJACENT_STOCK_REVIEW_SOURCE
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
 from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE, reviewed_outline_covers_traces
 from app.pipeline.decisions import (
@@ -685,8 +686,9 @@ async def update_photo_bounding_box(
             explicit = payload.segmentation_mask is not None and payload.segmentation_mask.warp_quad is not None
             outer = segmentation_mask.get("warp_quad") or []
             previous_outlines = (full_print.get("warp_quad"), original_mask.get("warp_quad") or original_mask.get("polygon"))
-            if not explicit or (not payload.confirm_print_outline and any(
-                _same_visible_outline(previous, outer, native_size=(width, height)) for previous in previous_outlines
+            if not explicit or (not payload.confirm_print_outline and (
+                full_print.get("suggested_outline_source") == ADJACENT_STOCK_REVIEW_SOURCE
+                or any(_same_visible_outline(previous, outer, native_size=(width, height)) for previous in previous_outlines)
             )):
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="print_outline_review_required")
         if original_mask.get("crossing_print_suggestion"):

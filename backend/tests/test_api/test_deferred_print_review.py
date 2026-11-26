@@ -132,6 +132,64 @@ async def test_compressed_quarter_turn_only_offers_the_measured_neighbor_edges(c
     assert (await client.get(f"{url}/image?variant=source_corrected_untrimmed")).status_code == 200
 
 
+async def test_adjacent_stock_draft_requires_explicit_paper_confirmation(client, monkeypatch):
+    from app.config import get_settings
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+    from app.pipeline.segmentation import SegmentationDetection, SegmentationResult
+    from app.services import pipeline
+
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
+    monkeypatch.setenv("MAX_UPLOAD_SIZE", "1048576")
+    monkeypatch.setenv("MAX_REQUEST_SIZE", "2097152")
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_CLASSICAL_SEGMENTATION_FALLBACK", "true")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    get_settings.cache_clear()
+
+    fixture = next(page for page in synthetic_crop_pages("locked") if page.name == "touching")
+    image = fixture.image
+    height, width = image.shape[:2]
+    seeds = (((86, 196), (413, 196), (414, 420), (86, 420)),
+             ((419, 230), (697, 230), (697, 425), (419, 425)))
+    detections = []
+    for seed in seeds:
+        polygon = [{"x": x / (width - 1), "y": y / (height - 1)} for x, y in seed]
+        xs, ys = zip(*seed, strict=True)
+        bounds = {"x1": min(xs) / width, "y1": min(ys) / height,
+                  "x2": max(xs) / width, "y2": max(ys) / height}
+        detections.append(SegmentationDetection(bounds, {"source": "yolo_seg_mask", "polygon": polygon}, .9, 1., True, []))
+    monkeypatch.setattr(pipeline, "segment_album_page", lambda *_, **__: SegmentationResult(detections, {}))
+    ok, png = cv2.imencode(".png", image)
+    assert ok
+    album_id = (await client.post("/api/v1/albums", json={"name": "Two neighboring paper stocks"})).json()["id"]
+    album = f"/api/v1/albums/{album_id}"
+    uploaded = await client.post(f"{album}/pages/upload", files={"files": ("touching.png", png.tobytes(), "image/png")})
+    assert uploaded.status_code == 201, uploaded.text
+    left, right = sorted((await client.get(f"{album}/photos")).json(), key=lambda row: row["bounding_box"]["x1"])
+    left_url = f"/api/v1/photos/{left['id']}"
+    right_url = f"/api/v1/photos/{right['id']}"
+    other = (await client.get(right_url)).json()
+    full = left["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+    assert full["suggested_outline_source"] == "adjacent_paper_stock"
+    proposal = full["suggested_warp_quad"]
+    assert proposal != full["warp_quad"]
+    for url in (left_url, right_url):
+        for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+            assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
+    update = {"bounding_box": left["bounding_box"], "segmentation_mask": {
+        "source": "manual_quad", "warp_quad": proposal, "polygon": proposal, "print_size_mm": {"width": 166, "height": 114},
+    }}
+    implicit = await client.patch(f"{left_url}/bounding-box", json=update)
+    assert implicit.status_code == 409 and implicit.json()["detail"] == "print_outline_review_required"
+    saved = await client.patch(f"{left_url}/bounding-box", json={**update, "confirm_print_outline": True})
+    assert saved.status_code == 200, saved.text
+    for variant in ("full_print", "image_only"):
+        assert (await client.get(f"{left_url}/image?variant={variant}")).status_code == 200
+    assert (await client.get(right_url)).json() == other
+
+
 @pytest.mark.parametrize("kind", ["film", "paper"])
 async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kind):
     from app.config import get_settings
