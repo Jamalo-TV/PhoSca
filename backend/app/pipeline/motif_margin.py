@@ -90,9 +90,28 @@ def _unexplained_margin_mark(lab: np.ndarray, owned: np.ndarray) -> np.ndarray |
                        [x + width - .5, y + height - .5], [x - .5, y + height - .5]])
 
 
+def _rule_in_margin(lightness: np.ndarray, owned: np.ndarray) -> np.ndarray | None:
+    """Find a thin continuous mark between two similar paper shoulders."""
+    values = lightness.astype(np.int16)
+    before, line, after = values[:-4], values[2:-2], values[4:]
+    paper = np.minimum(before, after)
+    dark = (owned[:-4] & owned[2:-2] & owned[4:] & (paper >= 185)
+            & (abs(before - after) <= 7) & (paper - line >= 4))
+    if not dark.any():
+        return None
+    _, _, components, _ = cv2.connectedComponentsWithStats(dark.astype(np.uint8))
+    for x, y, width, height, area in components[1:]:
+        if width >= max(36, .15 * lightness.shape[1]) and height <= 4 and area >= .75 * width:
+            # Row zero in the contrast map refers to row two of the strip.
+            y += 2
+            return np.float32([[x - .5, y - .5], [x + width - .5, y - .5],
+                               [x + width - .5, y + height - .5], [x - .5, y + height - .5]])
+    return None
+
+
 def motif_margin_marks(
     page: np.ndarray, full: np.ndarray, motif: np.ndarray, inverse: np.ndarray,
-    *, preview_guard: bool = False,
+    *, preview_guard: bool = False, inspect_rules: bool = False,
 ) -> list[np.ndarray]:
     """Return source coordinates for markings in the proposed removed paper strips."""
     if motif.shape != (4, 2) or not np.isfinite(motif).all():
@@ -133,6 +152,8 @@ def motif_margin_marks(
         if paper_lightness < 172:
             continue
         project = partial(_to_source, origin=origin + x0 * along + y0 * down, along=along, down=down, inverse=inverse)
+        if inspect_rules and (rule := _rule_in_margin(lightness, owned)) is not None:
+            _add_region(result, project(rule))
         background, labels, clusters = _mark_clusters(lightness, owned)
         strong_box = None
         checked = set()

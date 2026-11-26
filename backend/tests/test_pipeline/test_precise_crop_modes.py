@@ -475,6 +475,7 @@ def test_competing_paper_edge_traces_keep_the_existing_review_warp(ownership_cue
 @pytest.mark.parametrize("neighbor_group", [None, "existing_review", "extra_claim", "invalid_outline"])
 def test_adjacent_stock_outline_is_an_editable_alternative(monkeypatch, neighbor_group):
     from app.evaluation.crop_fixtures import synthetic_crop_pages
+    from app.evaluation.cropping import evaluate_rendered_crop
     from app.pipeline import perspective
 
     fixture = next(page for page in synthetic_crop_pages("locked") if page.name == "touching")
@@ -501,15 +502,60 @@ def test_adjacent_stock_outline_is_an_editable_alternative(monkeypatch, neighbor
         np.testing.assert_array_equal(observed.rectified_untrimmed, baseline.rectified_untrimmed)
         outline = modes["full_print"].pop("suggested_warp_quad", None)
         source = modes["full_print"].pop("suggested_outline_source", None)
-        assert modes == baseline.metadata["crop_modes"]
+        assert modes["full_print"] == baseline.metadata["crop_modes"]["full_print"]
         if neighbor_group is None:
             expected = fixture.prints[index].reference_modes["full_print"].corners
             assert outline is not None
             assert source == "adjacent_paper_stock"
             pixels = normalized_vertices_to_pixels([(p["x"], p["y"]) for p in outline], *image.shape[1::-1])
             assert np.linalg.norm(pixels - expected, axis=1).max() < .7
+            motif = modes["image_only"]
+            assert motif["reason_codes"] == baseline.metadata["crop_modes"]["image_only"]["reason_codes"]
+            assert motif["outline_preview"]["source"] == "paper_stock_motif"
+            assert observed.image_only_preview is not None
+            reference = fixture.prints[index].reference_modes["image_only"]
+            metrics = evaluate_rendered_crop(
+                reference.mask, [(p["x"], p["y"]) for p in motif["warp_quad"]],
+                motif["page_to_output"], observed.image_only_preview.shape[:2],
+                expected_corners=reference.corners, sampling=motif["sampling"],
+            )
+            assert metrics["cutoff_beyond_1px"] == metrics["foreign_source_samples"] == 0
+            assert metrics["corner_error_max_px"] < .15
         else:
             assert outline is None
+            assert observed.image_only_preview is None
+            assert modes["image_only"] == baseline.metadata["crop_modes"]["image_only"]
+
+
+@pytest.mark.parametrize("mark", ["caption_outside_stored_paper", "faint_rule"])
+def test_adjacent_stock_motif_preview_checks_the_paper_margins(mark) -> None:
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+
+    fixture = next(page for page in synthetic_crop_pages("locked") if page.name == "touching")
+    image = fixture.image.copy()
+    if mark == "caption_outside_stored_paper":
+        # A short, three-row caption entirely within the proposed paper extension.
+        bitmap = np.array([list(row) for row in (
+            "101001001010000011101110",
+            "111011100100000011000010",
+            "101010100100000001100010",
+        )]) == "1"
+        caption = np.repeat(bitmap, 2, axis=1)
+        image[422:425, 174:174 + caption.shape[1]][caption] = 172
+    else:
+        line = np.zeros(image.shape[:2], np.uint8)
+        cv2.line(line, (157, 205), (341, 205), 255, 1, cv2.LINE_AA)
+        change = (line.astype(np.float32) / 255)[..., None] * np.float32([5.6, 8., 8.8])
+        image = np.rint(image - change).astype(np.uint8)
+    proposal = {"source": "yolo_seg_mask", "polygon": _vertices([(86, 196), (413, 196), (414, 420), (86, 420)], image)}
+    neighbor = {"source": "yolo_seg_mask", "polygon": _vertices(_rect(419, 230, 697, 425), image)}
+    result = _crop(image, {}, proposal, dual_mode=True, enable_classical_retry=True, neighbor_masks=[neighbor])
+    full, motif = (result.metadata["crop_modes"][mode] for mode in ("full_print", "image_only"))
+    assert full["suggested_outline_source"] == "adjacent_paper_stock"
+    assert motif["status"] == full["status"] == "review_needed"
+    assert "IMAGE_MARGIN_MARKS_REVIEW" in motif["reason_codes"]
+    assert motif["margin_mark_regions"]
+    assert result.image_only is None and result.image_only_preview is None
 
 
 def test_backed_edge_review_draws_observed_spans_without_changing_crops(monkeypatch) -> None:

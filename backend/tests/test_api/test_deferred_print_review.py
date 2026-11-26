@@ -176,7 +176,12 @@ async def test_adjacent_stock_draft_requires_explicit_paper_confirmation(client,
     assert full["suggested_outline_source"] == "adjacent_paper_stock"
     proposal = full["suggested_warp_quad"]
     assert proposal != full["warp_quad"]
-    for url in (left_url, right_url):
+    for url, detail in ((left_url, (await client.get(left_url)).json()), (right_url, other)):
+        motif = detail["enhancement_applied"]["correction"]["crop_modes"]["image_only"]
+        assert motif["outline_preview"]["source"] == "paper_stock_motif"
+        assert motif["status"] == "review_needed"
+        preview = await client.get(detail["urls"]["image_only_preview"])
+        assert preview.status_code == 200 and preview.headers["content-type"] == "image/png"
         for variant in ("full_print", "image_only", "source_corrected_trimmed"):
             assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
     update = {"bounding_box": left["bounding_box"], "segmentation_mask": {
@@ -189,6 +194,20 @@ async def test_adjacent_stock_draft_requires_explicit_paper_confirmation(client,
     for variant in ("full_print", "image_only"):
         assert (await client.get(f"{left_url}/image?variant={variant}")).status_code == 200
     assert (await client.get(right_url)).json() == other
+
+    claim = [{"x": x / (width - 1), "y": y / (height - 1)}
+             for x, y in ((445, 250), (500, 250), (500, 302), (445, 302))]
+    manual = await client.post(f"/api/v1/pages/{right['page_id']}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": claim,
+    })
+    assert manual.status_code == 201, manual.text
+    assert (await client.get(other["urls"]["image_only_preview"])).status_code == 404
+    assert (await client.post(f"{right_url}/reprocess")).status_code == 200
+    latest = (await client.get(right_url)).json()
+    assert latest["urls"].get("image_only_preview") is None
+    assert (await client.get(f"{right_url}/image?variant=source_corrected_untrimmed")).status_code == 200
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{right_url}/image?variant={variant}")).status_code == 404
 
 
 async def test_source_corner_preview_is_held_and_retires_for_a_new_claim(client, monkeypatch, tmp_path):

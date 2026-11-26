@@ -2384,7 +2384,12 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {(rejectedDetection || currentSave?.rejected) && <p role="status">Vorschlag als falsches Objekt markiert.</p>}
       {currentSave?.url && <img className="review-crop-preview" src={currentSave.url} alt={cropModeLabels[editMode]} />}
       {editingImage && motifPreview && !currentSave?.url && (
-        <img className="review-crop-preview" src={motifPreview} alt="Motivvorschau zur Prüfung" />
+        <>
+          <img className="review-crop-preview" src={motifPreview} alt="Motivvorschau zur Prüfung"
+            aria-describedby={needsPrintReview && motifBoundaryReviewHint ? "held-motif-preview-hint" : undefined} />
+          {needsPrintReview && motifBoundaryReviewHint &&
+            <p className="crop-mode-status" id="held-motif-preview-hint">{motifBoundaryReviewHint}</p>}
+        </>
       )}
       {!editingImage && !newPrint && fullPrintPreview && !currentSave?.url && (
         comparePaperEdge ? <PaperEdgePreviewComparison currentUrl={untrimmedPrint} possibleUrl={fullPrintPreview}

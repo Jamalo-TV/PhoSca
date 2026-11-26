@@ -8,7 +8,7 @@ import numpy as np
 from app.pipeline.print_edges import _edge_band, _is_pale_stock, _replace_quad_side, _side_line, refine_print_boundary
 
 
-ADJACENT_STOCK_REVIEW_REVISION = 1
+ADJACENT_STOCK_REVIEW_REVISION = 2
 ADJACENT_STOCK_REVIEW_SOURCE = "adjacent_paper_stock"
 _SIDES = ("top", "right", "bottom", "left")
 _OFFSETS = [-6, -4, 4, 6]

@@ -481,6 +481,15 @@ prüfen. Erst die ausdrückliche Bestätigung speichert die Korrektur.
 Beide Abzüge behalten ihre eigene Anzahl und ihren eigenen Prüfstatus.
 [Beispiel mit eng anliegenden Abzügen](data/evaluation/README.md#offer-editable-edges-for-distinct-adjacent-paper-stocks)
 
+PhoSca kann unter **Nur Bildmotiv** schon eine Prüfvorschau zeigen,
+während die Papiergrenze zum Nachbarabzug noch offen ist. Dafür
+müssen alle vier Motivkanten im Original durchgehend und bis an die
+Ecken messbar sein. Das gesamte Motiv muss innerhalb des bisherigen
+Abzugs liegen. Ansprüche anderer Abzüge sowie geschützte Stellen
+und Markierungen am Rand können die Vorschau verhindern. Vergleiche
+die Vorschau mit dem Original und bestätige zuerst den Papierumriss.
+[Messung beider Motive](data/evaluation/README.md#preview-an-inboard-motif-beside-a-disputed-paper-edge)
+
 Ist eine Seite neben hellem Untergrund nur abschnittsweise sichtbar,
 kann **Ganzer Abzug** an beiden Enden gestrichelte Hinweise zeigen.
 PhoSca prüft dazu die sichtbaren Materialwechsel, das Ende der

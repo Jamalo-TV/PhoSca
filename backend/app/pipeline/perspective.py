@@ -1190,6 +1190,7 @@ def _dual_crop_result(
     neighbors: list[np.ndarray], corner_mount_detected: bool, print_outline: np.ndarray | None,
     motif_suggestion: np.ndarray | None, print_edge_traces: list,
     paper_stock_margin_regions: list | None = None,
+    adjacent_stock_outline: np.ndarray | None = None,
 ) -> CropResult:
     page_height, page_width = page.shape[:2]
     height, width = full_image.shape[:2]
@@ -1217,9 +1218,10 @@ def _dual_crop_result(
     independent = corner_mount_detected and set(full_reasons) <= _LOCALIZED_OCCLUSION_REASONS
     scalloped_motif = (print_outline is not None and inner is not None and set(full_reasons) == {SCALLOPED_PRINT_REVIEW}
                        and _motif_inside_scalloped_stock(inner, print_outline, neighbors))
-    stock_motif_review = trim_border and inner is None and full_reasons == ["PRINT_BOUNDARY_AMBIGUOUS"] and any(
-        isinstance(side, dict) and side.get("review_stock_fit")
-        for side in metadata["boundary_refinement"].values()
+    inboard_review = adjacent_stock_outline is not None and trim_border and inner is None
+    stock_motif_review = trim_border and inner is None and full_reasons == ["PRINT_BOUNDARY_AMBIGUOUS"] and (
+        inboard_review or any(isinstance(side, dict) and side.get("review_stock_fit")
+                              for side in metadata["boundary_refinement"].values())
     )
     needs_closed_rim = independent or stock_motif_review
     preview_only = bool(full_reasons) and set(full_reasons) <= _CROP_PREVIEW_REASONS and not scalloped_motif
@@ -1293,12 +1295,12 @@ def _dual_crop_result(
                     # A straight fit can corroborate an incomplete trace, for
                     # example under glare. It must observe all sampled support
                     # before the motif is marked ready.
-                    line_supported = native_verified and (preview_only or (
+                    line_supported = native_verified and not (inboard_review and needs_native_line_support) and (preview_only or (
                         len(native_evidence) == 4 and all(
                             edge["support"] == 1 and edge["corner_support"] == 1 for edge in native_evidence.values()
                         )
                     ))
-                    if needs_native_line_support and not line_supported:
+                    if (needs_native_line_support or inboard_review) and not line_supported:
                         image_reasons.append("IMAGE_BOUNDARY_UNCERTAIN")
                     elif (needs_closed_rim or wide_rim) and (
                         not native_verified or len(native_evidence) != 4
@@ -1320,7 +1322,7 @@ def _dual_crop_result(
                     image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
                 if stock_motif_review and any(cv2.pointPolygonTest(source_quad, tuple(point), True) < 3 for point in source):
                     image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
-                if (measured or independent or wide_rim) and not _is_rectangular_in_measured_plane(quad):
+                if (measured or independent or wide_rim or inboard_review) and not _is_rectangular_in_measured_plane(quad):
                     image_reasons.append("IMAGE_RECTANGLE_INCONSISTENT")
                 if protect_regions:
                     source_protection = validate_protected_regions(source, page_regions, width=page_width, height=page_height)
@@ -1330,8 +1332,26 @@ def _dual_crop_result(
                         image_reasons.append("BORDER_PROTECTED_CONTENT_VETO")
                 if not image_reasons and inner is None and (not full_reasons or needs_closed_rim):
                     margin_regions = motif_margin_marks(
-                        page, full_image, quad, np.linalg.inv(matrix), preview_guard=stock_motif_review,
+                        page, full_image, quad, np.linalg.inv(matrix),
+                        preview_guard=stock_motif_review, inspect_rules=inboard_review,
                     )
+                    if inboard_review and not margin_regions:
+                        # Inspect the proposed extended paper as a second margin
+                        # witness. The motif is still fitted and shown in the old plane.
+                        expanded = _render_review_quad_preview(
+                            page, adjacent_stock_outline, 0, neighbors, page_regions, None, None,
+                            source=ADJACENT_STOCK_REVIEW_SOURCE,
+                        )
+                        if expanded is None:
+                            image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
+                        else:
+                            expanded_image, expanded_geometry = expanded
+                            expanded_matrix = np.asarray(expanded_geometry["page_to_output"])
+                            expanded_motif = cv2.perspectiveTransform(source[None], expanded_matrix)[0]
+                            margin_regions = motif_margin_marks(
+                                page, expanded_image, expanded_motif, np.linalg.inv(expanded_matrix),
+                                preview_guard=True, inspect_rules=True,
+                            )
                 if not image_reasons and not margin_regions and wide_rim:
                     rectified_regions = _rectified_protected_regions(
                         page_regions, page_width=page_width, page_height=page_height, matrix=matrix,
@@ -1362,7 +1382,8 @@ def _dual_crop_result(
                         if scalloped_motif:
                             image_mode["scalloped_motif_ownership_revision"] = SCALLOPED_PRINT_REVISION
                         if stock_motif_review:
-                            full_mode["suggested_warp_quad"] = full_mode["warp_quad"]
+                            if not inboard_review:
+                                full_mode["suggested_warp_quad"] = full_mode["warp_quad"]
                             image_mode["outline_preview"] = {
                                 "source": PAPER_STOCK_MOTIF_SOURCE,
                                 "source_outline": image_mode["warp_quad"],
@@ -1379,11 +1400,14 @@ def _dual_crop_result(
         if (image_reasons and margin_regions is None and seam_seed is not None and inner is None
                 and (not full_reasons or needs_closed_rim)):
             margin_regions = motif_margin_marks(
-                page, full_image, seam_seed, np.linalg.inv(matrix), preview_guard=stock_motif_review,
+                page, full_image, seam_seed, np.linalg.inv(matrix),
+                preview_guard=stock_motif_review, inspect_rules=inboard_review,
             )
         if margin_regions:
             image_reasons.insert(0, MOTIF_MARGIN_MARKS_REVIEW)
-        if image_reasons:
+        if image_reasons and inboard_review and not margin_regions:
+            diagnostics = {"method": "deferred_until_print_boundary_is_verified", "applied": False}
+        elif image_reasons:
             diagnostics["applied"] = False
             if stock_motif_review:
                 image_reasons.extend(full_reasons)
@@ -1421,7 +1445,7 @@ def _dual_crop_result(
         final_shape=full_mode["shape"],
         untrimmed_shape=full_mode["shape"],
         border_trim={**diagnostics, "applied": bool(diagnostics.get("applied") and image_only is not None)},
-        border_trim_confidence=diagnostics.get("confidence") if diagnostics.get("applied") else None,
+        border_trim_confidence=diagnostics.get("confidence") if diagnostics.get("applied") and not inboard_review else None,
     )
     return CropResult(rectified_untrimmed=adjusted, image=adjusted, metadata=metadata,
                       image_only=image_only, image_only_preview=image_only_preview, full_print_preview=full_print_preview)
@@ -1999,6 +2023,20 @@ def correct_photo_crop(
         print_outline = scalloped_outline if SCALLOPED_PRINT_REVIEW in full_reasons and protection["passed"] and not (
             {"PRINT_POSSIBLY_OCCLUDED", "POSSIBLE_CONTENT_CUTOFF"} & set(full_reasons)
         ) else None
+        adjacent_stock_outline = None
+        if (enable_classical_retry and not manual and full_reasons == ["PRINT_BOUNDARY_AMBIGUOUS"]
+                and not stock_suggestion and neighbor_masks and not any(mask.get(name) for name in _STOCK_REVIEW_CONFLICTS)):
+            neighbor_seed = _adjacent_stock_neighbor(seed_points, neighbor_masks, width, height)
+            if neighbor_seed is not None:
+                candidate = suggest_adjacent_stock_outline(
+                    page_image, seed_points, src_points, boundary_refinement, neighbor_seed,
+                )
+                if (candidate is not None
+                        and not any(cv2.intersectConvexConvex(candidate, cv2.convexHull(neighbor))[0] > 1
+                                    for neighbor in neighbor_polygons)
+                        and _keeps_protected_preview_content(page_image, src_points, candidate, regions, protection)
+                        and validate_protected_regions(candidate, regions, width=width, height=height)["passed"]):
+                    adjacent_stock_outline = candidate
         result = _dual_crop_result(
             page_image, corrected, src_points, matrix, metadata, _explicit_quad(mask, "image_quad", width, height),
             full_reasons, trim_border=trim_border, auto_orient=auto_orient, orientation_model_path=orientation_model_path,
@@ -2010,6 +2048,7 @@ def correct_photo_crop(
             paper_stock_margin_regions=mask.get("paper_stock_margin_regions"),
             motif_suggestion=_explicit_quad(mask, "scalloped_motif_suggestion", width, height)
             if print_outline is not None and trim_border else None,
+            adjacent_stock_outline=adjacent_stock_outline,
         )
         modes = result.metadata["crop_modes"]
         aspect_pending_after_mark_review = (
@@ -2181,21 +2220,9 @@ def correct_photo_crop(
                     full_mode["suggested_warp_quad"] = _vertices_on_page(candidate, width, height)
                     full_mode["suggested_outline_source"] = INWARD_CORNER_REVIEW_SOURCE
                     result = replace(result, full_print_preview=pixels)
-        if (enable_classical_retry and not manual and full_reasons == ["PRINT_BOUNDARY_AMBIGUOUS"]
-                and not stock_suggestion and neighbor_masks and not full_mode.get("suggested_warp_quad")
-                and not any(mask.get(name) for name in _STOCK_REVIEW_CONFLICTS)):
-            neighbor_seed = _adjacent_stock_neighbor(seed_points, neighbor_masks, width, height)
-            if neighbor_seed is not None:
-                candidate = suggest_adjacent_stock_outline(
-                    page_image, seed_points, src_points, boundary_refinement, neighbor_seed,
-                )
-                if (candidate is not None
-                        and not any(cv2.intersectConvexConvex(candidate, cv2.convexHull(neighbor))[0] > 1
-                                    for neighbor in neighbor_polygons)
-                        and _keeps_protected_preview_content(page_image, src_points, candidate, regions, protection)
-                        and validate_protected_regions(candidate, regions, width=width, height=height)["passed"]):
-                    full_mode["suggested_warp_quad"] = _vertices_on_page(candidate, width, height)
-                    full_mode["suggested_outline_source"] = ADJACENT_STOCK_REVIEW_SOURCE
+        if adjacent_stock_outline is not None and not full_mode.get("suggested_warp_quad"):
+            full_mode["suggested_warp_quad"] = _vertices_on_page(adjacent_stock_outline, width, height)
+            full_mode["suggested_outline_source"] = ADJACENT_STOCK_REVIEW_SOURCE
         if (enable_classical_retry and not manual and mask.get("detector_source") == "yolo_onnx"
                 and "PRINT_BOUNDARY_UNSUPPORTED" in full_reasons
                 and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}

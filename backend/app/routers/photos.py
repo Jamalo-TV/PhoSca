@@ -48,6 +48,7 @@ from app.pipeline.protected_regions import OFF_PRINT_ADVISORY, ProtectedRegionRe
 from app.pipeline.variants import (
     CROP_REVIEW_PREVIEWS,
     FULL_PRINT_REVIEW_PREVIEW,
+    MOTIF_REVIEW_PREVIEW,
     released_variant_from_photo,
     variant_path_from_photo,
     variant_urls,
@@ -308,6 +309,19 @@ async def _review_overlapping_crops(
                 details={"overlapping_photo_id": str(photo.id)},
             ))
         motif_mode = modes.get("image_only") or {}
+        motif_preview = motif_mode.get("outline_preview") or {}
+        motif_outline = motif_preview.get("source_outline")
+        if (motif_preview.get("source") == PAPER_STOCK_MOTIF_SOURCE and motif_outline
+                and review_outline_intersects_claim(motif_outline, mask, width, height)):
+            for key in ("outline_preview", "warp_quad", "page_to_output", "shape", "sampling"):
+                motif_mode.pop(key, None)
+            correction.pop(f"{MOTIF_REVIEW_PREVIEW}_path", None)
+            correction.pop(f"{MOTIF_REVIEW_PREVIEW}_asset_id", None)
+            neighbor.enhancement_applied = metadata
+            session.add(AuditLog(
+                entity_type="photo", entity_id=neighbor.id, action="overlapping_crop_preview_invalidated",
+                details={"overlapping_photo_id": str(photo.id), "mode": "image_only"},
+            ))
         if motif_mode.get("margin_mark_source") == HELD_PRINT_MOTIF_MARGIN_SOURCE:
             marks = motif_mode.get("margin_mark_regions") or []
             current_marks = [mark for mark in marks if not review_outline_intersects_claim(mark, mask, width, height)]

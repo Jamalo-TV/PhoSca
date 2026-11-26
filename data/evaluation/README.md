@@ -1060,6 +1060,16 @@ paper and image boundary. The TIFFs record 200 and 400 dpi and timestamps
 three seconds apart. Separate acquisition still needs a comparison of
 the raw pixel grids and capture metadata. [American Colony album catalog](https://www.loc.gov/pictures/item/2007675258/)
 
+The latest local cache and archive audit recovered zero of seven pinned
+Whiting TIFFs. For the `15831`/`15830` pair the existing registration
+is compatible with a resampled extraction. The `13708`/`13709` catalog
+and stored timestamps support separate acquisition. The additional LoC
+record links back to the same asset series, and Commons has a JPEG
+derivative of print `13709-00055`. A native-grid comparison remains
+necessary to verify either pair.
+[LoC cross-reference](https://www.loc.gov/item/mamcol000128/) ·
+[Individual print derivative](https://commons.wikimedia.org/wiki/File:GermanStnAbouAugeileh00055v.jpg)
+
 The International Bomber Command Centre catalog pairs four mounted Quine
 album pages with larger images of all 14 prints. A separate Langworthy
 album page has six represented prints and multiple close-ups of one print.
@@ -3379,6 +3389,77 @@ separate strip. A second visible colour may locate an edge while
 the reviewer still has to assign the added area to a physical print.
 The tested Golden ambiguous cases also have other held reasons
 and do not meet this path's entry condition.
+
+#### Preview an inboard motif beside a disputed paper edge
+
+Once the adjacent-paper check produces an editable outline for a
+held print, PhoSca can inspect the motif in the stored, slightly
+smaller warp. Four physical seams must trace continuously in the
+original. The three-pixel native search must support every sampled
+side and corner, and the four motif corners need at least 3 px
+clearance inside the stored outline. The candidate must be rectangular
+in that plane, with a continuous paper rim and no conflicting visible
+neighbor or protected content. The motif renderer samples only the
+verified inner quadrilateral.
+
+The marking guard examines both the stored warp and the possible
+extended paper. The extended projection is used for evidence and
+adds no whole-print preview. A thin dark line between two similar
+paper shoulders can also block the crop. In development, a faint
+185-pixel printed rule and a three-row date with 58 marked centres
+entirely in the added strip both passed the ordinary edge checks.
+The corresponding margin evidence now withholds the tight motif
+preview. Fainter and smaller added marks can still lack enough
+contrast to be detected. Four of 60 synthetic illumination controls
+with narrow symmetric shadows also lose the optional preview. Both
+crop modes were already in review for those inputs.
+
+| Frozen `touching` motif preview | Left print | Right print |
+| --- | ---: | ---: |
+| Output size | 308 × 204 | 264 × 182 |
+| Source footprint IoU | 0.991867 | 0.990738 |
+| Maximum corner error | 0.089 px | 0.077 px |
+| Landmark p95 | 0.064 px | 0.065 px |
+| Relative aspect error | 0% | 0% |
+| Omitted centres beyond one source pixel | 0 | 0 |
+| Output pixels with foreign contributions | 0 | 0 |
+
+The clean multipart upload preserves both stored whole-print
+JPEGs, paper outlines and detection count. Both clients show the
+new motif PNG with the instruction to confirm the external paper
+outline first. Opening the comparison performs no write. Normal
+reprocessing reproduces the PNG bytes. A later intersecting claim
+retires the affected motif preview, including its old URL. The
+disjoint peer retains its own PNG. Both named exports and the trimmed
+alias remain held during this workflow.
+
+Eight warm A/B samples per print on one OpenCV thread put median
+crop time at 59.1 and 53.7 ms before the preview path and 171.1
+and 148.8 ms with the source checks and render. The new p95 times
+are 200.2 and 189.2 ms. The provisional fit contributes no
+border-trim confidence to the existing crop decision.
+
+Same-colour touching and overlapping controls keep their previous
+mode results. The real transfer run yields no new motif preview
+among 37 proposals across seven native views and two half-resolution
+Willett views. An original-size Willett view is included in both
+its native and reduced form. The other Willett native run was
+terminated by the execution environment and replayed at half
+resolution.
+The Domoritz control has four plausible motif edges in the
+rectified image and a successful native straight-line fit, but
+only two continuous source spans. It remains a negative example
+for accepting a closed motif based on straight-line support.
+`--score-review-previews` reports the two new controlled results
+separately from the delivered-mode scores. All eight paired benchmarks
+retain their detection, delivered crop and review metrics. The frozen
+detector keeps 18/18 matches and the seeded run passes all 23
+recoverable mode cases.
+The independent source controls and browser receipts are under
+`runs/crop-quality/adjacent-motif-preview/final/`.
+[Crop and source checks](../../backend/app/pipeline/perspective.py) ·
+[Marking checks](../../backend/app/pipeline/motif_margin.py) ·
+[Pixel regression](../../backend/tests/test_pipeline/test_precise_crop_modes.py)
 
 #### Locate a diagonal detection cutoff on Golden 05
 
