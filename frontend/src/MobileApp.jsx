@@ -645,7 +645,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       {saveError && <p className="crop-save-error" role="alert">{saveError}</p>}
       {displayedQuad && !motifOutside && (comparePaperEdge && !editingPreview && !visibleSavedCropUrl
         ? <PaperEdgePreviewComparison currentUrl={item.payload.untrimmed_url} possibleUrl={comparePaperEdge}
-            hint={outlinePreviewHint} />
+            hint={outlinePreviewHint} outlinePreview={fullPrintMode?.outline_preview} />
         : <LiveCropPreview src={item.preview_url} quad={displayedQuad} savedCropUrl={visibleSavedCropUrl}
             outlinePreviewUrl={editingPreview ? null : item.payload?.variant_urls?.[editingMotif ? "image_only_preview" : "full_print_preview"]}
             outlinePreviewHint={editingMotif ? motifBoundaryReviewHint : outlinePreviewHint}

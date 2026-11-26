@@ -28,6 +28,45 @@ def _crop(image, box, mask=None, **kwargs):
     return correct_photo_crop(image, box, mask, auto_orient=False, protect_regions=False, **kwargs)
 
 
+def test_disputed_paper_grid_comparison_checks_current_fragment_and_neighbor_claims():
+    from app.pipeline.perspective import _render_disputed_grid_preview
+
+    image = np.full((700, 800, 3), 180, np.uint8)
+    outline = _rect(120, 65, 620, 640)
+    outer = {"outline": _vertices(outline, image)}
+    fragment = _vertices(_rect(137, 252, 604, 626), image)
+    linked = {"source": "yolo_seg_mask", "detector_source": "yolo_onnx", "polygon": fragment,
+              "paper_grid_review": {**outer, "cut": fragment[:2]}}
+    exterior = _vertices(_rect(26, 75, 119, 625), image)
+    neighbor = {"polygon": exterior, "source": "classical_border_quad", "detector_source": "contrast_region"}
+
+    def preview(*claims):
+        return _render_disputed_grid_preview(image, outline, outer, 90, list(claims), [], None, None)
+
+    pixels, metadata = preview(linked, neighbor)
+    assert metadata["shape"] == {"width": pixels.shape[1], "height": pixels.shape[0]}
+    trace, = metadata["projected_grid_cuts"]
+    assert trace[0]["x"] == trace[1]["x"] and trace[0]["y"] < trace[1]["y"]
+
+    stale_cut = _vertices([[137, 260], [604, 260]], image)
+    distinct_grid = _vertices(_rect(119, 65, 620, 640), image)
+    explicit = _vertices(_rect(26, 80, 120.5, 92), image)
+    long_sliver = _vertices(_rect(26, 78, 120.1, 620), image)
+    short_sliver = _vertices(_rect(26, 80, 122, 116), image)
+    assert preview(linked, linked) is None
+    assert preview({**linked, "paper_grid_review": {**outer, "cut": stale_cut}}) is None
+    assert preview({**linked, "paper_grid_review": {"outline": distinct_grid, "cut": fragment[:2]}}) is None
+    assert preview(linked, {**neighbor, "warp_quad": explicit}) is None
+    assert preview(linked, {**neighbor, "polygon": long_sliver}) is None
+    assert preview(linked, {**neighbor, "polygon": short_sliver}) is None
+
+    image[:, :] = (57, 78, 93)
+    image[65:641, 120:621] = (222, 224, 233)
+    assert preview(linked, {**neighbor, "polygon": short_sliver}) is not None
+    image[80:117, 112:123] = (81, 106, 135)
+    assert preview(linked, {**neighbor, "polygon": short_sliver}) is None
+
+
 def test_original_album_ridge_reveals_only_the_inward_transition_for_review(monkeypatch):
     from app.pipeline import perspective
     from app.pipeline.print_outline_suggestion import POSSIBLE_INWARD_PRINT_EDGE, suggest_inward_print_edge

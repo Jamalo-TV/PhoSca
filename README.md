@@ -86,9 +86,18 @@ gemessenen Ecken als Entwurf für diesen Abzug. Auf dem Desktop wird
 der Abzug auf der Seite ausgewählt. Mobile lädt seine Geometrieaufgabe
 direkt anhand der Abzug-ID. Beim Öffnen und Verschieben der Ecken
 bleibt die gespeicherte Anzahl gleich. Erst Speichern übernimmt die
-Ecken. Überlappende Vorschläge halten beide Zuschnitte in Prüfung, bis
-der Reviewer ihre Zuordnung geklärt hat.
-[Beispiel Kontaktabzug](data/evaluation/README.md#open-the-measured-contact-outline-from-count-review)
+Ecken. Wenn die Kanten- und Nachbarprüfung es zulässt, zeigt der
+Editor unter **Ganzer Abzug** die bisherige Vorschau neben dem
+entzerrten **Möglichen Aussenumriss**. Gestrichelte Linien im Vergleich
+zeigen die Kanten der Teilvorschläge. Der Vergleich setzt voraus,
+dass diese Teile zum gleichen Papier gehören. Auf der Originalseite
+lassen sich die Linien auf einen Spalt, eine zweite Papierkante oder
+eine überlagerte Schicht prüfen. Die PNG-Vorschau ist ein eigenes
+Prüfobjekt. Ein neu gespeicherter Nachbarumriss, der in diese Fläche
+reicht, zieht sie zurück. Bei einem geschätzten Seitenverhältnis weist
+der Editor darauf hin. Beide Zuschnitte bleiben in Prüfung, bis ihre
+jeweiligen Freigabebedingungen erfüllt sind.
+[Beispiel Kontaktabzug](data/evaluation/README.md#compare-the-disputed-whole-contact-print)
 
 **Zusammengehörigkeit prüfen** markiert den Gesamtvorschlag und seine
 Teilvorschläge auf derselben Originalseite. Prüfe an den gepunkteten
@@ -994,11 +1003,16 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
   PhoSca den verdächtigen Randbereich im Original und hält den
   Motivexport für die gezielte Korrektur zurück. Nach der bewussten
   Korrektur enthielt der exportierte Zuschnitt alle 727 Messpunkte.
-- **Echter Kontaktabzug.** PhoSca markierte einen Teil der Beschriftung
-  am Original. Nach der manuellen Korrektur mit Test-Papiermassen
-  enthielten beide Galerie-Downloads alle 35 Bildfelder. Im Motiv
-  waren alle 1’938 vermessenen Beschriftungspunkte enthalten.
-  [Kontaktabzug und Downloadpfad](data/evaluation/README.md#review-visible-markings-outside-the-proposed-motif)
+- **Echter Kontaktabzug mit 35 Bildfeldern.** Die bisherige Vorschau
+  der verlustfreien Aufnahme erfasst 1’509 von 1’940 vermessenen
+  Beschriftungspunkten. Der mögliche Aussenumriss zeigt alle 1’940.
+  Der grösste Eckfehler gegenüber dem Referenzentwurf sinkt von 69,19
+  auf 5,71 Originalpixel. Die drei Vorschläge auf der Negativhülle
+  brauchen weiterhin eine eigene Anzahlprüfung. Die Motivgrenze bleibt
+  separat zu bestimmen. Nach manueller Prüfung beider Grenzen enthielten
+  beide Test-Downloads alle 35 Felder.
+  [Prüfvorschau und Messwerte](data/evaluation/README.md#compare-the-disputed-whole-contact-print) ·
+  [Manueller Downloadpfad](data/evaluation/README.md#review-visible-markings-outside-the-proposed-motif)
 - **Zwei Abzüge auf Golden-Seite 26.** Unten rechts stimmt die
   Fläche von **Ganzer Abzug** nahezu mit der Entwicklungsreferenz
   überein (IoU 0,996). Oben links folgt der Zuschnitt der hellen

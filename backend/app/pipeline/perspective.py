@@ -39,7 +39,7 @@ from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_SOURCE, sugge
 from app.pipeline.local_print_edge_review import suggest_local_print_edge_preview
 from app.pipeline.motif_boundary import close_motif_outline, motif_outline_corners_supported, trace_motif_boundary
 from app.pipeline.motif_margin import PAPER_STOCK_MOTIF_SOURCE, motif_margin_marks
-from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
+from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.manual_paper_boundary import (
     MANUAL_CAPTURE_OUTLINE_REVIEW, MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION,
     check_manual_paper_boundary, shared_rim_cut_segments,
@@ -78,7 +78,7 @@ from app.pipeline.print_edges import (
 )
 from app.pipeline.print_outline_suggestion import (
     POSSIBLE_INWARD_PRINT_EDGE, POSSIBLE_OVEREXTENDED_PRINT_EDGE, suggest_inward_print_edge,
-    suggest_outer_print_outline, suggest_overextended_print_outline,
+    suggest_outer_print_outline, suggest_overextended_print_outline, verify_print_edge_at_claim,
 )
 from app.pipeline.print_stock import find_outer_stock_candidate
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_OUTLINE_REVIEW
@@ -998,6 +998,96 @@ def _render_review_quad_preview(
         "reason_codes": reasons,
         **({"protected_content_review": True} if (prior_protection or {}).get("review_untrimmed") else {}),
     }
+
+
+def _linked_grid_cut(
+    neighbor: dict, grid: dict, outline: np.ndarray, points: np.ndarray, claim: np.ndarray, width: int, height: int,
+) -> np.ndarray | None:
+    link = neighbor.get("paper_grid_review") or {}
+    if (neighbor.get("source") != "yolo_seg_mask" or neighbor.get("detector_source") != "yolo_onnx"
+            or neighbor.get("warp_quad") is not None or neighbor.get("manual_added")
+            or link.get("outline") != grid["outline"] or not link.get("cut")):
+        return None
+    try:
+        vertices = np.float32([(point["x"], point["y"]) for point in link["cut"]])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if vertices.shape != (2, 2) or not np.isfinite(vertices).all() or np.any((vertices < 0) | (vertices > 1)):
+        return None
+    cut = normalized_vertices_to_pixels(vertices, width, height)
+    if (np.linalg.norm(cut[1] - cut[0]) <= 1
+            or any(cv2.pointPolygonTest(outline, tuple(point), True) < -0.02 for point in cut)
+            or cv2.intersectConvexConvex(outline, claim)[0] < .99 * cv2.contourArea(claim)):
+        return None
+    if any(abs(cv2.pointPolygonTest(points, tuple(point), True)) > 2 for point in np.linspace(*cut, num=5)):
+        return None
+    return cut
+
+
+def disputed_grid_preview_intersects_claim(
+    source_outline: list[dict], claim: dict, width: int, height: int,
+) -> bool:
+    """Retire a grid comparison when an independent reviewer outline enters it."""
+    try:
+        outline = _explicit_quad({"outline": source_outline}, "outline", width, height)
+        quad = _explicit_quad(claim, "warp_quad", width, height)
+        points = quad if quad is not None else _proposal_polygon(claim, width, height)
+        return outline is not None and points is not None and cv2.intersectConvexConvex(outline, cv2.convexHull(points))[0] > 1
+    except (ValueError, cv2.error):
+        return False
+
+
+def _render_disputed_grid_preview(
+    page: np.ndarray, outline: np.ndarray, grid: dict, rotation: int, neighbor_masks: list[dict],
+    regions: list[dict], camera_matrix: np.ndarray | None, page_plane: PrintPagePlane | None,
+) -> tuple[np.ndarray, dict] | None:
+    """Show the one-sheet hypothesis while keeping the active source claims intact."""
+    height, width = page.shape[:2]
+    shortest_side = np.linalg.norm(np.roll(outline, -1, axis=0) - outline, axis=1).min()
+    cuts = []
+    try:
+        for neighbor in neighbor_masks:
+            explicit = _explicit_quad(neighbor, "warp_quad", width, height)
+            points = explicit if explicit is not None else _proposal_polygon(neighbor, width, height)
+            if points is None or not np.isfinite(points).all():
+                return None
+            claim = cv2.convexHull(points)
+            if cv2.contourArea(claim) <= 0:
+                return None
+            cut = _linked_grid_cut(neighbor, grid, outline, points, claim, width, height)
+            if cut is not None:
+                if any(np.allclose(cut, previous, rtol=0, atol=1) or np.allclose(cut, previous[::-1], rtol=0, atol=1)
+                       for previous in cuts):
+                    return None
+                cuts.append(cut)
+                continue
+            area, overlap = cv2.intersectConvexConvex(outline, claim)
+            if area <= 1:
+                continue
+            # A coarse contrast contour can reach slightly across a corner of
+            # its neighbor. Require the print edge to continue through the intersection.
+            if (explicit is not None or neighbor.get("manual_added") or neighbor.get("paper_grid_review")
+                    or neighbor.get("source") != "classical_border_quad" or neighbor.get("detector_source") != "contrast_region"
+                    or area > max(6., .00035 * cv2.contourArea(outline)) or overlap is None
+                    or np.linalg.norm(np.ptp(overlap[:, 0], axis=0)) > .10 * shortest_side
+                    or not verify_print_edge_at_claim(page, outline, overlap[:, 0])):
+                return None
+    except (ValueError, cv2.error):
+        return None
+    if len(cuts) > 2:
+        return None
+    preview = _render_review_quad_preview(
+        page, outline, rotation, [], regions, camera_matrix, page_plane, source=DISPUTED_GRID_PREVIEW_SOURCE,
+    )
+    if preview is not None and cuts:
+        _, metadata = preview
+        matrix = np.asarray(metadata["page_to_output"])
+        shape = metadata["shape"]
+        metadata["projected_grid_cuts"] = [
+            _vertices_on_page(cv2.perspectiveTransform(cut[None], matrix)[0], shape["width"], shape["height"])
+            for cut in cuts
+        ]
+    return preview
 
 
 def _keeps_protected_preview_content(
@@ -1938,6 +2028,14 @@ def correct_photo_crop(
                     mode["status"] = "review_needed"
                     if PRINT_EDGE_CONFIRMATION not in mode["reason_codes"]:
                         mode["reason_codes"].append(PRINT_EDGE_CONFIRMATION)
+                if grid_outline and _keeps_protected_preview_content(page_image, src_points, alternative, regions, protection):
+                    rotation = int(result.metadata["orientation"].get("rotation_degrees") or 0) % 360
+                    preview = _render_disputed_grid_preview(
+                        page_image, alternative, paper_grid, rotation, neighbor_masks or [], regions, camera_matrix, page_plane,
+                    )
+                    if preview is not None:
+                        pixels, modes["full_print"]["outline_preview"] = preview
+                        result = replace(result, full_print_preview=pixels)
         full_mode = modes["full_print"]
         if (competing_segments and not manual and "PRINT_BOUNDARY_AMBIGUOUS" in full_reasons
                 and not full_mode.get("suggested_edge_traces") and not full_mode.get("suggested_warp_quad")

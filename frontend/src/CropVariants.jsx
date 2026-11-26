@@ -122,6 +122,7 @@ const possibleBowedPrintEdge = "possible_bowed_print_edge";
 const possibleDisplacedPrintEdges = "possible_displaced_print_edges";
 const possibleAlbumLayerEdge = "possible_album_layer_edge";
 const possibleLocalPrintEdge = "possible_local_print_edge";
+const disputedGridPreview = "disputed_paper_grid_outline_review";
 const curvedPrintOutlineReviewReason = "PRINT_CURVED_OUTLINE_REVIEW";
 const captureAtEdgeHint = "Der Abzug reicht über den Aufnahmerand hinaus. Für einen vollständigen Zuschnitt brauchst du eine neue Aufnahme.";
 export const captureSplitReviewHint = "Die gestrichelten Linien zeigen einen möglichen gemeinsamen Papierrand. Prüfe am Original, wie viele Abzüge dort liegen.";
@@ -402,6 +403,13 @@ export function getMotifMarginMarks(motif) {
 
 export function getPrintOutlinePreviewHint(fullPrint) {
   const preview = fullPrint?.outline_preview;
+  if (preview?.source === disputedGridPreview) {
+    const countHint = preview.projected_grid_cuts?.length
+      ? "So sieht der Aussenumriss aus, falls die markierten Teile zum selben Abzug gehören. Die gestrichelten Linien zeigen die Kanten der Teilvorschläge. Vergleiche sie mit dem Original."
+      : "Vergleiche den vorgeschlagenen Aussenumriss mit den Papierkanten am Original.";
+    const aspect = preview.reason_codes?.includes("PRINT_ASPECT_UNCERTAIN") ? " Das Seitenverhältnis ist geschätzt." : "";
+    return countHint + aspect;
+  }
   if (preview?.source === possibleDisplacedPrintEdges) {
     return "Die Prüfvorschau ergänzt an einer Seite sichtbaren Inhalt und blendet an der anderen einen hellen Streifen teilweise aus. Der Streifen kann zum Abzug gehören. Vergleiche beide Vorschauen mit dem Original.";
   }
@@ -431,18 +439,34 @@ export function getPrintOutlinePreviewHint(fullPrint) {
 
 export function showsPaperEdgeComparison(fullPrint) {
   return [possibleOverextendedPrintEdge, possibleInwardPrintCorner, possibleBowedPrintEdge,
-    possibleDisplacedPrintEdges, possibleAlbumLayerEdge, possibleLocalPrintEdge].includes(fullPrint?.outline_preview?.source);
+    possibleDisplacedPrintEdges, possibleAlbumLayerEdge, possibleLocalPrintEdge,
+    disputedGridPreview].includes(fullPrint?.outline_preview?.source);
 }
 
-export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint }) {
+export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outlinePreview }) {
+  const wholeGrid = outlinePreview?.source === disputedGridPreview;
+  const { width, height } = outlinePreview?.shape || {};
+  const cuts = wholeGrid && width > 1 && height > 1
+    ? getSourceEdgeTraces(outlinePreview.projected_grid_cuts).filter((trace) => trace.length === 2) : [];
   return <div className="paper-edge-comparison">
     <figure>
       <img src={currentUrl} alt="Bisherige Abzugsvorschau" />
       <figcaption>Bisherige Vorschau</figcaption>
     </figure>
     <figure>
-      <img src={possibleUrl} alt="Prüfvorschau entlang der möglichen Papierkante" />
-      <figcaption>Mögliche Papierkante</figcaption>
+      <div className="paper-edge-preview-image">
+        <img src={possibleUrl} alt={wholeGrid ? "Prüfvorschau des gesamten möglichen Abzugs" : "Prüfvorschau entlang der möglichen Papierkante"} />
+        {cuts.length > 0 && <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Mögliche Trennkanten der Teilvorschläge">
+          {cuts.map((trace) => {
+            const points = trace.map(({ x, y }) => `${x * (width - 1) + .5},${y * (height - 1) + .5}`).join(" ");
+            return <g key={points}>
+              <polyline points={points} stroke="#422006" strokeWidth="4" strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />
+              <polyline points={points} stroke="#fde047" strokeWidth="2" strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />
+            </g>;
+          })}
+        </svg>}
+      </div>
+      <figcaption>{wholeGrid ? "Möglicher Aussenumriss" : "Mögliche Papierkante"}</figcaption>
     </figure>
     {hint && <p>{hint}</p>}
   </div>;

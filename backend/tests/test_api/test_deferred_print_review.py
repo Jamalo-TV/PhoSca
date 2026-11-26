@@ -480,7 +480,7 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ReviewEvent
-    from app.pipeline.multipanel_prints import PAPER_GRID_REVIEW
+    from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, PAPER_GRID_REVIEW
     from app.pipeline.segmentation import SegmentationDetection, SegmentationResult
     from app.services import pipeline
 
@@ -506,6 +506,7 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
     detections = []
     for index, polygon in enumerate([parent, *fragments, neighbor]):
         mask = {"source": "classical_border_quad" if index == 0 else "yolo_seg_mask", "polygon": polygon}
+        mask["detector_source"] = "contrast_region" if index == 0 else "yolo_onnx"
         reasons = []
         if polygon != neighbor:
             mask["paper_grid_review"] = {"outline": outer}
@@ -541,6 +542,14 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
     preview_url = f"{parent_url}/image?variant=source_corrected_untrimmed"
     preview = await client.get(preview_url)
     assert preview.status_code == 200
+    alternative = parent_row["crop_modes"]["full_print"]["outline_preview"]
+    assert alternative["source"] == DISPUTED_GRID_PREVIEW_SOURCE
+    assert alternative["source_outline"] == parent_row["crop_modes"]["full_print"]["suggested_warp_quad"]
+    assert len(alternative["projected_grid_cuts"]) == 2
+    assert all(mode["status"] == "review_needed" for mode in parent_row["crop_modes"].values())
+    comparison_url = (await client.get(parent_url)).json()["urls"]["full_print_preview"]
+    comparison = await client.get(comparison_url)
+    assert comparison.status_code == 200 and comparison.headers["content-type"] == "image/png"
     variants = ("full_print", "image_only", "source_corrected_trimmed")
     for variant in variants:
         assert (await client.get(f"{parent_url}/image?variant={variant}")).status_code == 404
@@ -586,6 +595,7 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
         parent_id: parent_row, neighbor_row["photo_id"]: neighbor_row,
     }
     assert (await client.get(preview_url)).content == preview.content
+    assert (await client.get(comparison_url)).content == comparison.content
     for variant in variants:
         assert (await client.get(f"{parent_url}/image?variant={variant}")).status_code == 404
     for fragment_id in fragment_ids:
@@ -601,6 +611,38 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
     approve = await client.post(event_url, json={"task_type": "geometry", "task_id": parent_id,
                                 "answer": "correct", "idempotency_key": uuid4().hex})
     assert approve.status_code == 409
+
+    recalculated = await client.post(f"{parent_url}/reprocess")
+    assert recalculated.status_code == 200, recalculated.text
+    new_preview = recalculated.json()["enhancement_applied"]["correction"]["crop_modes"]["full_print"]["outline_preview"]
+    assert new_preview == {key: value for key, value in alternative.items() if key != "projected_grid_cuts"}
+    current_comparison_url = (await client.get(parent_url)).json()["urls"]["full_print_preview"]
+    assert (await client.get(current_comparison_url)).content == comparison.content
+
+    # Restoring a source fragment with an edited polygon and no explicit warp
+    # invalidates the one-sheet comparison as soon as the new claim is saved.
+    fragment_id = fragment_ids[0]
+    restored_quad = next(row["polygon"] for row in linked if row["photo_id"] == fragment_id)
+    restored_polygon = [restored_quad[0], restored_quad[1], {**restored_quad[1], "y": .65},
+                        restored_quad[2], restored_quad[3], {**restored_quad[0], "y": .65}]
+    restored = await client.patch(f"/api/v1/photos/{fragment_id}/bounding-box", json={
+        "bounding_box": bounds(restored_quad), "segmentation_mask": {"source": "manual_polygon", "polygon": restored_polygon},
+    })
+    assert restored.status_code == 200 and restored.json()["reviewed_non_print"] is False, restored.text
+    assert "warp_quad" not in restored.json()["segmentation_mask"]
+    assert (await client.get(current_comparison_url)).status_code == 404
+    assert (await client.post(f"{parent_url}/reprocess")).status_code == 200
+    detail = (await client.get(parent_url)).json()
+    assert "outline_preview" not in detail["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+    assert detail["urls"]["full_print_preview"] is None
+    task, = (await client.get(queue_url)).json()
+    refreshed = {**answer, "idempotency_key": uuid4().hex, "metadata": {
+        **answer["metadata"], "photo_count_revision": task["payload"]["photo_count_revision"],
+    }}
+    assert (await client.post(event_url, json=refreshed)).status_code == 409
+    assert (await client.post(event_url, json={"task_type": "geometry", "task_id": fragment_id,
+                              "answer": "wrong_object", "idempotency_key": uuid4().hex})).status_code == 201
+
     crop = await client.patch(f"{parent_url}/bounding-box", json={
         "bounding_box": bounds(outer), "confirm_print_outline": True,
         "segmentation_mask": {"source": "manual_quad", "polygon": outer, "warp_quad": outer,

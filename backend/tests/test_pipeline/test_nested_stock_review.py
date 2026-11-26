@@ -9,7 +9,8 @@ from app.pipeline import segmentation
 from app.pipeline.crop_sampling import OWNED_BILINEAR
 from app.pipeline.geometry import normalized_vertices_to_pixels
 from app.pipeline.multipanel_prints import (
-    GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, PAPER_GRID_REVIEW, nested_print_on_shared_stock,
+    DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, PAPER_GRID_REVIEW,
+    nested_print_on_shared_stock,
 )
 from app.pipeline.perspective import _proposal_polygon, apply_refined_visibility, correct_photo_crop
 from app.pipeline.print_edges import PRINT_EDGE_CONFIRMATION
@@ -282,7 +283,24 @@ def test_nearby_printed_grid_marks_only_a_review_and_keeps_both_proposals(cut_ed
                                [(p["x"], p["y"]) for p in outline], atol=1e-8)
     assert all(mode["status"] == "review_needed" and PRINT_EDGE_CONFIRMATION in mode["reason_codes"]
                for mode in modes.values())
-    assert review_crop.full_print_preview is None
+    preview = modes["full_print"]["outline_preview"]
+    assert preview["source"] == DISPUTED_GRID_PREVIEW_SOURCE
+    assert preview["source_outline"] == modes["full_print"]["suggested_warp_quad"]
+    assert len(preview["projected_grid_cuts"]) == 1
+    assert review_crop.full_print_preview.ndim == 3
+    previous_motif = original_crop.metadata["crop_modes"]["image_only"]
+    assert modes["image_only"] == {**previous_motif, "reason_codes": [*previous_motif["reason_codes"], PRINT_EDGE_CONFIRMATION]}
+
+    # A shorter comparison would exclude the mark completely, so a
+    # validation check that only rejects cuts through a region would pass.
+    trimmed_outline = [*outline[:2], *({**point, "y": .938} for point in outline[2:])]
+    resolved = {**parent.mask, "paper_grid_review": {"outline": trimmed_outline}}
+    options = dict(dual_mode=True, auto_orient=False)
+    unmarked = correct_photo_crop(page, parent.bounding_box, resolved, protected_regions=[], **options)
+    mark = {"type": "text", "source": "manual", "box": {"x1": 340, "y1": 1074, "x2": 352, "y2": 1081}}
+    marked = correct_photo_crop(page, parent.bounding_box, resolved, protected_regions=[mark], **options)
+    assert unmarked.full_print_preview is not None and marked.full_print_preview is None
+    assert marked.metadata["protected_regions"]["passed"]
 
 
 @pytest.mark.parametrize("offset,tilt,thickness,tone", [(-8, 0, 1, 150), (5, -3, 2, 145)])

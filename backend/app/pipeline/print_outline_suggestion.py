@@ -7,7 +7,7 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic
 from app.pipeline.print_edges import _PRINT_SIDES, _edge_band, _line_endpoints, _replace_quad_side, _sample_lab, _side_line
 
 
-PRINT_OUTLINE_SUGGESTION_REVISION = 7
+PRINT_OUTLINE_SUGGESTION_REVISION = 8
 POSSIBLE_OVEREXTENDED_PRINT_EDGE = "possible_overextended_print_edge"
 POSSIBLE_INWARD_PRINT_EDGE = "possible_inward_print_edge"
 
@@ -56,6 +56,35 @@ def _visible_stock_perimeter(image: np.ndarray, outline: np.ndarray, stock: np.n
         if (interrupted[:-1] & interrupted[1:]).any():
             return False
     return True
+
+
+def verify_print_edge_at_claim(image: np.ndarray, outline: np.ndarray, overlap: np.ndarray) -> bool:
+    """Check the visible stock edge along a short intrusion by a coarse contour."""
+    sides = np.roll(outline, -1, axis=0) - outline
+    lengths = np.linalg.norm(sides, axis=1)
+    tangents = sides / lengths[:, None]
+    normals = np.column_stack((-tangents[:, 1], tangents[:, 0]))
+    side = np.argmin(np.abs(np.sum((overlap.mean(axis=0) - outline) * normals, axis=1)))
+    stations = (overlap - outline[side]) @ tangents[side]
+    first, last = np.clip([min(stations), max(stations)], 0, lengths[side])
+    span = last - first
+    if span < 9:
+        return False
+    start, end = outline[side] + np.float32([first, last])[:, None] * tangents[side]
+    line, evidence = _side_line(image, start, end, 7)
+    if line is None or evidence["support"] < .82 or evidence["ambiguous"]:
+        return False
+    offsets = (np.asarray(_line_endpoints(start, end, line)) - [start, end]) @ normals[side]
+    if np.any((offsets < -5) | (offsets > 1)):
+        return False
+    band = _edge_band(image, start, end, [-7, -6, -5, -4, -3, 1, 2, 5, 6, 7, 8],
+                      fractions=np.linspace(.5 / span, 1 - .5 / span, 48, dtype=np.float32))
+    if band is None:
+        return False
+    outside = np.median(band[:, :5, 0], axis=1)
+    immediate_stock = np.median(band[:, 5:7], axis=1)
+    stock = np.median(band[:, 7:], axis=1)
+    return bool(np.mean((np.linalg.norm(immediate_stock - stock, axis=1) <= 13) & (stock[:, 0] - outside >= 21)) >= .85)
 
 
 def suggest_outer_print_outline(

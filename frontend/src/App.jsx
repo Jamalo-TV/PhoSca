@@ -2331,7 +2331,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       )}
       {!editingImage && !newPrint && fullPrintPreview && !currentSave?.url && (
         comparePaperEdge ? <PaperEdgePreviewComparison currentUrl={untrimmedPrint} possibleUrl={fullPrintPreview}
-          hint={outlinePreviewHint} /> : <>
+          hint={outlinePreviewHint} outlinePreview={fullPrintMode?.outline_preview} /> : <>
           <img className="review-crop-preview" src={fullPrintPreview} alt="Abzugsvorschau zur Prüfung" />
           {outlinePreviewHint && <p className="crop-mode-status">{outlinePreviewHint}</p>}
         </>

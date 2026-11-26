@@ -18,6 +18,7 @@ PAPER_GRID_REVIEW = "PAPER_GRID_REVIEW"
 PAPER_JOIN_REVIEW = "PAPER_JOIN_REVIEW"
 RECOVERED_STOCK_SOURCE = "shared_stock_boundary"
 GRID_OUTLINE_REVIEW_SOURCE = "shared_grid_outline_review"
+DISPUTED_GRID_PREVIEW_SOURCE = "disputed_paper_grid_outline_review"
 _UNIT_QUAD = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
 _STOCK_DISCOVERY_PIXELS = 800_000
 

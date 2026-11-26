@@ -38,8 +38,8 @@ from app.pipeline.manual_paper_boundary import (
     overlapping_paper_claims, paper_claim_groups, shared_rim_cut_is_inside, shared_rim_cut_reference,
 )
 from app.pipeline.motif_margin import PAPER_STOCK_MOTIF_SOURCE
-from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
-from app.pipeline.perspective import manual_print_intersects, validate_review_quads
+from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
+from app.pipeline.perspective import disputed_grid_preview_intersects_claim, manual_print_intersects, validate_review_quads
 from app.pipeline.presets import available_presets
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
@@ -243,7 +243,7 @@ async def _review_overlapping_crops(
     mask = photo.segmentation_mask or {}
     quad = mask.get("warp_quad")
     groups = paper_claim_groups(mask, original_prediction_mask(photo.enhancement_applied or {}))
-    if quad is None and not groups:
+    if quad is None and not groups and not (mask.get("visible_polygon") or mask.get("polygon")):
         return
     neighbors = await session.scalars(
         select(ExtractedPhoto)
@@ -263,10 +263,12 @@ async def _review_overlapping_crops(
         assisted_previews = (GRID_OUTLINE_REVIEW_SOURCE, POSSIBLE_OVEREXTENDED_PRINT_EDGE, INWARD_CORNER_REVIEW_SOURCE)
         measured_preview = preview_source in MEASURED_PRINT_PREVIEW_SOURCES
         fields = ("source_search_band", "source_inset_band") if measured_preview else ("source_outline",)
-        if (quad is not None and (preview_source in assisted_previews or measured_preview) and any(
-            manual_print_intersects(preview[key], quad, width, height, minimum_overlap_px=1. if measured_preview else None)
-            for key in fields if preview.get(key)
-        )):
+        if ((preview_source == DISPUTED_GRID_PREVIEW_SOURCE and preview.get("source_outline")
+             and disputed_grid_preview_intersects_claim(preview["source_outline"], mask, width, height))
+                or (quad is not None and (preview_source in assisted_previews or measured_preview) and any(
+                    manual_print_intersects(preview[key], quad, width, height, minimum_overlap_px=1. if measured_preview else None)
+                    for key in fields if preview.get(key)
+                ))):
             full_mode.pop("outline_preview")
             correction.pop("album_page_mark_review", None)
             if full_mode.get("suggested_edge_source") in (POSSIBLE_OVEREXTENDED_PRINT_EDGE, *MEASURED_PRINT_PREVIEW_SOURCES):
@@ -946,11 +948,14 @@ async def update_photo_bounding_box(
     prior_outer = prior_mask.get("warp_quad") or (prior_crop_modes.get("full_print") or {}).get("warp_quad")
     outer = segmentation_mask.get("warp_quad")
     edited_claim = outer if outer and not _same_visible_outline(prior_outer, outer) else None
+    edited_polygon = not outer and segmentation_mask.get("visible_polygon") != (
+        prior_mask.get("visible_polygon") or prior_mask.get("polygon")
+    )
     if retire_source_fragment_proposals(page, fragment=prior_mask.get("polygon"), claim=edited_claim):
         page.processing_metadata = {**(page.processing_metadata or {}), "photo_count_revision": str(uuid4())}
     if (was_non_print or segmentation_mask.get("manual_added") is True
             or paper_claim_groups(segmentation_mask, original_prediction_mask(metadata))
-            or edited_claim):
+            or edited_claim or edited_polygon):
         await _review_overlapping_crops(session, photo, width, height)
     await session.flush()
     return await _render_photo_edit(session, photo.id, settings, previous_manual_crop=previous_crop)

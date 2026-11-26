@@ -4851,6 +4851,88 @@ the preceding comparison for both modes. The comparison reports, native
 API replays and visual receipts are local in
 `runs/crop-quality/shared-paper-grid-count/`.
 
+### Compare the disputed whole contact print
+
+The normal print proposals in the 33% JPEG75 and lossless PNG both cut
+the heading of the 35-frame contact print. At a native mask IoU cutoff
+of 0.85, both miss the physical print. The best raw model candidates have
+IoUs of 0.8223 and 0.8183 before suppression. Classical proposals reach
+0.8317 and 0.8286. Fusion does not remove a higher-scoring source
+outline. Changing suppression or acceptance would still leave the short
+upper edge. The full-size source already reaches 0.9947 native mask IoU.
+Each encoding derives from the same capture.
+
+The crop editor now straightens the existing measured outer quad as a
+separate held PNG beside the primary preview. The parent keeps its
+editable four corners. The comparison assumes one physical sheet.
+It marks one proposed cut on JPEG75 and two on PNG. The lines are
+projected through the comparison homography, including its output
+rotation, and drawn by the client over the unmarked PNG. The editor
+directs the reviewer to inspect the marked places on the original page.
+The aspect shown is estimated when the geometry records lack a physical
+aspect reference. Count confirmation leaves the existing images and
+review records available. An explicit reprocess after confirmation
+updates the comparison to reflect the remaining active source claims.
+
+The renderer accepts a fragment cut only from an automatic YOLO mask
+with exactly the same measured group outline. It checks at least 99%
+containment, two finite endpoints inside the outline, and five stations
+within two native pixels of the current fragment contour. Duplicate cuts
+and groups larger than two fragments are withheld. All other claimed
+areas, including explicit reviewer quads and stored pending source
+masks, remain in the overlap check. A raw classical contrast contour can
+cross by a short sliver only with a corroborating original-pixel edge.
+Its intersection must be no larger than the greater of 6 square pixels
+and 0.035% of the paper area, and it must span no more than 10% of the
+shortest side. Over that span the local line must have at least 82%
+support, no competing line, and end offsets between 5 pixels outside
+and 1 pixel inside. At least 85% of original-pixel stations must show
+the same stock immediately inside and a darker exterior. Protected
+regions already in the primary crop must stay inside the comparison.
+The crop also passes the protected-region, homography and sampling checks.
+An independently saved manual quad or polygon crossing the comparison
+by more than one square native pixel retires the comparison asset.
+
+The exact PNG source had one 125.74-square-pixel intersection with a
+coarse sleeve proposal. Original colour profiles show an 8–16-pixel
+wood gap along the same span and a continuous outer paper edge. The
+three JPEG75 sleeve claims are disjoint from the measured paper outline.
+Independent controls with a real short foreign strip recovered the
+dark and pale overlaps as vetoes in 64 probes across two positions,
+four depths, two re-encodings and the two source derivatives. A 0.65-
+or 1.25-pixel backing slit inside the print and a flush separate overlay
+can still produce the outer comparison. Those cases retain all active
+instance claims and both modes in review. The named JPEG exports require
+their normal count and geometry decisions.
+
+| Draft measurement | JPEG75 primary | JPEG75 comparison | PNG primary | PNG comparison |
+| --- | ---: | ---: | ---: | ---: |
+| Rendered footprint IoU | 0.8295 | 0.9870 | 0.8246 | 0.9875 |
+| Draft area cut off | 16.77% | 1.22% | 17.27% | 1.17% |
+| Maximum corner difference in native pixels | 68.56 | 5.71 | 69.19 | 5.71 |
+| Landmark coverage over 35 fields | 312/315 | 315/315 | 315/315 | 315/315 |
+| Header ink pixel centres | 1,429/1,938 | 1,938/1,938 | 1,509/1,940 | 1,940/1,940 |
+| Grid ink pixel centres | 248,755/251,331 | 251,331/251,331 | 249,392/250,457 | 250,457/250,457 |
+| Foreign interpolation weight | 0.515% | 0.102% | 0.410% | 0.113% |
+| Output samples with foreign taps beyond one source pixel | 1,928 | 156 | 1,489 | 220 |
+
+The 609 × 781 and 609 × 782 comparison PNGs reproduce pixel for pixel
+from the native sources and their recorded homographies. Each file
+uses owned bilinear sampling. These measurements use a shared draft
+paper reference. Independent aspect and motif references are absent.
+The main whole-print and motif records, proposal counts (five and six),
+and ordinary JPEGs match the previous revision. The comparison adds no
+review tasks. The motif stays held without a supported rectified motif
+on these two exact inputs. Normal upload and rendering replayed on both
+Desktop and Mobile. Revealing the editor and moving the draft corners
+are local actions. Without manual geometry approval, the named export
+routes and the trimmed alias remain held. Reprocessing reproduces the
+same comparison PNG until the applicable source claims change. With
+one OpenCV thread and 31 warm measurements, median comparison-renderer
+CPU time was 9.15 ms for JPEG75 and 11.44 ms for PNG. The p95 values
+were 13.41 and 15.76 ms. Test reports and screenshots are local in
+`runs/crop-quality/disputed-contact-outline/`.
+
 ### Keep manual exports held while paper proposals overlap
 
 Saving a measured outer rectangle now checks the other active members of
