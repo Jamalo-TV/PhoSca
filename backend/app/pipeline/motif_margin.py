@@ -11,6 +11,7 @@ from app.pipeline.margin_stroke_shapes import isolated_margin_strokes
 
 
 MOTIF_MARGIN_REVIEW_REVISION = 6
+PAPER_STOCK_MOTIF_SOURCE = "paper_stock_motif"
 
 
 def _mark_clusters(lightness: np.ndarray, owned: np.ndarray) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
@@ -60,10 +61,38 @@ def _add_region(regions: list[np.ndarray], region: np.ndarray) -> None:
         regions.append(region)
 
 
+def _unexplained_margin_mark(lab: np.ndarray, owned: np.ndarray) -> np.ndarray | None:
+    """Flag a compact deviation between similar paper flanks for preview review."""
+    values = lab.astype(np.int16)
+    marked = np.zeros(owned.shape, bool)
+    for dx, dy in ((2, 0), (0, 2), (2, 2), (2, -2), (3, 0), (0, 3), (3, 2), (3, -2)):
+        before = np.roll(values, (dy, dx), axis=(0, 1))
+        after = np.roll(values, (-dy, -dx), axis=(0, 1))
+        valid = owned & np.roll(owned, (dy, dx), axis=(0, 1)) & np.roll(owned, (-dy, -dx), axis=(0, 1))
+        if dy:
+            valid[:abs(dy)] = valid[-abs(dy):] = False
+        if dx:
+            valid[:, :dx] = valid[:, -dx:] = False
+        difference = before - after
+        change = (before + after) * .5 - values
+        marked |= (valid & (np.minimum(before[..., 0], after[..., 0]) >= 185)
+                   & (np.abs(difference[..., 0]) <= 8) & (np.linalg.norm(difference[..., 1:], axis=2) <= 6)
+                   & (change[..., 0] >= 6) & (np.linalg.norm(change, axis=2) >= 20))
+    if np.count_nonzero(marked) < 20:
+        return None
+    _, _, stats, _ = cv2.connectedComponentsWithStats(marked.astype(np.uint8))
+    x, y, width, height, area = max(stats[1:], key=lambda component: component[cv2.CC_STAT_AREA])
+    if area < 12:
+        return None
+    return np.float32([[x - .5, y - .5], [x + width - .5, y - .5],
+                       [x + width - .5, y + height - .5], [x - .5, y + height - .5]])
+
+
 def motif_margin_marks(
     page: np.ndarray, full: np.ndarray, motif: np.ndarray, inverse: np.ndarray,
+    *, preview_guard: bool = False,
 ) -> list[np.ndarray]:
-    """Return source coordinates for confirmed strong and faint rim markings."""
+    """Return source coordinates for markings in the proposed removed paper strips."""
     if motif.shape != (4, 2) or not np.isfinite(motif).all():
         return []
     height, width = full.shape[:2]
@@ -75,6 +104,7 @@ def motif_margin_marks(
     )
     result = []
     faint_strips = []
+    preview_strips = []
     for edge, axes_for_side in enumerate(axes):
         origin, along, down = np.asarray(axes_for_side)
         plane = np.rot90(full, edge)
@@ -130,6 +160,8 @@ def motif_margin_marks(
                 break
         if paper_lightness >= 191 and end - start >= 30 and max(depth) >= 8:
             faint_strips.append((lab, owned, project, background, strong_box))
+        if preview_guard:
+            preview_strips.append((lab, owned, project))
     if faint_strips:
         already_marked = bool(result)
         forward = np.linalg.inv(inverse)
@@ -146,4 +178,9 @@ def motif_margin_marks(
                                          extend_dashed_note=already_marked)
             if region is not None:
                 _add_region(result, region)
+    if not result:
+        for lab, owned, project in preview_strips:
+            box = _unexplained_margin_mark(lab, owned)
+            if box is not None:
+                _add_region(result, project(box))
     return result

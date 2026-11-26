@@ -134,7 +134,8 @@ export function captureRequiresReview(fullPrint) {
 }
 
 export function paperOutlineRequiresReview(fullPrint) {
-  return fullPrint?.status === "review_needed" && (fullPrint.suggested_edge_source === competingPrintEdges
+  return fullPrint?.status === "review_needed" && (fullPrint.suggested_warp_quad?.length === 4
+    || fullPrint.suggested_edge_source === competingPrintEdges
     || fullPrint.suggested_edge_source === possibleBackedPaperEdge
     || fullPrint.suggested_edge_source === possibleOverextendedPrintEdge
     || fullPrint.reason_codes?.some(reason => reason === "PRINT_EDGE_CONFIRMATION_REQUIRED"
@@ -183,6 +184,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
 
 export function getMotifBoundaryReviewHint(motif) {
   if (motif?.status !== "review_needed") return null;
+  if (motif.outline_preview?.source === "paper_stock_motif") {
+    return "Die Vorschau folgt der gemessenen Motivgrenze. Prüfe zuerst den Aussenumriss am Original.";
+  }
   if (motif.reason_codes?.includes(markedMotifMarginReason)) {
     return markedMotifMarginHint;
   }
@@ -373,7 +377,7 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
         || paperGrid || captureEdgeClipped || captureSplit || pendingPaperEdge || result?.reason_codes?.includes(markedMotifMarginReason)) && fullPreview)
     : fullPreview;
   const previewAlt = mode === "image_only" && motifPreview
-    ? "Konturgetreue Motivvorschau zur Prüfung"
+    ? "Motivvorschau zur Prüfung"
     : preview && preview === printOutline
       ? "Vorschau der Papierkontur zur Prüfung"
       : "Vorschau zur Prüfung";
@@ -393,6 +397,7 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
     || (possibleFilmGrid && filmGridHint)
     || (paperGrid && (paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint))
     || (scallopedOutline && scallopedOutlineReviewHint)
+    || (mode === "image_only" && result?.outline_preview?.source === "paper_stock_motif" && getMotifBoundaryReviewHint(result))
     || result?.reason_codes?.map((code) => reviewMessages[code]).find(Boolean)
     || (result?.status === "ready" && !url && reviewMessages.CROP_VALIDATION_UNAVAILABLE)
     || (mode === "image_only" ? reviewMessages.IMAGE_BOUNDARY_UNCERTAIN : "Die Aussenkante des Abzugs muss geprüft werden.");

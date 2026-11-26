@@ -153,6 +153,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const motifMode = item.payload?.crop_modes?.image_only;
   const motifReviewPending = !reviewedNonPrint && item.payload?.motif_review_pending;
   const motifBoundaryReviewHint = getMotifBoundaryReviewHint(motifMode);
+  const stockMotifPreview = !reviewedNonPrint && motifMode?.status === "review_needed"
+    && motifMode?.outline_preview?.source === "paper_stock_motif"
+    && item.payload?.variant_urls?.image_only_preview;
   const motifMarginMarks = motifReviewPending ? getMotifMarginMarks(motifMode) : [];
   const motifTraces = motifReviewPending ? getSourceEdgeTraces(motifMode?.suggested_seam_traces) : [];
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
@@ -501,6 +504,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       {motifReviewPending && <p className="quad-hint" id="mobile-motif-review-hint">
         {motifBoundaryReviewHint && `${motifBoundaryReviewHint} `}{canEditMotif ? motifReviewHint : motifDesktopReviewHint}
       </p>}
+      {stockMotifPreview && !editingMotif && <details className="quad-hint">
+        <summary>Motivvorschau ansehen</summary>
+        <p>{motifBoundaryReviewHint}</p>
+        <img className="review-crop-preview" src={stockMotifPreview} alt="Motivvorschau zur Prüfung" />
+      </details>}
       {adjacentOutline && <p className="quad-hint">{adjacentPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
       {scallopedAlternate && <p className="quad-hint">Prüfe den gestrichelten Vorschlag am Original. Wähle «Prints zusammen», falls dort ein eigener Abzug aufliegt.</p>}
       {!editingMotif && (fragmentOutline || crossingOutline || printSuggestion) && (

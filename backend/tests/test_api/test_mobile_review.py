@@ -2733,6 +2733,105 @@ async def test_curved_motif_preview_is_an_inline_png_and_remains_a_review_asset(
     assert (await client.get(repaired)).status_code == 404
 
 
+@pytest.mark.parametrize("jpeg_caption", [False, True])
+async def test_stock_motif_preview_requires_an_empty_margin_and_keeps_exports_held(client, monkeypatch, jpeg_caption):
+    from app.config import get_settings
+    from app.pipeline.segmentation import SegmentationDetection, SegmentationResult
+    from app.services import pipeline
+
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
+    monkeypatch.setenv("MAX_UPLOAD_SIZE", "1048576")
+    monkeypatch.setenv("MAX_REQUEST_SIZE", "2097152")
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_BORDER_TRIM", "true")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    get_settings.cache_clear()
+
+    page = np.full((670, 820, 3), (124, 136, 146), np.uint8)
+    page[80:620, 120:711] = (189, 212, 228)
+    page[98:602, 138:693] = (109, 125, 143)
+    if jpeg_caption:
+        cv2.putText(page, "SEP 1954", (207, 90), cv2.FONT_HERSHEY_SIMPLEX, .26, (151, 174, 190), 1, cv2.LINE_AA)
+    polygon = [{"x": x / 819, "y": y / 669} for x, y in ((120, 67), (710, 67), (710, 619), (120, 619))]
+    box = {"x1": 120 / 819, "y1": 67 / 669, "x2": 710 / 819, "y2": 619 / 669}
+    detection = SegmentationDetection(box, {"source": "yolo_seg_mask", "polygon": polygon}, .9, 1., True, [])
+    monkeypatch.setattr(pipeline, "segment_album_page", lambda *_, **__: SegmentationResult([detection], {}))
+
+    if jpeg_caption:
+        ok, upload = cv2.imencode(".jpg", page, [cv2.IMWRITE_JPEG_QUALITY, 75])
+        name, media = "caption.jpg", "image/jpeg"
+    else:
+        ok, upload = cv2.imencode(".png", page)
+        name, media = "empty-margin.png", "image/png"
+    assert ok
+    album_id = (await client.post("/api/v1/albums", json={"name": "Measured motif review"})).json()["id"]
+    album_url = f"/api/v1/albums/{album_id}"
+    uploaded = await client.post(f"{album_url}/pages/upload", files={"files": (name, upload.tobytes(), media)})
+    assert uploaded.status_code == 201, uploaded.text
+    photo, = (await client.get(f"{album_url}/photos")).json()
+    url = f"/api/v1/photos/{photo['id']}"
+    photo = (await client.get(url)).json()
+    for reprocess in (False, True):
+        if reprocess:
+            assert (await client.post(f"{url}/reprocess")).status_code == 200
+            photo = (await client.get(url)).json()
+        correction = photo["enhancement_applied"]["correction"]
+        full, motif = (correction["crop_modes"][mode] for mode in ("full_print", "image_only"))
+        assert all(mode["status"] == "review_needed" and "PRINT_BOUNDARY_AMBIGUOUS" in mode["reason_codes"]
+                   for mode in (full, motif))
+        assert correction["boundary_refinement"]["bottom"]["review_stock_fit"]["support"] == 1
+        for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+            assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
+        assert (await client.get(photo["urls"]["source_corrected_untrimmed"])).status_code == 200
+        preview_url = photo["urls"].get("image_only_preview")
+        if jpeg_caption:
+            assert preview_url is None and "outline_preview" not in motif
+            assert motif["margin_mark_regions"]
+        else:
+            assert full["suggested_warp_quad"] == full["warp_quad"]
+            assert motif["outline_preview"]["source"] == "paper_stock_motif"
+            assert motif["outline_preview"]["source_outline"] == motif["warp_quad"]
+            preview = await client.get(preview_url)
+            assert preview.status_code == 200 and preview.headers["content-type"] == "image/png"
+            assert preview.headers["content-disposition"].startswith("inline")
+            variants = (await client.get(f"{url}/variants")).json()["variants"]
+            assert "image_only_preview" not in variants
+            queue, = (await client.get(f"/api/v1/review/queue?type=geometry&album_id={album_id}")).json()
+            assert queue["payload"]["variant_urls"]["image_only_preview"] == preview_url
+
+    approval = await client.post("/api/v1/review/events", json={
+        "task_type": "geometry", "task_id": photo["id"], "answer": "correct", "idempotency_key": str(uuid4()),
+    })
+    assert approval.status_code == 409
+    if jpeg_caption:
+        regions = motif["margin_mark_regions"]
+        saved = await client.patch(f"{url}/bounding-box", json={
+            "bounding_box": photo["bounding_box"], "confirm_print_outline": True,
+            "segmentation_mask": {"source": "manual_quad", "warp_quad": full["warp_quad"],
+                                  "polygon": full["warp_quad"], "print_size_mm": {"width": 118, "height": 107.8}},
+        })
+        assert saved.status_code == 200, saved.text
+        for reprocess in (False, True):
+            replay = await client.post(f"{url}/reprocess") if reprocess else saved
+            assert replay.status_code == 200, replay.text
+            detail = (await client.get(url)).json()
+            modes = detail["enhancement_applied"]["correction"]["crop_modes"]
+            assert modes["image_only"]["reason_codes"] == ["IMAGE_MARGIN_MARKS_REVIEW"]
+            assert modes["image_only"]["margin_mark_regions"] == regions
+            assert (await client.get(f"{url}/image?variant=full_print")).status_code == 200
+            for variant in ("image_only", "image_only_preview", "source_corrected_trimmed"):
+                assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
+    else:
+        implicit = await client.patch(f"{url}/bounding-box", json={
+            "bounding_box": photo["bounding_box"],
+            "segmentation_mask": {"source": "manual_quad", "warp_quad": full["warp_quad"],
+                                  "polygon": full["warp_quad"], "image_quad": motif["warp_quad"]},
+        })
+        assert implicit.status_code == 409 and implicit.json()["detail"] == "print_outline_review_required", implicit.text
+
+
 async def test_full_print_outline_preview_stays_out_of_exports_and_respects_review(client, monkeypatch) -> None:
     from types import SimpleNamespace
 

@@ -127,6 +127,7 @@ def crop_validation_profile(settings: Settings) -> dict:
         "deskew_inference": 1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None,
         "border_analysis": settings.enable_border_trim,
         "curved_motif_check": 7 if settings.enable_precise_photo_crops and settings.enable_border_trim else None,
+        "paper_stock_motif_preview": 1 if settings.enable_precise_photo_crops and settings.enable_border_trim else None,
         "motif_margin_review": (
             MOTIF_MARGIN_REVIEW_REVISION if settings.enable_precise_photo_crops and settings.enable_border_trim else None
         ),

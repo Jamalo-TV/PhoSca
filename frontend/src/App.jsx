@@ -2213,7 +2213,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {(rejectedDetection || currentSave?.rejected) && <p role="status">Vorschlag als falsches Objekt markiert.</p>}
       {currentSave?.url && <img className="review-crop-preview" src={currentSave.url} alt={cropModeLabels[editMode]} />}
       {editingImage && motifPreview && !currentSave?.url && (
-        <img className="review-crop-preview" src={motifPreview} alt="Konturgetreue Motivvorschau zur Prüfung" />
+        <img className="review-crop-preview" src={motifPreview} alt="Motivvorschau zur Prüfung" />
       )}
       {!editingImage && !newPrint && fullPrintPreview && !currentSave?.url && (
         comparePaperEdge ? <PaperEdgePreviewComparison currentUrl={untrimmedPrint} possibleUrl={fullPrintPreview}

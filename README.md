@@ -296,6 +296,22 @@ Für **Nur Bildmotiv** untersucht PhoSca zusätzlich die Übergänge
 zwischen Papier und Bild. Der Renderer berechnet beide Ausgaben
 direkt aus der Quellseite. Beim präzisen Sampling gehen in die
 Interpolation nur Quellpixel ein, die zur jeweiligen Fläche gehören.
+
+Bleibt genau eine Papierkante strittig, kann PhoSca ihren Verlauf
+anhand der anderen drei Seiten und der angrenzenden Ecken für
+die Prüfung genauer messen. Vier im Original gestützte Motivkanten,
+ein durchgehender Papiersaum und Abstand zu Nachbarabzügen erlauben
+in diesem Fall eine separate Motivvorschau. Zeigt der abzutrennende
+Papierstreifen eine mögliche Beschriftung oder eine andere kompakte
+Abweichung zwischen ähnlich gefärbten Papierflanken, markiert der
+Editor die Stelle auf der Originalseite und hält die enge Vorschau
+zurück. Auf Desktop und Mobil lässt sich die vorhandene Vorschau
+ansehen. Die Exporte beider Modi erfordern weiterhin eine Prüfung.
+Der Aussenumriss wird zuerst am Original bestätigt.
+Eine markierte Randstelle bleibt beim Speichern des Aussenumrisses
+in der Motivprüfung, bis ein Motivzuschnitt ausdrücklich gewählt wird.
+[Prüfvergleich für Motiv und Rand](data/evaluation/README.md#preview-a-motif-with-one-disputed-paper-edge)
+
 Die Randprüfung betrachtet nur Papierstreifen zwischen Aussenkontur
 und vorgeschlagener Motivgrenze. Für deutliche Markierungen verwendet
 sie zusammenhängende Komponenten aus der Helligkeitsdifferenz zum

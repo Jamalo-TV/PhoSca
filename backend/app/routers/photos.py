@@ -32,6 +32,7 @@ from app.pipeline.manual_paper_boundary import (
     original_prediction_mask, paper_curve_from_review_traces, paper_curve_review_reference,
     overlapping_paper_claims, paper_claim_groups,
 )
+from app.pipeline.motif_margin import PAPER_STOCK_MOTIF_SOURCE
 from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.perspective import manual_print_intersects, validate_review_quads
 from app.pipeline.presets import available_presets
@@ -703,6 +704,13 @@ async def update_photo_bounding_box(
         for flag in ("album_window_occluded", "manual_added", "capture_edge_clipped", REVIEWED_CROSSING_OUTLINE):
             if (photo.segmentation_mask or {}).get(flag) is True:
                 segmentation_mask[flag] = True
+        # A paper edit does not settle a separate mark in the proposed motif margin.
+        motif_mode = (correction.get("crop_modes") or {}).get("image_only") or {}
+        margin_regions = original_mask.get("paper_stock_margin_regions")
+        if not margin_regions and motif_mode.get("margin_mark_source") == PAPER_STOCK_MOTIF_SOURCE:
+            margin_regions = motif_mode.get("margin_mark_regions")
+        if margin_regions:
+            segmentation_mask["paper_stock_margin_regions"] = deepcopy(margin_regions)
         for kind in ("mounted", "projective"):
             review, confirmed = f"{kind}_outline_review", f"{kind}_outline_confirmed"
             if original_mask.get(review) is True:

@@ -4707,6 +4707,49 @@ The isolated native stock retry took 0.69 to 3.48 ms median and
 warm paired samples on one OpenCV thread with the original evidence
 and fitted proposals already available.
 
+### Preview a motif with one disputed paper edge
+
+The `white_margin` and `camera_tilt` controls already had a supported
+paper-stock fit for the one disputed edge. Their whole-print preview
+was within 0.50 native pixels of the known corners. The ordinary motif
+path deferred all inner geometry because of the paper ambiguity.
+The isolated preview path checks four physical motif edges, refits
+in the original source and requires a continuous pale paper rim.
+It also checks clearance inside the paper and from other proposed
+prints. It uses the existing protected-content checks.
+
+The ordinary margin checks run before the optional preview. A second
+check looks for compact deviations between similar local paper flanks
+in the rectified margin. A positive check marks the source location
+and withholds the tight view. It can indicate uncertain marks as well
+as readable writing. In the paired control the fallback catches the
+small graphite and coloured captions even after JPEG75 compression.
+The clean mark controls keep the preview in all four rotations.
+The 16 marked controls with four caption and encoding combinations
+all withhold it. A separate neighboring sheet with a four-pixel
+gutter withholds the preview, while the seven-pixel variant keeps it.
+These results measure only the supplied development controls.
+
+| Frozen motif preview | Footprint IoU | Max corner error | Aspect error | Landmark p95 |
+| --- | ---: | ---: | ---: | ---: |
+| `white_margin` | 0.99187 | 0.077 px | 0% | 0.052 px |
+| `camera_tilt` | 0.99137 | 0.084 px | 0.658% | 0.069 px |
+
+Both previews have zero cutoff beyond one native pixel and zero
+foreign interpolation contributions. The whole-print pixels are
+identical before and after in seven paired checks. The regular
+geometry metric still excludes the optional motif PNG. Its preview
+asset is available inline through `image_only_preview`. Approving the
+task or resubmitting the tentative paper together with the motif
+without an explicit paper confirmation is rejected. The three
+trimmed variants remain held through upload and reprocessing.
+For the marked comparison, saving only the paper corners and known
+paper dimensions releases the manually confirmed whole print. The
+source mark is carried into the new motif review and survives
+reprocessing. The motif export stays held until a separate decision.
+On the 820 × 670 isolated clean control, the median crop step rises
+from 86 ms to 180 ms over ten alternating warm one-thread runs.
+
 ### Compare local paper centering and noise scaling for faint dates
 
 The very pale README date separates into three aligned components at

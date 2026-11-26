@@ -27,7 +27,7 @@ from app.pipeline.geometry import (
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.motif_boundary import close_motif_outline, motif_outline_corners_supported, trace_motif_boundary
-from app.pipeline.motif_margin import motif_margin_marks
+from app.pipeline.motif_margin import PAPER_STOCK_MOTIF_SOURCE, motif_margin_marks
 from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.manual_paper_boundary import (
     MANUAL_CAPTURE_OUTLINE_REVIEW, MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION,
@@ -1002,6 +1002,7 @@ def _dual_crop_result(
     protect_regions: bool, owned_sampling: bool,
     neighbors: list[np.ndarray], corner_mount_detected: bool, print_outline: np.ndarray | None,
     motif_suggestion: np.ndarray | None, print_edge_traces: list,
+    paper_stock_margin_regions: list | None = None,
 ) -> CropResult:
     page_height, page_width = page.shape[:2]
     height, width = full_image.shape[:2]
@@ -1029,8 +1030,18 @@ def _dual_crop_result(
     independent = corner_mount_detected and set(full_reasons) <= _LOCALIZED_OCCLUSION_REASONS
     scalloped_motif = (print_outline is not None and inner is not None and set(full_reasons) == {SCALLOPED_PRINT_REVIEW}
                        and _motif_inside_scalloped_stock(inner, print_outline, neighbors))
+    stock_motif_review = trim_border and inner is None and full_reasons == ["PRINT_BOUNDARY_AMBIGUOUS"] and any(
+        isinstance(side, dict) and side.get("review_stock_fit")
+        for side in metadata["boundary_refinement"].values()
+    )
+    needs_closed_rim = independent or stock_motif_review
     preview_only = bool(full_reasons) and set(full_reasons) <= _CROP_PREVIEW_REASONS and not scalloped_motif
-    if motif_suggestion is not None:
+    if trim_border and inner is None and paper_stock_margin_regions:
+        diagnostics = {"method": "saved_margin_review", "applied": False}
+        image_mode["reason_codes"].insert(0, MOTIF_MARGIN_MARKS_REVIEW)
+        image_mode["margin_mark_source"] = PAPER_STOCK_MOTIF_SOURCE
+        image_mode["margin_mark_regions"] = paper_stock_margin_regions
+    elif motif_suggestion is not None:
         diagnostics = {"method": "native_scalloped_print_motif", "applied": False}
         if protect_regions and not validate_protected_regions(motif_suggestion, page_regions, width=page_width,
                                                               height=page_height)["passed"]:
@@ -1043,10 +1054,10 @@ def _dual_crop_result(
                 pass  # Preserve the measured editing suggestion if rendering is unresolved.
     elif print_outline is not None and not scalloped_motif:
         image_mode["reason_codes"].insert(0, "IMAGE_BOUNDARY_UNCERTAIN")
-    elif not full_reasons or independent or preview_only or scalloped_motif:
+    elif not full_reasons or needs_closed_rim or preview_only or scalloped_motif:
         quad, diagnostics, image_reasons = _inner_crop_plan(
             full_image, matrix, inner, trim_border=trim_border, page_width=page_width, page_height=page_height,
-            page_regions=page_regions, protect_regions=protect_regions, allow_wide_search=not independent,
+            page_regions=page_regions, protect_regions=protect_regions, allow_wide_search=not needs_closed_rim,
         )
         wide_rim = diagnostics["method"] == "wide_paper_rim"
         suggested_quad = None
@@ -1075,7 +1086,7 @@ def _dual_crop_result(
                 if continuously_observed and CURVED_IMAGE_BOUNDARY in image_reasons:
                     outline = close_motif_outline(native_seed, traces)
                 quad = None
-        if independent and (quad is None or (inner is None and not four_rim_edges)):
+        if needs_closed_rim and (quad is None or (inner is None and not four_rim_edges)):
             image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
             quad = None
         if not image_reasons and quad is None:
@@ -1085,7 +1096,7 @@ def _dual_crop_result(
             try:
                 _validate_quad(quad, width, height)
                 source = cv2.perspectiveTransform(quad.reshape(1, 4, 2), np.linalg.inv(matrix))[0]
-                if independent or wide_rim or (inner is None and four_rim_edges):
+                if needs_closed_rim or wide_rim or (inner is None and four_rim_edges):
                     # The rectified scan corroborates the paper rim. Locate its last
                     # boundary in source pixels, where resampling cannot blur the seam.
                     radius = max(3, min(16, round(max(width, height) / 450))) if wide_rim else 3
@@ -1102,7 +1113,7 @@ def _dual_crop_result(
                     ))
                     if needs_native_line_support and not line_supported:
                         image_reasons.append("IMAGE_BOUNDARY_UNCERTAIN")
-                    elif (independent or wide_rim) and (
+                    elif (needs_closed_rim or wide_rim) and (
                         not native_verified or len(native_evidence) != 4
                         or any(edge["support"] < .85 or (edge["corner_support"] or 0) < .85
                                for edge in native_evidence.values())
@@ -1118,7 +1129,9 @@ def _dual_crop_result(
                     "known_print_aspect", "measured_page_reference", "calibrated_camera", "estimated_page_plane",
                     "measured_page_plane",
                 }
-                if (independent or wide_rim) and not image_reasons and not _independent_motif_visible(page, source, neighbors):
+                if (needs_closed_rim or wide_rim) and not image_reasons and not _independent_motif_visible(page, source, neighbors):
+                    image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
+                if stock_motif_review and any(cv2.pointPolygonTest(source_quad, tuple(point), True) < 3 for point in source):
                     image_reasons.append("IMAGE_VISIBILITY_UNCERTAIN")
                 if (measured or independent or wide_rim) and not _is_rectangular_in_measured_plane(quad):
                     image_reasons.append("IMAGE_RECTANGLE_INCONSISTENT")
@@ -1128,8 +1141,10 @@ def _dual_crop_result(
                         source_quad, source, page_regions, width=page_width, height=page_height,
                     )):
                         image_reasons.append("BORDER_PROTECTED_CONTENT_VETO")
-                if not image_reasons and inner is None and (not full_reasons or independent):
-                    margin_regions = motif_margin_marks(page, full_image, quad, np.linalg.inv(matrix))
+                if not image_reasons and inner is None and (not full_reasons or needs_closed_rim):
+                    margin_regions = motif_margin_marks(
+                        page, full_image, quad, np.linalg.inv(matrix), preview_guard=stock_motif_review,
+                    )
                 if not image_reasons and not margin_regions and wide_rim:
                     rectified_regions = _rectified_protected_regions(
                         page_regions, page_width=page_width, page_height=page_height, matrix=matrix,
@@ -1152,34 +1167,50 @@ def _dual_crop_result(
                     if supported:
                         image_mode = _geometry_for_mode(
                             source, combined, pixels, page_width, page_height, rotation,
-                            full_reasons if preview_only else [],
+                            full_reasons if preview_only or stock_motif_review else [],
                         )
                         image_mode["sampling"] = OWNED_BILINEAR
                         if independent or scalloped_motif:
                             image_mode["independent_of_full_print"] = True
                         if scalloped_motif:
                             image_mode["scalloped_motif_ownership_revision"] = SCALLOPED_PRINT_REVISION
-                        image_only = rotate_image(pixels, rotation)
+                        if stock_motif_review:
+                            full_mode["suggested_warp_quad"] = full_mode["warp_quad"]
+                            image_mode["outline_preview"] = {
+                                "source": PAPER_STOCK_MOTIF_SOURCE,
+                                "source_outline": image_mode["warp_quad"],
+                                "page_to_output": image_mode["page_to_output"],
+                                "shape": image_mode["shape"],
+                            }
+                            image_only_preview = rotate_image(pixels, rotation)
+                        else:
+                            image_only = rotate_image(pixels, rotation)
                     else:
                         image_reasons.append("IMAGE_BOUNDARY_SAMPLING_UNCERTAIN")
             except (ValueError, cv2.error, np.linalg.LinAlgError):
                 image_reasons.append("IMAGE_QUAD_UNSTABLE")
         if (image_reasons and margin_regions is None and seam_seed is not None and inner is None
-                and (not full_reasons or independent)):
-            margin_regions = motif_margin_marks(page, full_image, seam_seed, np.linalg.inv(matrix))
+                and (not full_reasons or needs_closed_rim)):
+            margin_regions = motif_margin_marks(
+                page, full_image, seam_seed, np.linalg.inv(matrix), preview_guard=stock_motif_review,
+            )
         if margin_regions:
             image_reasons.insert(0, MOTIF_MARGIN_MARKS_REVIEW)
         if image_reasons:
             diagnostics["applied"] = False
+            if stock_motif_review:
+                image_reasons.extend(full_reasons)
             image_mode = {"status": "review_needed", "reason_codes": list(dict.fromkeys(image_reasons))}
             if margin_regions:
                 image_mode["margin_mark_regions"] = [_vertices_on_page(region, page_width, page_height)
                                                      for region in margin_regions]
+                if stock_motif_review:
+                    image_mode["margin_mark_source"] = PAPER_STOCK_MOTIF_SOURCE
             if suggested_quad is not None:
                 image_mode["suggested_warp_quad"] = suggested_quad
             if seam_traces:
                 image_mode["suggested_seam_traces"] = seam_traces
-            if outline is not None and not margin_regions and all(
+            if outline is not None and not stock_motif_review and not margin_regions and all(
                 cv2.pointPolygonTest(source_quad, tuple(point), True) >= -1e-4 for point in outline
             ):
                 outline_hull = cv2.convexHull(outline)
@@ -1775,6 +1806,7 @@ def correct_photo_crop(
             neighbors=neighbor_polygons, corner_mount_detected=corner_mount_detected,
             print_outline=print_outline,
             print_edge_traces=print_edge_traces,
+            paper_stock_margin_regions=mask.get("paper_stock_margin_regions"),
             motif_suggestion=_explicit_quad(mask, "scalloped_motif_suggestion", width, height)
             if print_outline is not None and trim_border else None,
         )
