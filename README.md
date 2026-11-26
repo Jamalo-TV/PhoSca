@@ -537,6 +537,17 @@ Bildinhalt verdeckt, braucht es eine unverdeckte Aufnahme.
 Beansprucht ein anderer Abzug den Streifen, entfällt der Hinweis.
 [Beispiel mit verdecktem Rudge-Abzug](data/evaluation/README.md#show-a-lower-exposed-strip-next-to-a-held-print)
 
+Bei einer **möglichen Albumöffnung** zeigt die Geometrieprüfung zwei
+violette gestrichelte Linien im Original. Der Hinweis kann erscheinen,
+wenn beide Zuschnittmodi in Prüfung liegen, zwei Seiten des bisherigen
+Vorschlags gut gestützt sind und PhoSca an den gegenüberliegenden
+Seiten eine gebogene Kante und einen weiter innen liegenden geraden
+Übergang misst. Vergleiche an diesen Linien, wo Fotopapier endet und
+Albumkarton beginnt. Ist ein Teil des Bildes verdeckt, braucht es eine
+Aufnahme mit freiem Blick auf den Abzug. Die Linien sind Orientierung
+für die Prüfung. Die vier Griffe zeigen die aktuelle Zuschnittgeometrie.
+[Beispiel und Gegenproben](data/evaluation/README.md#show-possible-album-opening-edges-in-review)
+
 Vor dem Speichern einer Korrektur prüft PhoSca geschützte Stellen
 in den Originalkoordinaten. Für **Ganzer Abzug** zählt der sichtbare
 Teil der bisherigen Abzugsfläche. Für einen ausdrücklich gesetzten
@@ -1052,8 +1063,8 @@ von 0,8104 auf 0,9414 und erhält alle darin markierten Pixelzentren.
 Dieselbe Kantenmessung würde bei einem separat erfassten Nachbarabzug
 rund 5 % der projizierten Papierfläche abschneiden. Sie eignet sich
 deshalb in diesem Zustand für die Analyse und als Ausgangspunkt für
-eine Prüfhilfe. Beide Zuschnittmodi dieses Rudge-Falls bleiben zur
-Prüfung zurückgehalten.
+eine Prüfhilfe. Die App zeigt die beobachteten Kanten am Original.
+Beide Zuschnittmodi dieses Rudge-Falls bleiben zur Prüfung zurückgehalten.
 [Messung, Aufnahmepaar und Gegenprobe](data/evaluation/README.md#measure-the-curved-opening-on-the-left-of-rudge-page-12)
 
 1. **Bei konkurrierenden Linien das Papier zuordnen.** Im eingefrorenen

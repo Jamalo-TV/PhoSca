@@ -5623,6 +5623,55 @@ The probe, overlay and stage measurements are retained locally under
 `/tmp/phosca-rudge-red12-aperture-independent/`.
 [Pinned source and independent scan](https://github.com/rudged/home/tree/9422452820380ca089db3e0baf0cfaf3dc6c7cdc)
 
+### Show possible album opening edges in review
+
+The product uses the native transitions as two open source traces. It
+considers an automatic ONNX proposal when both crop modes already need
+review and the whole-print reasons are unsupported boundary and uncertain
+aspect. It requires two adjacent sides with boundary support of at least
+0.88 and the opposite two sides below 0.45. An existing edge or outline
+suggestion, explicit saved quad or conflicting stock review takes precedence.
+The sampler rotates by quarter turns to bring the weak sides to the top
+and left, then maps the measured traces back onto the original.
+
+The lateral search ranks short bright-to-dark profiles over 96 stations.
+The selected line needs at least 86% overall support and 75% in each
+quarter. Against the current mask's intersection at each station, its
+inward displacement must reach 8.5% of the proposal width at p10 and
+10.5% at the median. The top path needs at least 92% support over 128
+stations and 82% in each quarter. Its central median bow must reach 2%
+of the proposal width, without abrupt changes or a disconnected left end.
+The original gives a bowed trace around x367–850 and y397–432 and a
+left trace from (361,497) to (319,974). The visible-material boundary can
+be traced without access to the separate scan.
+
+Four source quarter turns and their JPEG75 encodings retain the two traces
+when given the same proposal and corresponding measured boundary support.
+The four independently registered print guides on Rudge 13 abstain,
+including the genuinely arched upper-left print. The full mixed-detector
+replay on that page adds no cue. Artificial outer-seam controls show that
+similar lightness transitions can still arise on a reproduction. The
+caption asks the reviewer to distinguish print stock and backing and to
+use an unobstructed capture when the album covers part of the subject.
+
+On the native multipart upload, only the left whole-print review receives
+the two traces and their print-edge hint. Desktop and mobile render the
+same open paths and caption. The underlying masks, warps, mode statuses
+and JPEG bytes match the paired baseline. Explicit count review reduces
+the active list from three to two. The left opening traces and the right
+lower-strip cue survive ordinary reprocessing of both remaining photos.
+Both named downloads and the trimmed alias return 404 throughout this
+case. The trace took 27.6 ms median and 32.0 ms p95 over 30 warm
+single-thread runs on the 2,048 × 1,536 source. All eight benchmark
+pairs match their previous instance, crop and review metrics on every
+fixture. That includes 18/18 frozen synthetic detections and 23/23
+seeded crops. Both native Rudge 12 masks still miss the development
+matching threshold. Receipts and screenshots are under
+`runs/crop-quality/rudge-album-opening/`. Neither Rudge page contributes
+to the release split.
+[Source trace](../../backend/app/pipeline/album_opening_review.py) ·
+[Source rotation and negative controls](../../backend/tests/test_pipeline/test_album_opening_source_evidence.py)
+
 ### Explain a held whole print in mobile geometry review
 
 In revision `9b78009`, Mobile can offer **Korrekt & vollständig**
@@ -7375,12 +7424,18 @@ The Boston Public Library finding aid for `MS q G.3.30` records that 85
 original prints were physically removed, separately photographed in June
 and July 2025, and returned to their original pockets. The public set
 catalogues the parent album and individual print records, including item
-78 `06_01_019931_0078`. Its mounted views contain four-slot leaves. The
-native IIIF request returned HTTP 403 and the exact leaf to print mapping
-and visible stock boundaries need to be verified. The published image
-rights designation is No Copyright – United States.
+78 `06_01_019931_0078` (William P. Lucas, archival component 74908)
+and item 6 `06_01_019931_0006` (Robert Gould Shaw, component 74834).
+The album's archive digital object is `do:180`. Its mounted views
+contain four-slot leaves. The catalogue derivative of page 44 has yet
+to be linked to the slot of either print. The native IIIF and public
+DPLA metadata requests returned HTTP 403. Exact leaf-to-print mapping,
+native raster hashes and visible stock boundaries still need verification.
+The published image rights designation is No Copyright – United States.
 [Finding aid](https://archives.bpl.org/repositories/2/resources/180) ·
-[Image collection](https://www.digitalcommonwealth.org/collections/commonwealth:63964b37k)
+[Album digital object](https://archives.bpl.org/repositories/2/digital_objects/7564) ·
+[Image collection](https://www.digitalcommonwealth.org/collections/commonwealth:63964b37k) ·
+[Item 6](https://ark.digitalcommonwealth.org/ark:/50959/8910t015r)
 
 The 1908 Hungarian family album on Commons separately catalogues 17
 mounted page JPEGs and 68 individual TIFFs. The uploader links print
@@ -7388,8 +7443,9 @@ mounted page JPEGs and 68 individual TIFFs. The uploader links print
 their scan records. The catalogue lists page 01 at 10,970 × 14,816
 with SHA-1 `ab172e358af0c7de96ae55c73e37e12cee3f55d3` and print 001
 TIFF at 3,694 × 4,836 with SHA-1 `299834405988e550651762c4704cebf5eef3a802`.
-MediaWiki image info and the public Your.Org mirror requests returned 403
-from this workspace. PICRYL indexes derivatives via GetArchive. Native
+MediaWiki image info, Commons File REST metadata and the public Your.Org
+mirror requests returned 403 from this workspace. PICRYL indexes
+derivatives via GetArchive. Native
 raster identity is unverified. The native pixels are still needed to distinguish
 separate exposure from a transformed copy and to verify the visible
 paper and motif for both modes.

@@ -6,6 +6,7 @@ import numpy as np
 
 from app.pipeline.adjacent_stock_review import ADJACENT_STOCK_REVIEW_SOURCE, suggest_adjacent_stock_outline
 from app.pipeline.album_layer_review import suggest_album_layer_preview
+from app.pipeline.album_opening_review import POSSIBLE_ALBUM_OPENING_EDGE, album_opening_traces
 from app.pipeline.album_windows import (
     ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves,
 )
@@ -2226,6 +2227,18 @@ def correct_photo_crop(
                 marks = []
             if marks:
                 result.metadata["off_print_advisory_regions"] = marks
+        if (not manual and visible is not None and mask.get("detector_source") == "yolo_onnx"
+                and set(full_reasons) == {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_ASPECT_UNCERTAIN"}
+                and all(mode["status"] == "review_needed" for mode in modes.values())
+                and not any(full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview"))
+                and not any(mask.get(key) for key in ("warp_quad", *_STOCK_REVIEW_CONFLICTS))):
+            try:
+                opening = album_opening_traces(page_image, visible, boundary_refinement)
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                opening = []
+            if opening:
+                full_mode["suggested_edge_traces"] = [_vertices_on_page(trace, width, height) for trace in opening]
+                full_mode["suggested_edge_source"] = POSSIBLE_ALBUM_OPENING_EDGE
         strip_reasons = set(full_reasons)
         if (not manual and visible is not None and mask.get("detector_source") == "yolo_onnx"
                 and full_mode["status"] == "review_needed" and not full_mode.get("outline_preview")
