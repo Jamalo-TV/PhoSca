@@ -131,6 +131,7 @@ const curvedMotifReviewReason = "IMAGE_BOUNDARY_CURVED";
 const curvedMotifReviewHint = "Die Motivkante verläuft unregelmässig. Prüfe am Original, welche Bildfelder und Beschriftungen zum Motiv gehören.";
 const markedMotifMarginReason = "IMAGE_MARGIN_MARKS_REVIEW";
 const markedMotifMarginHint = "Am Papierrand sind mögliche Beschriftungen sichtbar. Prüfe den ganzen Rand am Original und nimm alle zum Bild gehörenden Beschriftungen in den Zuschnitt auf.";
+export const heldPrintMotifMargin = "held_print_motif_margin";
 const manualNeighborOverlap = "MANUAL_NEIGHBOR_OVERLAP";
 const manualNeighborContentLoss = "MANUAL_NEIGHBOR_CONTENT_LOSS";
 const mountedPrintOutlineReason = "MOUNTED_PRINT_OUTLINE_REVIEW";
@@ -420,6 +421,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
 
 export function getMotifBoundaryReviewHint(motif) {
   if (motif?.status !== "review_needed") return null;
+  if (motif.margin_mark_source === heldPrintMotifMargin) {
+    return "Orange markiert mögliche Beschriftung auf dem Abzug. Prüfe zuerst die Aussenkante. Berücksichtige danach die gesamte zum Bild gehörende Beschriftung beim Motivzuschnitt.";
+  }
   if (motif.outline_preview?.source === "paper_stock_motif") {
     return "Die Vorschau folgt der gemessenen Motivgrenze. Prüfe zuerst den Aussenumriss am Original.";
   }

@@ -5167,6 +5167,78 @@ fragments explicitly rejected. Its 538 × 783 export preserved
 315 anchors. Both tests use development paper dimensions and existing
 source pixel anchors. They provide manual workflow receipts.
 
+### Locate native contact-print lettering while the paper is held
+
+The native 4,080 × 3,072 SteveKM source holds the whole print with
+`PRINT_BOUNDARY_AMBIGUOUS`, `POSSIBLE_CONTENT_CUTOFF` and
+`PRINT_ASPECT_UNCERTAIN`. The existing protected pipeline defers the
+motif seam until the paper decision. In a separate pixel measurement,
+the unguided seam along the film grid would lose all 1,940 mapped
+development heading samples while retaining all 315 anchors inside the
+35 fields. The current untrimmed preview retains all 1,940 heading
+samples, 250,457 sampled grid pixels and 315 anchors. These samples
+were registered from the same capture. The scene has no verified
+physical paper or motif reference.
+
+`motif_margin_review` revision 7 measures the strip next to the four
+supported physical picture transitions when the border diagnostic
+finds a curved seam and the ordinary protection path holds both modes
+for those three reasons. The diagnostic supplies the search area. It
+requires a convex visible polygon and at least 900 pixels on the
+shorter side of the existing rectification.
+Both the existing rectification and its 800-pixel-long resampling
+must find the mark using source-pixel corroboration. The projected
+polygons must have source IoU of at least 0.80. The mark must lie at
+least four native pixels or 1.2% of the short paper side from both the
+current projected paper and the visible polygon, using the greater
+distance. Another active proposal claiming more than one square
+pixel of the mark suppresses it. A new manual claim also removes the
+overlapping annotation and, if it was the last mark, its review reason.
+
+The native replay annotates one real region around `(2511, 490)` to
+`(3020, 539)`, including “ASSIGNMENT” and “NYC, Brooklyn”. It covers
+351 of the 1,940 mapped heading samples, so the hint asks the reviewer
+to include the full relevant lettering. A single-resolution response
+at the white paper-to-wood edge was rejected. Independent controls
+included another printed title, blank paper, a uniform shadow, a long
+rule, dots and a title owned by a separate proposal. Only the two title
+examples without a competing claim produced a mark. Each of the three
+33% derivatives kept its existing annotations and review statuses.
+The new annotation affects an already held case, so it adds no cases
+to review. All 45 rendered images in the four-source comparison matched
+byte for byte.
+
+In the ordinary upload and review workflow, both Desktop and Mobile
+display the annotation on the original in **Ganzer Abzug**. On a
+412-pixel-wide phone the highlight locates the label and the overview
+requires magnification to read it. The annotation persists after the
+explicit 4-to-1 sleeve count decision and after two photo reprocesses.
+The original, untrimmed preview, mask and whole-print homography match
+the baseline at each step. An unrelated manual claim preserves the
+annotation. A competing manual claim removes it in both views. The two
+named exports, the legacy trimmed alias and the motif preview stay
+unavailable through the review flow. The untrimmed preview remains
+available. The marker does not supply a motif warp.
+
+A separate native draft retaining the heading and the lowest film
+rail was visually inspected. Under the normal protection guard the
+paper edit still returns `protected_region_cut`. Two advisory face
+boxes straddle the left paper edge near `(2023, 2695)` and `(2014,
+788)`. Their centres are in the exposed tabletop, and native close-ups
+show wood and paper edges. Existing review can resolve a single
+qualifying page mark. These two boxes remain an open paper-review case.
+Over 15 warm calls with one OpenCV thread, the new conditional
+diagnostic took a median of 517 ms and p95 of 634 ms of process CPU on
+the native source. The four-source replay report and rendered surfaces
+are in `runs/crop-quality/contact-motif-envelope/`. The comparison also
+preserves 18/18 locked synthetic detections, 11/11 seeded whole-print
+and 12/12 seeded motif crops, 29/29 Golden development detections, and
+48/48 detections on the six controlled development pages. Detection and
+crop metrics, review counts and gate results match the previous run
+across all eight regression comparisons.
+[Development source](contact-sheet-camera-development.json) ·
+[Marker implementation](../../backend/app/pipeline/motif_margin.py)
+
 ### Explain a held whole print in mobile geometry review
 
 In revision `9b78009`, Mobile can offer **Korrekt & vollständig**

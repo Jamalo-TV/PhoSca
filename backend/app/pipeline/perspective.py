@@ -38,7 +38,9 @@ from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_SOURCE, suggest_inward_corner_outline
 from app.pipeline.local_print_edge_review import suggest_local_print_edge_preview
 from app.pipeline.motif_boundary import close_motif_outline, motif_outline_corners_supported, trace_motif_boundary
-from app.pipeline.motif_margin import PAPER_STOCK_MOTIF_SOURCE, motif_margin_marks
+from app.pipeline.motif_margin import (
+    HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE, held_print_motif_margin_marks, motif_margin_marks,
+)
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.manual_paper_boundary import (
     MANUAL_CAPTURE_OUTLINE_REVIEW, MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION,
@@ -1024,10 +1026,10 @@ def _linked_grid_cut(
     return cut
 
 
-def disputed_grid_preview_intersects_claim(
+def review_outline_intersects_claim(
     source_outline: list[dict], claim: dict, width: int, height: int,
 ) -> bool:
-    """Retire a grid comparison when an independent reviewer outline enters it."""
+    """Check a current reviewer claim against a stored source outline."""
     try:
         outline = _explicit_quad({"outline": source_outline}, "outline", width, height)
         quad = _explicit_quad(claim, "warp_quad", width, height)
@@ -1966,6 +1968,21 @@ def correct_photo_crop(
             if print_outline is not None and trim_border else None,
         )
         modes = result.metadata["crop_modes"]
+        if (trim_border and not manual and visible is not None and protection.get("review_untrimmed")
+                and set(full_reasons) == {"PRINT_BOUNDARY_AMBIGUOUS", "POSSIBLE_CONTENT_CUTOFF", "PRINT_ASPECT_UNCERTAIN"}
+                and result.metadata["border_trim"]["method"] == "deferred_until_print_boundary_is_verified"):
+            try:
+                claims = [*neighbor_polygons, *(
+                    _explicit_quad(neighbor, "warp_quad", width, height) for neighbor in neighbor_masks or []
+                    if neighbor.get("warp_quad") is not None
+                )]
+                marks = held_print_motif_margin_marks(page_image, corrected, matrix, src_points, visible, claims)
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                marks = []
+            if marks:
+                modes["image_only"]["margin_mark_source"] = HELD_PRINT_MOTIF_MARGIN_SOURCE
+                modes["image_only"]["margin_mark_regions"] = [_vertices_on_page(mark, width, height) for mark in marks]
+                modes["image_only"]["reason_codes"].insert(0, MOTIF_MARGIN_MARKS_REVIEW)
         if PRINT_SHARED_RIM_UNCERTAIN in full_reasons:
             cuts = shared_rim_reference or shared_rim_cut_segments(_vertices_on_page(src_points, width, height), boundary_refinement)
             if cuts:

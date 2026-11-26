@@ -4,7 +4,7 @@ import pytest
 
 from app.pipeline.decisions import MOTIF_MARGIN_MARKS_REVIEW
 from app.pipeline.faint_margin import _source_strokes_supported, faint_margin_region
-from app.pipeline.motif_margin import motif_margin_marks
+from app.pipeline.motif_margin import held_print_motif_margin_marks, motif_margin_marks
 from app.pipeline.perspective import correct_photo_crop
 
 
@@ -20,6 +20,29 @@ def _margin_regions(page: np.ndarray) -> list[np.ndarray]:
     motif = np.float32([[12, 12], [227, 12], [227, 139], [12, 139]])
     inverse = np.float32([[1, 0, 45], [0, 1, 40], [0, 0, 1]])
     return motif_margin_marks(page, page[40:192, 45:285], motif, inverse)
+
+
+def test_held_print_caption_requires_visible_paper_and_an_unclaimed_native_mark() -> None:
+    full = np.full((1440, 1120, 3), 245, np.uint8)
+    rows = np.arange(108, 1349)
+    fraction = (rows - rows[0]) / (rows[-1] - rows[0])
+    bow = np.rint(20 * fraction * (1 - fraction))
+    left = np.column_stack((65 + bow, rows))
+    right = np.column_stack((1054 - bow, rows))[::-1]
+    cv2.fillPoly(full, [np.concatenate((left, right)).astype(np.int32)], (48, 70, 85))
+    blank = full.copy()
+    cv2.putText(full, "CONTACT NYC 1954", (250, 73), cv2.FONT_HERSHEY_SIMPLEX, 1.15, (48, 48, 48), 3, cv2.LINE_AA)
+    paper = np.float32([[0, 0], [1119, 0], [1119, 1439], [0, 1439]])
+    matrix = np.eye(3)
+
+    mark, = held_print_motif_margin_marks(full, full, matrix, paper, paper, [])
+    np.testing.assert_allclose(mark, [[251, 46], [605, 46], [605, 76], [251, 76]], atol=1.)
+    assert not held_print_motif_margin_marks(blank, full, matrix, paper, paper, [])
+    peer = np.float32([[560, 35], [665, 35], [665, 90], [560, 90]])
+    assert not held_print_motif_margin_marks(full, full, matrix, paper, paper, [peer])
+    visibility = paper.copy()
+    visibility[:2, 1] = 43
+    assert not held_print_motif_margin_marks(full, full, matrix, paper, visibility, [])
 
 
 def test_joined_faint_date_in_the_readme_is_held_with_source_coordinates() -> None:

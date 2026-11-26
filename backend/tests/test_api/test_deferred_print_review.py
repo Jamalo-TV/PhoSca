@@ -1,3 +1,4 @@
+from copy import deepcopy
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -479,7 +480,9 @@ async def test_dark_album_count_offer_needs_confirmation_and_then_a_separate_pap
 async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for_review(client, monkeypatch):
     from app.config import get_settings
     from app.database import get_session_factory
-    from app.models import ReviewEvent
+    from app.models import ExtractedPhoto, ReviewEvent
+    from app.pipeline.decisions import MOTIF_MARGIN_MARKS_REVIEW
+    from app.pipeline.motif_margin import HELD_PRINT_MOTIF_MARGIN_SOURCE
     from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, PAPER_GRID_REVIEW
     from app.pipeline.segmentation import SegmentationDetection, SegmentationResult
     from app.services import pipeline
@@ -619,6 +622,20 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
     current_comparison_url = (await client.get(parent_url)).json()["urls"]["full_print_preview"]
     assert (await client.get(current_comparison_url)).content == comparison.content
 
+    # Seed the informational mark so this test exercises the claim update
+    # independently of the marker's source-resolution and pixel classifiers.
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, UUID(parent_id))
+        metadata = deepcopy(photo.enhancement_applied)
+        motif = metadata["correction"]["crop_modes"]["image_only"]
+        motif_reasons = motif["reason_codes"].copy()
+        motif["margin_mark_source"] = HELD_PRINT_MOTIF_MARGIN_SOURCE
+        motif["margin_mark_regions"] = [vertices(235, 168, 300, 184)]
+        motif["reason_codes"] = [MOTIF_MARGIN_MARKS_REVIEW, *motif_reasons]
+        metadata["review_reasons"] = [MOTIF_MARGIN_MARKS_REVIEW, *metadata["review_reasons"]]
+        photo.enhancement_applied = metadata
+        await session.commit()
+
     # Restoring a source fragment with an edited polygon and no explicit warp
     # invalidates the one-sheet comparison as soon as the new claim is saved.
     fragment_id = fragment_ids[0]
@@ -631,6 +648,13 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
     assert restored.status_code == 200 and restored.json()["reviewed_non_print"] is False, restored.text
     assert "warp_quad" not in restored.json()["segmentation_mask"]
     assert (await client.get(current_comparison_url)).status_code == 404
+    current_metadata = (await client.get(parent_url)).json()["enhancement_applied"]
+    current_motif = current_metadata["correction"]["crop_modes"]["image_only"]
+    assert current_motif["reason_codes"] == motif_reasons
+    assert MOTIF_MARGIN_MARKS_REVIEW not in current_metadata["review_reasons"]
+    assert "margin_mark_regions" not in current_motif and "margin_mark_source" not in current_motif
+    for variant in variants:
+        assert (await client.get(f"{parent_url}/image?variant={variant}")).status_code == 404
     assert (await client.post(f"{parent_url}/reprocess")).status_code == 200
     detail = (await client.get(parent_url)).json()
     assert "outline_preview" not in detail["enhancement_applied"]["correction"]["crop_modes"]["full_print"]

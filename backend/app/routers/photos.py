@@ -25,7 +25,8 @@ from app.pipeline.crop_validation import route_ready_crop_modes_to_review
 from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE, reviewed_outline_covers_traces
 from app.pipeline.dark_album_review import DARK_ALBUM_PROPOSAL
 from app.pipeline.decisions import (
-    MANUAL_NEIGHBOR_OVERLAP, is_reviewed_non_print, photo_is_reviewed_non_print, remember_ready_print_for_neighbor_review,
+    MANUAL_NEIGHBOR_OVERLAP, MOTIF_MARGIN_MARKS_REVIEW, is_reviewed_non_print, photo_is_reviewed_non_print,
+    remember_ready_print_for_neighbor_review,
 )
 from app.pipeline.edge_trace import measure_edge_trace
 from app.pipeline.fragmented_prints import SOURCE_FRAGMENT_PROPOSAL
@@ -37,9 +38,9 @@ from app.pipeline.manual_paper_boundary import (
     original_prediction_mask, paper_curve_from_review_traces, paper_curve_review_reference,
     overlapping_paper_claims, paper_claim_groups, shared_rim_cut_is_inside, shared_rim_cut_reference,
 )
-from app.pipeline.motif_margin import PAPER_STOCK_MOTIF_SOURCE
+from app.pipeline.motif_margin import HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
-from app.pipeline.perspective import disputed_grid_preview_intersects_claim, manual_print_intersects, validate_review_quads
+from app.pipeline.perspective import manual_print_intersects, review_outline_intersects_claim, validate_review_quads
 from app.pipeline.presets import available_presets
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
@@ -264,7 +265,7 @@ async def _review_overlapping_crops(
         measured_preview = preview_source in MEASURED_PRINT_PREVIEW_SOURCES
         fields = ("source_search_band", "source_inset_band") if measured_preview else ("source_outline",)
         if ((preview_source == DISPUTED_GRID_PREVIEW_SOURCE and preview.get("source_outline")
-             and disputed_grid_preview_intersects_claim(preview["source_outline"], mask, width, height))
+             and review_outline_intersects_claim(preview["source_outline"], mask, width, height))
                 or (quad is not None and (preview_source in assisted_previews or measured_preview) and any(
                     manual_print_intersects(preview[key], quad, width, height, minimum_overlap_px=1. if measured_preview else None)
                     for key in fields if preview.get(key)
@@ -284,6 +285,23 @@ async def _review_overlapping_crops(
                 entity_type="photo", entity_id=neighbor.id, action="overlapping_crop_preview_invalidated",
                 details={"overlapping_photo_id": str(photo.id)},
             ))
+        motif_mode = modes.get("image_only") or {}
+        if motif_mode.get("margin_mark_source") == HELD_PRINT_MOTIF_MARGIN_SOURCE:
+            marks = motif_mode.get("margin_mark_regions") or []
+            current_marks = [mark for mark in marks if not review_outline_intersects_claim(mark, mask, width, height)]
+            if len(current_marks) < len(marks):
+                if current_marks:
+                    motif_mode["margin_mark_regions"] = current_marks
+                else:
+                    motif_mode.pop("margin_mark_regions", None)
+                    motif_mode.pop("margin_mark_source", None)
+                    motif_mode["reason_codes"] = [
+                        reason for reason in motif_mode.get("reason_codes") or [] if reason != MOTIF_MARGIN_MARKS_REVIEW
+                    ]
+                    metadata["review_reasons"] = [
+                        reason for reason in metadata.get("review_reasons") or [] if reason != MOTIF_MARGIN_MARKS_REVIEW
+                    ]
+                neighbor.enhancement_applied = metadata
         if groups and any(mode.get("status") == "ready" for mode in modes.values()):
             neighbor_mask = neighbor.segmentation_mask or {}
             neighbor_groups = paper_claim_groups(neighbor_mask, original_prediction_mask(metadata))

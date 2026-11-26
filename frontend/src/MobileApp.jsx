@@ -14,7 +14,7 @@ import {
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   borrowedFallbackProposal, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints, frameBackingProposal,
   getDeferredParentCropHints, getDeferredPrintEvidence, getDeferredPrintProposals, getSourceEdgeTraces,
-  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
+  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview,
@@ -223,6 +223,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     && motifMode?.outline_preview?.source === "paper_stock_motif"
     && item.payload?.variant_urls?.image_only_preview;
   const motifMarginMarks = motifReviewPending ? getMotifMarginMarks(motifMode) : [];
+  const preliminaryMotifMarks = motifMode?.margin_mark_source === heldPrintMotifMargin && motifMarginMarks.length > 0;
   const motifTraces = motifReviewPending ? getSourceEdgeTraces(motifMode?.suggested_seam_traces) : [];
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
@@ -492,6 +493,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     filmGridGroups.length && "mobile-film-grid-count-hint", paperGridGroups.length && "mobile-paper-grid-count-hint",
     paperJoinGroups.length && "mobile-paper-join-count-hint",
     editable && motifTraces.length && "mobile-motif-seam-hint",
+    editable && preliminaryMotifMarks && "mobile-motif-review-hint",
   ].filter(Boolean).join(" ");
   const paperTraceOverlay = printEdgeTraces.map((trace, index) => (
     <polyline key={index} points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
@@ -632,7 +634,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         checked={albumMarkReviewId === albumMark.id} disabled={saving}
         onChange={event => setAlbumMarkReviewId(event.target.checked ? albumMark.id : null)} />}
       {motifReviewPending && <p className="quad-hint" id="mobile-motif-review-hint">
-        {motifBoundaryReviewHint && `${motifBoundaryReviewHint} `}{canEditMotif ? motifReviewHint : motifDesktopReviewHint}
+        {preliminaryMotifMarks ? motifBoundaryReviewHint : <>
+          {motifBoundaryReviewHint && `${motifBoundaryReviewHint} `}{canEditMotif ? motifReviewHint : motifDesktopReviewHint}
+        </>}
       </p>}
       {stockMotifPreview && !editingMotif && <details className="quad-hint">
         <summary>Motivvorschau ansehen</summary>

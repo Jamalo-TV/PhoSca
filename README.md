@@ -624,6 +624,23 @@ Eine markierte Randstelle bleibt beim Speichern des Aussenumrisses
 in der Motivprüfung, bis ein Motivzuschnitt ausdrücklich gewählt wird.
 [Prüfvergleich für Motiv und Rand](data/evaluation/README.md#preview-a-motif-with-one-disputed-paper-edge)
 
+Die Prüfung kann auch vor der Bestätigung des Papierrands auf mögliche
+Beschriftung hinweisen. Das gilt für automatische Vorschläge mit unklarer
+Papiergrenze, unbelegtem Seitenverhältnis und möglichem Inhaltsverlust.
+PhoSca verlangt vier messbare Übergänge zwischen Papier und Motiv sowie
+eine gekrümmte Motivkante. Die Übergänge grenzen den zu untersuchenden
+Papierstreifen ein. Die Randprüfung vergleicht ihn in der bestehenden
+entzerrten Auflösung und mit 800 Pixeln auf der langen Seite. Beide
+Messungen müssen sich im Original bestätigen und dort mindestens 80 %
+Flächenüberdeckung erreichen. Der Fund muss innerhalb der sichtbaren
+Papierfläche liegen, mit Abstand zum Aussenrand und ausserhalb aller
+anderen Abzüge. Eine neu gespeicherte Nachbarkontur, die den Fund
+beansprucht, blendet die Markierung wieder aus. Der Hinweis erscheint
+auf Desktop und Mobil schon bei **Ganzer Abzug**. Er beschreibt eine
+Fundstelle und zeigt, welche Grenze zuerst geprüft werden muss. Für
+beide Exporte gelten weiter die bestehenden Geometrieprüfungen.
+[Beispiel am nativen Kontaktabzug](data/evaluation/README.md#locate-native-contact-print-lettering-while-the-paper-is-held)
+
 Die Randprüfung betrachtet nur Papierstreifen zwischen Aussenkontur
 und vorgeschlagener Motivgrenze. Für deutliche Markierungen verwendet
 sie zusammenhängende Komponenten aus der Helligkeitsdifferenz zum
@@ -1032,6 +1049,12 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
   beide Test-Downloads alle 35 Felder.
   [Prüfvorschau und Messwerte](data/evaluation/README.md#compare-the-disputed-whole-contact-print) ·
   [Manueller Downloadpfad](data/evaluation/README.md#review-visible-markings-outside-the-proposed-motif)
+- **Derselbe Kontaktabzug in Originalauflösung.** PhoSca markiert einen
+  Teil der Beschriftung «NYC, Brooklyn» bereits bei **Ganzer Abzug**.
+  Ein Versuch entlang des Filmrasters hätte die ganze Kopfzeile
+  abgeschnitten. Zwei fälschlich im Holz erkannte Gesichter blockieren
+  hier weiterhin die Bestätigung des Papierrands.
+  [Messwerte, Prüfpfad und offene Kante](data/evaluation/README.md#locate-native-contact-print-lettering-while-the-paper-is-held)
 - **Zwei Abzüge auf Golden-Seite 26.** Unten rechts stimmt die
   Fläche von **Ganzer Abzug** nahezu mit der Entwicklungsreferenz
   überein (IoU 0,996). Oben links folgt der Zuschnitt der hellen

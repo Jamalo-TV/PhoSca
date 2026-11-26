@@ -55,7 +55,7 @@ import {
   countGroupReviewError, CountGroupReview, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints,
   borrowedFallbackProposal, filmGridCountHint, filmGridHint, filmGridReason, filmGridRimHint, frameBackingProposal,
   getDeferredPrintEvidence, getDeferredPrintProposals, getDeferredParentCropHints, getSourceEdgeTraces,
-  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
+  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, scannerBackingHint, scannerBackingReason,
@@ -1489,6 +1489,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const motifReview = selectedModes?.image_only;
   const motifBoundaryReviewHint = getMotifBoundaryReviewHint(motifReview);
   const motifMarginMarks = useMemo(() => getMotifMarginMarks(motifReview), [motifReview]);
+  const preliminaryMotifMarks = !newPrint && !rejectedDetection && motifReview?.margin_mark_source === heldPrintMotifMargin
+    && motifMarginMarks.length > 0;
   const imageSuggestion = cyclicQuad(sanitizePolygon(motifReview?.suggested_warp_quad));
   const seamTraces = motifReview?.suggested_seam_traces;
   const traces = editingImage ? seamTraces : fullPrintMode?.suggested_edge_traces;
@@ -1618,7 +1620,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         }
         context.restore();
       }
-      if (editingImage && photo.id === selectedPhotoId && motifMarginMarks.length) {
+      if ((editingImage || preliminaryMotifMarks) && photo.id === selectedPhotoId && motifMarginMarks.length) {
         context.save();
         context.strokeStyle = "#b45309";
         context.lineWidth = 2;
@@ -1847,7 +1849,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   }, [albumMark, alternateOutline, blockedRegions, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
     printSuggestion,
-    missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, selectedCountGroup, selectedPhotoId, showMissingEdges]);
+    missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, preliminaryMotifMarks, selectedCountGroup, selectedPhotoId, showMissingEdges]);
 
   useEffect(() => {
     draw();
@@ -2204,10 +2206,11 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         onChange={event => setAlbumMarkReviewId(event.target.checked ? albumMark.id : null)} />}
       {editingImage && crossingReview && <p className="crop-editor-hint">{crossingPrintSaveHint}</p>}
       {needsPrintReview && !crossingReview && <p className="crop-editor-hint">{printOutlineSaveHint}</p>}
+      {preliminaryMotifMarks && <p className="crop-editor-hint" id="held-motif-margin-hint">{motifBoundaryReviewHint}</p>}
       {editingImage && selected && !crossingReview && !needsPrintReview && (
         <>
-          {motifBoundaryReviewHint && <p className="crop-editor-hint">{motifBoundaryReviewHint}</p>}
-          {motifMarginMarks.length > 0 && <p className="crop-editor-hint" id="motif-margin-marks-hint">
+          {!preliminaryMotifMarks && motifBoundaryReviewHint && <p className="crop-editor-hint">{motifBoundaryReviewHint}</p>}
+          {!preliminaryMotifMarks && motifMarginMarks.length > 0 && <p className="crop-editor-hint" id="motif-margin-marks-hint">
             Die orange Markierung zeigt eine Stelle, die der vorgeschlagene Zuschnitt auslassen würde.
           </p>}
           <p className="crop-editor-hint">
@@ -2249,7 +2252,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           paperGridGroups.length && "paper-grid-count-hint",
           paperJoinGroups.length && "paper-join-count-hint",
           captureSplitGroups.length && "capture-split-count-hint",
-          editingImage && motifMarginMarks.length && !crossingReview && !needsPrintReview && "motif-margin-marks-hint",
+          preliminaryMotifMarks ? "held-motif-margin-hint"
+            : editingImage && motifMarginMarks.length && !crossingReview && !needsPrintReview && "motif-margin-marks-hint",
         ].filter(Boolean).join(" ") || undefined}
       />
       {!newPrint && detectionReviewHint && !rejectedDetection && (

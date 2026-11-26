@@ -6,12 +6,14 @@ from functools import partial
 import cv2
 import numpy as np
 
+from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border
 from app.pipeline.faint_margin import faint_margin_region
 from app.pipeline.margin_stroke_shapes import isolated_margin_strokes
 
 
-MOTIF_MARGIN_REVIEW_REVISION = 6
+MOTIF_MARGIN_REVIEW_REVISION = 7
 PAPER_STOCK_MOTIF_SOURCE = "paper_stock_motif"
+HELD_PRINT_MOTIF_MARGIN_SOURCE = "held_print_motif_margin"
 
 
 def _mark_clusters(lightness: np.ndarray, owned: np.ndarray) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
@@ -184,3 +186,47 @@ def motif_margin_marks(
             if box is not None:
                 _add_region(result, project(box))
     return result
+
+
+def held_print_motif_margin_marks(
+    page: np.ndarray, full: np.ndarray, matrix: np.ndarray, paper: np.ndarray, visible: np.ndarray,
+    neighbors: list[np.ndarray],
+) -> list[np.ndarray]:
+    """Locate corroborated marks for review before a protected paper crop can be approved."""
+    height, width = full.shape[:2]
+    if min(width, height) < 900 or not cv2.isContourConvex(visible):
+        return []
+    # Use the observed border for locating the discard strip. It supplies no
+    # crop geometry and cannot override the held mode's protection decision.
+    plan = find_physical_border(full)
+    if CURVED_IMAGE_BOUNDARY not in plan.reason_codes or not all(edge.is_physical_border for edge in plan.edges.values()):
+        return []
+    inverse = np.linalg.inv(matrix)
+    motif = border_chord_quad(plan.edges, width, height)
+    candidates = motif_margin_marks(page, full, motif, inverse)
+    if not candidates:
+        return []
+
+    resized_size = np.maximum(1, np.rint(np.array([width, height]) * 800 / max(width, height))).astype(int)
+    scale = resized_size / np.array([width, height])
+    to_small = np.eye(3)
+    to_small[[0, 1], [0, 1]] = scale
+    to_small[:2, 2] = (scale - 1) / 2
+    reduced = cv2.resize(full, tuple(resized_size), interpolation=cv2.INTER_AREA)
+    reduced_motif = cv2.perspectiveTransform(motif[None], to_small)[0]
+    repeats = motif_margin_marks(page, reduced, reduced_motif, inverse @ np.linalg.inv(to_small))
+    inset = max(4., .012 * np.linalg.norm(np.roll(paper, -1, axis=0) - paper, axis=1).min())
+    peers = [cv2.convexHull(neighbor) for neighbor in neighbors]
+    confirmed = []
+    for candidate in candidates:
+        if (any(cv2.pointPolygonTest(outline, tuple(point), True) < inset
+                for outline in (paper, visible) for point in candidate)
+                or any(cv2.intersectConvexConvex(candidate, peer)[0] > 1. for peer in peers)):
+            continue
+        for repeat in repeats:
+            intersection, _ = cv2.intersectConvexConvex(candidate, repeat)
+            union = cv2.contourArea(candidate) + cv2.contourArea(repeat) - intersection
+            if union > 0 and intersection >= .80 * union:
+                confirmed.append(candidate)
+                break
+    return confirmed
