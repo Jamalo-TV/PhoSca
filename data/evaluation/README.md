@@ -2043,6 +2043,59 @@ the observed paper envelope offered in review scores 0.98862.
 The scan does not establish which competing parts share one paper.
 [Per-source hashes and counts](development-detector-replay.json)
 
+The mixed replay at `4bbf7d5` used the same native sources, label hashes,
+model and thresholds. The seven views again match 24 of 24 prints at
+instance IoU 0.85. Both extra proposals are on the clipped NerdScan scan
+and require review. The other six views have no extra proposals. Precision
+on the seven views is 92.3% and recall is 100%.
+
+The separate JPEG75 contact-sheet case again misses the one annotated print
+and leaves five nonmatches in review. The best counted mask has IoU 0.83174.
+Against the draft full-print footprint, its regular warp omits 16.77% of
+the annotated content. The alternate paper outline in review has a crop
+footprint IoU of 0.98702, omits 1.22% and retains 0.10% foreign area. The
+alternate outline does not resolve physical paper ownership.
+
+The evaluator ran both crop branches on all eight inputs with
+`--score-review-previews`. The development annotations supply draft paper
+footprints. They contain no verified crop geometry for either mode, so
+they cannot measure production eligibility, motif content loss or native
+landmark and aspect accuracy. Decode through both crop branches and JPEG
+writes took a median of 4.59 s and p95 of 15.34 s per input on the single
+CPU-thread development run. Local reports are in
+`runs/crop-quality/real-development-refresh/`.
+
+#### First development replay of a newly supplied spiral album
+
+The album group contains five views, including the illustrated front cover.
+Reserve the entire group for development. Use the manually drawn, source-only
+outlines on one open spread with eleven separate prints. The front cover has
+zero mounted prints. The draft outlines pin the original rasters, distinguish
+the paper from the foil background and carry no verified dimensions.
+
+| Detector at native mask IoU 0.85 | Spread matches | Spread extras | Cover extras |
+| --- | ---: | ---: | ---: |
+| Mixed development checkpoint and classical evidence | 1/11 | 2 | 4 |
+| Same checkpoint without classical evidence | 1/11 | 2 | 4 |
+| Classical only | 0/11 | 0 | 1 |
+| Forced retry with the existing four 70% tiles, detector-stage experiment | 6/11 | 1 | 4 |
+
+The two unmatched mixed proposals each combine a pair of distinct prints.
+The classical channel provides no proposal on the spread. The full-frame
+pass returns three masks, which falls below the existing dense-tile trigger
+of sixteen. Forcing this retry supplies ten tile proposals and takes
+0.54 s for the tiled detector stage on the development CPU. The cover
+produces no new tile proposals and keeps its four false proposals. Both
+images retain all seven original mixed proposals in review across the
+upload and reprocessing checks. Untrimmed previews are available and both
+crop exports are held. The upload check used lossless PNG copies whose
+working pixels were identical to the WebP sources.
+
+Keep the tile experiment isolated until tests distinguish adjacent paper
+from a common print, including multipanel prints and decorative covers.
+The provisional album group, original images, annotations and per-image
+reports are stored locally. No private source material is checked in.
+
 ### Scalloped paper on white scanner backing
 
 The ScanCropper development fixture pins two original rasters with five loose
