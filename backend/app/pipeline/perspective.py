@@ -11,8 +11,8 @@ from app.pipeline.album_windows import (
 )
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.bowed_edge_review import (
-    POSSIBLE_ALBUM_LAYER_EDGE, POSSIBLE_BOWED_PRINT_EDGE, POSSIBLE_DISPLACED_PRINT_EDGES, suggest_bowed_print_preview,
-    suggest_displaced_print_preview,
+    POSSIBLE_ALBUM_LAYER_EDGE, POSSIBLE_BOWED_PRINT_EDGE, POSSIBLE_DISPLACED_PRINT_EDGES, POSSIBLE_LOCAL_PRINT_EDGE,
+    suggest_bowed_print_preview, suggest_displaced_print_preview,
 )
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
 from app.pipeline.dark_album_review import DARK_BACKING_OUTLINE_REVIEW
@@ -36,6 +36,7 @@ from app.pipeline.geometry import (
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_SOURCE, suggest_inward_corner_outline
+from app.pipeline.local_print_edge_review import suggest_local_print_edge_preview
 from app.pipeline.motif_boundary import close_motif_outline, motif_outline_corners_supported, trace_motif_boundary
 from app.pipeline.motif_margin import PAPER_STOCK_MOTIF_SOURCE, motif_margin_marks
 from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
@@ -2044,9 +2045,17 @@ def correct_photo_crop(
                   and {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN"} <= set(full_reasons)
                   and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}):
                 preview_source, measure = POSSIBLE_ALBUM_LAYER_EDGE, suggest_album_layer_preview
+            elif ((protection["passed"] or protection.get("review_untrimmed")) and mask.get("source") == "yolo_seg_mask"
+                  and mask.get("detector_source") == "yolo_onnx"
+                  and {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN"} <= set(full_reasons)
+                  and set(full_reasons) <= {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN",
+                                           "POSSIBLE_CONTENT_CUTOFF", "PRINT_ASPECT_UNCERTAIN"}):
+                preview_source, measure = POSSIBLE_LOCAL_PRINT_EDGE, suggest_local_print_edge_preview
             if measure is not None:
                 try:
-                    options = {} if preview_source == POSSIBLE_BOWED_PRINT_EDGE else {"protected_regions": regions}
+                    options = {"protected_regions": regions} if preview_source in (
+                        POSSIBLE_ALBUM_LAYER_EDGE, POSSIBLE_DISPLACED_PRINT_EDGES,
+                    ) else {}
                     observed = measure(page_image, src_points, boundary_refinement, neighbor_polygons, **options)
                     if observed is not None:
                         preview, evidence = _render_outline_preview(

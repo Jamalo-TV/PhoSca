@@ -231,6 +231,71 @@ def test_rotated_album_layer_comparison_keeps_the_pale_strip_and_both_saved_crop
     assert 0 < removed_with_guard.sum() < removed.sum()
 
 
+def test_local_edge_comparison_adds_observed_pixels_without_trimming_the_existing_crop(monkeypatch):
+    from app.pipeline import perspective
+    from app.pipeline.bowed_edge_review import POSSIBLE_LOCAL_PRINT_EDGE
+    from app.pipeline.crop_sampling import _outline_mask
+    from app.pipeline.local_print_edge_review import suggest_local_print_edge_preview
+    from app.pipeline.manual_paper_boundary import paper_curve_review_reference
+
+    path = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_04.jpg"
+    rotated = cv2.rotate(cv2.imread(str(path)), cv2.ROTATE_90_CLOCKWISE)
+    encoded, jpeg = cv2.imencode(".jpg", rotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    assert encoded
+    image = cv2.imdecode(jpeg, cv2.IMREAD_COLOR)
+    seed = _vertices([(1174, 89), (50, 139), (50, 853), (964, 870), (895, 850), (1161, 841)], image)
+    mask = {"polygon": seed, "source": "yolo_seg_mask", "detector_source": "yolo_onnx"}
+    options = {"dual_mode": True, "enable_classical_retry": True}
+    with monkeypatch.context() as baseline:
+        baseline.setattr(perspective, "suggest_local_print_edge_preview", lambda *_: None)
+        before = _crop(image, {}, mask, **options)
+    after = _crop(image, {}, mask, **options)
+
+    old, modes = before.metadata["crop_modes"], after.metadata["crop_modes"]
+    full = modes["full_print"].copy()
+    assert full.pop("suggested_edge_source") == POSSIBLE_LOCAL_PRINT_EDGE
+    trace, = full.pop("suggested_edge_traces")
+    assert len(trace) > 4
+    preview = full.pop("outline_preview")
+    assert preview["source"] == POSSIBLE_LOCAL_PRINT_EDGE and preview["source_side"] == 0
+    assert full == old["full_print"] and modes["image_only"] == old["image_only"]
+    assert all(mode["status"] == "review_needed" for mode in modes.values())
+    assert "suggested_warp_quad" not in full and paper_curve_review_reference(after.metadata) is None
+    np.testing.assert_array_equal(after.image, before.image)
+    assert before.full_print_preview is None and after.full_print_preview.shape[2] == 4
+
+    height, width = image.shape[:2]
+    quad, outline = (normalized_vertices_to_pixels([(p["x"], p["y"]) for p in points], width, height)
+                     for points in (full["warp_quad"], preview["source_outline"]))
+    shape = image.shape[:2]
+    footprint = _outline_mask(quad, shape).astype(bool)
+    comparison = _outline_mask(outline, shape).astype(bool)
+    added = comparison & ~footprint
+    assert not np.any(footprint & ~comparison)
+    assert 1250 <= np.count_nonzero(added) <= 1360 and not added[154:].any()
+    previous_matrix = np.asarray(full["page_to_output"])
+    candidate_matrix = np.asarray(preview["page_to_output"])
+    shift = candidate_matrix @ np.linalg.inv(previous_matrix)
+    np.testing.assert_allclose(shift, [[1, 0, 0], [0, 1, 9], [0, 0, 1]], atol=1e-8)
+    evidence = after.metadata["boundary_refinement"]
+    assert suggest_local_print_edge_preview(image, quad, evidence, [_rect(120, 118, 240, 131)]) is None
+
+    # Artificial cast shadow with an edge as sharp as the photo transition.
+    edge = quad[1] - quad[0]
+    tangent = edge / np.linalg.norm(edge)
+    outward = np.float32([tangent[1], -tangent[0]])
+    rows, cols = np.ogrid[:height, :width]
+    fraction = ((cols - quad[0, 0]) * tangent[0] + (rows - quad[0, 1]) * tangent[1]) / np.linalg.norm(edge)
+    offset = (cols - quad[0, 0]) * outward[0] + (rows - quad[0, 1]) * outward[1]
+    rail = offset - np.polynomial.polynomial.polyval(fraction, [10.55, -30.65, 21.91])
+    cast = (fraction > .005) & (fraction < .52) & (rail >= 0) & (rail <= 7)
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    lab[cast, 0] = 65
+    shadow = image.copy()
+    shadow[cast] = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)[cast]
+    assert suggest_local_print_edge_preview(shadow, quad, evidence, []) is None
+
+
 def test_overlapping_print_shows_only_exposed_paper_without_changing_either_crop(monkeypatch):
     from app.evaluation.crop_fixtures import synthetic_crop_pages
     from app.pipeline import perspective

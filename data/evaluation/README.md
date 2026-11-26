@@ -442,6 +442,23 @@ negative and cannot establish physical paper identity. [Columbia finding aid](ht
 [Columbia license](https://bunraku.library.columbia.edu/rights/) ·
 [Ermakov conservation report](https://resources.culturalheritage.org/pmgtopics/2011-volume-fourteen/14-17_Maes.html)
 
+Mountaineers accession `MTR.2018.3` describes scans of Edward K.
+Triol's 1911 album pages and 34 high-resolution individual images.
+Two individual motifs are published with attribution. The native
+files, positions on the page, proof of separate capture of the same
+paper, and photograph usage rights remain open. The HistoryLink
+site license excludes photographs. The Smithsonian Arpee catalogue
+identifies `FSA.A2011.03 A.24a` and `A.58b` as the same motif on
+two separate mounted physical prints. The locally available Rudge
+Red Album image `3REDA.JPG` and scan `REDA2.jpg` register with 224
+inliers and held-out p95 1.32 px. The album window obstructs the
+paper boundary and the rights remain unverified. This intake adds
+zero verified shared release groups. [Triol collection](https://mountaineers.atlassian.net/wiki/spaces/ARCH/pages/11567109/Digital%2BPhotographs) ·
+[Published Triol motifs](https://www.historylink.org/File/23121) ·
+[HistoryLink terms](https://www.historylink.org/File/20001) ·
+[Arpee finding aid](https://sirismm.si.edu/EADpdfs/FSA.A2011.03.pdf) ·
+[Rudge individual scans](https://rudged.github.io/home/redalbumis.html)
+
 The source-only preflight at `eccc049` rechecked seven tracked drafts.
 On this workspace it reported 26 missing pinned page rasters and 12
 missing independent scan assets. The drafts account for 15 final-split
@@ -5952,6 +5969,90 @@ detections and the seeded control retains 11/11 whole prints and
 and two existing extra proposals on the 270° JPEG75 case.
 Receipts and the exact sampling comparison are local under
 `runs/crop-quality/continuing-album-layer/`.
+
+### Compare a local dark print edge
+
+On Golden 04 rotated 270° and encoded at JPEG75, the old left
+cut misses dark image material and the other edge retains a
+broad pale strip. The native source audit found 304 of 304
+signed transitions on that side, with p95 residual 0.47 px around
+the source curve. The lower quarter has median displacement
+6.38 px outside the old cut. The bottom photo-to-pale transition
+is separate evidence. Its disputed pale strip can either be part
+of the photographic paper or album material.
+
+The comparison uses a model mask when both modes are held for
+an ambiguous perimeter and uncertain corners. Two sides must
+have support at least 0.94. The tested side must have support
+between 0.58 and 0.82, at least 0.90 at one end, at most 0.20 at
+the other, and an ambiguous adjoining side at the weak end.
+The measured side must be at least 580 native px. A peer claim
+intersecting the local band stops the cue. The native search
+looks from 4 px inside to 14 px outside the cut. The fitted
+transition must return near the cut at the strongly supported end.
+
+Two narrow strips along the observed transition must have
+correlated high-pass luminance and similar Lab color. A flat
+shadow and an adjoining print edge can look like the same
+brightness step without preserving image detail. The comparison
+uses a high-pass correlation of at least 0.58 and requires median
+Lab distance at most 10. A light interruption in the added
+region caps that station. The local polygon follows the smaller
+of the fitted and observed expansions with a 1.25 px allowance
+inside the measured transition. Nearest stations must support
+the same expansion. The old crop is the baseline throughout.
+
+The exact API preview is 1123 × 782 RGBA. Its perspective is the
+stored transform translated by nine output rows. It adds 1,309
+source centres at the left edge, all in the one-pixel-eroded
+intersection of two independently measured optical contours.
+It removes zero previously enclosed centres. A byte-for-byte
+pixel replay of the PNG finds the added source in 1,940 output
+pixels. The unrelated pale strip on the other edge stays
+visible in the comparison.
+
+| Metric against the native JPEG75 optical fit | Stored crop | Comparison |
+| --- | ---: | ---: |
+| Source-footprint IoU | 0.97758 | 0.97916 |
+| Omitted native centres beyond the one-pixel tolerance | 1,815 | 506 |
+| Output pixels with foreign contribution beyond the tolerance | 17,277 | 17,260 |
+
+Against the other optical fit the footprint IoU rises from
+0.97740 to 0.97897 and strict omissions drop from 1,842 to 533.
+Foreign output counts remain around 17,250 on both renders. The
+new portion adds zero foreign source centres in either fit.
+The full reference still lacks confirmed paper outside the dark
+image, physical dimensions and independent motif landmarks.
+
+Five fixed-proposal source, recompression and blur controls add
+1,291–1,354 native centres. Among 28 ordinary neighboring-strip
+and shadow controls, 27 abstain. One light softened shadow
+allows an addition entirely inside the older optical core.
+Thirty-four independently prepared distinguishable clone, shadow
+and neighbor tests abstain. A pixel-identical layer and 25 of 28
+small palette-shifted, deliberately registered independent prints
+can still pass the optical cue. The corresponding known peer
+polygons veto those proposals. The source overlay and transparent
+comparison support manual ownership review.
+
+Normal upload and reprocessing reproduce the one open trace and
+comparison PNG. The four active instances and one pending count
+proposal, stored JPEGs, transforms and crop-mode records agree
+with the earlier version, apart from the comparison fields.
+Manual movement that covers the existing protected region can
+retire the comparison without recording automatic curve ownership.
+Submitting the old corners with the partial protection claim
+returns HTTP 422. Both named downloads and the trimmed alias stay
+held. Desktop and Mobile show the original edge hint and the
+comparison. `print_outline_suggestion` moves to profile revision 7.
+The measured helper takes 16.31 ms median and 21.48 ms p95 CPU
+time over 31 warm calls with one OpenCV thread. Across eight
+paired reports, the only new output is the local comparison on
+this source. Counts, retained geometry and both mode states
+match the prior reports. The frozen detector stays at 18/18,
+and the seeded test retains 11/11 whole-print and 12/12 motif
+passes.
+Receipts are local under `runs/crop-quality/local-dark-print-edge/`.
 
 ### Review a fallback contour sharing a weakly detected print edge
 

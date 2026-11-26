@@ -259,6 +259,22 @@ mit dem Original. Ein ähnlich gefärbter Schatten oder eine gedruckte
 Linie kann denselben Verlauf zeigen. Beide Modi bleiben in Prüfung.
 [Beispiel gedrehte Golden-Seite 04](data/evaluation/README.md#compare-a-continuing-album-layer-near-the-capture-edge)
 
+Endet der bisherige Zuschnitt an einer Seite mitten in dunklen
+Bilddetails, kann PhoSca einen kurzen zusätzlichen Streifen zur
+Prüfung zeigen. Die Suche beginnt am schwach gestützten Ende einer
+Seite. Sie verfolgt den Übergang zum hellen Untergrund im Original
+und prüft, ob sich feine Helligkeitsänderungen vom Bild bis zum
+Übergang fortsetzen. Eine helle Unterbrechung begrenzt den Streifen.
+Ein Nachbarumriss im Messbereich verhindert den Vorschlag.
+
+Unter **Ganzer Abzug** erscheint der zusätzliche Streifen in einer
+transparenten Vorschau mit derselben Perspektive. Die Markierung im
+Original zeigt den geprüften Abschnitt. Vergleiche seine Struktur mit
+dem Foto und prüfe besonders, ob ein Schatten oder ein benachbarter
+Abzug die Kante bildet. Der Vergleich ist ein Angebot für die
+manuelle Prüfung beider Zuschnittmodi.
+[Beispiel mit dunklem Bildverlust am linken Rand](data/evaluation/README.md#compare-a-local-dark-print-edge)
+
 Bei hellen Papierrändern direkt nebeneinander kann der Zuschnitt an
 der inneren Bildkante enden. PhoSca prüft zusätzlich, ob sich der
 helle Streifen ausserhalb der Schnittkante bis zum benachbarten

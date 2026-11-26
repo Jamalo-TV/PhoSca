@@ -121,6 +121,7 @@ const possibleInwardPrintCorner = "possible_inward_print_corner";
 const possibleBowedPrintEdge = "possible_bowed_print_edge";
 const possibleDisplacedPrintEdges = "possible_displaced_print_edges";
 const possibleAlbumLayerEdge = "possible_album_layer_edge";
+const possibleLocalPrintEdge = "possible_local_print_edge";
 const curvedPrintOutlineReviewReason = "PRINT_CURVED_OUTLINE_REVIEW";
 const captureAtEdgeHint = "Der Abzug reicht über den Aufnahmerand hinaus. Für einen vollständigen Zuschnitt brauchst du eine neue Aufnahme.";
 export const captureSplitReviewHint = "Die gestrichelten Linien zeigen einen möglichen gemeinsamen Papierrand. Prüfe am Original, wie viele Abzüge dort liegen.";
@@ -333,6 +334,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
   if (hasMeasuredEdgeReview(fullPrint, possibleAlbumLayerEdge)) {
     return "Die gestrichelte Linie folgt einer möglichen Albumlage bis neben den Abzug. Prüfe am Original, wo das Fotopapier endet und die Albumlage beginnt.";
   }
+  if (hasMeasuredEdgeReview(fullPrint, possibleLocalPrintEdge)) {
+    return "Die gestrichelte Linie markiert den Übergang am dunklen Streifen. Prüfe am Original, ob er zum Abzug, zu einem benachbarten Abzug oder zu einem Schatten gehört.";
+  }
   if (hasMeasuredEdgeReview(fullPrint, possibleBowedPrintEdge)) {
     return "Prüfe am Original, ob sich die Papierkante wölbt, und verfolge den Papierrand rundum. Bleibt er unklar, fotografiere den Abzug flach aufgelegt.";
   }
@@ -391,6 +395,9 @@ export function getPrintOutlinePreviewHint(fullPrint) {
   if (preview?.source === possibleAlbumLayerEdge) {
     return "Die Prüfvorschau blendet einen Streifen hinter der beobachteten Linie aus. Der helle Rand direkt am Bild bleibt sichtbar. Prüfe am Original, ob der ausgeblendete Streifen zum Album oder zum Abzug gehört.";
   }
+  if (preview?.source === possibleLocalPrintEdge) {
+    return "Die Prüfvorschau zeigt den zusätzlichen dunklen Streifen an der Markierung. Vergleiche seine Struktur mit dem Original.";
+  }
   if (preview?.source === possibleBowedPrintEdge) {
     return "Die Prüfvorschau ergänzt nur den am Original gemessenen sichtbaren Streifen. Der vollständige Papierrand ist noch unklar.";
   }
@@ -411,7 +418,7 @@ export function getPrintOutlinePreviewHint(fullPrint) {
 
 export function showsPaperEdgeComparison(fullPrint) {
   return [possibleOverextendedPrintEdge, possibleInwardPrintCorner, possibleBowedPrintEdge,
-    possibleDisplacedPrintEdges, possibleAlbumLayerEdge].includes(fullPrint?.outline_preview?.source);
+    possibleDisplacedPrintEdges, possibleAlbumLayerEdge, possibleLocalPrintEdge].includes(fullPrint?.outline_preview?.source);
 }
 
 export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint }) {
