@@ -2115,6 +2115,17 @@ across the ridge distinguishes those originals from the flat and
 phase-shifted controls at the sampled positions. These results were
 obtained on one physical album with selected measurement bands.
 
+A source-derived reproduction puts both motifs and the original album
+texture on one new physical sheet. It preserves the complete sampled
+ridge and passes the same local check. A separate experimental rim check
+recovers the quad for the light-paper reproduction. It fails to recover
+the dark-paper rim when it must find the outline itself. A local separator
+or failure to find a rim therefore does not establish distinct paper.
+The forced tile probe preserves all 17 full-frame matches on the locked
+synthetic detector subset and removes one extra proposal in the overlap
+case. The original miss on that overlap remains. The synthetic count
+check does not cover the ambiguity exposed by the reproduction.
+
 ### Scalloped paper on white scanner backing
 
 The ScanCropper development fixture pins two original rasters with five loose
