@@ -661,7 +661,7 @@ select {
 }
 
 .manual-print-actions,
-.film-carrier-review {
+.count-group-review {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -669,11 +669,11 @@ select {
 }
 
 .manual-print-actions p,
-.film-carrier-review p {
+.count-group-review p {
   flex-basis: 100%;
 }
 
-.film-carrier-review .text-button {
+.count-group-review .text-button {
   min-height: 38px;
   padding: 0 12px;
   border: 1px solid #9dbeba;
@@ -682,20 +682,20 @@ select {
   color: #153f39;
 }
 
-.film-carrier-review button:disabled {
+.count-group-review button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.crop-review-shell .film-carrier-review {
+.crop-review-shell .count-group-review {
   margin: 12px 0;
 }
 
-.crop-review-shell .film-carrier-review button {
+.crop-review-shell .count-group-review button {
   min-height: 44px;
 }
 
-.crop-review-shell .film-carrier-review .text-button {
+.crop-review-shell .count-group-review .text-button {
   border-color: #31544c;
   background: #102d27;
   color: #eff8f5;

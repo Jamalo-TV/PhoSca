@@ -11,10 +11,11 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic,
 from app.pipeline.print_edges import _edge_band, _is_pale_stock, refine_print_boundary
 
 
-MULTIPANEL_PRINT_REVISION = 9
+MULTIPANEL_PRINT_REVISION = 10
 MULTIPANEL_PRINT_REVIEW = "MULTIPANEL_PRINT_REVIEW"
 FILM_GRID_REVIEW = "FILM_GRID_REVIEW"
 PAPER_GRID_REVIEW = "PAPER_GRID_REVIEW"
+PAPER_JOIN_REVIEW = "PAPER_JOIN_REVIEW"
 RECOVERED_STOCK_SOURCE = "shared_stock_boundary"
 GRID_OUTLINE_REVIEW_SOURCE = "shared_grid_outline_review"
 _UNIT_QUAD = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
@@ -382,6 +383,107 @@ def film_grid_review_seam(image: np.ndarray, first: np.ndarray, second: np.ndarr
         if _perforation_rails_cross_split(light, center):
             return facing.reshape(2, 2, 2).mean(axis=0)
     return None
+
+
+def _paper_join_edge(
+    image: np.ndarray, center: np.ndarray, tangent: np.ndarray, span: float,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Measure a material transition on both sides of a proposed cut."""
+    radius = min(44, round(.37 * span))
+    start, end = center - span * tangent, center + span * tangent
+    count = round(2 * span)
+    fractions = np.linspace(0, 1, count, dtype=np.float32)
+    band = _edge_band(image, start, end, list(range(-radius - 8, radius + 9)), fractions=fractions)
+    if band is None:
+        return None
+    backing = np.median(band[:, :8], axis=(0, 1))
+    distance = np.linalg.norm(band.astype(np.float32) - backing, axis=2)
+    # Compare collars on either side of each native position. A shadow or
+    # ink ridge without a transition away from the backing cannot supply it.
+    profile = np.lib.stride_tricks.sliding_window_view(distance, 17, axis=1)
+    before, after = profile[..., 1:6].mean(axis=2), profile[..., 11:16].mean(axis=2)
+    strength = after - before
+    usable = (before < 10) & (after > 18) & (strength > 13)
+    covered = usable.any(axis=1)
+    blocks = np.array_split(np.arange(count), 8)
+    if any(covered[block].mean() < .82 for block in blocks):
+        return None
+    rows = np.flatnonzero(covered)
+    best = np.argmax(np.where(usable[rows], strength[rows], 0), axis=1)
+    transition = profile[rows, best]
+    level = .5 * (before[rows, best] + after[rows, best])
+    above = transition >= level[:, None]
+    crossing = 1 + np.argmax(above[:, 1:] & ~above[:, :-1], axis=1)
+    observed = np.arange(len(rows))
+    previous, next_value = transition[observed, crossing - 1], transition[observed, crossing]
+    shift = (next_value - level) / np.maximum(next_value - previous, 1)
+    depths = np.zeros(count, dtype=np.float32)
+    depths[rows] = best - radius + crossing - 8 - np.clip(shift, 0, 1)
+    positions = np.array([fractions[block].mean() for block in blocks])
+    medians = np.array([np.median(depths[block][covered[block]]) for block in blocks])
+    fit = np.polyfit(positions, medians, 1)
+    # A pair of separated, offset rims can appear to support one tilted edge.
+    if np.max(np.abs(medians - np.polyval(fit, positions))) > 2 or np.max(np.abs(np.diff(medians))) > 4:
+        return None
+    inset = np.float32([positions[0], positions[-1]])
+    inward = np.float32([-tangent[1], tangent[0]])
+    trace = start + inset[:, None] * (end - start) + np.polyval(fit, inset)[:, None] * inward
+    return trace.astype(np.float32), backing
+
+
+def paper_join_review_traces(image: np.ndarray, first: np.ndarray, second: np.ndarray) -> list[np.ndarray]:
+    """Return two observed spans outside a disputed paper join for review."""
+    edges = [np.roll(quad, -1, axis=0) - quad for quad in (first, second)]
+    lengths = [np.linalg.norm(edge, axis=1) for edge in edges]
+    if min(side.min() for side in lengths) < 220:
+        return []
+    first_edges, second_edges = (edge / length[:, None] for edge, length in zip(edges, lengths, strict=True))
+    offset = max(range(4), key=lambda turn: np.sum(first_edges * np.roll(second_edges, -turn, axis=0)))
+    second = np.roll(second, -offset, axis=0)
+    for turn in range(4):
+        a, b = np.roll(first, -turn, axis=0), np.roll(second, -turn, axis=0)
+        dx, dy = a[1] - a[0]
+        upper, lower = sorted((a, b), key=lambda quad: quad.mean(axis=0) @ np.float32([-dy, dx]))
+        envelope = np.float32([upper[0], upper[1], lower[2], lower[3]])
+        if not cv2.isContourConvex(envelope):
+            continue
+        facing = np.float32([upper[[3, 2]], lower[:2]])
+        transform = cv2.getPerspectiveTransform(envelope, _UNIT_QUAD)
+        projected = cv2.perspectiveTransform(facing.reshape(1, 4, 2), transform)[0]
+        depths = projected[:, 1].reshape(2, 2)
+        if (not .30 <= depths.mean() <= .70 or np.ptp(depths, axis=1).max() > .03
+                or np.max(np.abs(depths[1] - depths[0])) > .035
+                or np.max(np.abs(projected[:, 0] - [0, 1, 0, 1])) > .075):
+            continue
+        measurements = []
+        for center, side in zip(facing.mean(axis=0), (envelope[0] - envelope[3], envelope[2] - envelope[1]), strict=True):
+            length = float(np.linalg.norm(side))
+            if length < 680:
+                break
+            observation = _paper_join_edge(image, center, side / length, min(104., .048 * length))
+            if observation is None:
+                break
+            measurements.append(observation)
+        if len(measurements) != 2:
+            continue
+        (first_trace, before), (second_trace, after) = measurements
+        if np.linalg.norm(before - after) > 12:
+            continue
+        # A narrow aisle of backing can separate papers whose outer edges align.
+        along = np.linspace(.07, .93, 180, dtype=np.float32)[:, None]
+        a_edge, b_edge = (edge[0] + along * (edge[1] - edge[0]) for edge in facing)
+        axis = envelope[3] - envelope[0] + envelope[2] - envelope[1]
+        collar = 4 * axis / np.linalg.norm(axis)
+        count = min(128, max(17, round(float(np.linalg.norm(b_edge - a_edge, axis=1).max())) * 2 + 17))
+        across = np.linspace(0, 1, count, dtype=np.float32)[None, :, None]
+        strip = _sample_lab(image, (a_edge - collar)[:, None] * (1 - across) + (b_edge + collar)[:, None] * across)
+        if strip is None:
+            continue
+        backing = (1 - along) * before + along * after
+        backing_run = (np.linalg.norm(strip - backing[:, None], axis=2) <= 9).any(axis=1)
+        if backing_run.mean() <= .26:
+            return [first_trace, second_trace]
+    return []
 
 
 def _bridge_intervals(

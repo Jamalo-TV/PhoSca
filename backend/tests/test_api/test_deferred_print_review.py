@@ -5,11 +5,12 @@ import numpy as np
 import pytest
 
 
-async def test_review_excludes_only_the_confirmed_film_carrier_group(client, monkeypatch):
+@pytest.mark.parametrize("kind", ["film", "paper"])
+async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kind):
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ReviewEvent
-    from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW
+    from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
     from app.pipeline.segmentation import SegmentationDetection, SegmentationResult
     from app.services import pipeline
 
@@ -25,17 +26,22 @@ async def test_review_excludes_only_the_confirmed_film_carrier_group(client, mon
     def vertices(left, top, right, bottom):
         return [{"x": x / 399, "y": y / 259} for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
 
-    film = [vertices(20, 24, 184, 233), vertices(25, 30, 179, 121), vertices(26, 131, 181, 228)]
+    linked = [vertices(25, 30, 179, 121), vertices(26, 131, 181, 228)]
+    if kind == "film":
+        linked.insert(0, vertices(20, 24, 184, 233))
     paper = [vertices(206, 21, 375, 234), vertices(218, 132, 362, 232)]
     seam = [{"x": 0.08, "y": 0.48}, {"x": 0.45, "y": 0.49}]
+    traces = [[{"x": x, "y": .49}, {"x": x, "y": .54}] for x in (.05, .46)]
+    mask_key = "film_grid_review_seam" if kind == "film" else "paper_join_review_traces"
+    reason = FILM_GRID_REVIEW if kind == "film" else PAPER_JOIN_REVIEW
     detections = []
-    for polygon in [*film, *paper]:
+    for polygon in [*linked, *paper]:
         bounds = {"x1": polygon[0]["x"], "y1": polygon[0]["y"], "x2": polygon[2]["x"], "y2": polygon[2]["y"]}
         mask = {"source": "yolo_seg_mask", "polygon": polygon}
-        if polygon in film:
-            mask["film_grid_review_seam"] = seam
+        if polygon in linked:
+            mask[mask_key] = seam if kind == "film" else traces
         detections.append(SegmentationDetection(
-            bounds, mask, 0.81, 1.0, False, [FILM_GRID_REVIEW if polygon in film else PAPER_GRID_REVIEW],
+            bounds, mask, 0.81, 1.0, False, [reason if polygon in linked else PAPER_GRID_REVIEW],
         ))
     monkeypatch.setattr(pipeline, "segment_album_page", lambda *_, **__: SegmentationResult(detections, {}))
     image = np.full((260, 400, 3), 42, np.uint8)
@@ -44,27 +50,29 @@ async def test_review_excludes_only_the_confirmed_film_carrier_group(client, mon
     ok, png = cv2.imencode(".png", image)
     assert ok
 
-    album_id = (await client.post("/api/v1/albums", json={"name": "Film carrier review"})).json()["id"]
+    album_id = (await client.post("/api/v1/albums", json={"name": "Linked proposal review"})).json()["id"]
     album_url = f"/api/v1/albums/{album_id}"
     uploaded = await client.post(f"{album_url}/pages/upload", files={"files": ("page.png", png.tobytes(), "image/png")})
     assert uploaded.status_code == 201, uploaded.text
     queue_url = f"/api/v1/review/queue?album_id={album_id}&type=segmentation"
     task, = (await client.get(queue_url)).json()
     before = task["payload"]
-    assert before["detection_count"] == 5
-    group_ids = [row["photo_id"] for row in before["detections"] if row["segmentation_mask"].get("film_grid_review_seam")]
+    assert before["detection_count"] == len(detections)
+    group_ids = [row["photo_id"] for row in before["detections"] if row["segmentation_mask"].get(mask_key)]
     paper_before = [row for row in before["detections"] if row["photo_id"] not in group_ids]
-    assert len(group_ids) == 3 and len(paper_before) == 2
+    assert len(group_ids) == len(linked) and len(paper_before) == 2
 
     event_url = "/api/v1/review/events"
-    metadata = {"ui": "desktop", "photo_count_revision": before["photo_count_revision"], "film_group_photo_ids": group_ids}
-    answer = {"task_type": "segmentation", "task_id": task["id"], "answer": "exclude_film_group",
-              "reason_code": "film_carrier", "idempotency_key": uuid4().hex, "metadata": metadata}
-    incomplete = await client.post(event_url, json={**answer, "metadata": {**metadata, "film_group_photo_ids": group_ids[:2]}})
+    ids_key = f"{kind}_group_photo_ids"
+    metadata = {"ui": "desktop", "photo_count_revision": before["photo_count_revision"], ids_key: group_ids}
+    answer = {"task_type": "segmentation", "task_id": task["id"], "answer": f"exclude_{kind}_group",
+              "reason_code": "film_carrier" if kind == "film" else "non_photo_object",
+              "idempotency_key": uuid4().hex, "metadata": metadata}
+    incomplete = await client.post(event_url, json={**answer, "metadata": {**metadata, ids_key: group_ids[:-1]}})
     assert incomplete.status_code == 422
-    for selection in ([*group_ids[:2], paper_before[0]["photo_id"]], [group_ids[0]] * 3):
-        wrong = await client.post(event_url, json={**answer, "metadata": {**metadata, "film_group_photo_ids": selection}})
-        assert wrong.status_code == 409 and wrong.json()["detail"] == "film_review_group_stale"
+    for selection in ([*group_ids[:-1], paper_before[0]["photo_id"]], [group_ids[0]] * len(group_ids)):
+        wrong = await client.post(event_url, json={**answer, "metadata": {**metadata, ids_key: selection}})
+        assert wrong.status_code == 409 and wrong.json()["detail"] == f"{kind}_review_group_stale"
     assert (await client.get(queue_url)).json() == [task]
 
     confirmed = await client.post(event_url, json=answer)
@@ -94,8 +102,8 @@ async def test_review_excludes_only_the_confirmed_film_carrier_group(client, mon
 
     async with get_session_factory()() as session:
         event = await session.get(ReviewEvent, UUID(event_id))
-        assert event.event_metadata["client"]["film_group_photo_ids"] == group_ids
-        assert len(event.event_metadata["snapshot"]["photos"]) == 5
+        assert event.event_metadata["client"][ids_key] == group_ids
+        assert len(event.event_metadata["snapshot"]["photos"]) == len(detections)
 
     count = await client.post(event_url, json={
         **answer, "answer": "correct", "idempotency_key": uuid4().hex, "metadata": {"photo_count_revision": event_id},

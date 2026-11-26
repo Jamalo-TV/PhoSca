@@ -34,9 +34,10 @@ from app.pipeline.geometry import (
 from app.pipeline.image_ops import normalized_box_to_pixels, pixel_box_to_normalized
 from app.pipeline.mounted_prints import mounted_print_evidence
 from app.pipeline.multipanel_prints import (
-    FILM_GRID_REVIEW, GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, PAPER_GRID_REVIEW, RECOVERED_STOCK_SOURCE,
+    FILM_GRID_REVIEW, GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW,
+    RECOVERED_STOCK_SOURCE,
     film_grid_review_seam, grid_fragment_on_shared_stock, nested_print_on_shared_stock, paper_grid_review_seam,
-    recover_shared_stock_outline, shared_stock_outline,
+    paper_join_review_traces, recover_shared_stock_outline, shared_stock_outline,
 )
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.print_edges import (
@@ -3523,6 +3524,48 @@ def _flag_conflicting_film_grids(image: np.ndarray, result: SegmentationResult) 
     return SegmentationResult(updated, result.metadata)
 
 
+def _flag_disputed_paper_joins(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    detections = result.detections
+    if not result.metadata.get("fallback_used") or not 2 <= len(detections) <= _MULTIPANEL_GROUP_LIMIT:
+        return result
+    height, width = image.shape[:2]
+    polygons = [_detection_polygon(item) for item in detections]
+    suitable = [
+        index for index, item in enumerate(detections)
+        if item.geometry_valid and not item.review_reasons and not item.mask.get("warp_quad")
+        and .35 <= (item.mask.get("boundary_evidence") or {}).get("exterior_background_support", 0) <= .85
+    ]
+    groups = {}
+    for left, right in combinations(suitable, 2):
+        if (not _adjacent_panel_boxes(detections[left].bounding_box, detections[right].bounding_box)
+                or normalized_polygon_overlap(polygons[left], polygons[right]).iou > .018):
+            continue
+        try:
+            first, second = (quad_from_polygon(normalized_vertices_to_pixels(polygons[index], width, height))[0]
+                             for index in (left, right))
+            traces = paper_join_review_traces(image, first, second)
+        except (cv2.error, ValueError, np.linalg.LinAlgError):
+            continue
+        if not traces:
+            continue
+        hull = cv2.convexHull(np.concatenate((polygons[left], polygons[right])))[:, 0]
+        if any(normalized_polygon_overlap(hull, polygon).second_containment > .06
+               for index, polygon in enumerate(polygons) if index not in (left, right)):
+            continue
+        groups[left, right] = [_normalized_polygon(trace, width, height) for trace in traces]
+    claims = Counter(index for pair in groups for index in pair)
+    if not groups:
+        return result
+    updated = detections.copy()
+    for pair, traces in groups.items():
+        if all(claims[index] == 1 for index in pair):
+            for index in pair:
+                item = updated[index]
+                updated[index] = replace(item, mask={**item.mask, "paper_join_review_traces": traces},
+                                         review_reasons=[PAPER_JOIN_REVIEW])
+    return SegmentationResult(updated, result.metadata)
+
+
 def segment_album_page(
     image: np.ndarray, settings: Settings, *, source_image: np.ndarray | None = None,
     protected_regions: list[dict] | None = None,
@@ -3546,6 +3589,7 @@ def segment_album_page(
             result = _defer_nested_print_candidates(evidence_source, result)
             result = _flag_disputed_paper_grids(evidence_source, result)
             result = _flag_conflicting_film_grids(evidence_source, result)
+            result = _flag_disputed_paper_joins(evidence_source, result)
     model_path = settings.visible_mask_model_path
     if not settings.enable_precise_photo_crops:
         return result

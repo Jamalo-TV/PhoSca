@@ -101,6 +101,17 @@ bleibt auf derselben Seite offen. Für einen daneben liegenden
 Papierabzug gelten weiterhin seine eigenen Konturen und Zuschnittregeln.
 [Beispiel und Gegenprobe](data/evaluation/README.md#confirm-a-negative-sleeve-in-count-review)
 
+Bei zwei strittigen Vorschlägen kann PhoSca kurze, am Original
+gemessene Randabschnitte beidseits der vermuteten Teilung einzeichnen.
+**Gemeinsame Papierkante prüfen** markiert beide Vorschläge. Der
+Reviewer sieht so, wo der Materialwechsel am Aussenrand liegt, und
+prüft am Original, wie viele Gegenstände dort liegen und welche davon
+Fotoabzüge sind. Gehören beide Vorschläge zur selben Zeichnung oder zu
+einem anderen Gegenstand ohne Fotoabzug, nimmt ein ausdrücklicher
+Entscheid beide aus der aktiven Liste. Ein Foto lässt sich nach
+Abbrechen im gewöhnlichen Editor korrigieren.
+[Beispiel Willett 109](data/evaluation/README.md#review-a-disputed-paper-join)
+
 Wenn der Zuschnitt an einer Papierkante in Prüfung bleibt und zwei
 Linien im Original ausreichend gestützt sind, zeichnet **Ganzer Abzug**
 beide als gestrichelte Kanten ein. Die Linien folgen dem beobachteten

@@ -38,12 +38,12 @@ export function getPaperGridReview(mask) {
   return Array.isArray(cut) && cut.length === 2 && cut.every(isNormalizedPoint) ? { outline, cut } : null;
 }
 
-export function getCaptureSplitReviewGroups(photos) {
+function getTraceReviewGroups(photos, field) {
   const groups = new Map();
   for (const photo of photos) {
     const id = photo.photo_id ?? photo.id;
     const { segmentation_confidence: confidence = photo.confidence } = photo;
-    const traces = photo.segmentation_mask?.capture_split_review_traces;
+    const traces = photo.segmentation_mask?.[field];
     if (!id || photo.reviewed_non_print || confidence == null || !Array.isArray(traces)
         || traces.length !== 2 || !traces.every(line => Array.isArray(line) && line.length === 2
           && line.every(isNormalizedPoint))) continue;
@@ -52,6 +52,14 @@ export function getCaptureSplitReviewGroups(photos) {
     groups.get(key).photoIds.add(id);
   }
   return [...groups.values()].filter(({ photoIds }) => photoIds.size > 1);
+}
+
+export function getCaptureSplitReviewGroups(photos) {
+  return getTraceReviewGroups(photos, "capture_split_review_traces");
+}
+
+export function getPaperJoinReviewGroups(photos) {
+  return getTraceReviewGroups(photos, "paper_join_review_traces").filter(({ photoIds }) => photoIds.size === 2);
 }
 
 export function getPaperGridReviewGroups(photos) {

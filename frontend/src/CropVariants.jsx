@@ -14,7 +14,10 @@ export const scannerBackingHint = "Prüfe am Original, ob die Markierung einen A
 export const filmGridReason = "FILM_GRID_REVIEW";
 export const filmGridHint = "Gehört der Vorschlag zur Negativhülle, wähle «Falsches Objekt». Liegt dort ein Papierabzug, setze unter «Ganzer Abzug» die Ecken an seinen Papierrand.";
 export const filmGridCountHint = "Prüfe die Vorschläge beidseits der türkis gestrichelten Linie im Original. Sind dort Papierabzüge oder Teile einer Negativhülle markiert?";
-export const filmGroupReviewError = "Die Vorschläge haben sich geändert. Prüfe die aktualisierte Albumseite.";
+export const countGroupReviewError = "Die Vorschläge haben sich geändert. Prüfe die aktualisierte Albumseite.";
+export const paperJoinCountHint = "Die gestrichelten Abschnitte zeigen Materialwechsel am äusseren Rand. Prüfe, ob die beiden Vorschläge zu einem Gegenstand gehören und ob er ein Fotoabzug ist.";
+export const paperJoinReason = "PAPER_JOIN_REVIEW";
+export const paperJoinHint = "Prüfe den ganzen Papierrand am Original. Gehören beide Vorschläge zu einem Fotoabzug, setze die Ecken eines Vorschlags an seinen Aussenrand und prüfe den anderen als möglichen Teilvorschlag.";
 export const paperGridReason = "PAPER_GRID_REVIEW";
 export const paperGridCountHint = "Die blau gestrichelte Kontur zeigt einen möglichen Aussenumriss. Prüfe am Original, ob die Ausschnitte an den gepunkteten Linien eigene Papierabzüge sind.";
 export const paperGridOuterHint = "Prüfe den möglichen Aussenumriss am Original. Lade ihn für einen ganzen Papierabzug in den Editor oder markiere den Vorschlag als «Falsches Objekt».";
@@ -77,23 +80,43 @@ export function getSourceEdgeTraces(traces) {
     && trace.every((point) => [point?.x, point?.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1))) : [];
 }
 
-export function FilmCarrierReview({ groups, selected, busy, onSelect, onExclude }) {
-  const carriers = groups.filter(({ photoIds }) => photoIds.size === 3);
-  if (!carriers.length) return null;
-  return <div className="film-carrier-review">
+const groupReviewLabels = {
+  film: {
+    open: "Negativhülle prüfen",
+    confirm: "Drei Vorschläge aus der Abzugsliste nehmen",
+    prompt: "Prüfe im Original, ob alle drei türkis markierten Vorschläge zur Negativhülle gehören.",
+  },
+  paper: {
+    open: "Gemeinsame Papierkante prüfen",
+    confirm: "Beide Vorschläge aus der Abzugsliste nehmen",
+    prompt: "Entferne die beiden türkis markierten Vorschläge gemeinsam, wenn sie zur selben Zeichnung oder zu einem anderen Gegenstand ohne Fotoabzug gehören. Für die Einzelkorrektur eines Fotoabzugs wähle «Abbrechen».",
+  },
+};
+
+export function CountGroupReview({ groups, selected, busy, onSelect, onExclude }) {
+  if (!groups.length) return null;
+  const labels = selected && groupReviewLabels[selected.kind];
+  return <div className="count-group-review">
     {selected ? <>
-      <p className="crop-editor-hint" role="status">Prüfe im Original, ob alle drei türkis markierten Vorschläge zur Negativhülle gehören.</p>
+      <p className="crop-editor-hint" role="status">{labels.prompt}</p>
       <button type="button" className="primary-button" disabled={busy}
-        onClick={() => onExclude(selected.photoIds)}>
-        {busy ? "Vorschläge werden geprüft …" : "Drei Vorschläge aus der Abzugsliste nehmen"}
+        onClick={() => onExclude(selected)}>
+        {busy ? "Vorschläge werden geprüft …" : labels.confirm}
       </button>
       <button type="button" className="text-button" disabled={busy} onClick={() => onSelect(null)}>Abbrechen</button>
-    </> : carriers.map(({ key }, index) => (
+    </> : groups.map(({ key, kind }, index) => (
       <button key={key} type="button" className="text-button" disabled={busy} onClick={() => onSelect(key)}>
-        {`Negativhülle prüfen${carriers.length > 1 ? ` (${index + 1})` : ""}`}
+        {`${groupReviewLabels[kind].open}${groups.length > 1 ? ` (${index + 1})` : ""}`}
       </button>
     ))}
   </div>;
+}
+
+export function actionableCountGroups(filmGroups, paperGroups) {
+  return [
+    ...filmGroups.filter(({ photoIds }) => photoIds.size === 3).map(group => ({ ...group, kind: "film" })),
+    ...paperGroups.map(group => ({ ...group, kind: "paper" })),
+  ];
 }
 
 export function getDeferredPrintProposals(proposals) {
@@ -283,6 +306,7 @@ const reviewMessages = {
   [crossingPrintReason]: crossingPrintHint,
   [scannerBackingReason]: scannerBackingHint,
   [filmGridReason]: filmGridHint,
+  [paperJoinReason]: paperJoinHint,
   PAPER_GRID_OVERLAP_REVIEW: printEdgeReviewHints.PAPER_GRID_OVERLAP_REVIEW,
   CROP_VALIDATION_UNAVAILABLE: "Prüfe und speichere den Zuschnitt, um den Download freizugeben.",
   CAMERA_ASPECT_REVIEW: "Die Vorschau nutzt die Kamerakalibrierung. Prüfe und bestätige die Fotoecken.",
@@ -322,6 +346,8 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(fragmentOutlineReason);
   const possibleFilmGrid = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(filmGridReason);
+  const possiblePaperJoin = photo.segmentation_confidence != null
+    && photo.enhancement_applied?.segmentation_review_reasons?.includes(paperJoinReason);
   const paperGrid = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(paperGridReason)
     && getPaperGridReview(photo.segmentation_mask);
@@ -341,7 +367,7 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
   const fullPreview = printOutline || photo.urls?.source_corrected_untrimmed || photo.urls?.original;
   const motifPreview = photo.urls?.image_only_preview;
   const preview = mode === "image_only"
-    ? motifPreview || ((possibleMultipanel || possibleFragmentedPrint || possibleFragmentOutline || scannerBackingUncertain || clippedOverlapUncertain || possibleFilmGrid
+    ? motifPreview || ((possibleMultipanel || possibleFragmentedPrint || possibleFragmentOutline || scannerBackingUncertain || clippedOverlapUncertain || possibleFilmGrid || possiblePaperJoin
         || paperGrid || captureEdgeClipped || captureSplit || pendingPaperEdge || result?.reason_codes?.includes(markedMotifMarginReason)) && fullPreview)
     : fullPreview;
   const previewAlt = mode === "image_only" && motifPreview

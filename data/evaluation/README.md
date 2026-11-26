@@ -836,6 +836,17 @@ pages and 31 photos and verifies all file hashes. The annotations are still
 pending independent review. [Smithsonian dimensions](https://nmaahc.si.edu/object/nmaahc_2017.30.47)
 and [Library of Congress album and print record](https://www.loc.gov/pictures/item/2018645050/).
 
+The conservators confirm separate front and back digitization of
+each of the 44 cartes de visite after removal, and digitization of
+the album as a physical object after treatment. The Smithsonian
+records the Tubman image as 94 × 57 mm and the paper mount as
+100 × 62 mm and publishes the stand-alone asset under CC0. The
+checked native Smithsonian requests returned HTTP 403 in this
+workspace. The earlier Tubman pair remains a development example
+for unrecoverable content in an album window.
+[Conservation report, p. 83](https://faic.wpenginepowered.com/pmg-topics/wp-content/uploads/sites/9/2024/08/T19-72-85-Formatted-Evers.pdf#page=13) ·
+[Smithsonian asset record](https://avpreservation.si.edu/object/nmaahc_2017.30.47)
+
 `whiting-paired-crops-draft.json` pins the original TIFFs, the fitted
 quads and held-out landmarks for two prints in Whiting's *Diary in photos*,
 volume I. The Library of Congress catalog distinguishes the album page
@@ -3084,6 +3095,56 @@ fusion. Its two fold flanks differ by a median 10.55 Lab units and the
 actual cardstock-to-backing edge differs by 47.97. A real photo on the
 same page has a 7.28-unit fold. The source cues tested here leave the
 ownership and export decisions in place.
+
+#### Review a disputed paper join
+
+The pinned native Willett page 109 is 3491 × 2325. At mask IoU 0.85,
+the model-only and classical-only arms each match both photographs and
+emit three extra proposals. The mixed arm matches both and emits two
+extras, one from each detector. The folded vehicle photograph has
+strong scene detail around its actual crease. The butterfly card has
+more fine texture than that photo in the sampled interior. Paper
+continuity and the physical medium need separate review decisions.
+
+Multipanel revision 10 checks the weak exterior evidence of two
+complementary active proposals. At opposite ends of the cut it samples
+native collars across the proposed outer edge. Eight adjacent sections
+must agree with the measured transition out of local backing. An
+aligned strip of backing through the interior or conflicting third
+contour vetoes the hint. Only the two supported spans are drawn. Both
+proposal masks, the automatic count and the crop geometry stay intact.
+
+The hint appears in all eight tested quarter-turn and JPEG75 views
+of the native card with its source proposals. The intentionally
+split folded-car photo abstains in all eight corresponding checks.
+Rearrangements of two separate photographs from the same page with
+1, 4 or 12 native pixels between them abstain in all six lossless and
+JPEG75 checks. An integrated backing slit in the same card still
+passes at 0.25 and 0.5 pixels in 8/8 checks and at one pixel in 7/8.
+The two- and four-pixel slits veto the hint in all eight checks at
+each width. As a medium control, photographic reproductions of a
+printed page and a lithograph can contain the same line art and
+lettering as direct ink on paper. [Talbot plates IX and XI](https://www.gutenberg.org/ebooks/33447)
+
+Both clients open the measured spans and highlight only the two
+linked masks. Opening, cancelling or switching to individual geometry
+leaves the count at four. Once the reviewer confirms both belong to
+the same non-photo object, one page-revision-checked event records
+both rejections. In separate desktop and mobile replays through
+ordinary multipart upload and processing, this reduced the active
+count from four to two. Both photos retained byte-identical review
+JPEGs and their existing per-mode geometry and export holds. The
+untrimmed previews returned HTTP 200. Both named exports and the
+legacy trimmed alias returned HTTP 404 before and after the decision.
+The dismissed rows remain available for geometry review.
+
+The measured-spans stage took 8.0 ms median and 10.5 ms p95 over
+40 warm calls on one OpenCV thread. The frozen detector, seeded
+geometry and Golden replays retained 18/18 instance matches,
+11/11 whole-print and 12/12 motif passes, and 29/29 real development
+instance matches respectively. Detection, rendered-crop and mode
+availability summaries were identical to the previous replays. The
+configuration records the new multipanel revision.
 
 ### Measure an open edge at an overextended corner
 

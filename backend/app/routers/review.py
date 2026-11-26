@@ -25,7 +25,7 @@ from app.models import (
 )
 from app.pipeline.decisions import is_reviewed_non_print, motif_geometry_requires_review
 from app.pipeline.manual_paper_boundary import PAPER_CLAIM_OVERLAP_CHECKS, paper_claims_need_overlap_check
-from app.pipeline.multipanel_prints import FILM_GRID_REVIEW
+from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_JOIN_REVIEW
 from app.pipeline.protected_regions import album_mark_source_matches
 from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import PhotoRead, ReviewItem
@@ -44,8 +44,13 @@ class MobileReviewAnswer(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
 
+GROUP_EXCLUSIONS = {
+    "exclude_film_group": (3, "film_grid_review_seam", "film_group_photo_ids", FILM_GRID_REVIEW, "film"),
+    "exclude_paper_group": (2, "paper_join_review_traces", "paper_group_photo_ids", PAPER_JOIN_REVIEW, "paper"),
+}
+
 ALLOWED_ANSWERS = {
-    "segmentation": {"correct", "missing_print", "too_many", "unsure", "exclude_film_group"},
+    "segmentation": {"correct", "missing_print", "too_many", "unsure", *GROUP_EXCLUSIONS},
     "geometry": {
         "correct",
         "too_tight",
@@ -304,26 +309,27 @@ def _validate_enhancement_decision(payload: MobileReviewAnswer, context: dict) -
         )
 
 
-def _film_group_for_review(payload: MobileReviewAnswer, context: dict) -> list[ExtractedPhoto]:
-    submitted = payload.metadata.get("film_group_photo_ids")
-    if not isinstance(submitted, list) or len(submitted) != 3 or not all(isinstance(photo_id, str) for photo_id in submitted):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="film_group_selection_invalid")
+def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[ExtractedPhoto]:
+    size, mask_key, request_key, review_reason, name = GROUP_EXCLUSIONS[payload.answer]
+    submitted = payload.metadata.get(request_key)
+    if not isinstance(submitted, list) or len(submitted) != size or not all(isinstance(photo_id, str) for photo_id in submitted):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{name}_group_selection_invalid")
     selected = [photo for photo in context["photos"] if str(photo.id) in submitted]
-    seam = (selected[0].segmentation_mask or {}).get("film_grid_review_seam") if selected else None
+    evidence = (selected[0].segmentation_mask or {}).get(mask_key) if selected else None
     group = {
         photo.id for photo in context["photos"]
         if photo.segmentation_confidence is not None
-        and (photo.segmentation_mask or {}).get("film_grid_review_seam") == seam
+        and (photo.segmentation_mask or {}).get(mask_key) == evidence
     }
     if (context["page"].status not in {PageStatus.completed, PageStatus.review_needed}
-            or not isinstance(seam, list) or len(seam) != 2 or len(selected) != 3
+            or not isinstance(evidence, list) or len(evidence) != 2 or len(selected) != size
             or group != {photo.id for photo in selected}
             or any(
-                FILM_GRID_REVIEW not in ((photo.enhancement_applied or {}).get("segmentation_review_reasons") or [])
+                review_reason not in ((photo.enhancement_applied or {}).get("segmentation_review_reasons") or [])
                 or variant_path_from_photo(photo, "full_print") or variant_path_from_photo(photo, "image_only")
                 for photo in selected
             )):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="film_review_group_stale")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{name}_review_group_stale")
     return selected
 
 
@@ -372,9 +378,9 @@ def _apply_review_decision(event: ReviewEvent, payload: MobileReviewAnswer, cont
 
     if payload.task_type == "segmentation":
         page: Page = context["page"]
-        if payload.answer == "exclude_film_group":
+        if payload.answer in GROUP_EXCLUSIONS:
             decision = {**_decision_record(event.id, payload, state="rejected"), "answer": "wrong_object"}
-            for photo in context["film_group"]:
+            for photo in context["excluded_group"]:
                 metadata = _store_entity_decision(photo.enhancement_applied or {}, "geometry", decision)
                 _record_rejected_detection(photo, metadata)
                 reasons = [
@@ -463,7 +469,7 @@ async def add_review_event(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported answer for review task type."
         )
     context = await _task_context(
-        session, payload.task_type, payload.task_id, principal, lock_photos=payload.answer == "exclude_film_group",
+        session, payload.task_type, payload.task_id, principal, lock_photos=payload.answer in GROUP_EXCLUSIONS,
     )
     _validate_enhancement_decision(payload, context)
     existing = await session.scalar(select(ReviewEvent).where(ReviewEvent.idempotency_key == payload.idempotency_key))
@@ -486,8 +492,8 @@ async def add_review_event(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Prüfe die gestrichelten Konturen, bevor du die Anzahl bestätigst.",
             )
-        if payload.answer == "exclude_film_group":
-            context["film_group"] = _film_group_for_review(payload, context)
+        if payload.answer in GROUP_EXCLUSIONS:
+            context["excluded_group"] = _group_for_review(payload, context)
 
     if payload.task_type == "geometry" and payload.answer == "correct":
         photo = context["photo"]

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFragmentReviewOutlines, getPaperGridReviewGroups,
-  getStoredMotifQuad, motifFitsPaper,
+  getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
 } from "../src/cropReviewOutlines.js";
 
 const quad = [{ x: .1, y: .2 }, { x: .7, y: .2 }, { x: .7, y: .8 }, { x: .1, y: .8 }];
@@ -78,6 +78,19 @@ test("a shared capture corner shows only its measured sides while proposals are 
     { ...second, photo_id: "manual", confidence: null },
     { ...second, photo_id: "invalid", segmentation_mask: { capture_split_review_traces: traces.slice(0, 1) } },
   ]), []);
+});
+
+test("a paper join links exactly two active automatic proposals with the same native traces", () => {
+  const traces = [[{ x: .43, y: .28 }, { x: .56, y: .28 }], [{ x: .43, y: .72 }, { x: .56, y: .72 }]];
+  const first = { id: "first", confidence: .74, segmentation_mask: { paper_join_review_traces: traces } };
+  const second = { ...first, id: "second", segmentation_mask: structuredClone(first.segmentation_mask) };
+  const archived = { ...second, id: "archived", reviewed_non_print: true };
+  const [group, ...others] = getPaperJoinReviewGroups([first, second, archived]);
+  assert.deepEqual(others, []);
+  assert.deepEqual(group.photoIds, new Set(["first", "second"]));
+  assert.deepEqual(group.traces, traces);
+  assert.deepEqual(getPaperJoinReviewGroups([first, second, { ...second, id: "third" }]), []);
+  assert.deepEqual(getPaperJoinReviewGroups([first, { ...second, confidence: null }]), []);
 });
 
 test("each paper-grid cut follows its own active proposal", () => {

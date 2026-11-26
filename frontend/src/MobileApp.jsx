@@ -1,24 +1,25 @@
 import { Camera, Check, ChevronLeft, CircleHelp, CloudOff, Images, ListChecks, RefreshCw, Save, Upload, WandSparkles, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createAlbum, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
+import { createAlbum, excludeCountReviewGroup, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
 import { projectedCropAspect, resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import {
-  adjacentPrintHint, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
+  actionableCountGroups, adjacentPrintHint, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
   captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, cropProtectionErrors, CropVariants,
   cropModeLabels, crossingPrintHint,
-  crossingPrintReason, crossingPrintSaveHint, FilmCarrierReview, filmGridCountHint, filmGridHint, filmGridReason,
-  filmGroupReviewError, fragmentCountHint,
+  countGroupReviewError, CountGroupReview, crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint,
+  filmGridReason, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
   mountedPrintNeedsReview, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
-  paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperOutlineRequiresReview,
+  paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
+  paperJoinReason, paperOutlineRequiresReview,
   scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
-  getPaperGridReview, getPaperGridReviewGroups, getStoredMotifQuad, motifFitsPaper,
+  getPaperGridReview, getPaperGridReviewGroups, getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
@@ -117,7 +118,7 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome, uplo
 }
 
 function DetectionOverlay({ item, editable = false, openPaperOutline, countOutlines, captureSplitGroups, filmGridGroups,
-  selectedFilmGroup, paperGridGroups, onSaved, onProtectionBlocked }) {
+  selectedCountGroup, paperGridGroups, paperJoinGroups, onSaved, onProtectionBlocked }) {
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
   const [showMissingEdges, setShowMissingEdges] = useState(false);
@@ -141,6 +142,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     && item.payload?.review_reasons?.includes(filmGridReason) && getFilmGridSeam(item.payload?.segmentation_mask);
   const paperGrid = editable && !reviewedNonPrint && item.payload?.confidence != null
     && item.payload?.review_reasons?.includes(paperGridReason) && getPaperGridReview(item.payload?.segmentation_mask);
+  const paperJoinReview = editable && !reviewedNonPrint && item.payload?.confidence != null
+    && item.payload?.review_reasons?.includes(paperJoinReason);
   const crossingOutline = item.payload?.confidence != null
     && item.payload?.review_reasons?.includes(crossingPrintReason)
     && !reviewedNonPrint
@@ -336,16 +339,23 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       strokeWidth="7" strokeDasharray="14 8" pointerEvents="none"
       points={line.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
   ));
-  const filmGroupOverlay = selectedFilmGroup && (
-    <g aria-label="Vorschläge zur Prüfung der Negativhülle" fill="#0e7490" fillOpacity="0.11"
+  const countGroupOverlay = selectedCountGroup && (
+    <g aria-label={selectedCountGroup.kind === "film" ? "Vorschläge zur Prüfung der Negativhülle" : "Vorschläge zur Prüfung der Papierkante"}
+      fill="#0e7490" fillOpacity="0.11"
       stroke="#0e7490" strokeWidth="6" pointerEvents="none">
-      {detections.filter(({ photo_id }) => selectedFilmGroup.photoIds.has(photo_id)).map(detection => {
+      {detections.filter(({ photo_id }) => selectedCountGroup.photoIds.has(photo_id)).map(detection => {
         const polygon = sanitizeReviewPolygon(detection.visible_polygon || detection.polygon);
         return polygon && <polygon key={detection.photo_id}
           points={polygon.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />;
       })}
     </g>
   );
+  const paperJoinOverlay = paperJoinGroups.map(({ key, traces }) => (
+    <g key={key} aria-label="Gemessene Randabschnitte an der Teilung" fill="none" stroke="#0e7490"
+      strokeWidth="7" strokeDasharray="14 8" pointerEvents="none">
+      {traces.map((line, index) => <polyline key={index} points={line.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />)}
+    </g>
+  ));
   const shownPaperGrids = paperGrid?.cut
     ? [{ key: item.id, outline: paperGrid.outline, cuts: new Map([[item.id, paperGrid.cut]]) }]
     : paperGridGroups;
@@ -362,6 +372,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const overlayHints = [countOutlines.length && "mobile-fragment-count-review-hint",
     captureSplitGroups.length && "mobile-capture-split-count-hint",
     filmGridGroups.length && "mobile-film-grid-count-hint", paperGridGroups.length && "mobile-paper-grid-count-hint",
+    paperJoinGroups.length && "mobile-paper-join-count-hint",
     editable && motifTraces.length && "mobile-motif-seam-hint",
   ].filter(Boolean).join(" ");
   const paperTraceOverlay = printEdgeTraces.map((trace, index) => (
@@ -412,10 +423,13 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
             <text className="corner-label" x={point.x * 1000 + 28} y={point.y * 1000 - 22}>{index + 1}</text>
           </g>)}
         </g> : shown.map(({ bounding_box: box, photo_id: photoId }, index) => <g key={photoId || index}>
-          <rect x={box.x1 * 1000} y={box.y1 * 1000} width={(box.x2 - box.x1) * 1000} height={(box.y2 - box.y1) * 1000} />
+          {!selectedCountGroup?.photoIds.has(photoId) && (
+            <rect x={box.x1 * 1000} y={box.y1 * 1000} width={(box.x2 - box.x1) * 1000} height={(box.y2 - box.y1) * 1000} />
+          )}
           <text x={box.x1 * 1000 + 12} y={box.y1 * 1000 + 38}>{index + 1}</text>
         </g>)}
-        {nestedOverlay}{deferredOverlay}{fragmentCountOverlay}{captureSplitOverlay}{filmGroupOverlay}{filmGridOverlay}{paperGridOverlay}
+        {nestedOverlay}{deferredOverlay}{fragmentCountOverlay}{captureSplitOverlay}{countGroupOverlay}
+        {filmGridOverlay}{paperGridOverlay}{paperJoinOverlay}
         {albumMark && <rect x={albumMark.bounds.x1 * 1000} y={albumMark.bounds.y1 * 1000}
           width={(albumMark.bounds.x2 - albumMark.bounds.x1) * 1000} height={(albumMark.bounds.y2 - albumMark.bounds.y1) * 1000}
           aria-label="Zu prüfende Schutzmarkierung" style={{ fill: "none", stroke: "#facc15", strokeWidth: 6, pointerEvents: "none" }} />}
@@ -454,6 +468,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     {captureSplitGroups.length > 0 && <p className="quad-hint" id="mobile-capture-split-count-hint">{captureSplitReviewHint}</p>}
     {filmGridGroups.length > 0 && <p className="quad-hint" id="mobile-film-grid-count-hint">{filmGridCountHint}</p>}
     {paperGridGroups.length > 0 && <p className="quad-hint" id="mobile-paper-grid-count-hint">{paperGridCountHint}</p>}
+    {paperJoinGroups.length > 0 && <p className="quad-hint" id="mobile-paper-join-count-hint">{paperJoinCountHint}</p>}
     {editable && motifTraces.length > 0 && <p className="quad-hint" id="mobile-motif-seam-hint">
       Die blau gestrichelten Linien zeigen gemessene Abschnitte einer möglichen Motivkante. Prüfe den Inhalt auch ausserhalb der Linien.
     </p>}
@@ -469,6 +484,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         <p className="quad-hint">{scannerBackingHint}</p>
       )}
       {filmGrid && <p className="quad-hint">{filmGridHint}</p>}
+      {paperJoinReview && <p className="quad-hint">{paperJoinHint}</p>}
       {paperGrid && (paperGrid.cut || !usingOutlineSuggestion)
         && <p className="quad-hint">{paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint}</p>}
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
@@ -662,7 +678,7 @@ function CropReview({ albumId, goHome }) {
   const [blockedCropTaskId, setBlockedCropTaskId] = useState(null);
   const [answerError, setAnswerError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [filmSelection, setFilmSelection] = useState(null);
+  const [groupSelection, setGroupSelection] = useState(null);
   const returnCountId = useRef(null);
   const leavingRef=useRef(false); const goHomeRef=useRef(goHome);
   const queueKey = JSON.stringify([albumId, type, focusedPhotoId]);
@@ -696,8 +712,10 @@ function CropReview({ albumId, goHome }) {
   const countOutlines = type === "segmentation" ? getFragmentReviewOutlines(item?.payload?.detections || []) : [];
   const captureSplitGroups = type === "segmentation" ? getCaptureSplitReviewGroups(item?.payload?.detections || []) : [];
   const filmGridGroups = type === "segmentation" ? getFilmGridReviewSeams(item?.payload?.detections || []) : [];
-  const selectedFilmGroup = filmSelection?.pageId === item?.id
-    ? filmGridGroups.find(({ key, photoIds }) => key === filmSelection?.key && photoIds.size === 3) : null;
+  const paperJoinGroups = type === "segmentation" ? getPaperJoinReviewGroups(item?.payload?.detections || []) : [];
+  const countGroups = actionableCountGroups(filmGridGroups, paperJoinGroups);
+  const selectedCountGroup = groupSelection?.pageId === item?.id
+    ? countGroups.find(({ key }) => key === groupSelection?.key) : null;
   const paperGridGroups = type === "segmentation" ? getPaperGridReviewGroups(item?.payload?.detections || []) : [];
   useEffect(()=>{ goHomeRef.current=goHome; },[goHome]);
   useEffect(() => {
@@ -718,7 +736,7 @@ function CropReview({ albumId, goHome }) {
     setFocusedPhotoId(photoId);
     setType(nextType);
     setBlockedCropTaskId(null);
-    setFilmSelection(null);
+    setGroupSelection(null);
     setAnswerError("");
     setMessage("");
   }
@@ -777,23 +795,19 @@ function CropReview({ albumId, goHome }) {
       setSubmitting(false);
     }
   }
-  async function excludeFilmGroup(photoIds) {
+  async function excludeCountGroup(group) {
     if (!item || submitting) return;
     setSubmitting(true);
     setAnswerError("");
     returnCountId.current = item.id;
     try {
-      await submitReviewEvent({
-        task_type: "segmentation", task_id: item.id, answer: "exclude_film_group", reason_code: "film_carrier",
-        idempotency_key: crypto.randomUUID(), metadata: { page_id: item.page_id, ui: "mobile-v2",
-          photo_count_revision: item.payload.photo_count_revision, film_group_photo_ids: [...photoIds] },
-      });
+      await excludeCountReviewGroup(item.id, item.payload.photo_count_revision, group, "mobile-v2");
       await load();
     } catch (error) {
-      setAnswerError(error.message === "film_review_group_stale" ? filmGroupReviewError : error.message);
+      setAnswerError(error.message.endsWith("_review_group_stale") ? countGroupReviewError : error.message);
       await load().catch(() => {});
     } finally {
-      setFilmSelection(null);
+      setGroupSelection(null);
       setSubmitting(false);
     }
   }
@@ -803,11 +817,12 @@ function CropReview({ albumId, goHome }) {
     {item ? <>
       <DetectionOverlay item={item} editable={type === "geometry"} openPaperOutline={Boolean(focusedPhotoId)}
         countOutlines={countOutlines} captureSplitGroups={captureSplitGroups}
-        filmGridGroups={filmGridGroups} selectedFilmGroup={selectedFilmGroup} paperGridGroups={paperGridGroups} onSaved={updateSavedCropModes}
+        filmGridGroups={filmGridGroups} selectedCountGroup={selectedCountGroup} paperGridGroups={paperGridGroups}
+        paperJoinGroups={paperJoinGroups} onSaved={updateSavedCropModes}
         onProtectionBlocked={setBlockedCropTaskId} />
-      <FilmCarrierReview groups={filmGridGroups} selected={selectedFilmGroup} busy={submitting}
-        onSelect={key => { setFilmSelection(key == null ? null : { pageId: item.id, key }); setAnswerError(""); }}
-        onExclude={excludeFilmGroup} />
+      <CountGroupReview groups={countGroups} selected={selectedCountGroup} busy={submitting}
+        onSelect={key => { setGroupSelection(key == null ? null : { pageId: item.id, key }); setAnswerError(""); }}
+        onExclude={excludeCountGroup} />
       {paperGridGroups.map(({ key, parents }, groupIndex) => {
         const [parentId] = parents;
         const parent = item.payload.detections.find(row => row.photo_id === parentId);
@@ -821,10 +836,11 @@ function CropReview({ albumId, goHome }) {
         {cropAnswers[type].map(([value,label]) => (
           <button key={value} className={value === "correct" ? "good" : ""}
             disabled={submitting || (value === "correct"
-              && (captureReviewPending || paperOutlinePending || motifReviewPending || rejectedDraftPending))}
+              && (captureReviewPending || paperOutlinePending || motifReviewPending || rejectedDraftPending || selectedCountGroup))}
             aria-describedby={value === "correct" ? approvalHint : undefined}
             onClick={() => record(value)}>
-            {value === "correct" && (deferredProposals.length || countOutlines.length || captureSplitGroups.length || filmGridGroups.length || paperGridGroups.length)
+            {value === "correct" && (deferredProposals.length || countOutlines.length || captureSplitGroups.length || filmGridGroups.length
+              || paperGridGroups.length || paperJoinGroups.length)
               ? "Anzahl bestätigen" : label}
           </button>
         ))}

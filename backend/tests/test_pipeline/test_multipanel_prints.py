@@ -9,8 +9,29 @@ from app.config import Settings
 from app.pipeline import segmentation
 from app.pipeline.crop_validation import automatic_crop_review_reasons
 from app.pipeline.multipanel_prints import (
-    FILM_GRID_REVIEW, MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE, film_grid_review_seam,
+    FILM_GRID_REVIEW, MULTIPANEL_PRINT_REVIEW, RECOVERED_STOCK_SOURCE, film_grid_review_seam, paper_join_review_traces,
 )
+
+
+@pytest.mark.parametrize("gap", [0, 1, 5])
+def test_paper_join_marks_native_material_spans_and_keeps_separate_rims(gap):
+    page = np.full((780, 1540, 3), (167, 164, 155), dtype=np.uint8)
+    page[115:651, 175:1375] = (78, 95, 112)
+    cv2.line(page, (774, 115), (775, 650), (68, 84, 100), 1)
+    cv2.ellipse(page, (548, 370), (214, 172), -10, 0, 320, (14, 25, 45), 8)
+    cv2.ellipse(page, (988, 370), (208, 172), 10, 5, 325, (14, 25, 45), 8)
+    if gap:
+        page[115:651, 775:775 + gap] = (167, 164, 155)
+    first = np.float32([[175, 118], [768, 118], [768, 646], [175, 646]])
+    second = np.float32([[782, 118], [1374, 118], [1374, 646], [782, 646]])
+    traces = paper_join_review_traces(page, first, second)
+    if gap:
+        assert traces == []
+    else:
+        assert len(traces) == 2
+        for trace, boundary in zip(sorted(traces, key=lambda trace: trace[:, 1].mean()), (115, 650), strict=True):
+            assert trace[:, 0].min() < 774 < trace[:, 0].max()
+            assert np.max(np.abs(trace[:, 1] - boundary)) <= 2
 
 
 def page_and_proposals(settings, gap, angle, *, mixed=False, jpeg_quality=91):
