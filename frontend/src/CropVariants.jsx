@@ -33,6 +33,8 @@ export const crossingPrintHint = "Prüfe am Original, ob die gestrichelte Kontur
 export const crossingPrintSaveHint = "Korrigiere und speichere zuerst die vier Ecken unter «Ganzer Abzug».";
 export const printOutlineSaveHint = "Prüfe und speichere zuerst die Papierkontur unter «Ganzer Abzug».";
 export const captureOutlineReviewReason = "PRINT_CAPTURE_OUTLINE_REVIEW";
+const captureAtEdgeReason = "PRINT_AT_CAPTURE_EDGE";
+const captureAtEdgeHint = "Der Abzug reicht über den Aufnahmerand hinaus. Für einen vollständigen Zuschnitt brauchst du eine neue Aufnahme.";
 export const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
 const curvedMotifReviewReason = "IMAGE_BOUNDARY_CURVED";
 const curvedMotifReviewHint = "Die Motivkante verläuft unregelmässig. Prüfe am Original, welche Bildfelder und Beschriftungen zum Motiv gehören.";
@@ -48,6 +50,7 @@ const printEdgeReviewHints = {
   PRINT_BOUNDARY_CURVED: "Die Abzugskante ist gekrümmt. Prüfe am Original, ob der Abzug für eine neue Aufnahme flach aufgelegt werden kann.",
   PRINT_CURVED_OUTLINE_REVIEW: "Die Papierkante braucht eine weitere Prüfung. Setze die Ecken an die sichtbare Aussenkante. Bei einer Wölbung hilft eine neue Aufnahme mit flach liegendem Abzug.",
   [captureOutlineReviewReason]: "Die vollständige Papierkante ist noch unklar. Vergleiche die Ecken mit der Aussenkante im Original. Bei einer verdeckten oder gewölbten Kante hilft eine neue Aufnahme mit sichtbarem Rand rundum.",
+  [captureAtEdgeReason]: captureAtEdgeHint,
   PAPER_GRID_OVERLAP_REVIEW: "Zwei Vorschläge überdecken dieselbe Stelle. Kläre zuerst die überlappenden Vorschläge am Original und berechne den Zuschnitt danach erneut.",
 };
 
@@ -61,6 +64,10 @@ export function getDeferredPrintProposals(proposals) {
     && proposal.polygon?.length === 4 && getSourceEdgeTraces([proposal.polygon]).length === 1) : [];
 }
 
+export function captureRequiresReview(fullPrint) {
+  return fullPrint?.reason_codes?.some(reason => reason === captureAtEdgeReason || reason === captureOutlineReviewReason);
+}
+
 export function getPrintEdgeReviewHint(fullPrint) {
   if (fullPrint?.reason_codes?.includes(scallopedOwnershipReason)) {
     return scallopedOwnershipHint;
@@ -72,6 +79,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
     return printEdgeReviewHints.PRINT_CURVED_OUTLINE_REVIEW;
   }
   if (getSourceEdgeTraces(fullPrint?.suggested_edge_traces).length) {
+    if (fullPrint.suggested_edge_source === "capture_edge_boundary") {
+      return `Die gestrichelten Linien zeigen die sichtbaren Papierkanten. ${captureAtEdgeHint}`;
+    }
     return "Die gestrichelten Abschnitte zeigen die gemessene Papierkante im Original. Vergleiche sie mit den geraden Zuschnittkanten.";
   }
   return fullPrint?.reason_codes?.map((reason) => printEdgeReviewHints[reason]).find(Boolean);

@@ -16,6 +16,7 @@ from app.pipeline.crossing_prints import CROSSING_PRINT_REVIEW, crossing_print_o
 from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
     clipped_fragment_needs_review, clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
+    visible_capture_edge_traces,
 )
 from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
@@ -1675,7 +1676,7 @@ def _recover_capture_edge_prints(
     additional = [(quad, pixel_vertices_to_normalized(quad, width, height)) for quad, _ in supported_conflicts]
     rejected = set()
     overlap_reviews = 0
-    for _, matches in supported_conflicts:
+    for visible_quad, matches in supported_conflicts:
         if len(matches) != 2:
             continue
         fragment, full = sorted(matches, key=lambda index: matches[index].second_containment)
@@ -1692,6 +1693,10 @@ def _recover_capture_edge_prints(
             quad = order_quad_cyclic(normalized_vertices_to_pixels(outline, width, height))
             if clipped_fragment_needs_review(image, quad):
                 updated[fragment] = replace(item, review_reasons=[CLIPPED_PRINT_OVERLAP_REVIEW, *item.review_reasons])
+                parent = updated[full]
+                traces = [_normalized_polygon(side, width, height)
+                          for side in visible_capture_edge_traces(image, visible_quad)]
+                updated[full] = replace(parent, mask={**parent.mask, "capture_edge_review_traces": traces})
                 overlap_reviews += 1
         except (cv2.error, ValueError):
             continue

@@ -4,7 +4,7 @@ import { createAlbum, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop,
 import { resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import {
-  adjacentPrintHint, captureOutlineReviewReason, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, crossingPrintHint,
+  adjacentPrintHint, captureRequiresReview, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, crossingPrintHint,
   crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridReason, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
@@ -218,7 +218,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroup
       setOrientation(savedDegrees);
       setSavedOrientation(savedDegrees);
       const cropModes = getCropModes(saved);
-      const held = cropModes?.full_print?.reason_codes?.includes(captureOutlineReviewReason);
+      const held = captureRequiresReview(cropModes?.full_print);
       setSavedCropUrl(held ? "" : `/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`);
       onSaved?.(cropModes, saved.segmentation_mask, saved.motif_review_pending);
     } catch (error) {
@@ -347,7 +347,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, filmGridGroup
       {paperGrid && <p className="quad-hint">{paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint}</p>}
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
-      {printEdgeReviewHint && <p className="quad-hint">{printEdgeReviewHint}</p>}
+      {printEdgeReviewHint && <p className="quad-hint" id="mobile-print-edge-review-hint">{printEdgeReviewHint}</p>}
       {motifReviewPending && <p className="quad-hint" id="mobile-motif-review-hint">
         {motifBoundaryReviewHint && `${motifBoundaryReviewHint} `}{motifDesktopReviewHint}
       </p>}
@@ -521,9 +521,10 @@ function CropReview({ albumId, goHome }) {
     setIndex(0);
   }, [albumId, type]);
   useEffect(() => { load().catch(e => setMessage(e.message)); }, [load]); const item = items[index];
-  const captureReviewPending = type === "geometry"
-    && item?.payload?.crop_modes?.full_print?.reason_codes?.includes(captureOutlineReviewReason);
+  const captureReviewPending = type === "geometry" && captureRequiresReview(item?.payload?.crop_modes?.full_print);
   const motifReviewPending = type === "geometry" && item?.payload?.motif_review_pending;
+  const approvalHint = captureReviewPending ? "mobile-print-edge-review-hint"
+    : motifReviewPending ? "mobile-motif-review-hint" : undefined;
   const deferredProposals = getDeferredPrintProposals(item?.payload?.deferred_print_proposals);
   const countOutlines = type === "segmentation" ? getFragmentReviewOutlines(item?.payload?.detections || []) : [];
   const filmGridGroups = type === "segmentation" ? getFilmGridReviewSeams(item?.payload?.detections || []) : [];
@@ -552,7 +553,7 @@ function CropReview({ albumId, goHome }) {
           motif_review_pending: motifReviewPending, variant_urls: variantUrls } };
       }));
     }
-    setMessage(cropModes?.full_print?.reason_codes?.includes(captureOutlineReviewReason)
+    setMessage(captureRequiresReview(cropModes?.full_print)
       ? "Vier Ecken gespeichert. Die Papierkante bleibt in Prüfung."
       : motifReviewPending ? "Vier Ecken gespeichert. Der Motivzuschnitt bleibt in Prüfung."
         : "Vier Ecken gespeichert und Perspektive korrigiert");
@@ -593,7 +594,7 @@ function CropReview({ albumId, goHome }) {
         {cropAnswers[type].map(([value,label]) => (
           <button key={value} className={value === "correct" ? "good" : ""}
             disabled={submitting || (value === "correct" && (captureReviewPending || motifReviewPending))}
-            aria-describedby={value === "correct" && motifReviewPending ? "mobile-motif-review-hint" : undefined}
+            aria-describedby={value === "correct" ? approvalHint : undefined}
             onClick={() => record(value)}>
             {value === "correct" && (deferredProposals.length || countOutlines.length || filmGridGroups.length || paperGridGroups.length)
               ? "Anzahl bestätigen" : label}

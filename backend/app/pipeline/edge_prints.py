@@ -9,7 +9,7 @@ from app.pipeline.geometry import order_quad_cyclic
 from app.pipeline.print_edges import _side_line
 
 
-CAPTURE_EDGE_REVISION = 7
+CAPTURE_EDGE_REVISION = 8
 CAPTURE_EDGE_SOURCE = "capture_edge_boundary"
 CAPTURE_EDGE_HOLD = "PRINT_AT_CAPTURE_EDGE"
 SCANNER_BACKING_REVIEW = "SCANNER_BACKING_UNCERTAIN"
@@ -163,6 +163,13 @@ def clipped_print_outlines(image: np.ndarray) -> list[np.ndarray]:
 def _frame_sides(quad: np.ndarray, ends: np.ndarray, image: np.ndarray) -> np.ndarray:
     limit = np.array(image.shape[1::-1]) - 1
     return ((quad == ends) & ((quad == 0) | (quad == limit))).any(axis=1)
+
+
+def visible_capture_edge_traces(image: np.ndarray, quad: np.ndarray) -> list[np.ndarray]:
+    """Return the measured paper sides that do not coincide with the raster frame."""
+    ends = np.roll(quad, -1, axis=0)
+    return [np.stack((start, end)) for start, end, frame in zip(quad, ends, _frame_sides(quad, ends, image), strict=True)
+            if not frame]
 
 
 def clipped_print_overlap_uncertain(image: np.ndarray, quad: np.ndarray, clipped: np.ndarray) -> bool:

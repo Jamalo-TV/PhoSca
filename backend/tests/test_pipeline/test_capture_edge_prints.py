@@ -11,6 +11,7 @@ from app.pipeline import segmentation
 from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
 )
+from app.pipeline.perspective import correct_photo_crop
 from app.pipeline.variants import variant_path_from_photo
 
 
@@ -310,8 +311,29 @@ def test_supported_capture_conflict_gives_review_hints_without_removing_candidat
     partial, scanner, measured = result.detections[2:]
     assert (CLIPPED_PRINT_OVERLAP_REVIEW in partial.review_reasons) == fragment_review
     assert (SCANNER_BACKING_REVIEW in scanner.review_reasons) == scanner_review
-    assert [item.mask for item in result.detections[2:]] == [item.mask for item in original.detections[2:]]
-    assert measured is full
+    assert partial.mask == original.detections[2].mask
+    assert scanner.mask == original.detections[3].mask
+    mask = measured.mask.copy()
+    traces = mask.pop("capture_edge_review_traces", None)
+    assert mask == full.mask
+    if not fragment_review:
+        assert traces is None
+        return
+
+    assert len(traces) == 2
+    assert all(len(line) == 2 and not any(line[0][axis] == line[1][axis] in (0., 1.)
+                                         for axis in ("x", "y")) for line in traces)
+    params = dict(dual_mode=True, auto_orient=False, protect_regions=False)
+    baseline = correct_photo_crop(page, full.bounding_box, full.mask, **params)
+    crop = correct_photo_crop(page, measured.bounding_box, measured.mask, **params)
+    np.testing.assert_array_equal(crop.rectified_untrimmed, baseline.rectified_untrimmed)
+    modes = crop.metadata["crop_modes"]
+    assert all(mode["status"] == "review_needed" and CAPTURE_EDGE_HOLD in mode["reason_codes"] for mode in modes.values())
+    whole = modes["full_print"]
+    assert whole["warp_quad"] == baseline.metadata["crop_modes"]["full_print"]["warp_quad"]
+    assert whole["suggested_edge_source"] == CAPTURE_EDGE_SOURCE
+    assert whole["suggested_edge_traces"] == traces
+    assert "suggested_warp_quad" not in whole and "suggested_edge_traces" not in modes["image_only"]
 
 
 def test_capture_edge_hold_applies_to_stale_download_metadata():

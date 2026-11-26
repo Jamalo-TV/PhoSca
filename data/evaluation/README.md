@@ -1486,6 +1486,59 @@ the material veto. Frozen detection and geometry, Golden, NerdScan,
 Domoritz, the contact and stock controls reproduce previous detection
 and crop metrics.
 
+### Show the visible paper sides in a clipped overlap
+
+The lower NerdScan crop already has a measured outer footprint at the
+source. Revision 8 uses it when the existing conflict test associates
+one nearly complete model proposal and one unsupported internal
+classical contour with the same outline. It passes the measured
+physical sides to the parent print's `full_print.suggested_edge_traces`.
+The frame interval is excluded on every side of the raster. The native
+2179 × 3000 test has two physical sides, the upper and left edges.
+The right and bottom are capture limits. The child retains its
+separate overlap reason and wrong-object action.
+
+The geometry editor draws the trace over the original page. The
+detected masks and existing warp serve as the active geometry. Saving
+an explicit edit uses the existing manual capture-outline guard. Rejecting the
+fragment leaves the parent's physical clipping and its review
+requirement in place.
+
+The source comparison shows why the two count contenders still matter.
+An upright model-only replay matches 3/3 with no extra from proposal
+thresholds 0.20 to 0.60. Running capture-edge measurement on those
+model proposals in isolation produces roughly 0.999 draft-mask IoU on
+all three. Two of the quarter-turn layouts still produce an extra
+proposal. The unmodified hybrid can recover an additional generated
+overlay with a two-level change in the source channels on the lower
+print. The model-only source-measurement path misses that layer.
+Retaining the count contenders preserves that detection. In the
+180° hybrid replay the expected upper print is split among three
+proposals and the result is 2/3 matched with four extras. Each piece
+occupies a share of the same source-measured footprint.
+The union of the two model fragments covers 91.2% of that
+footprint with only 0.27% shared area. The classical fragment
+adds about 0.3 percentage points to the union.
+The current recovery requires a unique owner of that whole footprint.
+
+Paired multipart uploads of the upright source produce five active
+rows in both revisions. All masks, crop matrices, mode status and
+source-corrected preview JPEG bytes match after excluding the new
+trace metadata. Both named downloads and the legacy alias return 404.
+The measured trace survives reprocessing after the fragment is
+explicitly rejected. A subsequent manual rectangle and test size still
+hold the clipped print and both named variants. Desktop and 412 × 890
+mobile workflow checks
+display the same two source sides to within 0.000001 normalized
+coordinates. Both show the recapture hint and the fragment's separate
+wrong-object action. Mobile disables the completeness approval while
+a capture-edge or capture-outline review reason is active.
+
+The mixed native capture step took 309.73 to 294.13 ms median and
+468.31 to 508.92 ms at p95 across 24 paired warm one-thread calls while
+other regression jobs were active. It uses the already measured
+outline for the two coordinate traces.
+
 ## Four neighboring loose prints on a flatbed
 
 The published 600 × 851 JPEG shows four separate prints that the author

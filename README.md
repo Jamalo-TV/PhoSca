@@ -504,9 +504,12 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
 - **Echter Abzug am Aufnahmebildrand.** Beim NerdScan-Entwicklungsbild
   traf die getestete Konfiguration drei erwartete Abzüge und lieferte
   zwei zusätzliche Vorschläge. Beide Modi blieben in Prüfung.
+  Beim unteren Abzug zeigt der Editor die gemessene obere und linke
+  Papierkante. Rechts und unten endet die Aufnahme. Der
+  überlappende Teilvorschlag kann separat beurteilt werden.
   Bei angeschnittenen Originalen hilft eine neue Aufnahme mit sichtbar
   belassenen Papierrändern. [Entwicklungsreferenz](data/evaluation/nerdscan-clipped-development.json) ·
-  [Auswertung](data/evaluation/README.md)
+  [Auswertung](data/evaluation/README.md#show-the-visible-paper-sides-in-a-clipped-overlap)
 
 Die Abbildung enthält generierte Testbilder und lässt sich lokal neu berechnen.
 
