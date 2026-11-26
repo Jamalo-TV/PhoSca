@@ -47,6 +47,7 @@ const captureAtEdgeReason = "PRINT_AT_CAPTURE_EDGE";
 const competingPrintEdges = "competing_print_edges";
 const possibleBackedPaperEdge = "possible_backed_paper_edge";
 export const possibleOverextendedPrintEdge = "possible_overextended_print_edge";
+const possibleInwardPrintCorner = "possible_inward_print_corner";
 const captureAtEdgeHint = "Der Abzug reicht über den Aufnahmerand hinaus. Für einen vollständigen Zuschnitt brauchst du eine neue Aufnahme.";
 export const captureSplitReviewHint = "Die gestrichelten Linien zeigen einen möglichen gemeinsamen Papierrand. Prüfe am Original, wie viele Abzüge dort liegen.";
 export const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
@@ -160,6 +161,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
   if (fullPrint?.suggested_outline_source === "adjacent_paper_stock") {
     return "Prüfe am Original, ob der zusätzlich vorgeschlagene Papierstreifen zu diesem Abzug gehört.";
   }
+  if (fullPrint?.suggested_outline_source === possibleInwardPrintCorner) {
+    return "Prüfe am Original, ob die gemessene Ecke und der ergänzte Bildbereich zum selben Abzug gehören.";
+  }
   if (fullPrint?.suggested_warp_quad?.length === 4) {
     return "Vergleiche den vorgeschlagenen Aussenumriss mit dem Original. Setze die Ecken an die sichtbare Papierkante.";
   }
@@ -203,6 +207,10 @@ export function getMotifMarginMarks(motif) {
 
 export function getPrintOutlinePreviewHint(fullPrint) {
   const preview = fullPrint?.outline_preview;
+  if (preview?.source === possibleInwardPrintCorner) {
+    const aspect = preview.reason_codes?.includes("PRINT_ASPECT_UNCERTAIN") ? " Das Seitenverhältnis ist geschätzt." : "";
+    return `Die Vorschau ergänzt die am Original gemessene Ecke.${aspect}`;
+  }
   if (preview?.source === possibleOverextendedPrintEdge) {
     const aspect = preview.reason_codes?.includes("PRINT_ASPECT_UNCERTAIN") ? "Das Seitenverhältnis ist geschätzt. " : "";
     return aspect + (preview.protected_content_review ? "Prüfe vor einer Korrektur auch den Ausschnitt auf möglichen Inhaltsverlust."
@@ -212,6 +220,10 @@ export function getPrintOutlinePreviewHint(fullPrint) {
   return preview.reason_codes?.includes("PRINT_ASPECT_UNCERTAIN")
     ? "Vorgeschlagener Abzug mit geschätztem Seitenverhältnis."
     : "Vorschau des vorgeschlagenen Aussenumrisses.";
+}
+
+export function showsPaperEdgeComparison(fullPrint) {
+  return [possibleOverextendedPrintEdge, possibleInwardPrintCorner].includes(fullPrint?.outline_preview?.source);
 }
 
 export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint }) {
@@ -371,7 +383,7 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
   const captureSplit = getCropModes(photo)?.full_print?.suggested_edge_source === "capture_edge_split";
   const pendingPaperEdge = getCropModes(photo)?.full_print?.reason_codes?.includes("PRINT_EDGE_CONFIRMATION_REQUIRED");
   const scallopedOutline = mode === "full_print" && result?.reason_codes?.includes(scallopedOutlineReviewReason);
-  const printOutline = getCropModes(photo)?.full_print?.outline_preview?.source === possibleOverextendedPrintEdge
+  const printOutline = showsPaperEdgeComparison(getCropModes(photo)?.full_print)
     ? null : photo.urls?.full_print_preview;
   const fullPreview = printOutline || photo.urls?.source_corrected_untrimmed || photo.urls?.original;
   const motifPreview = photo.urls?.image_only_preview;

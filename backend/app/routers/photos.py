@@ -28,6 +28,7 @@ from app.pipeline.decisions import (
 from app.pipeline.edge_trace import measure_edge_trace
 from app.pipeline.geometry import normalized_polygon_overlap
 from app.pipeline.image_ops import load_image, normalized_box_to_pixels
+from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_SOURCE
 from app.pipeline.manual_paper_boundary import (
     PAPER_GRID_OVERLAP_REVIEW, backed_edge_review_reference, capture_outline_review_required, hold_overlapping_paper_claim_modes,
     original_prediction_mask, paper_curve_from_review_traces, paper_curve_review_reference,
@@ -255,7 +256,8 @@ async def _review_overlapping_crops(
         full_mode = modes.get("full_print") or {}
         preview = full_mode.get("outline_preview") or {}
         preview_source = preview.get("source")
-        if quad is not None and preview_source in {GRID_OUTLINE_REVIEW_SOURCE, POSSIBLE_OVEREXTENDED_PRINT_EDGE} and manual_print_intersects(
+        assisted_previews = (GRID_OUTLINE_REVIEW_SOURCE, POSSIBLE_OVEREXTENDED_PRINT_EDGE, INWARD_CORNER_REVIEW_SOURCE)
+        if quad is not None and preview_source in assisted_previews and manual_print_intersects(
             preview.get("source_outline"), quad, width, height,
         ):
             full_mode.pop("outline_preview")
@@ -263,6 +265,9 @@ async def _review_overlapping_crops(
             if full_mode.get("suggested_edge_source") == POSSIBLE_OVEREXTENDED_PRINT_EDGE:
                 full_mode.pop("suggested_edge_source", None)
                 full_mode.pop("suggested_edge_traces", None)
+            if full_mode.get("suggested_outline_source") == INWARD_CORNER_REVIEW_SOURCE:
+                full_mode.pop("suggested_warp_quad", None)
+                full_mode.pop("suggested_outline_source", None)
             correction.pop(f"{FULL_PRINT_REVIEW_PREVIEW}_path", None)
             correction.pop(f"{FULL_PRINT_REVIEW_PREVIEW}_asset_id", None)
             neighbor.enhancement_applied = metadata
@@ -687,7 +692,7 @@ async def update_photo_bounding_box(
             outer = segmentation_mask.get("warp_quad") or []
             previous_outlines = (full_print.get("warp_quad"), original_mask.get("warp_quad") or original_mask.get("polygon"))
             if not explicit or (not payload.confirm_print_outline and (
-                full_print.get("suggested_outline_source") == ADJACENT_STOCK_REVIEW_SOURCE
+                full_print.get("suggested_outline_source") in (ADJACENT_STOCK_REVIEW_SOURCE, INWARD_CORNER_REVIEW_SOURCE)
                 or any(_same_visible_outline(previous, outer, native_size=(width, height)) for previous in previous_outlines)
             )):
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="print_outline_review_required")

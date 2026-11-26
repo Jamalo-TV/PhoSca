@@ -53,7 +53,7 @@ import {
   countGroupReviewError, CountGroupReview, deferredPrintHint, filmGridCountHint, filmGridHint, filmGridReason,
   getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
-  paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
+  paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
@@ -1475,7 +1475,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const motifPreview = selected?.variant_urls?.image_only_preview || selected?.urls?.image_only_preview;
   const fullPrintPreview = selected?.variant_urls?.full_print_preview || selected?.urls?.full_print_preview;
   const untrimmedPrint = selected?.untrimmed_url || selected?.variant_urls?.source_corrected_untrimmed;
-  const comparePaperEdge = untrimmedPrint && fullPrintMode?.outline_preview?.source === possibleOverextendedPrintEdge;
+  const comparePaperEdge = untrimmedPrint && showsPaperEdgeComparison(fullPrintMode);
   const albumMark = !newPrint && !editingImage && !rejectedDetection ? selected?.correction?.album_page_mark_review : null;
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const motifCorners = selectedShape?.imageQuad || savedShape?.warpQuad;

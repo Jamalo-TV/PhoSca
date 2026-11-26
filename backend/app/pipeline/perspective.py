@@ -27,6 +27,7 @@ from app.pipeline.geometry import (
     rectify_crop_quad,
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
+from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_SOURCE, suggest_inward_corner_outline
 from app.pipeline.motif_boundary import close_motif_outline, motif_outline_corners_supported, trace_motif_boundary
 from app.pipeline.motif_margin import PAPER_STOCK_MOTIF_SOURCE, motif_margin_marks
 from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
@@ -1944,6 +1945,25 @@ def correct_photo_crop(
                     pixels, full_mode["outline_preview"] = preview
                     full_mode["suggested_edge_traces"] = [_vertices_on_page(trace, width, height) for trace in traces]
                     full_mode["suggested_edge_source"] = POSSIBLE_OVEREXTENDED_PRINT_EDGE
+                    result = replace(result, full_print_preview=pixels)
+        if (enable_classical_retry and not manual and mask.get("source") == "classical_border_quad"
+                and mask.get("detector_source") == "edge_contour" and not mask.get("warp_quad")
+                and "PRINT_BOUNDARY_AMBIGUOUS" in full_reasons
+                and set(full_reasons) <= {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_ASPECT_UNCERTAIN"}
+                and not any(full_mode.get(key) for key in ("suggested_warp_quad", "outline_preview"))
+                and full_mode.get("suggested_edge_source") in {None, COMPETING_PRINT_EDGES}
+                and not any(mask.get(name) for name in _STOCK_REVIEW_CONFLICTS)):
+            candidate = suggest_inward_corner_outline(page_image, src_points, boundary_refinement)
+            if candidate is not None and _keeps_protected_preview_content(page_image, src_points, candidate, regions, protection):
+                rotation = int(result.metadata["orientation"].get("rotation_degrees") or 0) % 360
+                preview = _render_review_quad_preview(
+                    page_image, candidate, rotation, neighbor_polygons, regions, camera_matrix, page_plane,
+                    source=INWARD_CORNER_REVIEW_SOURCE,
+                )
+                if preview is not None:
+                    pixels, full_mode["outline_preview"] = preview
+                    full_mode["suggested_warp_quad"] = _vertices_on_page(candidate, width, height)
+                    full_mode["suggested_outline_source"] = INWARD_CORNER_REVIEW_SOURCE
                     result = replace(result, full_print_preview=pixels)
         if (enable_classical_retry and not manual and full_reasons == ["PRINT_BOUNDARY_AMBIGUOUS"]
                 and not stock_suggestion and neighbor_masks and not full_mode.get("suggested_warp_quad")

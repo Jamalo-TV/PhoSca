@@ -190,6 +190,72 @@ async def test_adjacent_stock_draft_requires_explicit_paper_confirmation(client,
     assert (await client.get(right_url)).json() == other
 
 
+async def test_source_corner_preview_is_held_and_retires_for_a_new_claim(client, monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.services import pipeline
+
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
+    monkeypatch.setenv("MAX_UPLOAD_SIZE", "2000000")
+    monkeypatch.setenv("MAX_REQUEST_SIZE", "2100000")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_CLASSICAL_SEGMENTATION_FALLBACK", "true")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "true")
+    monkeypatch.setenv("YOLO_MODEL_PATH", str(tmp_path / "absent.onnx"))
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    get_settings.cache_clear()
+
+    source = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_05.jpg"
+    album_id = (await client.post("/api/v1/albums", json={"name": "Partial contour review"})).json()["id"]
+    album = f"/api/v1/albums/{album_id}"
+    uploaded = await client.post(f"{album}/pages/upload", files={"files": (source.name, source.read_bytes(), "image/jpeg")})
+    assert uploaded.status_code == 201, uploaded.text
+    photos = (await client.get(f"{album}/photos")).json()
+    assert len(photos) == 5
+    row, = [photo for photo in photos if photo["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+            .get("suggested_outline_source") == "possible_inward_print_corner"]
+    url = f"/api/v1/photos/{row['id']}"
+    detail = (await client.get(url)).json()
+    modes = detail["enhancement_applied"]["correction"]["crop_modes"]
+    full = modes["full_print"]
+    assert full["suggested_edge_source"] == "competing_print_edges"
+    assert len(full["suggested_edge_traces"]) == 2
+    assert full["warp_quad"][2]["y"] < .26
+    proposal = full["suggested_warp_quad"]
+    assert np.linalg.norm([2559 * proposal[2]["x"] - 1265.86, 1919 * proposal[2]["y"] - 759.85]) < 3.
+    assert full["outline_preview"]["source_outline"] == proposal
+    preview_url = detail["urls"]["full_print_preview"]
+    preview = await client.get(preview_url)
+    assert preview.status_code == 200 and preview.headers["content-type"] == "image/png"
+    assert (await client.get(detail["urls"]["source_corrected_untrimmed"])).status_code == 200
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
+    implicit = await client.patch(f"{url}/bounding-box", json={
+        "bounding_box": row["bounding_box"],
+        "segmentation_mask": {"source": "manual_quad", "polygon": proposal, "warp_quad": proposal},
+    })
+    assert implicit.status_code == 409 and implicit.json()["detail"] == "print_outline_review_required"
+
+    in_added_region = [{"x": x / 2559, "y": y / 1919}
+                       for x, y in ((1050, 657), (1190, 657), (1190, 729), (1050, 729))]
+    manual = await client.post(f"/api/v1/pages/{row['page_id']}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": in_added_region,
+    })
+    assert manual.status_code == 201, manual.text
+    for reprocess in (False, True):
+        if reprocess:
+            assert (await client.post(f"{url}/reprocess")).status_code == 200
+        current = (await client.get(url)).json()
+        corrected = current["enhancement_applied"]["correction"]["crop_modes"]
+        assert "suggested_warp_quad" not in corrected["full_print"]
+        assert "outline_preview" not in corrected["full_print"]
+        assert corrected["full_print"]["suggested_edge_traces"] == full["suggested_edge_traces"]
+        assert corrected["full_print"]["warp_quad"] == full["warp_quad"]
+        assert corrected["image_only"] == modes["image_only"]
+        assert (await client.get(preview_url)).status_code == 404
+        assert (await client.get(f"{url}/image?variant=full_print")).status_code == 404
+
+
 @pytest.mark.parametrize("kind", ["film", "paper"])
 async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kind):
     from app.config import get_settings

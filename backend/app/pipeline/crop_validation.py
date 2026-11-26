@@ -18,6 +18,7 @@ from app.pipeline.crossing_prints import CROSSING_PRINT_REVISION
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.edge_prints import CAPTURE_EDGE_REVISION
 from app.pipeline.fragmented_prints import FRAGMENTED_PRINT_REVISION
+from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_REVISION
 from app.pipeline.fusion_ownership import FUSION_OWNERSHIP_REVISION
 from app.pipeline.model_registry import sha256
 from app.pipeline.motif_margin import MOTIF_MARGIN_REVIEW_REVISION
@@ -61,6 +62,10 @@ def crop_validation_profile(settings: Settings) -> dict:
         "print_boundary": PRINT_BOUNDARY_REVISION if settings.enable_precise_photo_crops else None,
         "print_outline_suggestion": (
             PRINT_OUTLINE_SUGGESTION_REVISION
+            if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+        ),
+        "inward_corner_review": (
+            INWARD_CORNER_REVIEW_REVISION
             if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "registered_model_required": settings.require_registered_models,

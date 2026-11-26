@@ -164,6 +164,23 @@ Downloadfreigabe bleiben beim Einblenden der Linien gleich. Ein bereits
 vorhandener Umriss- oder Kantenhinweis hat Vorrang.
 [Kantenvergleich](data/evaluation/README.md#show-competing-edges-in-review)
 
+Wenn ein klassisch erkannter Umriss eine Ecke diagonal abschneidet,
+kann **Ganzer Abzug** eine zweite Vorschau anbieten. PhoSca verlängert
+die beiden betroffenen Seiten in einem begrenzten Suchbereich und
+prüft im Original den Übergang vom hellen Album zum dunkleren Bild.
+Beide Linien müssen bis zur vorgeschlagenen Ecke sichtbar sein und
+dort enden. Andere Abzüge und geschützte Bildbereiche werden bei der
+Vorschau berücksichtigt. Eine neue manuell erfasste Fläche, die die
+ergänzte Ecke beansprucht, entfernt den Vorschlag. Strittige Kanten
+an anderer Stelle bleiben im Editor sichtbar.
+
+Der Reviewer prüft am Original, ob der ergänzte Bereich zum selben
+Abzug gehört. **Aussenumriss in den Editor laden** übernimmt die
+Punkte als Entwurf. Erst eine ausdrücklich bestätigte Papierkorrektur
+speichert den Umriss. Das Seitenverhältnis und die Eignung für beide
+Exporte werden separat geprüft.
+[Beispiel Golden 05](data/evaluation/README.md#offer-a-reviewed-preview-for-the-inset-corner-on-golden-05)
+
 Bei zwei eng benachbarten Abzügen mit unterscheidbarem Papier
 kann der Editor einen zusätzlichen Aussenumriss anbieten. PhoSca
 schätzt den Papierton für jeden Abzug aus seinen gestützten Seiten.

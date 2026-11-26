@@ -12,7 +12,7 @@ import {
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
-  paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
+  paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview,
   scannerBackingHint, scannerBackingReason,
@@ -188,7 +188,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const albumMark = editable && !editingMotif && !reviewedNonPrint ? item.payload?.correction?.album_page_mark_review : null;
   const [albumMarkReviewId, setAlbumMarkReviewId] = useState(null);
   const displayedQuad = editingMotif ? motifQuad || savedQuad : quad;
-  const comparePaperEdge = !editingMotif && fullPrintMode?.outline_preview?.source === possibleOverextendedPrintEdge
+  const comparePaperEdge = !editingMotif && showsPaperEdgeComparison(fullPrintMode)
     && item.payload?.untrimmed_url && item.payload?.variant_urls?.full_print_preview;
   const [usingOutlineSuggestion, setUsingOutlineSuggestion] = useState(Boolean(initialPaperOutline));
   const [editingPreview, setEditingPreview] = useState(Boolean(initialPaperOutline && !outlinePreviewHint));

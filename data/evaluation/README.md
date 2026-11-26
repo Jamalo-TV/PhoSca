@@ -3253,6 +3253,69 @@ starting geometry. The production path and instance count
 remain as measured above. The metric aspect and final ownership
 need separate proof.
 
+#### Offer a reviewed preview for the inset corner on Golden 05
+
+On the model-free upload path, the target is a classical four-sided
+edge-contour prediction. Its two opposing sides have full source
+support. Its lower diagonal has 0.232 support and its upper edge
+has two plausible traces near a dark album rail. PhoSca searches for
+the missing corner only when the truncated side is substantially
+shorter than its opposite side and both already observed directions
+support a diagonal truncation. Both new lines must follow a signed
+light-to-dark source transition in every quarter of their search
+windows. The two transitions have to reach their intersection and
+end there. The preview also checks that the expanded outline retains
+protected content and clears the other active print claims.
+
+| Whole-print source footprint against the Golden 05 development draft | Stored crop | Review preview |
+| --- | ---: | ---: |
+| IoU | 0.771689 | 0.993180 |
+| Omitted centres out of 641,447 | 144,277 | 825 |
+| Centres outside the draft | 2,815 | 3,574 |
+| Maximum corner error at source scale | 289.304 px | 4.069 px |
+
+The 996 × 658 preview uses the measured lines and the retained
+opposite sides. It includes all previously retained draft-owned
+centres. The table measures the projected source footprint against a
+development draft. The disputed upper edge, physical aspect and
+interpolation accuracy of a finished crop still need a verified
+reference. A printed rectangle on wider paper, or a holder flush
+with the observed transition, can generate the same evidence. The
+editor asks the reviewer to verify that the added area belongs to
+the same physical print before saving a paper correction.
+
+The normal upload, desktop and mobile editor and image endpoints
+were exercised with the tracked JPEG and no detector model. Five
+proposals remain. Exactly one offers the second preview alongside
+the stored result, and the two existing upper-edge traces stay
+visible. Loading the draft performs no write. A save without paper
+confirmation and generic approval return HTTP 409. Both named
+exports and the legacy trimmed route return HTTP 404. When a new
+manual print claims an area wholly inside the added corner, the
+PNG and its editable outline are retired, including after
+reprocessing. The stored preview and the original traces persist.
+
+Independent source controls preserve the ordinary output arrays and
+both modes' review states. The extra preview appears in the native,
+JPEG75 and lightly blurred fixed-geometry replays. It is absent in
+all six visible-gap trials and all nine crossing, matte and holder
+trials with interrupted edge evidence. A flush transition can still
+produce a preview in all 17 same-edge trials. Across 16 complete
+model-free reanalyses at four quarter turns and four encoding
+conditions, eight retain a nearly complete upper-left proposal
+already (polygon IoU at least 0.949 on the 256-pixel comparison
+raster). Five get this additional outline.
+Three retain a weak or incomplete proposal without a correction.
+The fixed-seed matrix isolates the corner measurement and produces
+14 previews across 16 replays. In 16 paired one-thread runs of the
+original case, measuring the corner took 15 ms at the median and
+17 ms at p95. The full preview adds 26 ms at the median and 38 ms
+at p95 to the affected crop before asset encoding. The frozen mixed
+detector retains 18/18 matches, the seeded crops retain 11/11
+whole-print and 12/12 motif passes, and the mixed Golden replay
+retains 29/29 matches.
+The classical Golden replay still has 14/29 matches with 15 extras.
+
 ### Show the visible spans of an interrupted paper edge
 
 On the sigma 1.2 blurred Domoritz flatbed derivative, the bottom-right
