@@ -65,7 +65,8 @@ def test_ambiguous_paper_rim_requires_clear_backing_beyond_the_edge() -> None:
 
 
 @pytest.mark.parametrize("obstruction", [None, "corner", "neighbor"])
-def test_ambiguous_stock_fit_improves_only_the_review_warp(obstruction) -> None:
+@pytest.mark.parametrize("proposal_right", [704, 708])
+def test_ambiguous_stock_fit_improves_only_the_review_warp(obstruction, proposal_right) -> None:
     backing = (124, 136, 146)
     page = np.full((670, 820, 3), backing, np.uint8)
     page[80:620, 120:711] = (189, 212, 228)
@@ -74,7 +75,7 @@ def test_ambiguous_stock_fit_improves_only_the_review_warp(obstruction) -> None:
     if obstruction == "corner":
         page[80:90, 700:711] = backing
     neighbors = [{"polygon": _vertices(_rect(709, 200, 800, 480), page)}] if obstruction == "neighbor" else []
-    proposal = _rect(120, 80, 708, 619)
+    proposal = _rect(120, 80, proposal_right, 619)
     mask = {"source": "yolo_seg_mask", "polygon": _vertices(proposal, page)}
 
     crop = _crop(page, {}, mask, dual_mode=True, neighbor_masks=neighbors)

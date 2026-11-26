@@ -443,12 +443,14 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
 
 ### Nächste technische Hypothesen
 
-1. **Zählfehler früher lokalisieren.** Zuerst in bisher unerklärten
-   Seitenbereichen zusätzliche klassische Vorschläge protokollieren.
-   Die heutige Risikoprüfung beurteilt vor allem vorhandene Vorschläge.
-   Ein sauberer Treffer kann daher einen weiteren Druck übersehen.
-   Der Vergleich soll zusätzliche Treffer, zusätzliche Fehlvorschläge,
-   neu verursachte Prüfungen und CPU-p95 getrennt messen.
+1. **Bei konkurrierenden Linien das Papier zuordnen.** Im eingefrorenen
+   Kontrolllauf liegt bei allen sieben umstrittenen Seiten eine
+   korrekte Papierkante bereits im Suchband. Die Bewertung kann eine
+   etwa neun bis zwölf Pixel weiter innen liegende Motivkante
+   bevorzugen. Zwei Prüfvorschauen gewinnen den fehlenden Rand mit
+   einer materialgestützten Wiederholung. Für die übrigen Fälle
+   stehen mehrere Seiten oder unterschiedlich heller Untergrund zur
+   Prüfung. [Diagnose mit Startversatz und Linienvergleich](data/evaluation/README.md#measure-seed-displacement-and-competing-print-edges)
 2. **Den Besitzkonflikt auf ScanCropper auflösen.** Ein zusätzlicher
    Modellvorschlag umfasst einen Teil des oberen Abzugs. In der
    Ablation ohne genau diesen Vorschlag stieg die Masken-IoU von
@@ -457,13 +459,14 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
    Sehr dünne aufgelegte Abzüge mit derselben Vorlage können
    dieselben Übergänge zeigen. Ihre Anzahl bleibt eine Prüfentscheidung.
    [Fusionsprüfung und ScanCropper-Ablation](data/evaluation/README.md#audit-cross-source-fusion-and-scalloped-stock-conflicts)
-3. **Restfehler bei blasser und offener Schrift prüfen.** Die neue
-   Formprüfung hat ihren Schwerpunkt auf deutlichen Markierungen mit
-   Innenräumen. Das sehr blasse Datum in der README-Abbildung bleibt
-   offen. Der nächste Versuch muss schwache Striche im Original
-   von Papierfasern, Druckraster und Kratzern unterscheiden und auf
-   vollständigen Motivzuschnitten nachmessen, welche Bildpixel
-   wieder in Prüfung landen.
+3. **Restfehler bei blasser und offener Schrift prüfen.** Ein Prototyp
+   gruppiert die verbundenen Striche des blassen Datums im
+   Papierstreifen und gibt einen Prüfhinweis. Der Abzug des lokalen
+   Papiermedians schnitt in den bisherigen Gegenproben besser ab
+   als eine vollständige Normierung nach Papierrauschen. Die
+   Entwicklungsmessung braucht noch eine Gegenprüfung auf weiteren
+   Originalen und ganzen Zuschnitten.
+   [Vergleich der Schrifterkennung](data/evaluation/README.md#compare-local-paper-centering-and-noise-scaling-for-faint-dates)
 4. **Zwei echte Albumgruppen als unabhängigen Endtest sichern.** Die
    Quellenaufarbeitung soll nutzbare Originale mit belegtem Papier-
    und Motivbezug liefern. Danach lassen sich getrennte

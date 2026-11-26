@@ -2962,6 +2962,113 @@ the frozen detection and seeded geometry benchmarks, Golden,
 NerdScan, Domoritz, the JPEG55 contact sheet and the stock challenge.
 The native ScanCropper views are development evidence.
 
+### Measure seed displacement and competing print edges
+
+The frozen synthetic-control detector `c31317f…` with fallback at
+`110415d` matches all 18 instances at IoU 0.85. Seven full-print modes
+and six motif modes are deliberately unrecoverable. The other 11 and
+12 modes respectively are the denominators for the crop test. The
+negative page expects zero proposals and yields zero. The first
+detector pass succeeds for 6/11 full prints and 7/12 motifs. The separate
+reference-jitter control succeeds for 11/11 and 12/12.
+
+| Frozen instance | Expected full / motif | Synthetic-control full / motif |
+| --- | --- | --- |
+| `borderless`, `portrait`, `white_on_white`, `white_motif`, `cast_shadow`, `glare` | Pass / pass for each | Pass / pass for each |
+| `white_margin`, `camera_tilt`, `touching #0`, `touching #1`, `overlap #1` | Pass / pass for each | Review / review for each |
+| `touching_same_color #0`, `touching_same_color #1`, `overlap #0`, `photo_corners`, `clipped`, `curl` | Review / review for each | Review / review for each |
+| `paper_corner_mount` | Review / pass | Review / pass |
+
+For the five recoverable failures, the decoded model, fused proposal
+and renderer input have identical corners. The visible source masks
+improve from roughly 0.96–0.97 to 0.98–0.99 IoU while the selected warp
+seeds remain unchanged. Seven native sides have competing fitted lines.
+The existing search already finds the physical edge on all seven,
+0.035–0.453 px from the reference on average by side. Each set of
+alternatives includes an ink edge roughly 8.84–12.16 px inside the paper.
+The general evidence score favours the ink edge on two sides. Holding
+orientation and varying the corridor alone exposes further alternatives.
+
+In a separate geometric control, each recoverable print's reference
+edges move in parallel by the specified fraction of its shortest
+native side. Keep the fixture's visible polygon, neighbours, protection
+and renderer settings. Use the existing jitter seeds for the known
+obstructed prints. The metric is the ordinary synthetic mode pass,
+including correct review of obstructed cases as a separate check.
+
+| Native side offset | Full print passes | Motif passes |
+| ---: | ---: | ---: |
+| −4.00% | 5/11 | 6/12 |
+| −2.50% | 2/11 | 3/12 |
+| −1.50% | 2/11 | 3/12 |
+| −0.75% | 7/11 | 8/12 |
+| 0.00% | 10/11 | 11/12 |
+| +0.75% | 11/11 | 12/12 |
+| +1.50% | 11/11 | 12/12 |
+| +2.50% | 10/11 | 11/12 |
+| +4.00% | 10/11 | 11/12 |
+
+The exact reference seed can still be attracted to the inner line on
+the front `overlap` print. The material on both sides of the
+competing lines distinguishes the edge of the paper strip.
+
+Print-boundary revision 11 keeps the three-pixel stock retry. If it
+finds no line, the retry can reuse that side's original native search
+radius. Exactly one side must be ambiguous. The three other sides must
+corroborate pale stock against backing. The new line must still satisfy
+support along the side and on the four adjacent corner arms, and the
+result may not intersect a neighbouring print. The geometry remains
+in review. The regression covers a closer and a farther initial
+proposal plus a corner obstruction and a neighbouring print.
+
+| Improved synthetic-control review preview | Max corner error | Cutoff beyond 1 px | Output pixels with foreign contributions | Landmark p95 |
+| --- | ---: | ---: | ---: | ---: |
+| `white_margin` | 5.27 → 0.49 px | 1,320 → 0 | 263 → 0 | 4.318 → 0.363 px |
+| `camera_tilt` | 5.65 → 0.34 px | 706 → 0 | 466 → 0 | 3.565 → 0.192 px |
+
+The two previews gain paper in the source footprint. Their aspect
+errors change from 2.25% to 0% and 1.43% to 0.62%, respectively.
+The synthetic-control detector count, the motif results and all
+18/18 seeded instances with 23 recoverable mode passes reproduce.
+The next unresolved geometry cases have multiple competing sides,
+different backing colours across the gutters or a trusted inner edge.
+Paired replays on Golden, both NerdScan runs, Domoritz, both
+contact-sheet JPEG variants and the stock challenge reproduce previous
+instance and crop summaries. The stock retry sends no additional
+usable mode to review in these comparisons.
+
+The isolated native stock retry took 0.69 to 3.48 ms median and
+0.90 to 3.89 ms at p95 for `white_margin`. The `camera_tilt` pair took
+0.74 to 3.31 ms median and 0.91 to 3.64 ms at p95. These values use 40
+warm paired samples on one OpenCV thread with the original evidence
+and fitted proposals already available.
+
+### Compare local paper centering and noise scaling for faint dates
+
+The very pale README date separates into three aligned components at
+multiple rectified contrast levels. Two are wide, joined strokes. The
+existing component grouping yields no proposal, so the native flank
+check never gets to evaluate the date. A separate scratch grouping
+looks for the aligned run and variation across both directions. It
+passes the mark to the existing native matched-stock check without
+asking for closed counters. The exact missing date goes to review in
+that prototype. The hint covers 683 of 727 labelled stroke centres.
+
+Across 432 synthetic date views, the existing implementation marks
+131. The new grouping marks 164 with an absolute contrast floor, 153
+after subtracting the local median and 139 with median and MAD
+normalization. On 660 controls, the absolute version adds one review
+on pulp fibres. The locally centred and MAD versions add none. Both
+also add zero among 360 extra white-stock controls. The 162-image
+paired MAD trial adds four reviews for known full lettering loss and
+preserves the whole-print bytes. The paired locally centred variant
+also adds four reviews for known full lettering loss and adds a
+location hint to two already-held variants. All 162 whole-print
+outputs remain byte-identical. Trials on additional original material
+are pending.
+These are development experiments. The checked-in faint-date example
+still reproduces the original loss.
+
 ### Verify that catalogued pairs represent independent acquisitions
 
 A leave-one-out affine fit of the 15 saved American Colony draft landmarks

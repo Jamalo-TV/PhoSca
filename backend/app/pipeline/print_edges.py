@@ -13,7 +13,7 @@ PRINT_FAINT_RIM_REVIEW = "PRINT_FAINT_OUTER_RIM_REVIEW"
 PRINT_OUTER_EDGE_CONFLICT_REVIEW = "PRINT_OUTER_EDGE_CONFLICT_REVIEW"
 PRINT_SHARED_RIM_UNCERTAIN = "PRINT_SHARED_RIM_UNCERTAIN"
 PRINT_EDGE_CONFIRMATION = "PRINT_EDGE_CONFIRMATION_REQUIRED"
-PRINT_BOUNDARY_REVISION = 10
+PRINT_BOUNDARY_REVISION = 11
 CLASSICAL_CONTOUR_REFINEMENT_REVISION = 1
 _PRINT_SIDES = ("top", "right", "bottom", "left")
 
@@ -735,6 +735,10 @@ def suggest_ambiguous_stock_edge(
     radius = 3
     next_index = (index + 1) % 4
     line, observed = _side_line(image, proposal[index], proposal[next_index], radius, rim_color=stock)
+    if line is None and evidence[names[index]]["search_radius_px"] > radius:
+        # The physical edge can lie farther from the seed than the ink edge.
+        radius = evidence[names[index]]["search_radius_px"]
+        line, observed = _side_line(image, proposal[index], proposal[next_index], radius, rim_color=stock)
     if line is None or observed["support"] < .9 or observed["corner_support"] < .8:
         return None
     candidate = _replace_quad_side(quad, index, line, radius, image.shape)
