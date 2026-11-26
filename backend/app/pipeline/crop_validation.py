@@ -23,6 +23,7 @@ from app.pipeline.fusion_ownership import FUSION_OWNERSHIP_REVISION
 from app.pipeline.model_registry import sha256
 from app.pipeline.motif_margin import MOTIF_MARGIN_REVIEW_REVISION
 from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVISION
+from app.pipeline.overlap_edge_review import OVERLAP_EDGE_REVIEW_REVISION
 from app.pipeline.print_edges import CLASSICAL_CONTOUR_REFINEMENT_REVISION, PRINT_BOUNDARY_REVISION
 from app.pipeline.print_outline_suggestion import PRINT_OUTLINE_SUGGESTION_REVISION
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_REVISION
@@ -126,6 +127,10 @@ def crop_validation_profile(settings: Settings) -> dict:
         ),
         "source_fragment_review": (
             SOURCE_FRAGMENT_REVIEW_REVISION
+            if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+        ),
+        "overlap_edge_review": (
+            OVERLAP_EDGE_REVIEW_REVISION
             if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "scalloped_print_outline": (

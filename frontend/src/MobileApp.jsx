@@ -426,6 +426,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
             fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9" />}
           <polygon className="editable-quad" points={displayedQuad.map(point => `${point.x * 1000},${point.y * 1000}`).join(" ")} />
           {!editingMotif && <>{uncertainLine}{alternateOverlay}{paperTraceOverlay}</>}
+          {!editingMotif && getSourceEdgeTraces(fullPrintMode?.exposed_overlap_edge_traces).map((trace, index) => (
+            <polyline key={index} aria-label="Möglicher Papierrand ausserhalb des Zuschnitts"
+              points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
+              fill="none" stroke="#0e7490" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />
+          ))}
           {!editingMotif && neighborOutline && <polyline aria-label="Überlappender Nachbarabzug"
             points={neighborOutline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
             fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />}

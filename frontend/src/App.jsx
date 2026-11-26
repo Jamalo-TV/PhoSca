@@ -1471,9 +1471,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const traces = editingImage ? seamTraces : fullPrintMode?.suggested_edge_traces;
   const neighborOutline = editingImage ? null : fullPrintMode?.neighbor_overlap_outline;
   const missingPaperOutlines = editingImage ? null : fullPrintMode?.neighbor_content_loss_outlines;
-  const edgeTraces = useMemo(() => [
-    ...getSourceEdgeTraces(traces), ...getSourceEdgeTraces([neighborOutline]), ...getSourceEdgeTraces(missingPaperOutlines),
-  ], [traces, neighborOutline, missingPaperOutlines]);
+  const exposedOverlapEdges = editingImage ? null : fullPrintMode?.exposed_overlap_edge_traces;
+  const edgeTraces = useMemo(() => [...getSourceEdgeTraces(traces), ...getSourceEdgeTraces([neighborOutline]),
+    ...getSourceEdgeTraces(missingPaperOutlines)], [traces, neighborOutline, missingPaperOutlines]);
   const motifPreview = selected?.variant_urls?.image_only_preview || selected?.urls?.image_only_preview;
   const fullPrintPreview = selected?.variant_urls?.full_print_preview || selected?.urls?.full_print_preview;
   const untrimmedPrint = selected?.untrimmed_url || selected?.variant_urls?.source_corrected_untrimmed;
@@ -1580,17 +1580,19 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         context.closePath();
         context.stroke();
       }
-      if (photo.id === selectedPhotoId && edgeTraces.length && !newPrint) {
+      if (photo.id === selectedPhotoId && !newPrint && (edgeTraces.length || exposedOverlapEdges?.length)) {
         context.save();
-        context.strokeStyle = "#a21caf";
         context.lineWidth = 2;
         context.setLineDash([5, 3]);
-        edgeTraces.forEach((trace) => {
-          context.beginPath();
-          context.moveTo(trace[0].x * canvas.width, trace[0].y * canvas.height);
-          trace.slice(1).forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
-          context.stroke();
-        });
+        for (const [lines, color] of [[edgeTraces, "#a21caf"], [getSourceEdgeTraces(exposedOverlapEdges), "#0e7490"]]) {
+          context.strokeStyle = color;
+          for (const [first, ...rest] of lines) {
+            context.beginPath();
+            context.moveTo(first.x * canvas.width, first.y * canvas.height);
+            rest.forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
+            context.stroke();
+          }
+        }
         context.restore();
       }
       if (editingImage && photo.id === selectedPhotoId && motifMarginMarks.length) {
@@ -1767,7 +1769,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         context.fillText(String(index + 1), x + 9, y - 7);
       });
     }
-  }, [albumMark, alternateOutline, blockedRegions, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage,
+  }, [albumMark, alternateOutline, blockedRegions, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
     printSuggestion,
     missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, selectedCountGroup, selectedPhotoId, showMissingEdges]);

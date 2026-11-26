@@ -38,6 +38,7 @@ from app.pipeline.manual_paper_boundary import (
     check_manual_paper_boundary,
 )
 from app.pipeline.orientation import correct_photo_orientation, rotate_image
+from app.pipeline.overlap_edge_review import suggest_exposed_overlap_edges
 from app.pipeline.page_plane import (
     PRINT_ASPECT_REFERENCE_REVIEW,
     MeasuredPrintReference,
@@ -1918,6 +1919,11 @@ def correct_photo_crop(
                 _vertices_on_page(np.asarray(segment), width, height) for segment in competing_segments
             ]
             full_mode["suggested_edge_source"] = COMPETING_PRINT_EDGES
+            if (enable_classical_retry and mask.get("detector_source") == "yolo_onnx" and not mask.get("warp_quad")
+                    and not any(mask.get(key) for key in _STOCK_REVIEW_CONFLICTS)):
+                spans = suggest_exposed_overlap_edges(page_image, src_points, boundary_refinement, neighbor_polygons)
+                if spans:
+                    full_mode["exposed_overlap_edge_traces"] = [_vertices_on_page(span, width, height) for span in spans]
         elif (enable_classical_retry and not manual and "PRINT_BOUNDARY_UNSUPPORTED" in full_reasons
               and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
               and all(mode["status"] == "review_needed" for mode in modes.values())

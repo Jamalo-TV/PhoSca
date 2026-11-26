@@ -28,6 +28,42 @@ def _crop(image, box, mask=None, **kwargs):
     return correct_photo_crop(image, box, mask, auto_orient=False, protect_regions=False, **kwargs)
 
 
+def test_overlapping_print_shows_only_exposed_paper_without_changing_either_crop(monkeypatch):
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+    from app.pipeline import perspective
+
+    fixture = next(page for page in synthetic_crop_pages("locked") if page.name == "overlap")
+    image = fixture.image
+    seed = _vertices([(369, 217), (637, 245), (622, 435), (348, 408)], image)
+    rear = np.float32([(86, 197), (415, 199), (415, 211), (369, 218), (349, 404), (415, 417), (415, 420), (86, 420)])
+    mask = {"source": "yolo_seg_mask", "detector_source": "yolo_onnx", "polygon": seed}
+    options = {"dual_mode": True, "enable_classical_retry": True, "neighbor_masks": [{"polygon": _vertices(rear, image)}]}
+    with monkeypatch.context() as baseline:
+        baseline.setattr(perspective, "suggest_exposed_overlap_edges", lambda *_: [])
+        before = _crop(image, {}, mask, **options)
+    after = _crop(image, {}, mask, **options)
+    modes = after.metadata["crop_modes"]
+    span, = modes["full_print"].pop("exposed_overlap_edge_traces")
+    assert len(modes["full_print"]["suggested_edge_traces"]) == 4
+    assert all(mode["status"] == "review_needed" for mode in modes.values())
+    assert after.metadata == before.metadata
+    assert np.array_equal(after.image, before.image)
+    assert np.array_equal(after.rectified_untrimmed, before.rectified_untrimmed)
+    assert after.image_only is after.full_print_preview is after.image_only_preview is None
+
+    points = normalized_vertices_to_pixels([(point["x"], point["y"]) for point in span], *image.shape[1::-1])
+    assert 180 < np.linalg.norm(points[1] - points[0]) < 200
+    expected = fixture.prints[1].reference_modes["full_print"].corners
+    edge = expected[3] - expected[2]
+    normal = np.float32([-edge[1], edge[0]]) / np.linalg.norm(edge)
+    assert np.max(np.abs((points - expected[2]) @ normal)) < 1.
+    assert all(cv2.pointPolygonTest(rear, tuple(point), True) < -9 for point in points)
+
+    for neighbors in ([], [*options["neighbor_masks"], {"polygon": _vertices(_rect(460, 413, 620, 457), image)}]):
+        crop = _crop(image, {}, mask, **{**options, "neighbor_masks": neighbors})
+        assert "exposed_overlap_edge_traces" not in crop.metadata["crop_modes"]["full_print"]
+
+
 def test_ambiguous_paper_rim_requires_clear_backing_beyond_the_edge() -> None:
     from app.evaluation.crop_fixtures import synthetic_crop_pages
     from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE

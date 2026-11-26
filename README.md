@@ -164,6 +164,16 @@ Downloadfreigabe bleiben beim Einblenden der Linien gleich. Ein bereits
 vorhandener Umriss- oder Kantenhinweis hat Vorrang.
 [Kantenvergleich](data/evaluation/README.md#show-competing-edges-in-review)
 
+Bei überlappenden Abzügen kann zusätzlich ein türkis gestrichelter
+Abschnitt ausserhalb des bisherigen Zuschnitts erscheinen. PhoSca
+sucht dazu im Original nach einem Übergang vom gemessenen Papierton
+des Abzugs zum dunkleren Untergrund. Der Hinweis endet vor der Fläche,
+die ein Nachbarvorschlag beansprucht. Die violetten Alternativen an
+den anderen Kanten bleiben sichtbar. Vergleiche die Markierungen mit
+dem Original und prüfe, welcher Abzug oben liegt. Beide Zuschnittmodi
+bleiben für diesen Fall in Prüfung.
+[Überlappung und sichtbarer Papierübergang](data/evaluation/README.md#show-only-the-exposed-edge-of-an-overlapping-print)
+
 Wenn ein klassisch erkannter Umriss eine Ecke diagonal abschneidet,
 kann **Ganzer Abzug** eine zweite Vorschau anbieten. PhoSca verlängert
 die beiden betroffenen Seiten in einem begrenzten Suchbereich und

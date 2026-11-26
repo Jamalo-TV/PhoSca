@@ -5082,6 +5082,105 @@ The isolated native stock retry took 0.69 to 3.48 ms median and
 warm paired samples on one OpenCV thread with the original evidence
 and fitted proposals already available.
 
+### Show only the exposed edge of an overlapping print
+
+In the frozen `overlap` capture, the ordinary model finds both
+physical prints. The front print loses 8.24% of its visible source
+footprint and omits 3,753 centres beyond one native pixel. The model
+input has competing left and right paper lines. The bottom fit
+unambiguously follows an ink line within the paper. Combining the
+two physical side alternatives with that bottom still puts both
+lower corners about nine native pixels inside the development
+reference. A source search shifted outward by 6–12 pixels finds a
+bottom line that brings all four corners within 0.61 pixels.
+
+The alternate has zero shared source centres with the exact concave
+rear reference. Its overlap with the reference convex hull is
+12,491 px². The actual detector rear proposal claims 1,428 centres
+within the alternate, including 1,205 in newly added paper. The
+existing source-stock verifier corroborates 942 of those added
+centres on the original and 754 after light blur. A replacement
+based on contour intersections would need an independent explanation
+of the rest of the claim.
+
+A separate 29 × 6 px paper tab with the same sampled colour covers
+170 centres of the alternate with identical source bytes. The source
+comparison was also tested on 156 opaque overlay derivatives. The
+combined T-junction and four-rim rule still accepts 96. A separate
+small photographic fragment can pass those measurements and add
+foreign content inside a complete render. These counterexamples
+establish the limit of a whole-print interpretation.
+
+The review code uses the two opposing disputed sides and two
+supported sides as its entry condition. It samples the pale stock
+from an observed side and fits the four paper lines on the original
+to locate a possible outer strip. It requires one current neighbor
+claim to grow into the strip. Only stations with a signed native
+transition within 1.5 pixels of the line and enough clearance to
+every other claim appear in the overlay. Each interval is shortened
+by one pixel at each end. The frozen normal-path result adds one
+turquoise span about 186 native pixels long. The four original
+violet competing traces remain. Both mode states, the committed warp,
+the detection results, the existing preview and the download decisions
+match the baseline.
+
+The exposed span repeats through four quarter turns and four encoding
+and blur treatments when the original detector contours are carried
+through the same transform. It measures 185.6–185.7 native pixels.
+With the final native fit, 145 of 160 original stress treatments
+still have an observable span, with zero centreline samples on the
+painted overlay masks. The shortest distance to the detected rear
+stays above ten pixels. On 208 additional treatments that put a separate
+object directly on the exposed edge, 144 visible disruptions suppress
+the measurement. The other 64 preserve the same apparent local source
+step and can still put a review trace on a different physical object.
+Supplying those objects as active claims excludes their areas from
+the trace. The overlay suggests a possible paper edge and leaves both
+physical ownership and metric aspect for review.
+
+The helper takes about 13 ms median and 18 ms p95 in 72 warm
+one-thread measurements of the original. In 392 paired pipeline
+comparisons, both mode records and all rendered assets reproduce
+apart from the optional trace metadata. The normal upload and
+reprocess serve byte-identical previews on Desktop and Mobile.
+Both named downloads and the legacy trimmed route still return
+HTTP 404 for both prints.
+
+On the separately examined Willett page 99, the two original
+rear edges visibly terminate at the foreground print. In the native
+source, the median Lab contrast of one rear edge drops from 183.1
+to 1.2 after the junction. The other drops from 168.2 to 1.1. The
+normal crop rectangles share 7,247 native centres. The foreground
+crop crosses only seven centres of the source-draft visible rear
+mask. The example is development evidence from a single album
+capture. Independent physical and motif measurements are still
+required for release. [Willett page 99](https://historycenter.mld.org/willett_album/items/col003_p99.html)
+
+#### Trace the dark-page extras on Willett 99
+
+The normal mixed replay has two matches and two extra detections on
+the pinned 6,016 × 3,819 source, SHA-256
+`848005c653f3d38624862ce5d07ebc32b1740de06ef3b320f6c994723b8d9213`.
+Both extras are standalone full-page model proposals at confidence
+0.549 and 0.486. The two matching detections come from classical
+outlines supported by the source. The two extra positions are dark
+album quadrants, with median Lab lightness 24 and 31. Their proposals
+borrow bright edges of the nearby prints with the paper on the side
+outside the claimed shape. The two legitimate crop sets are
+byte-identical when the extra neighbor claims are omitted in a
+shadow replay.
+
+An original-pixel diagnostic marks both extras when the dark core,
+continued backing and reversed paper transition agree. It also marks
+nine of 20 truly separate, nearly colour-matched paper controls.
+It leaves all 18 planted dark photographic prints unmarked across
+three illumination levels and three border intensities. The ordinary
+detector replay on three Willett pages, ten Golden views and sixteen
+frozen pages supplies only three eligible weak model-only proposals.
+Of those, the same two Willett 99 proposals are marked. The ambiguity
+for near-matching paper requires a human count decision. The production
+count and export decisions are as measured above.
+
 ### Preview a motif with one disputed paper edge
 
 The `white_margin` and `camera_tilt` controls already had a supported

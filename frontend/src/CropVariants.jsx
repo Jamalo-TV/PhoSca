@@ -180,6 +180,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
   if (fullPrint?.reason_codes?.includes("PRINT_CURVED_OUTLINE_REVIEW")) {
     return printEdgeReviewHints.PRINT_CURVED_OUTLINE_REVIEW;
   }
+  if (getSourceEdgeTraces(fullPrint?.exposed_overlap_edge_traces).length) {
+    return "Türkis zeigt einen möglichen Papierrand ausserhalb des Zuschnitts. Prüfe am Original, wo das Fotopapier endet und welcher Abzug oben liegt.";
+  }
   if (getSourceEdgeTraces(fullPrint?.suggested_edge_traces).length) {
     if (fullPrint.suggested_edge_source === competingPrintEdges) {
       return "Die gestrichelten Linien zeigen mögliche Kanten im Original. Prüfe, welche das Fotopapier begrenzt.";
