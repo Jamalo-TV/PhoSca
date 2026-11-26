@@ -131,6 +131,20 @@ vier Papierecken im Geometrie-Editor bestätigt sind und zu den
 gemessenen Kanten passen.
 [Beispiel Golden 11 nach JPEG-Neukompression](data/evaluation/README.md#review-source-edges-after-an-empty-line-pair-search)
 
+Bei gedrehten Aufnahmen kann sich die verkleinerte Liniensuche an
+der Albumkante orientieren. Liefert der erste Durchlauf keine
+gestützten Spuren, sucht PhoSca im Original nach den Enden des
+Materialwechsels an den beiden Querkanten. Eine kurze Verlängerung
+in der Nähe des bekannten Abzugs ist nur zulässig, wenn der
+Randverlauf im Original durchgehend gestützt ist und auf dem
+freien Abschnitt der Wechsel von hellem Albumkarton zu Foto
+sichtbar bleibt. PhoSca prüft danach die drei freien Seiten
+erneut und zeichnet nur ihre gemessenen Abschnitte ein. Die
+Punkte werden in die Koordinaten der hochgeladenen Seite
+zurückgerechnet. Über die Abzugsliste und die Zuschnittfreigabe
+entscheiden weiterhin die jeweiligen Prüfungen.
+[Gedrehte JPEG75-Beispiele](data/evaluation/README.md#recover-source-traces-on-rotated-jpeg-uploads)
+
 Wenn der Zuschnitt an einer Papierkante in Prüfung bleibt und zwei
 Linien im Original ausreichend gestützt sind, zeichnet **Ganzer Abzug**
 beide als gestrichelte Kanten ein. Die Linien folgen dem beobachteten

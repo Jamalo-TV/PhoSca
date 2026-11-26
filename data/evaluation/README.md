@@ -1313,6 +1313,18 @@ the exact pinned Whiting and Gardner rasters occur in the archives remains
 unverified. [Library of Congress package](https://data.labs.loc.gov/free-to-use/) ·
 [Smithsonian mirror](https://source.coop/harvard-lil/smithsonian-open-access)
 
+Visual Ancestor catalogues separate physical albums `10162` and
+`10410`. The records place print `10162-127` on leaf 116 and print
+`10410-103` on leaf 104. The archive describes scanning pages and
+unmounted prints separately and marks the linked print records as
+public domain. The native leaf request returned HTTP 403. Separate
+acquisition for these exact files, the complete visible paper
+edges and the specific page raster rights still need verification
+before either album can enter the reference split.
+[Print 10162-127](https://www.visualancestor.com/image/?group=10162&image=10162-127) ·
+[Print 10410-103](https://www.visualancestor.com/image/?group=10410&image=10410-103) ·
+[Archive method](https://www.visualancestor.com/about/)
+
 ## Clipped prints in the NerdScan development scan
 
 NerdScan's original upload has
@@ -2160,6 +2172,78 @@ in the local comparison. The locked model and model-free replays,
 seeded geometry and Golden comparisons reproduce their
 instance and both mode metrics. No extra active proposal is added
 by the new count review path.
+
+#### Recover source traces on rotated JPEG uploads
+
+The three quarter-turn controls above reproduce two distinct
+line-discovery errors. At 90° and 180°, the candidate's shared rail
+ends about 181 native pixels before the lower crossbar. At 270°,
+the outer rail incorporates both the paper edge and the album edge.
+It predicts the upper endpoint roughly 19 pixels too far out and
+the lower endpoint roughly 16 pixels too far in.
+
+The second search runs when the straight-rail search yields no
+supported trace set. It permits a short, locally corroborated
+extension of the shared rail only if the exposed part past the
+known print shows a signed pale-backing-to-print transition.
+For the far rail, the top and bottom crossbars each need a unique
+termination of the light-to-dark step in the native source. Local
+line support and the three free-side traces are then verified
+again. The shared side supplies context for the search. The
+overlay shows only measured spans on the three free sides.
+
+| Quarter-turn before JPEG75 encoding | Active proposals | Deferred left outlines before → after | Right trace runs before → after |
+| --- | ---: | ---: | ---: |
+| 0° | 0 | 1 → 1 | 4 → 4 |
+| 90° | 0 | 0 → 1 | 0 → 4 |
+| 180° | 1 | 0 → 0 | 0 → 4 |
+| 270° | 0 | 0 → 1 | 0 → 4 |
+
+The left outline in the 90° and 270° rotated runs has approximately
+0.9937 and 0.9935 native mask IoU against the Golden development
+annotation. The three recovered trace sets enter count review and
+the number of active detections stays the same. Over five warm
+one-thread measurements per input, the median search takes
+0.50–0.66 s for the three recovered variants and about 0.27 s in
+the existing upright case.
+Against separately fitted native source curves, the measured
+right-print runs have p95 deviations of 0.60–0.78 px on the top,
+0.95–1.08 px on the far side, and 1.07–1.28 px on the bottom.
+The far-side run stops 129–165 px short of the lower corner
+across these variants. The gap remains open in the overlay.
+
+The 90° JPEG went through actual upload and analysis with no ONNX
+detector, automatic orientation or OCR. Desktop and mobile show
+the violet draft and the four blue spans in the uploaded raster's
+coordinates. On desktop the two manual additions bring the count
+from zero to two. The second save keeps the left record and its
+preview intact and stores the measured curve on the right print.
+After reprocessing both rows, whole print, motif and the legacy
+trimmed alias each return 404. The untrimmed review JPEGs return
+200. Both geometry approval requests return 409. The diagnostic
+100 × 70 mm entries and the Golden annotation are development
+inputs. Release-level aspect, landmarks and content-loss scores
+still need independently verified references for both modes.
+Separate 180° and 270° uploads show the matching overlays in the
+mobile UI. Inspecting them writes no new photo row.
+
+With the known left outline fixed, eight right-side negative
+controls across the four turns give zero traces in 32 runs. They
+include an exterior holder, an interior pale stripe, two corner
+covers and an empty leaf with the album edge still present.
+In the full pipeline a dark cover over the left corner suppresses
+the deferred outline at all four turns. An almost registered
+layer offset by two native pixels can still show a draft at all
+four turns. Each of those runs has zero active proposals. The
+visible traces do not establish whether two layers share a
+physical sheet.
+
+The frozen model run retains 18/18 matches. With seeded geometry,
+11/11 recoverable whole prints and 12/12 recoverable motifs pass.
+The Golden runs retain 29/29 mixed-model matches and 14/29 classical
+matches with 15 extra classical proposals. The frozen classical run
+retains 13/18 matches and six extras. Detection, rendered crop and
+mode availability metrics match the preceding runs.
 
 ### Confirming a suggested print exactly once
 

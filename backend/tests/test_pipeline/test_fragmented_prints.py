@@ -17,6 +17,7 @@ from app.pipeline.fragmented_prints import (
 from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic
 from app.pipeline.image_ops import load_image
 from app.pipeline.perspective import correct_photo_crop
+from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
 
 
 def _scene(case="continuous", turns=0):
@@ -216,6 +217,34 @@ def test_missing_neighbor_traces_require_source_sides_beyond_the_album_edge():
     stock = np.median(image[420:590, 1590:2100], axis=(0, 1)).tolist()
     cv2.fillConvexPoly(image, np.rint(cover).astype(np.int32), stock)
     assert staggered_print_source_traces(image, anchor) == []
+
+
+@pytest.mark.parametrize(("turn", "expected_count"), [(1, 0), (2, 1), (3, 0)])
+def test_independently_encoded_quarter_turns_recover_neighbor_traces(turn, expected_count, tmp_path):
+    source = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_11.jpg"
+    image = load_image(source)
+    height, width = image.shape[:2]
+    ok, jpeg = cv2.imencode(".jpg", np.rot90(image, turn), [cv2.IMWRITE_JPEG_QUALITY, 75])
+    assert ok
+    rotated = cv2.imdecode(jpeg, cv2.IMREAD_COLOR)
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://", YOLO_MODEL_PATH=tmp_path / "absent.onnx")
+    prepared, *_ = prepare_for_cutout(rotated)
+    result = segmentation.segment_album_page(prepared, settings, source_image=rotated, protected_regions=[])
+
+    assert len(result.detections) == expected_count
+    drafts = result.metadata["fusion"].get("deferred_print_proposals", [])
+    assert [draft["reason"] for draft in drafts] == ([] if expected_count else [PROJECTIVE_PRINT_PROPOSAL])
+    runs = result.metadata["missing_print_edge_traces"]
+    assert len(runs) >= 3
+    # Undo the source turn to measure the published traces in original pixels.
+    xy = np.float32([(point["x"], point["y"]) for run in runs for point in run])
+    x, y = xy.T
+    x, y = [(1 - y, x), (1 - x, 1 - y), (y, 1 - x)][turn - 1]
+    x, y = x * (width - 1), y * (height - 1)
+    assert np.all((x >= 1533) & (x <= 2314) & (y >= 745) & (y <= 1862))
+    assert np.count_nonzero((x > 2278) & (y > 1000) & (y < 1500)) >= 10
+    assert np.count_nonzero(y < 785) >= 20
+    assert np.count_nonzero(y > 1825) >= 20
 
 
 @pytest.mark.parametrize(("join", "drift"), [("none", 0), ("touching", 53), ("gutter", 97), ("overlap", 97)])
