@@ -2466,8 +2466,8 @@ print ownership masks. Each root pairs one continuous dense print with
 two closely spaced papers under the same camera, rotation and JPEG
 settings. A separate negative-sleeve graphic is present in both views.
 The images, polygon labels, ownership masks and manifest reproduce byte
-for byte. Their exact hashes do not occur in either training or
-validation cohort. The real contact derivatives stay together as one
+for byte. Their exact hashes are disjoint from both training and
+validation cohorts. The real contact derivatives stay together as one
 known source outside this training experiment. The held-out groups are
 procedural scenes and qualify for synthetic development evaluation.
 
@@ -2559,7 +2559,8 @@ the development outline the sparse hybrid's whole-print preview
 excludes 8.76% of the footprint and includes 2,268 output samples with
 foreign source contributions, with 1,661 beyond the one-pixel band.
 The two modes remain in Review for every proposal in all three JPEG75
-replays. There is no approved native motif reference for this source.
+replays. An independently verified native motif reference remains open
+for this source.
 
 | Other hybrid replays, correct / expected, extra | Parent | Sparse | Dense |
 | --- | ---: | ---: | ---: |
@@ -2602,15 +2603,47 @@ Both trained arms mark the obstructed `touching_same_color` fixture
 ready in both modes. Their local geometric statuses precede the
 separate release policy, which stays locked. Cases such as `portrait`
 and `camera_tilt` also enter Review with ambiguous paper borders under
-both trained arms. Neither export is suitable for deployment. The
-unchanged detector control still finds 18/18 prints. The separate run
+both trained arms. Both exported weights remain development artifacts.
+The unchanged detector control still finds 18/18 prints. The separate run
 with seeded geometry still passes 11/11 paper crops and 12/12 motif
 crops, without marking an obstructed reference ready.
 
-The next comparison can isolate how same-instance proposals are ranked,
-using original paper evidence and newly built seam, overlap and
-near-neighbor controls. Sleeve proposals merit a separate negative
-example experiment because the paired change barely affected them.
+#### Isolate the fusion choice on the native JPEG75 image
+
+An ablation switches only the selected candidate in the existing
+dense-contact cluster. The mask IoU rises from 0.8321 to 0.8937, and the
+whole-print review-preview IoU rises from 0.8321 to 0.9021 against the
+development outline. The two modes still require Review. Measuring the
+paper perimeter on the original yields a quad within one native pixel
+of the development corners when seeded with the model proposal and the
+active neighbours. Relative to this perimeter, the model polygon gains
+34,079 paper pixels that the classical polygon omits. It also loses
+6,090 paper pixels that the classical polygon includes, mainly at the
+lower rim. The perimeter supplies additional information for the
+reviewer beyond either individual proposal.
+
+Across the 26 hybrid clusters that selected a classical alternative in
+the three-model replay, nine met the exploratory perimeter probe's
+pairing and size conditions. The probe measured seven perimeters in
+55–63 ms each on one CPU thread. All seven came from different runs of
+the same physical contact sheet. It found no new perimeter on the
+frozen synthetic, Golden, NerdScan or Domoritz inputs in this replay.
+The dense model quad fits its measured physical perimeter better than
+the classical quad in all three encodings. The parent model quad fits
+the same perimeter worse than the classical quad in all three. A rule
+that favours the model family would miss that difference.
+
+With the same seeds and positions, the perimeter search also returns a
+quad on 6 of 12 physically separated controls and 16 of 18 controls with
+a second paper layer. The smallest gaps can disappear during sampling or
+compression. Both candidate polygons and the exterior measurement can
+be consistent with separate ownership. A separate seam test needs two
+paper flanks, local backing colour in the gap and a continuous path
+ending at independently measured sides. In this image local backing and
+paper have similar lightness and distinct chroma. Keep the candidates in
+Review while that ownership is unresolved. Sleeve proposals merit a
+separate negative example experiment because the paired training barely
+affected them.
 
 ### Measure an open edge at an overextended corner
 
