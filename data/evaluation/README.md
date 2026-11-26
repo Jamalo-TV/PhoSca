@@ -3404,3 +3404,24 @@ The Getty finding aid for the Pascal Sébah album `2010.R.16` documents
 HTTP 403. An independent capture before dismounting and reuse terms
 for the paired images remain unverified.
 [Getty finding aid](https://www.getty.edu/research/collections/static/pdf/2010.R.16.pdf)
+
+The Mississippi Department of Archives and History documents individual
+600 ppi scans of 1,073 original prints from two Painter albums
+(`PI/1988.0006`). The capture inventory preserves their print order and
+identifies the two physical album objects. The catalogue reports public
+domain status. The inventory has no corresponding mounted-page masters.
+[Painter collection](https://da.mdah.ms.gov/series/painter) ·
+[Capture inventory](https://da.mdah.ms.gov/series/painter/colldesc) ·
+[Rights and technical information](https://da.mdah.ms.gov/series/painter/gentech)
+
+The Lochinvar album (`PI/HH/1984.0001`) from the same archive has
+public-domain scans of 29 whole pages and individually indexed
+prints. The capture inventory lists 31 files for pages and covers.
+The dedicated records for prints 5 and 6 use the same leaf file
+`100345-01-photo.tif`. Prints 7 and 8 have the same relationship to
+`100347-01-photo.tif`. The print indexes therefore provide page
+locations. A separately acquired print raster was unavailable, and
+the workspace request for the native imagery returned HTTP 403.
+[Lochinvar collection](https://da.mdah.ms.gov/series/lochinvar) ·
+[Shared source record](https://da.mdah.ms.gov/series/lochinvar/detail/22535) ·
+[Rights and capture inventory](https://da.mdah.ms.gov/series/lochinvar/gentech)
