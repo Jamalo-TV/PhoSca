@@ -3788,6 +3788,62 @@ instance threshold at 0.8317 and 0.8286 mask IoU, respectively. The shared
 grid check reads a different perforation phase at those proposed cuts.
 The contact sheet remains a development source.
 
+### Confirm a negative sleeve in count review
+
+The JPEG75 contact-sheet upload shows five active proposals. Three
+proposals on the left share the normalized film-grid divider. On the
+right, an outer paper proposal and an overlapping fragment belong to a
+separate review. These counts describe proposals before any decision.
+
+The native image shows wood grain through a clear lip to the left of
+the three masks. Several film frames match the artwork on the right
+in inverted tones. With fixed proposals, an opaque perforated negative
+print, a positive print and unrelated patterned paper under a simulated
+clear protector all trigger the same grid warning. The divider marks
+what to inspect on the original. The camera view also retains the lip
+outside the proposed crops.
+
+Desktop and mobile count review let the reviewer highlight the three
+linked polygons and confirm their removal from the active count in a
+single operation. Opening or cancelling this selection leaves the count
+at five. The API checks the current page revision, the exact active
+group and its held crop variants. It stores one review event with the
+previous page and photo geometry, records a wrong-object decision for
+each selected row and advances the count revision. The count stays
+open with two proposals. Each excluded row retains its explicit source
+preview for geometry review. The two survivors keep their crop
+geometry, render records and existing export holds.
+
+In the normal JPEG75 upload, both interfaces leave the two surviving
+source preview JPEGs byte-identical. The two named exports and the
+trimmed alias return HTTP 404 for both survivors before and after the
+group decision. In a separate mobile follow-through, the reviewer
+saves the measured outline with diagnostic dimensions of 203 × 264 mm,
+rejects the right fragment explicitly and reprocesses the remaining
+print. The active count becomes one. The whole print returns HTTP 200.
+The motif and trimmed alias stay held with `IMAGE_MARGIN_MARKS_REVIEW`
+and `IMAGE_BOUNDARY_CURVED`. The measured outline scores 0.9886 mask
+IoU against the same-source development annotation. Detector scoring
+still uses the five proposals before manual review.
+
+After a separate intentional motif edit on the same mobile upload, the
+Gallery delivered both JPEGs. The 609 × 792 whole print was byte-identical
+before and after the edit. The 538 × 783 motif was byte-identical to the
+earlier native raster check that retained 35 of 35 panels, 315 of 315
+landmarks and 1,938 of 1,938 sampled heading pixels. The lowest row and
+the heading remain visible. These are manually confirmed development
+crops. [Earlier native comparison](#require-an-intentional-motif-outline-in-review)
+
+A fresh local Chromium replay measured 51 ms from confirmation to
+the API response and 59 ms to refreshed count controls. The measurement
+covers one desktop update on a local API and database. No detector or
+renderer is invoked by the group decision.
+
+The frozen detector replay retains all 18 instances. The seeded
+geometry replay retains 11/11 whole-print and 12/12 motif passes. The
+Golden development replay retains 29/29 instances. The detector,
+geometry, per-mode and availability summaries match the previous runs.
+
 ### Compare the whole contact print with its counted fragments
 
 Multipanel revision 9 keeps the right paper outline, the original crop
@@ -4442,6 +4498,28 @@ and resize, 0.467 for an affine fit and 0.383 for a projective fit. Across
 nine paired draft mode records, affine p95 is 0.153–0.910 pixels. The
 coordinate matches remain compatible with digitally transformed
 derivatives. Capture independence still needs the actual two rasters.
+
+CU Boulder publishes whole-album records and item-level catalogue
+links for four Ira Wolff albums. In the Civil War Carte-de-Visite
+Album, 78 individual records have size measurements and a No Copyright
+United States statement. The Lincoln card `0m746x06r0fj` retains its ARK
+across two published file names and is catalogued at 2.25 × 3.25 in.
+The item and position can be matched from metadata. Native raster
+requests returned HTTP 403, and the separate acquisition of the print
+still needs verification. [Collection](https://doi.org/10.25810/9e4g-k065) ·
+[Pinned catalogue exports](https://github.com/cuboulder-MSD/digColl_iraWolffPhoto/tree/9659d61fc9d2de31473b1f650bd21d5bbf9b8b7c) ·
+[Lincoln card record](https://ark.colorado.edu/ark:/47540/0m746x06r0fj)
+
+The Dieulafoy catalogue mirror indexes 774 pages across eight INHA
+albums. INHA publishes an Etalab Open Licence for its digitized
+materials, including commercial reuse with attribution. The native
+Perse 1 canvas 65 request and a separately published Perse 1 derivative
+both returned HTTP 403. The exact page and independent single-print
+pairing still need raster evidence. These catalogue checks added zero
+verified calibration or release groups.
+[INHA reuse terms](https://www.inha.fr/bibliotheque/collections/la-bibliotheque-numerique-de-linha/) ·
+[Pinned catalogue index](https://github.com/moarthist/dieulafoy/tree/e8d67dc03a096d569feb380004fbb2101841e1f8) ·
+[Published derivative](https://ac.nau.edu/omeka-s/s/pioneering-women-archaeologists/item/4181)
 
 The Getty Bayard album was disbound in the 1980s. The published page
 viewer reconstructs the volume digitally. Catalogued dimensions and

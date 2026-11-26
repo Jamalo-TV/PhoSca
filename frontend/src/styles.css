@@ -660,15 +660,45 @@ select {
   cursor: crosshair;
 }
 
-.manual-print-actions {
+.manual-print-actions,
+.film-carrier-review {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.manual-print-actions p {
+.manual-print-actions p,
+.film-carrier-review p {
   flex-basis: 100%;
+}
+
+.film-carrier-review .text-button {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid #9dbeba;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #153f39;
+}
+
+.film-carrier-review button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.crop-review-shell .film-carrier-review {
+  margin: 12px 0;
+}
+
+.crop-review-shell .film-carrier-review button {
+  min-height: 44px;
+}
+
+.crop-review-shell .film-carrier-review .text-button {
+  border-color: #31544c;
+  background: #102d27;
+  color: #eff8f5;
 }
 
 .mounted-print-fragment-review {

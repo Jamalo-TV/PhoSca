@@ -49,7 +49,8 @@ import {
   adjacentPrintHint, AlbumPageMarkReview, captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, cropProtectionErrors,
   CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
-  deferredPrintHint, filmGridCountHint, filmGridHint, filmGridReason, getDeferredPrintProposals, getSourceEdgeTraces,
+  deferredPrintHint, FilmCarrierReview, filmGridCountHint, filmGridHint, filmGridReason, filmGroupReviewError,
+  getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
   mountedPrintNeedsReview, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, scannerBackingHint, scannerBackingReason,
@@ -1364,7 +1365,8 @@ const printAdditionErrors = {
   deferred_print_proposal_stale: "Dieser Vorschlag wurde bereits geprüft. Die Ansicht wurde aktualisiert.",
 };
 
-function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onConfirmCount, selectedPhotoId, onSelectPhoto, reviewingCount }) {
+function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onConfirmCount, onExcludeFilmGroup,
+  selectedPhotoId, onSelectPhoto, reviewingCount }) {
   const canvasRef = useRef(null);
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
@@ -1377,6 +1379,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const [albumMarkReviewId, setAlbumMarkReviewId] = useState(null);
   const [addition, setAddition] = useState(null);
   const [countReview, setCountReview] = useState(null);
+  const [filmSelection, setFilmSelection] = useState(null);
   const dragRef = useRef(null);
   const editingImage = editMode === "image_only";
   const blockedRegions = blockedCrop?.photoId === selectedPhotoId && blockedCrop.mode === editMode
@@ -1408,6 +1411,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const filmGridSeam = useMemo(() => getFilmGridSeam(filmMask), [filmMask]);
   const filmGridGroups = useMemo(() => reviewingCount && !newPrint && !editingImage ? getFilmGridReviewSeams(photos) : [],
     [reviewingCount, newPrint, editingImage, photos]);
+  const selectedFilmGroup = filmSelection?.pageId === pageId
+    ? filmGridGroups.find(({ key, photoIds }) => key === filmSelection?.key && photoIds.size === 3) : null;
   const paperGridMask = selected?.segmentation_confidence != null && !rejectedDetection
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(paperGridReason) ? selected.segmentation_mask : null;
   const paperGrid = useMemo(() => getPaperGridReview(paperGridMask), [paperGridMask]);
@@ -1494,22 +1499,27 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     photos.forEach((photo) => {
-      const shape = draftShapes[photo.id] || draftShapeFromPhoto(photo);
+      const inFilmGroup = selectedFilmGroup?.photoIds.has(photo.id);
+      const shape = (!inFilmGroup && draftShapes[photo.id]) || draftShapeFromPhoto(photo);
       const visiblePoints = shape.visiblePolygon.map((point) => ({ x: point.x * canvas.width, y: point.y * canvas.height }));
       const outer = editingImage ? draftShapeFromPhoto(photo).warpQuad : shape.warpQuad;
       const points = outer.map((point) => ({ x: point.x * canvas.width, y: point.y * canvas.height }));
       if (visiblePoints.length >= 4) {
-        context.strokeStyle = "rgba(245, 158, 11, 0.9)";
-        context.lineWidth = 2;
+        context.strokeStyle = inFilmGroup ? "#0e7490" : "rgba(245, 158, 11, 0.9)";
+        context.lineWidth = inFilmGroup ? 3 : 2;
         context.beginPath();
         visiblePoints.forEach((point, index) => {
           if (index === 0) context.moveTo(point.x, point.y);
           else context.lineTo(point.x, point.y);
         });
         context.closePath();
+        if (inFilmGroup) {
+          context.fillStyle = "rgba(14, 116, 144, 0.11)";
+          context.fill();
+        }
         context.stroke();
       }
-      context.strokeStyle = photo.id === selectedPhotoId ? "#0f766e" : "#f59e0b";
+      context.strokeStyle = inFilmGroup ? "#0e7490" : photo.id === selectedPhotoId ? "#0f766e" : "#f59e0b";
       context.lineWidth = photo.id === selectedPhotoId ? 4 : 2;
       context.beginPath();
       points.forEach((point, index) => {
@@ -1747,7 +1757,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   }, [albumMark, alternateOutline, blockedRegions, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups,
     printSuggestion,
-    missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, selectedPhotoId, showMissingEdges]);
+    missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, selectedFilmGroup, selectedPhotoId, showMissingEdges]);
 
   useEffect(() => {
     draw();
@@ -1935,6 +1945,20 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     }
   }
 
+  async function excludeFilmGroup(photoIds) {
+    setCountReview({ pageId, saving: true });
+    try {
+      await onExcludeFilmGroup(page, photoIds);
+      if (activePage.current === pageId) setCountReview(null);
+    } catch (error) {
+      if (activePage.current === pageId) {
+        setCountReview({ pageId, error: error.message === "film_review_group_stale" ? filmGroupReviewError : error.message });
+      }
+    } finally {
+      setFilmSelection(current => current?.pageId === pageId ? null : current);
+    }
+  }
+
   async function saveNewPrint() {
     if (!newPrint || newPrint.saving || newPrint.invalidated || newPrint.corners.length !== 4 || additionSize.error) return;
     setAddition({ ...newPrint, saving: true, error: null });
@@ -2016,6 +2040,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {countOutlines.length > 0 && <p className="crop-editor-hint" id="fragment-count-review-hint">{fragmentCountHint}</p>}
       {captureSplitGroups.length > 0 && <p className="crop-editor-hint" id="capture-split-count-hint">{captureSplitReviewHint}</p>}
       {filmGridGroups.length > 0 && <p className="crop-editor-hint" id="film-grid-count-hint">{filmGridCountHint}</p>}
+      <FilmCarrierReview groups={filmGridGroups} selected={selectedFilmGroup}
+        busy={!canAddPhoto || Boolean(saveState?.saving || currentCountReview?.saving)}
+        onSelect={key => { setFilmSelection(key == null ? null : { pageId, key }); setCountReview(null); }}
+        onExclude={excludeFilmGroup} />
       {paperGridGroups.length > 0 && <>
         <p className="crop-editor-hint" id="paper-grid-count-hint">{paperGridCountHint}</p>
         <div className="manual-print-actions">
@@ -2272,6 +2300,18 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
     }
   }
 
+  async function excludeFilmGroup(page, photoIds) {
+    try {
+      await submitReviewEvent({
+        task_type: "segmentation", task_id: page.id, answer: "exclude_film_group", reason_code: "film_carrier",
+        idempotency_key: crypto.randomUUID(), metadata: { ui: "desktop",
+          photo_count_revision: page.processing_metadata?.photo_count_revision, film_group_photo_ids: [...photoIds] },
+      });
+    } finally {
+      await refreshCorrections().catch(() => {});
+    }
+  }
+
   async function reprocessSelected() {
     if (!currentPhotoId) return;
     await reprocessPhoto(currentPhotoId);
@@ -2304,6 +2344,7 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
           onAddPhoto={addPhoto}
           onRejectPhoto={rejectPhoto}
           onConfirmCount={confirmCount}
+          onExcludeFilmGroup={excludeFilmGroup}
           reviewingCount={reviewType === "segmentation"}
         />
       </section>

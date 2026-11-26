@@ -7,7 +7,8 @@ import {
   adjacentPrintHint, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
   captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, cropProtectionErrors, CropVariants,
   cropModeLabels, crossingPrintHint,
-  crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridReason, fragmentCountHint,
+  crossingPrintReason, crossingPrintSaveHint, FilmCarrierReview, filmGridCountHint, filmGridHint, filmGridReason,
+  filmGroupReviewError, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
@@ -116,7 +117,7 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome, uplo
 }
 
 function DetectionOverlay({ item, editable = false, openPaperOutline, countOutlines, captureSplitGroups, filmGridGroups,
-  paperGridGroups, onSaved, onProtectionBlocked }) {
+  selectedFilmGroup, paperGridGroups, onSaved, onProtectionBlocked }) {
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
   const [showMissingEdges, setShowMissingEdges] = useState(false);
@@ -335,6 +336,16 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       strokeWidth="7" strokeDasharray="14 8" pointerEvents="none"
       points={line.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
   ));
+  const filmGroupOverlay = selectedFilmGroup && (
+    <g aria-label="Vorschläge zur Prüfung der Negativhülle" fill="#0e7490" fillOpacity="0.11"
+      stroke="#0e7490" strokeWidth="6" pointerEvents="none">
+      {detections.filter(({ photo_id }) => selectedFilmGroup.photoIds.has(photo_id)).map(detection => {
+        const polygon = sanitizeReviewPolygon(detection.visible_polygon || detection.polygon);
+        return polygon && <polygon key={detection.photo_id}
+          points={polygon.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />;
+      })}
+    </g>
+  );
   const shownPaperGrids = paperGrid?.cut
     ? [{ key: item.id, outline: paperGrid.outline, cuts: new Map([[item.id, paperGrid.cut]]) }]
     : paperGridGroups;
@@ -404,7 +415,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           <rect x={box.x1 * 1000} y={box.y1 * 1000} width={(box.x2 - box.x1) * 1000} height={(box.y2 - box.y1) * 1000} />
           <text x={box.x1 * 1000 + 12} y={box.y1 * 1000 + 38}>{index + 1}</text>
         </g>)}
-        {nestedOverlay}{deferredOverlay}{fragmentCountOverlay}{captureSplitOverlay}{filmGridOverlay}{paperGridOverlay}
+        {nestedOverlay}{deferredOverlay}{fragmentCountOverlay}{captureSplitOverlay}{filmGroupOverlay}{filmGridOverlay}{paperGridOverlay}
         {albumMark && <rect x={albumMark.bounds.x1 * 1000} y={albumMark.bounds.y1 * 1000}
           width={(albumMark.bounds.x2 - albumMark.bounds.x1) * 1000} height={(albumMark.bounds.y2 - albumMark.bounds.y1) * 1000}
           aria-label="Zu prüfende Schutzmarkierung" style={{ fill: "none", stroke: "#facc15", strokeWidth: 6, pointerEvents: "none" }} />}
@@ -651,6 +662,7 @@ function CropReview({ albumId, goHome }) {
   const [blockedCropTaskId, setBlockedCropTaskId] = useState(null);
   const [answerError, setAnswerError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [filmSelection, setFilmSelection] = useState(null);
   const returnCountId = useRef(null);
   const leavingRef=useRef(false); const goHomeRef=useRef(goHome);
   const queueKey = JSON.stringify([albumId, type, focusedPhotoId]);
@@ -684,6 +696,8 @@ function CropReview({ albumId, goHome }) {
   const countOutlines = type === "segmentation" ? getFragmentReviewOutlines(item?.payload?.detections || []) : [];
   const captureSplitGroups = type === "segmentation" ? getCaptureSplitReviewGroups(item?.payload?.detections || []) : [];
   const filmGridGroups = type === "segmentation" ? getFilmGridReviewSeams(item?.payload?.detections || []) : [];
+  const selectedFilmGroup = filmSelection?.pageId === item?.id
+    ? filmGridGroups.find(({ key, photoIds }) => key === filmSelection?.key && photoIds.size === 3) : null;
   const paperGridGroups = type === "segmentation" ? getPaperGridReviewGroups(item?.payload?.detections || []) : [];
   useEffect(()=>{ goHomeRef.current=goHome; },[goHome]);
   useEffect(() => {
@@ -704,6 +718,7 @@ function CropReview({ albumId, goHome }) {
     setFocusedPhotoId(photoId);
     setType(nextType);
     setBlockedCropTaskId(null);
+    setFilmSelection(null);
     setAnswerError("");
     setMessage("");
   }
@@ -762,14 +777,37 @@ function CropReview({ albumId, goHome }) {
       setSubmitting(false);
     }
   }
+  async function excludeFilmGroup(photoIds) {
+    if (!item || submitting) return;
+    setSubmitting(true);
+    setAnswerError("");
+    returnCountId.current = item.id;
+    try {
+      await submitReviewEvent({
+        task_type: "segmentation", task_id: item.id, answer: "exclude_film_group", reason_code: "film_carrier",
+        idempotency_key: crypto.randomUUID(), metadata: { page_id: item.page_id, ui: "mobile-v2",
+          photo_count_revision: item.payload.photo_count_revision, film_group_photo_ids: [...photoIds] },
+      });
+      await load();
+    } catch (error) {
+      setAnswerError(error.message === "film_review_group_stale" ? filmGroupReviewError : error.message);
+      await load().catch(() => {});
+    } finally {
+      setFilmSelection(null);
+      setSubmitting(false);
+    }
+  }
   return <div className="mobile-shell crop-review-shell"><MobileHeader title="Cropping prüfen" onBack={leaveReview}/><main className="mobile-content"><div className="review-top"><div><span>Kurze Sitzung</span><strong>{Math.min(index + 1, items.length || 5)} / {Math.min(items.length, 5) || 5}</strong></div><div className="review-progress"><i style={{width:`${Math.min(100, index / Math.max(1, Math.min(items.length,5)) * 100)}%`}}/></div></div>
     <div className="task-switch"><button className={type === "segmentation" ? "active" : ""} onClick={() => switchTask("segmentation")} disabled={submitting}>Printanzahl</button><button className={type === "geometry" ? "active" : ""} onClick={() => switchTask("geometry")} disabled={submitting}>Crop-Qualität</button></div>
     {answerError && <p role="alert">{answerError}</p>}
     {item ? <>
       <DetectionOverlay item={item} editable={type === "geometry"} openPaperOutline={Boolean(focusedPhotoId)}
         countOutlines={countOutlines} captureSplitGroups={captureSplitGroups}
-        filmGridGroups={filmGridGroups} paperGridGroups={paperGridGroups} onSaved={updateSavedCropModes}
+        filmGridGroups={filmGridGroups} selectedFilmGroup={selectedFilmGroup} paperGridGroups={paperGridGroups} onSaved={updateSavedCropModes}
         onProtectionBlocked={setBlockedCropTaskId} />
+      <FilmCarrierReview groups={filmGridGroups} selected={selectedFilmGroup} busy={submitting}
+        onSelect={key => { setFilmSelection(key == null ? null : { pageId: item.id, key }); setAnswerError(""); }}
+        onExclude={excludeFilmGroup} />
       {paperGridGroups.map(({ key, parents }, groupIndex) => {
         const [parentId] = parents;
         const parent = item.payload.detections.find(row => row.photo_id === parentId);

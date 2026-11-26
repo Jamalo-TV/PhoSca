@@ -90,6 +90,17 @@ Ecken. Überlappende Vorschläge halten beide Zuschnitte in Prüfung, bis
 der Reviewer ihre Zuordnung geklärt hat.
 [Beispiel Kontaktabzug](data/evaluation/README.md#open-the-measured-contact-outline-from-count-review)
 
+Bei drei verknüpften Vorschlägen für eine mögliche Negativhülle öffnet
+**Negativhülle prüfen** eine Auswahl in der Anzahlprüfung. Desktop und
+Mobile markieren die drei Konturen türkis auf der Originalseite.
+Bestätigt der Reviewer, dass alle drei zur Hülle gehören, speichert
+PhoSca einen gemeinsamen Entscheid und entfernt die drei Vorschläge
+aus der aktiven Abzugsliste. Die vorherigen Masken und Quellvorschauen
+bleiben in der Geometrieprüfung nachvollziehbar. Die Anzahlprüfung
+bleibt auf derselben Seite offen. Für einen daneben liegenden
+Papierabzug gelten weiterhin seine eigenen Konturen und Zuschnittregeln.
+[Beispiel und Gegenprobe](data/evaluation/README.md#confirm-a-negative-sleeve-in-count-review)
+
 Wenn der Zuschnitt an einer Papierkante in Prüfung bleibt und zwei
 Linien im Original ausreichend gestützt sind, zeichnet **Ganzer Abzug**
 beide als gestrichelte Kanten ein. Die Linien folgen dem beobachteten

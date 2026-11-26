@@ -5,6 +5,115 @@ import numpy as np
 import pytest
 
 
+async def test_review_excludes_only_the_confirmed_film_carrier_group(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ReviewEvent
+    from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW
+    from app.pipeline.segmentation import SegmentationDetection, SegmentationResult
+    from app.services import pipeline
+
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
+    monkeypatch.setenv("MAX_UPLOAD_SIZE", "1048576")
+    monkeypatch.setenv("MAX_REQUEST_SIZE", "2097152")
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    get_settings.cache_clear()
+
+    def vertices(left, top, right, bottom):
+        return [{"x": x / 399, "y": y / 259} for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
+
+    film = [vertices(20, 24, 184, 233), vertices(25, 30, 179, 121), vertices(26, 131, 181, 228)]
+    paper = [vertices(206, 21, 375, 234), vertices(218, 132, 362, 232)]
+    seam = [{"x": 0.08, "y": 0.48}, {"x": 0.45, "y": 0.49}]
+    detections = []
+    for polygon in [*film, *paper]:
+        bounds = {"x1": polygon[0]["x"], "y1": polygon[0]["y"], "x2": polygon[2]["x"], "y2": polygon[2]["y"]}
+        mask = {"source": "yolo_seg_mask", "polygon": polygon}
+        if polygon in film:
+            mask["film_grid_review_seam"] = seam
+        detections.append(SegmentationDetection(
+            bounds, mask, 0.81, 1.0, False, [FILM_GRID_REVIEW if polygon in film else PAPER_GRID_REVIEW],
+        ))
+    monkeypatch.setattr(pipeline, "segment_album_page", lambda *_, **__: SegmentationResult(detections, {}))
+    image = np.full((260, 400, 3), 42, np.uint8)
+    image[24:234, 20:185] = (53, 82, 110)
+    image[21:235, 206:376] = (89, 137, 186)
+    ok, png = cv2.imencode(".png", image)
+    assert ok
+
+    album_id = (await client.post("/api/v1/albums", json={"name": "Film carrier review"})).json()["id"]
+    album_url = f"/api/v1/albums/{album_id}"
+    uploaded = await client.post(f"{album_url}/pages/upload", files={"files": ("page.png", png.tobytes(), "image/png")})
+    assert uploaded.status_code == 201, uploaded.text
+    queue_url = f"/api/v1/review/queue?album_id={album_id}&type=segmentation"
+    task, = (await client.get(queue_url)).json()
+    before = task["payload"]
+    assert before["detection_count"] == 5
+    group_ids = [row["photo_id"] for row in before["detections"] if row["segmentation_mask"].get("film_grid_review_seam")]
+    paper_before = [row for row in before["detections"] if row["photo_id"] not in group_ids]
+    assert len(group_ids) == 3 and len(paper_before) == 2
+
+    event_url = "/api/v1/review/events"
+    metadata = {"ui": "desktop", "photo_count_revision": before["photo_count_revision"], "film_group_photo_ids": group_ids}
+    answer = {"task_type": "segmentation", "task_id": task["id"], "answer": "exclude_film_group",
+              "reason_code": "film_carrier", "idempotency_key": uuid4().hex, "metadata": metadata}
+    incomplete = await client.post(event_url, json={**answer, "metadata": {**metadata, "film_group_photo_ids": group_ids[:2]}})
+    assert incomplete.status_code == 422
+    for selection in ([*group_ids[:2], paper_before[0]["photo_id"]], [group_ids[0]] * 3):
+        wrong = await client.post(event_url, json={**answer, "metadata": {**metadata, "film_group_photo_ids": selection}})
+        assert wrong.status_code == 409 and wrong.json()["detail"] == "film_review_group_stale"
+    assert (await client.get(queue_url)).json() == [task]
+
+    confirmed = await client.post(event_url, json=answer)
+    assert confirmed.status_code == 201, confirmed.text
+    event_id = confirmed.json()["id"]
+    retry = await client.post(event_url, json=answer)
+    assert retry.json() == {"id": event_id, "saved": True, "duplicate": True}
+    stale = await client.post(event_url, json={**answer, "idempotency_key": uuid4().hex})
+    assert stale.status_code == 409
+
+    current, = (await client.get(queue_url)).json()
+    after = current["payload"]
+    assert after["detection_count"] == 2 and after["photo_count_revision"] == event_id
+    assert after["detections"] == paper_before
+    rows = (await client.get(f"{album_url}/photos")).json()
+    assert {row["id"] for row in rows} == {row["photo_id"] for row in paper_before}
+    for photo_id in group_ids:
+        url = f"/api/v1/photos/{photo_id}"
+        photo = (await client.get(url)).json()
+        assert photo["reviewed_non_print"] is True
+        saved = photo["enhancement_applied"]
+        assert saved["review_rejected_detection"]["segmentation_mask"] == photo["segmentation_mask"]
+        assert saved["review_decisions"]["geometry"][-1]["event_id"] == event_id
+        for mode in ("full_print", "image_only", "source_corrected_trimmed"):
+            assert (await client.get(f"{url}/image?variant={mode}")).status_code == 404
+        assert (await client.get(f"{url}/image?variant=source_corrected_untrimmed")).status_code == 200
+
+    async with get_session_factory()() as session:
+        event = await session.get(ReviewEvent, UUID(event_id))
+        assert event.event_metadata["client"]["film_group_photo_ids"] == group_ids
+        assert len(event.event_metadata["snapshot"]["photos"]) == 5
+
+    count = await client.post(event_url, json={
+        **answer, "answer": "correct", "idempotency_key": uuid4().hex, "metadata": {"photo_count_revision": event_id},
+    })
+    assert count.status_code == 201, count.text
+    assert (await client.get(queue_url)).json() == []
+
+    original = next(row for row in before["detections"] if row["photo_id"] == group_ids[0])
+    restored = await client.patch(f"/api/v1/photos/{original['photo_id']}/bounding-box", json={
+        "bounding_box": original["bounding_box"],
+        "segmentation_mask": {"source": "manual_quad", "polygon": original["polygon"], "warp_quad": original["polygon"]},
+    })
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["reviewed_non_print"] is False
+    reopened, = (await client.get(queue_url)).json()
+    assert reopened["payload"]["detection_count"] == 3
+
+
 @pytest.mark.parametrize("add_second", [False, True])
 async def test_fusion_proposals_stay_uncounted_until_manually_added_or_dismissed(client, monkeypatch, add_second):
     from app.config import get_settings

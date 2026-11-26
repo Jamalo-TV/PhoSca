@@ -14,6 +14,7 @@ export const scannerBackingHint = "Prüfe am Original, ob die Markierung einen A
 export const filmGridReason = "FILM_GRID_REVIEW";
 export const filmGridHint = "Gehört der Vorschlag zur Negativhülle, wähle «Falsches Objekt». Liegt dort ein Papierabzug, setze unter «Ganzer Abzug» die Ecken an seinen Papierrand.";
 export const filmGridCountHint = "Prüfe die Vorschläge beidseits der türkis gestrichelten Linie im Original. Sind dort Papierabzüge oder Teile einer Negativhülle markiert?";
+export const filmGroupReviewError = "Die Vorschläge haben sich geändert. Prüfe die aktualisierte Albumseite.";
 export const paperGridReason = "PAPER_GRID_REVIEW";
 export const paperGridCountHint = "Die blau gestrichelte Kontur zeigt einen möglichen Aussenumriss. Prüfe am Original, ob die Ausschnitte an den gepunkteten Linien eigene Papierabzüge sind.";
 export const paperGridOuterHint = "Prüfe den möglichen Aussenumriss am Original. Lade ihn für einen ganzen Papierabzug in den Editor oder markiere den Vorschlag als «Falsches Objekt».";
@@ -74,6 +75,25 @@ const printEdgeReviewHints = {
 export function getSourceEdgeTraces(traces) {
   return Array.isArray(traces) ? traces.filter((trace) => Array.isArray(trace) && trace.length >= 2
     && trace.every((point) => [point?.x, point?.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1))) : [];
+}
+
+export function FilmCarrierReview({ groups, selected, busy, onSelect, onExclude }) {
+  const carriers = groups.filter(({ photoIds }) => photoIds.size === 3);
+  if (!carriers.length) return null;
+  return <div className="film-carrier-review">
+    {selected ? <>
+      <p className="crop-editor-hint" role="status">Prüfe im Original, ob alle drei türkis markierten Vorschläge zur Negativhülle gehören.</p>
+      <button type="button" className="primary-button" disabled={busy}
+        onClick={() => onExclude(selected.photoIds)}>
+        {busy ? "Vorschläge werden geprüft …" : "Drei Vorschläge aus der Abzugsliste nehmen"}
+      </button>
+      <button type="button" className="text-button" disabled={busy} onClick={() => onSelect(null)}>Abbrechen</button>
+    </> : carriers.map(({ key }, index) => (
+      <button key={key} type="button" className="text-button" disabled={busy} onClick={() => onSelect(key)}>
+        {`Negativhülle prüfen${carriers.length > 1 ? ` (${index + 1})` : ""}`}
+      </button>
+    ))}
+  </div>;
 }
 
 export function getDeferredPrintProposals(proposals) {
