@@ -22,7 +22,7 @@ import {
   scannerBackingHint, scannerBackingReason,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
-  offPrintAdvisorySource, useAlbumPageMarkReview,
+  getSourceStripReview, SourceStripOutline, SourceStripReview, offPrintAdvisorySource, useAlbumPageMarkReview,
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
@@ -260,6 +260,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const [editMode, setEditMode] = useState("full_print");
   const [motifQuad, setMotifQuad] = useState(storedMotif);
   const editingMotif = canEditMotif && editMode === "image_only";
+  const sourceStrip = editable && !deferredDraft && !editingMotif ? getSourceStripReview(fullPrintMode) : null;
   const albumMark = editable && !editingMotif && !reviewedNonPrint ? markOffer : null;
   const albumMarkReview = useAlbumPageMarkReview(albumMark, item.payload?.photo_id);
   const displayedQuad = editingMotif ? motifQuad || savedQuad : quad;
@@ -525,6 +526,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     paperJoinGroups.length && "mobile-paper-join-count-hint",
     editable && motifTraces.length && "mobile-motif-seam-hint",
     editable && preliminaryMotifMarks && "mobile-motif-review-hint",
+    sourceStrip && "mobile-source-strip-review-hint",
   ].filter(Boolean).join(" ");
   const paperTraceOverlay = printEdgeTraces.map((trace, index) => (
     <polyline key={index} points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
@@ -556,6 +558,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
             fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9" />}
           <polygon className="editable-quad" points={displayedQuad.map(point => `${point.x * 1000},${point.y * 1000}`).join(" ")} />
           {!editingMotif && <>{uncertainLine}{alternateOverlay}{paperTraceOverlay}</>}
+          {sourceStrip && <SourceStripOutline points={sourceStrip.outline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />}
           {!editingMotif && getSourceEdgeTraces(fullPrintMode?.exposed_overlap_edge_traces).map((trace, index) => (
             <polyline key={index} aria-label="Möglicher Papierrand ausserhalb des Zuschnitts"
               points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
@@ -661,6 +664,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         <p key={id} className="quad-hint" id={`mobile-${id}`}>{text}</p>
       ))}
       {printEdgeReviewHint && <p className="quad-hint" id="mobile-print-edge-review-hint">{printEdgeReviewHint}</p>}
+      {sourceStrip && <SourceStripReview strip={sourceStrip} sourceUrl={item.preview_url} hintId="mobile-source-strip-review-hint" />}
       {!editingMotif && <NeighborContentReview fullPrint={fullPrintMode} sourceUrl={item.preview_url} />}
       {albumMarkReview.bounds.length > 0 && <AlbumPageMarkReview mark={albumMark} review={albumMarkReview}
         sourceUrl={item.preview_url} disabled={saving} />}

@@ -869,6 +869,13 @@ select {
   border-radius: 4px;
 }
 
+.source-strip-detail {
+  display: block;
+  width: min(100%, 520px);
+  max-height: 300px;
+  border-radius: 4px;
+}
+
 .print-size-fields p {
   margin: 0 0 10px;
   font-size: 0.875rem;

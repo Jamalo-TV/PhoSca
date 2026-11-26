@@ -92,6 +92,7 @@ from app.pipeline.protected_regions import (
 )
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVIEW, SCALLOPED_PRINT_REVISION
 from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE, refine_visible_paper_rim
+from app.pipeline.source_strip_review import source_strip_outline
 
 _PRINT_BOUNDARY_SOURCE = "physical_print_boundary"
 _PAPER_RIM_SOURCE = "visible_paper_rim"
@@ -2225,6 +2226,23 @@ def correct_photo_crop(
                 marks = []
             if marks:
                 result.metadata["off_print_advisory_regions"] = marks
+        strip_reasons = set(full_reasons)
+        if (not manual and visible is not None and mask.get("detector_source") == "yolo_onnx"
+                and full_mode["status"] == "review_needed" and not full_mode.get("outline_preview")
+                and len(strip_reasons) == 3
+                and strip_reasons - {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_BOUNDARY_UNSUPPORTED"}
+                == {"PRINT_ASPECT_UNCERTAIN", "POSSIBLE_CONTENT_CUTOFF"}
+                and not any(mask.get(key) for key in _STOCK_REVIEW_CONFLICTS)):
+            try:
+                strip = source_strip_outline(page_image, src_points, boundary_refinement, neighbor_polygons)
+                if strip is not None:
+                    _validate_quad(strip, width, height)
+                    full_mode["source_strip_review"] = {
+                        "source_size": {"width": width, "height": height},
+                        "source_outline": _vertices_on_page(strip, width, height),
+                    }
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                pass  # The existing held crop already supplies its ordinary review.
         return result
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:

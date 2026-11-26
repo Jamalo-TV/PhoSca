@@ -5417,6 +5417,69 @@ detection polygon for this path.
 The shadow replays are under
 `runs/crop-quality/paper-plane-motif-editor/renderer-seed-controls/`.
 
+### Show a lower exposed strip next to a held print
+
+On Rudge `12REDA.JPG`, none of the six raw right-hand candidates
+at the 0.25 proposal threshold reaches the lower visible island.
+The classical detector also supplies no proposal there. Holding its
+two crop modes therefore correctly prevents an incomplete export,
+while the existing source outline does not direct the reviewer to
+the lower visible area. A separate scan fitted on the upper field
+alone independently matches 17 lower motif features within three
+native pixels, 13 on JPEG75 and 10 after moderate blur. The opaque
+gap supplies zero matches. This paired evidence establishes the case
+for development. The app's hint uses only the page photograph.
+
+For an already held model crop with an ambiguous or unsupported
+boundary, uncertain aspect and possible content cutoff, the renderer
+searches outside a side with at least 90% line support
+and 85% corner support. A near-black patch supports the outer extent.
+A lightness step of at least 20 in the upstream textured band must
+match one continuous line at at least 69% of the sampled stations.
+Two lateral steps and the similarity of the gap's colour to both
+external flanks support the source location. The marker is inset
+within the midtone band, before the black backing. A nonunique strip
+or one covered by another active proposal supplies no hint. The
+existing geometry editor displays the marker and an original-pixel
+detail with the surrounding gap. A competing manual claim retires
+the hint immediately.
+
+The native marker covers 25,698 of 30,160 pixel centres in the
+approximate lower motif reference and 450 centres outside that
+draft. The edit route receives no geometry from the marker. The
+normal native evaluator still has three proposed objects and both
+modes held for the right one. The source marker is the sole change
+in the three crop records, and all seven rendered images match the
+baseline byte for byte. Normal replays of JPEG75, 75% and 50% scale
+each display one right-hand marker and keep all affected tracks in
+review. Those encodings yield five proposals each. Scope remains
+the source review of the strip.
+
+On Desktop and Mobile the detail includes the visible lower field,
+the gap and the bottom of the existing crop. The named whole-print
+and motif downloads and the trimmed alias remain unavailable.
+Reprocessing the original reproduces the marker and original JPEG.
+An unrelated manual claim preserves it. A competing claim covering
+3,600 native square pixels of the marker retires it in both Photo
+Detail and the geometry queue, including after reprocessing.
+
+The same-page left print, left page outline, black-only, flat-card
+and unadjusted different-work controls produced no marker in the
+final source check. Three separate motifs inserted with matched
+lightness and preserved aperture edges each produce the marker in
+both the native and JPEG75 versions. This confirms the ambiguity of
+ownership from the single photograph. Median CPU time for
+the narrow final check was 9.7 ms and p95 was 11.8 ms over 30 warm
+one-thread calls. The regression comparisons retain 18/18 locked
+synthetic detections and 23/23 crops with the seeded geometry. The
+hint operates on an already held crop and adds no cases to review.
+The current source, test replays and draft masks
+are development evidence. The Red Album is excluded from release
+and calibration. The replay files are in
+`runs/crop-quality/rudge-visible-strip-review/`.
+[Paired photographs](https://github.com/rudged/home/tree/9422452820380ca089db3e0baf0cfaf3dc6c7cdc) ·
+[Detector and pixel checks](../../backend/app/pipeline/source_strip_review.py)
+
 ### Explain a held whole print in mobile geometry review
 
 In revision `9b78009`, Mobile can offer **Korrekt & vollständig**

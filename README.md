@@ -511,6 +511,17 @@ Anspruch hält die betroffenen Downloads erneut zurück. Ein ungeklärtes
 Papierformat und eine strittige Motivgrenze bleiben eigene Prüfungen.
 [Beispiel mit zwei Markierungen](data/evaluation/README.md#review-multiple-advisory-marks-at-a-measured-paper-edge)
 
+Bei einem zur Prüfung zurückgehaltenen Abzug kann PhoSca einen
+weiteren sichtbaren Bildstreifen ausserhalb des bisherigen Umrisses
+türkis markieren. Es sucht von einer gut belegten Seite aus, prüft
+den hellen Zwischenraum, den Übergang zum strukturierten Streifen und
+die dunkle Fläche dahinter. Zwei seitliche Kontraste stützen die
+Lage. Die Markierung zeigt nur den beobachteten Streifen am Original.
+Prüfe dort, ob er zum selben Abzug gehört. Falls Albumkarton
+Bildinhalt verdeckt, braucht es eine unverdeckte Aufnahme.
+Beansprucht ein anderer Abzug den Streifen, entfällt der Hinweis.
+[Beispiel mit verdecktem Rudge-Abzug](data/evaluation/README.md#show-a-lower-exposed-strip-next-to-a-held-print)
+
 Vor dem Speichern einer Korrektur prüft PhoSca geschützte Stellen
 in den Originalkoordinaten. Für **Ganzer Abzug** zählt der sichtbare
 Teil der bisherigen Abzugsfläche. Für einen ausdrücklich gesetzten

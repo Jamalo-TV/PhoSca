@@ -63,6 +63,7 @@ import {
   nestedFallbackProposal,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
+  getSourceStripReview, SourceStripReview, sourceStripColor, sourceStripContrastColor,
   offPrintAdvisorySource, useAlbumPageMarkReview,
 } from "./CropVariants.jsx";
 import {
@@ -1382,7 +1383,7 @@ const printAdditionErrors = {
 };
 
 function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onConfirmCount, onResolveCountGroup,
-  selectedPhotoId, onSelectPhoto, reviewingCount }) {
+  selectedPhotoId, onSelectPhoto, reviewingCount, reviewingGeometry }) {
   const canvasRef = useRef(null);
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
@@ -1485,6 +1486,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   ));
   const selectedModes = selected?.crop_modes || getCropModes(selected);
   const fullPrintMode = rejectedDetection ? null : selectedModes?.full_print;
+  const sourceStrip = useMemo(() => reviewingGeometry && !newPrint && !editingImage ? getSourceStripReview(fullPrintMode) : null,
+    [reviewingGeometry, newPrint, editingImage, fullPrintMode]);
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
   const proposedPrintQuad = fullPrintMode?.suggested_warp_quad;
   const printSuggestion = useMemo(() => cyclicQuad(sanitizePolygon(proposedPrintQuad)), [proposedPrintQuad]);
@@ -1626,6 +1629,24 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             context.stroke();
           }
         }
+        context.restore();
+      }
+      if (photo.id === selectedPhotoId && sourceStrip) {
+        const [first, ...rest] = sourceStrip.outline;
+        context.save();
+        context.lineJoin = "round";
+        context.beginPath();
+        context.moveTo(first.x * canvas.width, first.y * canvas.height);
+        rest.forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
+        context.closePath();
+        context.strokeStyle = sourceStripContrastColor;
+        context.lineWidth = 4;
+        context.setLineDash([]);
+        context.stroke();
+        context.strokeStyle = sourceStripColor;
+        context.lineWidth = 2;
+        context.setLineDash([7, 4]);
+        context.stroke();
         context.restore();
       }
       if ((editingImage || preliminaryMotifMarks) && photo.id === selectedPhotoId && motifMarginMarks.length) {
@@ -1858,7 +1879,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   }, [alternateOutline, blockedRegions, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
     printSuggestion,
-    markBounds, missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, preliminaryMotifMarks, selectedCountGroup, selectedPhotoId, showMissingEdges]);
+    markBounds, missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, preliminaryMotifMarks, selectedCountGroup, selectedPhotoId, showMissingEdges, sourceStrip]);
 
   useEffect(() => {
     draw();
@@ -2215,6 +2236,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         </>
       )}
       {!newPrint && !editingImage && printEdgeReviewHint && <p className="crop-editor-hint">{printEdgeReviewHint}</p>}
+      {sourceStrip && <SourceStripReview strip={sourceStrip} sourceUrl={`/api/v1/pages/${pageId}/image`} hintId="source-strip-review-hint" />}
       {!newPrint && deferredParentHints.map(({ id, text }) => <p key={id} className="crop-editor-hint">{text}</p>)}
       {!newPrint && !editingImage && <NeighborContentReview fullPrint={fullPrintMode} sourceUrl={`/api/v1/pages/${pageId}/image`} />}
       {markBounds.length > 0 && <AlbumPageMarkReview mark={albumMark} review={albumMarkReview}
@@ -2268,6 +2290,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           paperGridGroups.length && "paper-grid-count-hint",
           paperJoinGroups.length && "paper-join-count-hint",
           captureSplitGroups.length && "capture-split-count-hint",
+          sourceStrip && "source-strip-review-hint",
           preliminaryMotifMarks ? "held-motif-margin-hint"
             : editingImage && motifMarginMarks.length && !crossingReview && !needsPrintReview && "motif-margin-marks-hint",
         ].filter(Boolean).join(" ") || undefined}
@@ -2493,6 +2516,7 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
           onConfirmCount={confirmCount}
           onResolveCountGroup={resolveCountGroup}
           reviewingCount={reviewType === "segmentation"}
+          reviewingGeometry={reviewType === "geometry"}
         />
       </section>
       <section className="side-surface">

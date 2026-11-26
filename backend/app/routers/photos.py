@@ -261,6 +261,10 @@ async def _review_overlapping_crops(
         full_mode = modes.get("full_print") or {}
         preview = full_mode.get("outline_preview") or {}
         preview_source = preview.get("source")
+        strip = (full_mode.get("source_strip_review") or {}).get("source_outline")
+        if strip and review_outline_intersects_claim(strip, mask, width, height):
+            full_mode.pop("source_strip_review", None)
+            neighbor.enhancement_applied = metadata
         mark_offer = correction.get("album_page_mark_review") or {}
         reviewed_mark = (metadata.get("review_provenance") or {}).get("reviewed_album_mark") or {}
         for review in (mark_offer, reviewed_mark):

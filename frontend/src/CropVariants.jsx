@@ -608,6 +608,46 @@ export function NeighborContentReview({ fullPrint, sourceUrl }) {
   </details>;
 }
 
+export const sourceStripColor = "#22d3ee";
+export const sourceStripContrastColor = "#164e63";
+
+export function getSourceStripReview(fullPrint) {
+  const review = fullPrint?.source_strip_review;
+  if (fullPrint?.status !== "review_needed" || !review) return null;
+  const { width, height } = review.source_size || {};
+  const [outline] = getSourceEdgeTraces([review.source_outline]);
+  return Number.isFinite(width) && Number.isFinite(height) && width > 1 && height > 1 && outline?.length === 4
+    ? { width, height, outline } : null;
+}
+
+export function SourceStripOutline({ points }) {
+  return <g aria-label="Möglicher sichtbarer Bildstreifen" fill="none" strokeLinejoin="round" pointerEvents="none">
+    <polygon points={points} stroke={sourceStripContrastColor} strokeWidth="4" vectorEffect="non-scaling-stroke" />
+    <polygon points={points} stroke={sourceStripColor} strokeWidth="2" strokeDasharray="7 4" vectorEffect="non-scaling-stroke" />
+  </g>;
+}
+
+export function SourceStripReview({ strip, sourceUrl, hintId }) {
+  const { width, height, outline } = strip;
+  const points = outline.map(({ x, y }) => [x * (width - 1), y * (height - 1)]);
+  const xs = points.map(([x]) => x), ys = points.map(([, y]) => y);
+  const stripWidth = Math.max(...xs) - Math.min(...xs);
+  const stripHeight = Math.max(...ys) - Math.min(...ys);
+  const lateralPad = Math.max(24, .08 * stripWidth);
+  const left = Math.max(0, Math.min(...xs) - lateralPad);
+  const top = Math.max(0, Math.min(...ys) - Math.max(96, 2 * stripHeight, stripWidth / 3));
+  const right = Math.min(width, Math.max(...xs) + lateralPad);
+  const bottom = Math.min(height, Math.max(...ys) + Math.max(24, .5 * stripHeight));
+  return <section className="neighbor-content-review" aria-label="Möglicher Bildstreifen im Original">
+    <p id={hintId}>Prüfe am Original, ob der markierte Streifen zum Abzug gehört. Wenn der Albumkarton Bildinhalt verdeckt, verwende eine unverdeckte Aufnahme.</p>
+    <svg className="source-strip-detail" viewBox={[left, top, right - left, bottom - top].join(" ")}
+      role="img" aria-label="Markierter Streifen mit Umgebung im Original">
+      <image href={sourceUrl} width={width} height={height} />
+      <SourceStripOutline points={points.map(([x, y]) => `${x},${y}`).join(" ")} />
+    </svg>
+  </section>;
+}
+
 export function getCropModes(photo) {
   return photo?.enhancement_applied?.correction?.crop_modes || null;
 }

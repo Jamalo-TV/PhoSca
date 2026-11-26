@@ -30,6 +30,7 @@ from app.pipeline.print_edges import CLASSICAL_CONTOUR_REFINEMENT_REVISION, PRIN
 from app.pipeline.print_outline_suggestion import PRINT_OUTLINE_SUGGESTION_REVISION
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_REVISION
 from app.pipeline.protected_regions import PROTECTED_REGION_REVISION
+from app.pipeline.source_strip_review import SOURCE_STRIP_REVIEW_REVISION
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
 from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
 from app.pipeline.source_fragment_review import SOURCE_FRAGMENT_REVIEW_REVISION
@@ -162,6 +163,7 @@ def crop_validation_profile(settings: Settings) -> dict:
         "off_print_advisory_review": (
             OFF_PRINT_ADVISORY_REVISION if settings.enable_precise_photo_crops and settings.enable_protected_region_guard else None
         ),
+        "source_strip_review": SOURCE_STRIP_REVIEW_REVISION if settings.enable_precise_photo_crops else None,
         "orientation_enabled": settings.enable_photo_orientation_correction,
         "orientation_model_sha256": (
             _optional_hash(settings.photo_orientation_model_path) if settings.enable_photo_orientation_correction else None
