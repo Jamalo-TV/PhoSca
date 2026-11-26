@@ -1062,6 +1062,43 @@ async def test_bowed_source_review_survives_preview_invalidation_and_small_manua
         assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
 
 
+async def test_new_paper_claim_retires_intersecting_open_motif_guides(client):
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.motif_boundary import PARTIAL_MOTIF_SEAMS
+
+    _, page_id, photo_id = await _seed_review_data()
+    reasons = ["PRINT_BOUNDARY_AMBIGUOUS", "PRINT_ASPECT_UNCERTAIN"]
+    held = {"status": "review_needed", "reason_codes": reasons}
+    guides = [
+        [{"x": .2, "y": .33}, {"x": .79, "y": .33}],
+        [{"x": .79, "y": .35}, {"x": .79, "y": .75}],
+        [{"x": .75, "y": .77}, {"x": .2, "y": .77}],
+    ]
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.enhancement_applied = {**photo.enhancement_applied, "correction": {
+            "crop_modes": {"full_print": held, "image_only": {
+                **held, "suggested_seam_source": PARTIAL_MOTIF_SEAMS, "suggested_seam_traces": guides,
+            }},
+        }}
+        await session.commit()
+
+    photo_url = f"/api/v1/photos/{photo_id}"
+    before = (await client.get(photo_url)).json()["enhancement_applied"]["correction"]["crop_modes"]
+    assert before["image_only"]["suggested_seam_traces"] == guides
+    # The new paper intersects only the buffered guide at x = .79.
+    claim = [{"x": x, "y": y} for x, y in ((.8, .25), (.97, .25), (.97, .55), (.8, .55))]
+    added = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": claim,
+    })
+    assert added.status_code == 201, added.text
+    after = (await client.get(photo_url)).json()["enhancement_applied"]["correction"]["crop_modes"]
+    assert after == {"full_print": held, "image_only": held}
+    for variant in ("full_print", "image_only", "image_only_preview"):
+        assert (await client.get(f"{photo_url}/image", params={"variant": variant})).status_code == 404
+
+
 @pytest.mark.parametrize("comparison", ["displaced_edges", "album_layer", "local_edge"])
 async def test_source_claim_retires_measured_comparison(client, monkeypatch, tmp_path, comparison):
     from app.config import get_settings

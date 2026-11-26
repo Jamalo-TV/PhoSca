@@ -2270,7 +2270,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             Die orange Markierung zeigt eine Stelle, die der vorgeschlagene Zuschnitt auslassen würde.
           </p>}
           <p className="crop-editor-hint">
-            {edgeTraces.length > 0 && "Die gestrichelten Linien zeigen Abschnitte der gemessenen Motivkante. "}
+            {edgeTraces.length > 0 && "Die gestrichelten Linien zeigen gemessene Abschnitte einer möglichen Motivkante. "}
             {!savedShape.imageQuad && "Die blauen Ecken starten am Papierrand. "}
             Verschiebe sie an die Motivgrenze und lass alle Bildfelder und zum Motiv gehörenden Beschriftungen im Zuschnitt.
             {motifPaperQuad && " Beim Ziehen bleiben die Motivkanten parallel zum entzerrten Papier."}

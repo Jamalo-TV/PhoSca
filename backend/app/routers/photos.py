@@ -41,9 +41,12 @@ from app.pipeline.manual_paper_boundary import (
     original_prediction_mask, paper_curve_from_review_traces, paper_curve_review_reference,
     overlapping_paper_claims, paper_claim_groups, shared_rim_cut_is_inside, shared_rim_cut_reference,
 )
+from app.pipeline.motif_boundary import PARTIAL_MOTIF_SEAMS
 from app.pipeline.motif_margin import HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
-from app.pipeline.perspective import manual_print_intersects, review_outline_intersects_claim, validate_review_quads
+from app.pipeline.perspective import (
+    manual_print_intersects, review_motif_seams_intersect_claim, review_outline_intersects_claim, validate_review_quads,
+)
 from app.pipeline.presets import available_presets
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
@@ -314,6 +317,12 @@ async def _review_overlapping_crops(
                 details={"overlapping_photo_id": str(photo.id)},
             ))
         motif_mode = modes.get("image_only") or {}
+        if motif_mode.get("suggested_seam_source") == PARTIAL_MOTIF_SEAMS and review_motif_seams_intersect_claim(
+            motif_mode.get("suggested_seam_traces") or [], mask, width, height,
+        ):
+            motif_mode.pop("suggested_seam_traces", None)
+            motif_mode.pop("suggested_seam_source", None)
+            neighbor.enhancement_applied = metadata
         motif_preview = motif_mode.get("outline_preview") or {}
         motif_outline = motif_preview.get("source_outline")
         if (motif_preview.get("source") == PAPER_STOCK_MOTIF_SOURCE and motif_outline

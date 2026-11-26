@@ -3,6 +3,12 @@
 import cv2
 import numpy as np
 
+from app.pipeline.border_removal import _is_pale_paper, find_physical_border
+
+PARTIAL_MOTIF_SEAMS = "partial_motif_seams"
+_SIDES = ("top", "right", "bottom", "left")
+_GUIDE_MARGIN = np.float32([[-2, -2], [-2, 2], [2, -2], [2, 2]])
+
 
 def _add_bracketed_measurements(
     levels: np.ndarray, progress: np.ndarray, crossings: np.ndarray, depth: np.ndarray,
@@ -178,7 +184,7 @@ def trace_motif_boundary(
     curved = False
     disagrees = False
     continuous = True
-    for side, start, end in zip(("top", "right", "bottom", "left"), quad, np.roll(quad, -1, axis=0), strict=True):
+    for side, start, end in zip(_SIDES, quad, np.roll(quad, -1, axis=0), strict=True):
         edge = edges.get(side) or {}
         paper = edge.get("rim_bgr")
         if not edge.get("is_physical_border") or not paper:
@@ -192,6 +198,55 @@ def trace_motif_boundary(
         disagrees |= distance > 1.30 or competing
         continuous &= side_continuous and not competing
     return traces, curved, disagrees, continuous and len(traces) == 4
+
+
+def partial_motif_seams(
+    page: np.ndarray, rectified: np.ndarray, page_to_rectified: np.ndarray,
+) -> list[np.ndarray]:
+    """Find three open editing guides while the paper geometry still needs review."""
+    height, width = rectified.shape[:2]
+    short_side = min(height, width)
+    if short_side < 170:
+        return []
+    narrow = find_physical_border(rectified, max_crop_ratio=.17)
+    edges = [narrow.edges[name] for name in _SIDES if narrow.edges[name].is_physical_border]
+    if len(edges) != 3 or narrow.crop_quad is None:
+        return []
+    if any(
+        edge.confidence < .86 or edge.measurements.get("boundary_support", 0) < .80
+        or edge.rim_bgr is None or not _is_pale_paper(edge.rim_bgr)
+        or min(edge.insets) < max(7, .025 * short_side)
+        for edge in edges
+    ) or np.ptp([edge.rim_bgr for edge in edges], axis=0).max() > 26:
+        return []
+    # Check that widening the search does not uncover a competing rim.
+    wide = find_physical_border(rectified, max_crop_ratio=.21)
+    if (wide.crop_quad is None
+            or [edge.edge for edge in edges] != [name for name in _SIDES if wide.edges[name].is_physical_border]
+            or np.max(np.linalg.norm(narrow.crop_quad - wide.crop_quad, axis=1)) > 1.5):
+        return []
+
+    source = cv2.perspectiveTransform(narrow.crop_quad[None], np.linalg.inv(page_to_rectified))[0]
+    traces = []
+    for edge in edges:
+        side = _SIDES.index(edge.edge)
+        evidence = _trace_side(page, source[side], source[(side + 1) % 4], edge.rim_bgr, None)
+        if evidence is None:
+            return []
+        trace, _, distance, continuous, competing = evidence
+        if not continuous or competing or distance > 2:
+            return []
+        traces.append(trace)
+    return traces
+
+
+def motif_seams_intersect_claim(traces: list[np.ndarray], claim: np.ndarray) -> bool:
+    """Check each guide's source-pixel buffer, including between measured knots."""
+    hull = cv2.convexHull(claim)
+    return any(
+        cv2.intersectConvexConvex(cv2.convexHull((trace[:, None] + _GUIDE_MARGIN).reshape(-1, 2)), hull)[0] > 0
+        for trace in traces
+    )
 
 
 def _cross(first: np.ndarray, second: np.ndarray) -> np.ndarray:

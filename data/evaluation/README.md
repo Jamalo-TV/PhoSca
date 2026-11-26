@@ -2239,6 +2239,57 @@ median for the three-proposal material check was 0.21 s on one development
 CPU thread during concurrent test runs. All eight comparison runs keep
 their previous detection, crop and count-review results.
 
+#### Show three open motif guides on the souvenir card
+
+The uploaded development raster is 1200 × 1600 and has SHA-256
+`08544646ef8aa6b383e708ca0115a6fa6dbbc8abc48dab7992b7632d6a853cdf`.
+Glare and the construction of the souvenir card leave two plausible
+upper paper claims. The outer paper boundary and metric aspect of
+the right-hand proposal still require review.
+
+In this combination of holds, PhoSca can show three inner transitions.
+It searches up to 17% and 21% of each side's inward depth in the
+provisional rectification. The two searches must select the same
+three pale paper edges with a matching colour and fits at most 1.5
+rectified pixels apart. The original raster must corroborate each
+line continuously under the native seam check and without a competing
+step. A neighboring paper claim that intersects the two-pixel buffer
+around a guide vetoes the set. Adding or editing a neighboring claim
+retires the stored guides immediately if it enters that buffer. On
+the left, the provisional paper
+warp starts at the observed picture transition, so the rectification
+cannot establish a separate pale rim there. The editor receives only
+open polylines. Its fourth side has no trace, and the held motif has no
+proposed quad or rendered preview.
+
+On this source the upper, right and lower guides each contain 12
+measured knots. Median distances to a separate source-pixel line fit
+are 0.07, 0.20 and 0.16 pixels. The largest local difference is 2.66
+pixels on the right. The provisional warp has unresolved corners,
+so these are guide agreement measurements. A JPEG75 replay and a
+0.6-pixel Gaussian blur kept the three guides with the same provisional
+paper transform. JPEG55 and the 0.9- and 1.3-pixel blur replays left the
+guides empty. The guide check took a 56 ms warm single-thread CPU
+median on the original, measured after rectification.
+
+A caption, a ruled outline and a frame returning to blank paper
+produce no guides. A decorative card with a printed scene and a
+caption outside a measured edge can still produce three guides.
+This optical evidence cannot assign either the caption or its paper to
+a physical print. That control keeps both modes in review and
+preserves the untrimmed image.
+
+The upload replay exposes the three guides for the right-hand
+proposal through geometry review, and reprocessing preserves them.
+The caption proposal has no motif guides. Both crop downloads and the
+motif preview remain unavailable, while the untrimmed review image is
+available. The server rejects ordinary geometry approval without the
+required correction. All eight frozen and development comparisons
+keep their existing detection, crop and review metrics, with no newly
+held usable crop. The recognition model and automatic eligibility
+rules are unchanged. Local measurements and the annotated comparison
+are under `runs/crop-quality/partial-motif-seams/`.
+
 ### Scalloped paper on white scanner backing
 
 The ScanCropper development fixture pins two original rasters with five loose

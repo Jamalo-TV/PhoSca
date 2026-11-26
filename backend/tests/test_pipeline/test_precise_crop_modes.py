@@ -1051,6 +1051,82 @@ def test_native_motif_trace_follows_a_nonparabolic_boundary(curved_motif_page) -
     assert np.max(np.abs(points[:, 1] - (true_top + .5))) < 1
 
 
+@pytest.fixture
+def open_motif_card():
+    width, height = 389, 646
+    paper = np.full((height, width, 3), (198, 209, 215), np.uint8)
+    y, x = np.mgrid[:519, :340]
+    paper[61:580, :340] = np.stack((
+        64 + 20 * np.sin(x / 12) + 23 * np.cos(y / 23),
+        85 + 22 * np.cos(x / 29) + 31 * np.sin(y / 16),
+        101 + 40 * np.sin(x / 26 + y / 28),
+    ), axis=-1).astype(np.uint8)
+    # This could be an inset print or an image printed on the card.
+    # The label outside all three image edges must remain for manual review.
+    cv2.putText(paper, "DATE 1975", (94, 619), cv2.FONT_HERSHEY_SIMPLEX, .67, (26, 86, 111), 2, cv2.LINE_AA)
+    stock = np.float32([[60, 55], [448, 60], [466, 705], [39, 697]])
+    transform = cv2.getPerspectiveTransform(stock, _rect(0, 0, width - 1, height - 1))
+    return paper, stock, transform
+
+
+def test_held_paper_shows_three_open_native_guides_without_motif_warp(open_motif_card) -> None:
+    from app.pipeline.crop_sampling import warp_owned_crop
+    from app.pipeline.perspective import _dual_crop_result
+
+    paper, stock, transform = open_motif_card
+    page = cv2.warpPerspective(paper, np.linalg.inv(transform), (525, 760), borderValue=(73, 126, 130))
+    untrimmed, supported = warp_owned_crop(page, transform, paper.shape[1::-1])
+    assert supported
+    reasons = ["PRINT_BOUNDARY_AMBIGUOUS", "PRINT_ASPECT_UNCERTAIN"]
+
+    def result(neighbors=None):
+        return _dual_crop_result(
+            page, untrimmed, stock, transform, {}, None, reasons,
+            trim_border=True, auto_orient=False, orientation_model_path=None, manual_rotation=None,
+            page_regions=[], protect_regions=True, owned_sampling=True, neighbors=[], neighbor_masks=neighbors,
+            corner_mount_detected=False, print_outline=None, motif_suggestion=None, print_edge_traces=[],
+        )
+
+    crop = result()
+    full, motif = (crop.metadata["crop_modes"][mode] for mode in ("full_print", "image_only"))
+    assert full["status"] == motif["status"] == "review_needed"
+    assert full["reason_codes"] == motif["reason_codes"] == reasons
+    assert np.allclose(
+        normalized_vertices_to_pixels([(p["x"], p["y"]) for p in full["warp_quad"]], *page.shape[1::-1]), stock,
+    )
+    assert crop.image_only is crop.image_only_preview is None
+    assert np.array_equal(crop.rectified_untrimmed, untrimmed)
+    assert set(motif) == {"status", "reason_codes", "suggested_seam_traces", "suggested_seam_source"}
+    assert motif["suggested_seam_source"] == "partial_motif_seams"
+    traces = motif["suggested_seam_traces"]
+    assert len(traces) == 3
+    for trace, axis, boundary in zip(traces, (1, 0, 1), (61, 339, 579), strict=True):
+        native = normalized_vertices_to_pixels([(p["x"], p["y"]) for p in trace], *page.shape[1::-1])
+        measured = cv2.perspectiveTransform(native[None], transform)[0]
+        assert np.max(np.abs(measured[:, axis] - boundary)) < 1.5
+    # A narrow overlapping claim crosses between knots of the upper guide.
+    neighboring_claim = {"polygon": _vertices(_rect(3, 3, 20, 20), page),
+                         "warp_quad": _vertices(_rect(249, 109, 252, 125), page)}
+    assert "suggested_seam_traces" not in result([neighboring_claim]).metadata["crop_modes"]["image_only"]
+
+
+@pytest.mark.parametrize("decoration", ["caption", "ruling", "empty_frame"])
+def test_held_motif_guides_abstain_on_paper_decoration(open_motif_card, decoration) -> None:
+    from app.pipeline.crop_sampling import warp_owned_crop
+    from app.pipeline.motif_boundary import partial_motif_seams
+
+    paper, _, transform = open_motif_card
+    paper[61:580, :340] = (198, 209, 215)
+    if decoration == "ruling":
+        cv2.rectangle(paper, (0, 61), (340, 580), (43, 42, 44), 3)
+    elif decoration == "empty_frame":
+        paper[60:584, :340] = (51, 51, 62)
+        paper[92:560, 20:318] = (198, 209, 215)
+    page = cv2.warpPerspective(paper, np.linalg.inv(transform), (525, 760), borderValue=(73, 126, 130))
+    rectified, supported = warp_owned_crop(page, transform, paper.shape[1::-1])
+    assert supported and partial_motif_seams(page, rectified, transform) == []
+
+
 @pytest.mark.parametrize("weak_feature", ["dark_edge", "bright_edge", "no_edge", "ruling", "gradient", "offset_step",
                                          "coherent_shadow", "short_hidden_curve"])
 def test_native_motif_trace_recovers_only_supported_faint_edges(weak_feature) -> None:

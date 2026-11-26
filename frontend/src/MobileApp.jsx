@@ -17,7 +17,7 @@ import {
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
-  paperJoinReason, paperOutlineRequiresReview,
+  paperJoinReason, paperOutlineRequiresReview, partialMotifSeams,
   isNestedFallbackProposal, requiresStandalonePrintFlag, projectivePrintProposal, standalonePrintReviewErrors, tiledPrintProposal,
   scannerBackingHint, scannerBackingReason,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
@@ -226,7 +226,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     && item.payload?.variant_urls?.image_only_preview;
   const motifMarginMarks = motifReviewPending ? getMotifMarginMarks(motifMode) : [];
   const preliminaryMotifMarks = motifMode?.margin_mark_source === heldPrintMotifMargin && motifMarginMarks.length > 0;
-  const motifTraces = motifReviewPending ? getSourceEdgeTraces(motifMode?.suggested_seam_traces) : [];
+  const openMotifGuides = !reviewedNonPrint && motifMode?.status === "review_needed"
+    && motifMode.suggested_seam_source === partialMotifSeams;
+  const motifTraces = motifReviewPending || openMotifGuides ? getSourceEdgeTraces(motifMode?.suggested_seam_traces) : [];
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
   const initialPaperOutline = deferredDraft?.polygon || (openPaperOutline && paperGrid?.cut === null && printSuggestion);
@@ -653,7 +655,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     {paperGridGroups.length > 0 && <p className="quad-hint" id="mobile-paper-grid-count-hint">{paperGridCountHint}</p>}
     {paperJoinGroups.length > 0 && <p className="quad-hint" id="mobile-paper-join-count-hint">{paperJoinCountHint}</p>}
     {editable && motifTraces.length > 0 && <p className="quad-hint" id="mobile-motif-seam-hint">
-      Die blau gestrichelten Linien zeigen gemessene Abschnitte einer möglichen Motivkante. Prüfe den Inhalt auch ausserhalb der Linien.
+      Die blau gestrichelten Linien zeigen gemessene Abschnitte einer möglichen Motivkante. {openMotifGuides
+        ? motifBoundaryReviewHint : "Prüfe den Inhalt auch ausserhalb der Linien."}
     </p>}
     {nestedOutlines.length > 0 && <p className="quad-hint">{nestedPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
     {!darkBackingDraft && deferredProposals.some(({ reason }) => reason === sourceFragmentProposal)

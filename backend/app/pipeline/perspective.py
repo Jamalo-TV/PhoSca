@@ -39,7 +39,10 @@ from app.pipeline.geometry import (
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_SOURCE, suggest_inward_corner_outline
 from app.pipeline.local_print_edge_review import suggest_local_print_edge_preview
-from app.pipeline.motif_boundary import close_motif_outline, motif_outline_corners_supported, trace_motif_boundary
+from app.pipeline.motif_boundary import (
+    PARTIAL_MOTIF_SEAMS, close_motif_outline, motif_outline_corners_supported, motif_seams_intersect_claim,
+    partial_motif_seams, trace_motif_boundary,
+)
 from app.pipeline.motif_margin import (
     HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE, held_print_motif_margin_marks, motif_margin_marks,
 )
@@ -1068,6 +1071,20 @@ def review_outline_intersects_claim(
         return False
 
 
+def review_motif_seams_intersect_claim(
+    guides: list[list[dict]], claim: dict, width: int, height: int,
+) -> bool:
+    try:
+        traces = [normalized_vertices_to_pixels([(p["x"], p["y"]) for p in guide], width, height) for guide in guides]
+        visible = _proposal_polygon(claim, width, height)
+        if visible is not None and motif_seams_intersect_claim(traces, visible):
+            return True
+        paper = _explicit_quad(claim, "warp_quad", width, height)
+        return paper is not None and motif_seams_intersect_claim(traces, paper)
+    except (KeyError, TypeError, ValueError, cv2.error):
+        return False
+
+
 def _render_disputed_grid_preview(
     page: np.ndarray, outline: np.ndarray, grid: dict, rotation: int, neighbor_masks: list[dict],
     regions: list[dict], camera_matrix: np.ndarray | None, page_plane: PrintPagePlane | None,
@@ -1193,6 +1210,7 @@ def _dual_crop_result(
     motif_suggestion: np.ndarray | None, print_edge_traces: list,
     paper_stock_margin_regions: list | None = None,
     adjacent_stock_outline: np.ndarray | None = None,
+    neighbor_masks: list[dict] | None = None,
 ) -> CropResult:
     page_height, page_width = page.shape[:2]
     height, width = full_image.shape[:2]
@@ -1439,6 +1457,16 @@ def _dual_crop_result(
                         )
                     except (ValueError, cv2.error):
                         pass  # Incomplete preview geometry leaves the measured lines available for review.
+    elif trim_border and inner is None and set(full_reasons) == {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_ASPECT_UNCERTAIN"}:
+        try:
+            guides = [_vertices_on_page(trace, page_width, page_height)
+                      for trace in partial_motif_seams(page, full_image, matrix)]
+        except (ValueError, cv2.error, np.linalg.LinAlgError):
+            guides = []
+        if guides and not any(review_motif_seams_intersect_claim(guides, mask, page_width, page_height)
+                              for mask in neighbor_masks or []):
+            image_mode["suggested_seam_traces"] = guides
+            image_mode["suggested_seam_source"] = PARTIAL_MOTIF_SEAMS
 
     metadata.update(
         crop_modes={"full_print": full_mode, "image_only": image_mode},
@@ -2051,6 +2079,7 @@ def correct_photo_crop(
             motif_suggestion=_explicit_quad(mask, "scalloped_motif_suggestion", width, height)
             if print_outline is not None and trim_border else None,
             adjacent_stock_outline=adjacent_stock_outline,
+            neighbor_masks=neighbor_masks,
         )
         modes = result.metadata["crop_modes"]
         aspect_pending_after_mark_review = (

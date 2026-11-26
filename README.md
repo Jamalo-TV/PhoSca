@@ -580,6 +580,18 @@ und Markierungen am Rand können die Vorschau verhindern. Vergleiche
 die Vorschau mit dem Original und bestätige zuerst den Papierumriss.
 [Messung beider Motive](data/evaluation/README.md#preview-an-inboard-motif-beside-a-disputed-paper-edge)
 
+Sind Papiergrenze und Seitenverhältnis unklar, kann **Nur Bildmotiv**
+drei gemessene Motivkanten als gestrichelte Linien anzeigen. Dazu muss
+PhoSca bei zwei Suchtiefen dieselben hellen Ränder finden und alle drei
+Übergänge im Original bestätigen. Berührt ein benachbarter Abzug den
+Prüfbereich einer Linie, blendet PhoSca alle drei Linien aus. Das gilt
+auch nach späteren Änderungen am Nachbarabzug. Die ungemessene vierte
+Seite bleibt offen. Prüfe auch dort und ausserhalb der Linien, ob
+Bildinhalt oder zugehörige Beschriftung liegt. Am Handy erscheinen die
+Linien in der Geometrieprüfung. Im Desktop-Editor erscheinen sie unter
+**Nur Bildmotiv**. Erst deine geprüften Ecken definieren den Zuschnitt.
+[Weihnachtskartenseite und Messung](data/evaluation/README.md#show-three-open-motif-guides-on-the-souvenir-card)
+
 Ist eine Seite neben hellem Untergrund nur abschnittsweise sichtbar,
 kann **Ganzer Abzug** an beiden Enden gestrichelte Hinweise zeigen.
 PhoSca prüft dazu die sichtbaren Materialwechsel, das Ende der
