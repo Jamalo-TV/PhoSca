@@ -650,6 +650,48 @@ def _rendered_quality(references, matches, rendered, difficulty, eligible_modes)
     return rows
 
 
+def _review_preview_quality(references, matches, rendered):
+    """Measure alternate opaque crops separately from the deliverable modes."""
+    from app.evaluation.cropping import evaluate_rendered_crop
+
+    by_prediction = {match["prediction_index"]: match for match in matches if match["mask_iou"] >= .50}
+    rows = []
+    for prediction_index, render in enumerate(rendered):
+        match = by_prediction.get(prediction_index)
+        for name, image in render.get("previews", {}).items():
+            mode = render["modes"].get(name) or {}
+            preview = mode.get("outline_preview") or {}
+            truth_index = match["truth_index"] if match else None
+            reference = references[truth_index].get(name) if truth_index is not None else None
+            row = {
+                "prediction_index": prediction_index,
+                "truth_index": truth_index,
+                "mode": name,
+                "source": preview.get("source"),
+                "reference_verified": bool(reference and reference.get("verified")),
+                "shape": list(image.shape[:2]),
+            }
+            outline, matrix = preview.get("source_outline") or [], preview.get("page_to_output")
+            if image.ndim != 3 or image.shape[2] != 3:
+                row["unscored_reason"] = "transparent_outline_requires_coverage_scoring"
+            elif reference is None or reference.get("mask") is None:
+                row["unscored_reason"] = "no_matched_mode_reference"
+            elif len(outline) != 4 or matrix is None:
+                row["unscored_reason"] = "missing_quadrilateral_projection"
+            else:
+                row["metrics"] = evaluate_rendered_crop(
+                    reference["mask"], _points(outline), matrix, image.shape[:2],
+                    expected_corners=reference.get("corners"),
+                    expected_shape=reference.get("shape"),
+                    expected_aspect_ratio=reference.get("expected_aspect_ratio"),
+                    source_landmarks=reference.get("source_landmarks"),
+                    expected_landmarks=reference.get("landmarks"),
+                    sampling=preview.get("sampling") or mode.get("sampling"),
+                )
+            rows.append(row)
+    return rows
+
+
 def _quality_summary(rows):
     summaries = {}
     for name in MODES:
@@ -812,6 +854,8 @@ def main() -> None:
     parser.add_argument("--geometry-only", action="store_true", help="Seed approximate proposals on synthetic pages.")
     parser.add_argument("--legacy-crop", action="store_true", help="Measure the rollback detector and crop path.")
     parser.add_argument("--visuals", action="store_true", help="Write a contact sheet alongside the report.")
+    parser.add_argument("--score-review-previews", action="store_true",
+                        help="Measure opaque alternate review crops separately from release quality.")
     parser.add_argument("--require-final-quality", action="store_true")
     parser.add_argument("--iou-threshold", type=float, default=0.85)
     parser.add_argument("--output", type=Path)
@@ -1001,7 +1045,8 @@ def main() -> None:
                 detected = [_detected_polygon(item) for item in result.detections]
 
             rendered = _render_crops(image, proposals, settings, Path(temporary), protected=protected,
-                                     include_previews=visuals is not None, segmentation=detection_metadata)
+                                     include_previews=visuals is not None or args.score_review_previews,
+                                     segmentation=detection_metadata)
             if ownership_unresolved:
                 for item in rendered:
                     route_ready_crop_modes_to_review(item["modes"], [CROP_VALIDATION_UNAVAILABLE])
@@ -1149,7 +1194,7 @@ def main() -> None:
                 sheets.append(_contact_sheet(
                     visuals, image, expected, native_truth_masks, detected, rendered, rows, references, page_index, record["id"],
                 ))
-            fixtures.append({
+            fixture = {
                 "fixture": record["id"], "expected": len(expected), "detected": len(detected),
                 "native_instance_mask_count": sum(mask is not None for mask in native_truth_masks),
                 "page_category": record.get("page_category"), "difficulty_tags": record.get("difficulty_tags", []),
@@ -1168,7 +1213,10 @@ def main() -> None:
                 "acceptance": acceptance_evidence,
                 "runtime": detection_metadata,
                 "latency": (page_runtime or {}) | {"image_to_jpeg_ms": pipeline_ms},
-            })
+            }
+            if args.score_review_previews:
+                fixture["review_previews"] = _review_preview_quality(references, final_metrics.matches, rendered)
+            fixtures.append(fixture)
 
     aggregate = evaluate_cropping_dataset(page_metrics)
     final_instances = evaluate_cropping_dataset(final_instance_page_metrics)

@@ -349,6 +349,13 @@ report also revokes access to the automatic downloads that used it.
 Generated reports and visual comparisons belong under `runs/`, which is
 ignored because reports can contain local paths and private derivatives.
 
+Use `--score-review-previews` to measure opaque quadrilateral review crops
+with the same source-space ownership and interpolation metrics as ordinary
+crops. Each fixture lists them under `review_previews`, linked to the matched
+reference mode. The report records unmatched previews and transparent
+outlines as unscored. Preview measurements are diagnostic. Release counts
+continue to use the delivered `crop_modes` and their eligibility.
+
 The Library of Congress catalog links stand-alone scans of mounted prints to
 the source album pages in the Prokudin-Gorskii collection. The archive
 documents separate acquisitions of 430 mounted pages from 14 volumes and
@@ -3593,6 +3600,80 @@ metrics, including 18/18 frozen mixed matches, 11/11 and 12/12
 seeded mode passes, 29/29 mixed Golden matches and 14/29 automatic
 classical Golden matches. The two targeted Golden 05 fragments were
 already in review. The group adds a shared reason to both modes.
+
+### Compare the lower paper edge on Golden 05 with the model enabled
+
+The registered mixed run finds all four prints. The lower-right
+proposal descends about 38 original pixels past a strong dark-to-light
+edge near its right corner. The pale material in that wedge continues
+into the stacked album leaf. The left end is already near the observed
+transition. The crop has four existing hold reasons for the uncertain
+outer rim, unsupported boundary, uncertain corners and unverified aspect.
+
+The comparison first requires exactly one side with a partial stock
+fit. It searches that side on the original within 6.7% of the shortest
+side, up to 80 pixels, using the existing normal-gradient line fit.
+The line needs 97% support, 90% corner support and at most 1.25 px
+residual. It must differ substantially at one end and stay near the
+stored edge at the other. The signed lightness drop must hold over
+94% of samples and 88% in each quarter. The transition must stop
+beyond both ends, and the two adjoining sides must have transverse
+contrast near their corners. A competing bright-paper transition
+repeated outside the candidate, visible margin marks, other active
+print claims and the normal protected-content check can veto the
+alternate render.
+
+The coarse left-neighbor mask shares 3,428 native centres with both
+the stored crop and the comparison. The shared centres are identical.
+Two original-facing transitions bound a pale gutter 15.8–21.3 px
+wide across that span. The lower corner of the left print also has
+observable contrast. The comparison tests only one narrow automatic
+claim and requires membership in the previous crop over the entire
+intersection. A manual claim, a wider overlap, an interrupted gutter
+or preview growth into a neighbor retains the renderer's veto. The
+underlying claim remains in force for both crops. The caption asks
+for a separate look at the neighboring edge.
+
+On the original the measured line ends near (2,331.1, 1,829.8) and
+(1,310.0, 1,851.2). The comparison uses a one-native-pixel outward
+guard along this line. The other two corners keep their positions.
+The source footprint preserves every draft-owned centre in the
+current crop, regains 50 more and reduces centres outside the draft
+from 25,370 to 7,956. The draft is an approximate outline from the
+original capture. It does not establish the paper's physical aspect.
+
+The source line and both corners hold through fixed-proposal
+JPEG55, JPEG75 and blur replays. A continuing dark rail, an obscured
+corner and a simulated pale extension carrying a date abstain.
+Some quiet pale paper extensions still produce the same inner
+transition. The original remains available beside the comparison.
+Both final modes keep their hold independently of the new preview.
+
+| Rendered comparison against the Golden development reference | Stored crop | Review preview |
+| --- | ---: | ---: |
+| Source footprint IoU | 0.956684 | 0.980317 |
+| Draft centres omitted beyond one pixel | 6,003 | 5,980 |
+| Output pixels with foreign contributions beyond one pixel | 24,223 | 6,526 |
+| Output samples outside the source | 0 | 0 |
+
+The 1,022 × 700 PNG has an estimated aspect. Verified corners, dimensions
+and landmarks are still needed for those acceptance measures. The normal
+multipart upload retains four active rows. Both clients display the
+original trace and the two rectified versions with their comparison
+caption. The previous images and both mode geometries match the baseline
+through reprocessing. The comparison URL serves the PNG and both named
+downloads stay held. Adding an overlapping manual claim retires the offer,
+including its old image URL and through another reprocess. All eight
+benchmark pairs reproduce their delivered crop, detection and review
+metrics. The frozen detector matches all 18 prints and the seeded run
+passes all 23 recoverable crops. The added comparison step takes 55.6 ms
+median and 67.2 ms p95 across 30 warm one-thread runs. That timing covers
+the source fit, guards and preview render with the original crop already
+available. The source, browser receipts and reports are under
+`runs/crop-quality/golden05-paper-edge-comparison/final/`.
+[Native fixture](../golden_fixtures/page_05.jpg) ·
+[Measurement and rendering](../../backend/app/pipeline/print_outline_suggestion.py) ·
+[Source and covered-corner test](../../backend/tests/test_pipeline/test_slanted_paper_preview.py)
 
 ### Show the visible spans of an interrupted paper edge
 
@@ -7034,6 +7115,18 @@ The isolated native stock retry took 0.69 to 3.48 ms median and
 warm paired samples on one OpenCV thread with the original evidence
 and fitted proposals already available.
 
+A development replay on the two differently coloured `touching` prints
+compared the model's original and refined masks as warp seeds. Using the
+refined mask directly makes both modes of the left print geometrically
+ready while its outer stock is still disputed. The two motifs can be
+measured using only pixels inside the old warp. A diagnostic render with
+owned sampling keeps their corners at least 6.2 original pixels inside
+that warp. Against the frozen reference the worst motif corner errors
+are 0.089 and 0.077 px. Both renders have zero strict cutoff and zero
+foreign interpolation contributions. The same-tone and overlapping
+controls abstain from the guarded diagnostic. This experiment is preserved
+under `runs/crop-quality/golden05-paper-edge-comparison/adjacent-motif-probe/`.
+
 ### Show only the exposed edge of an overlapping print
 
 In the frozen `overlap` capture, the ordinary model finds both
@@ -7452,6 +7545,20 @@ paper and motif for both modes.
 [Hungarian album](https://commons.wikimedia.org/wiki/Category:Photograph_album_of_an_unknown_Hungarian_family_(1908)) ·
 [Page 01](https://commons.wikimedia.org/wiki/File:Hungarian_family_photo_album_1908,_page_01.jpg) ·
 [Print 001](https://commons.wikimedia.org/wiki/File:Hungarian_family_photo_album_1908,_image_001.tif)
+
+The Museums & Galleries NSW guidance illustrates an album page scanned
+before a separate image capture. The illustrated album lacks an accession
+identifier. Item `9873_a025_a025000097` is the preceding illustration
+of two sides of a separate photograph of Dr Lawrence William Cock.
+The mounted and individual album files and their reuse terms remain open.
+[Scanning guidance](https://mgnsw.org.au/wp-content/uploads/2019/01/Digitising-your-collection-Part-4-Scanning-and-handling-tips.pdf#page=6)
+
+AfricaMuseum records high-resolution scanning of 538 albums and identifies
+an example physical album as `HP.1929.613.1`. The project reattached
+loose photographs before scanning and exposed the mounted page images
+through its IIIF intranet. The record has no identified independent
+capture of an individual physical print for the illustrated album.
+[Digitization report](https://www.africamuseum.be/sites/default/files/media/about-us/annual-reports/doc/annualreport2017.pdf#page=46)
 
 The Bancroft Red Album study documents a mounted, measured print on
 page 8 and a 1999 State Library of Queensland copy negative showing the

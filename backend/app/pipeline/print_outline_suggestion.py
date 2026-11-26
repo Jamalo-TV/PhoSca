@@ -7,7 +7,7 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic
 from app.pipeline.print_edges import _PRINT_SIDES, _edge_band, _line_endpoints, _replace_quad_side, _sample_lab, _side_line
 
 
-PRINT_OUTLINE_SUGGESTION_REVISION = 8
+PRINT_OUTLINE_SUGGESTION_REVISION = 9
 POSSIBLE_OVEREXTENDED_PRINT_EDGE = "possible_overextended_print_edge"
 POSSIBLE_INWARD_PRINT_EDGE = "possible_inward_print_edge"
 
@@ -352,3 +352,150 @@ def suggest_overextended_print_outline(
     traces = [cv2.approxPolyDP(points[first:stop], .4, False)[:, 0]
               for first, stop in intervals if stop - first >= 5]
     return (candidate, traces) if traces else None
+
+
+def suggest_slanted_print_edge_comparison(
+    image: np.ndarray, quad: np.ndarray, evidence: dict,
+) -> tuple[np.ndarray, list[np.ndarray]] | None:
+    """Compare a single displaced side with a locally terminating source edge."""
+    possible = [
+        index for index, name in enumerate(_PRINT_SIDES)
+        if (side := evidence.get(name) or {}).get("matched_print_rim")
+        and not side.get("ambiguous") and .65 <= side.get("support", 0) < .88
+    ]
+    shortest = float(np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min())
+    if len(possible) != 1 or shortest < 300:
+        return None
+    index, = possible
+    following = (index + 1) % 4
+    start, end = quad[[index, following]]
+    direction = end - start
+    inward = np.float32([-direction[1], direction[0]]) / np.linalg.norm(direction)
+    radius = min(80, round(.067 * shortest))
+    line, observed = _side_line(image, start, end, radius)
+    if (line is None or observed["support"] < .97 or observed["corner_support"] < .90
+            or observed["maximum_residual_px"] > 1.25):
+        return None
+    fitted = _replace_quad_side(quad, index, line, radius, image.shape)
+    if fitted is None:
+        return None
+    measured_start, measured_end = fitted[[index, following]]
+    depth = (fitted[[index, following]] - [start, end]) @ inward
+    if not (-4 <= depth.min() <= .017 * shortest and .04 * shortest <= depth.max() <= radius):
+        return None
+
+    interior = np.linspace(.055, .945, 96, dtype=np.float32)
+    overhangs = np.float32(np.r_[np.linspace(-.075, -.015, 16), np.linspace(1.015, 1.075, 16)])
+    band = _edge_band(image, measured_start, measured_end, [-4, -2, 2, 4], fractions=np.r_[interior, overhangs])
+    if band is None:
+        return None
+    drop = band[:, :2, 0].mean(axis=1) - band[:, 2:, 0].mean(axis=1)
+    supported = drop[:96] >= 45
+    if supported.mean() < .94 or min(part.mean() for part in np.array_split(supported, 4)) < .88:
+        return None
+    if any(np.quantile(abs(part), .85) > 17 for part in np.split(drop[96:], 2)):
+        return None
+    exterior = _edge_band(
+        image, measured_start, measured_end, list(range(-radius, -2)), fractions=interior,
+    )
+    if exterior is None:
+        return None
+    # A second long edge across the pale strip can be the actual paper rim.
+    pale_step = exterior[:, 4:, 0] - exterior[:, :-4, 0]
+    if np.max((pale_step > 12).mean(axis=0)) >= .52:
+        return None
+    for side, from_end in (((index - 1) % 4, True), (following, False)):
+        a, b = fitted[side], fitted[(side + 1) % 4]
+        fractions = np.float32([5, 8, 12, 18, 25, 32, 42]) / np.linalg.norm(b - a)
+        arm = _edge_band(image, a, b, [-5, -3, 3, 5], fractions=1 - fractions if from_end else fractions)
+        if arm is None:
+            return None
+        contrast = np.linalg.norm(arm[:, :2].mean(axis=1) - arm[:, 2:].mean(axis=1), axis=1)
+        if contrast[0] < 34 or (contrast >= 30).sum() < 6:
+            return None
+
+    # Keep the edge's transition pixels in this comparison. The original
+    # geometry and the measured line are both still visible in review.
+    edge = measured_end - measured_start
+    outward = np.float32([edge[1], -edge[0]]) / np.linalg.norm(edge)
+    anchors = fitted[[index, following]] + outward
+    guarded_line = np.cross(np.r_[anchors[0], 1.], np.r_[anchors[1], 1.])
+    candidate = _replace_quad_side(quad, index, guarded_line, radius, image.shape)
+    return (candidate, [fitted[[index, following]]]) if candidate is not None else None
+
+
+def visible_gap_at_unchanged_claim(
+    image: np.ndarray, previous: np.ndarray, candidate: np.ndarray, intersection: np.ndarray,
+) -> bool:
+    """Locate a visible gap where the comparison keeps an existing coarse overlap."""
+    section = intersection.reshape(-1, 2)
+    if any(cv2.pointPolygonTest(previous, tuple(point), True) < -.002 for point in section):
+        return False
+    vectors = np.roll(candidate, -1, axis=0) - candidate
+    lengths = np.linalg.norm(vectors, axis=1)
+    tangents = vectors / lengths[:, None]
+    normals = np.column_stack((-tangents[:, 1], tangents[:, 0]))
+    offsets = section[None] - candidate[:, None]
+    depths = np.einsum("ijk,ik->ij", offsets, normals)
+    sides = np.flatnonzero(depths.max(axis=1) <= 16)
+    if len(sides) != 1:
+        return False
+    side, = sides
+    distances = offsets[side] @ tangents[side]
+    a, b = candidate[side] + np.float32([distances.min(), distances.max()])[:, None] * tangents[side]
+    if np.linalg.norm(a - b) < 140:
+        return False
+    own_line, own = _side_line(image, a, b, 8)
+    if own_line is None or own["support"] < .96 or own["corner_support"] < .85:
+        return False
+    a, b = np.float32(_line_endpoints(a, b, own_line))
+    normal = normals[side]
+    peer_a, peer_b = b - 22 * normal, a - 22 * normal
+    peer_line, peer = _side_line(image, peer_a, peer_b, 12)
+    if peer_line is None or peer["support"] < .93 or peer["corner_support"] < .78:
+        return False
+    peer_a, peer_b = np.float32(_line_endpoints(peer_a, peer_b, peer_line))
+    gap = (np.array([a, b]) - [peer_b, peer_a]) @ normal
+    if not (gap.min() >= 11 and gap.max() <= 32):
+        return False
+
+    stations = np.linspace(.035, .965, 96, dtype=np.float32)
+    own_band = _edge_band(image, a, b, [-6, -4, 3, 5], fractions=stations)
+    peer_band = _edge_band(image, peer_a, peer_b, [-6, -4, 3, 5], fractions=1 - stations)
+    if own_band is None or peer_band is None:
+        return False
+    first, last = own_band[:, :2].mean(axis=1), peer_band[:, :2].mean(axis=1)
+    own_drop = first[:, 0] - own_band[:, 2:, 0].mean(axis=1)
+    peer_drop = last[:, 0] - peer_band[:, 2:, 0].mean(axis=1)
+    # Both rails must face the same pale gutter over the whole claimed span.
+    agreed = ((own_drop >= 45) & (peer_drop >= 45) & (first[:, 0] >= 165) & (last[:, 0] >= 165)
+              & (np.linalg.norm(first - last, axis=1) <= 25))
+    if agreed.mean() < .92 or min(part.mean() for part in np.array_split(agreed, 4)) < .82:
+        return False
+    own_points = a + stations[:, None] * (b - a)
+    peer_points = peer_b + stations[:, None] * (peer_a - peer_b)
+    center = _sample_lab(image, (own_points + peer_points) / 2)
+    open_gap = (center[:, 0] >= 165) & (np.linalg.norm(center - (first + last) / 2, axis=1) <= 23)
+    if open_gap.mean() < .94 or min(part.mean() for part in np.array_split(open_gap, 4)) < .86:
+        return False
+
+    # A visible end of the facing print corroborates that the pale strip is
+    # open space. Look slightly past the coarse claim as well as inside it.
+    along = (peer_b - peer_a) / np.linalg.norm(peer_b - peer_a)
+    offsets = np.float32([-7, -4, 4, 7])
+    across = offsets[:, None] * normal
+    reach = np.arange(-22, 23, dtype=np.float32)
+    for end, direction in ((peer_b, along), (peer_a, -along)):
+        grid = end + (reach[:, None, None, None] + offsets[None, :, None, None]) * direction + across[None, None]
+        if np.any((grid < 0) | (grid > np.array(image.shape[1::-1]) - 1)):
+            continue
+        samples = _sample_lab(image, grid.reshape(-1, 2))[:, 0].reshape(len(reach), 4, 4)
+        inside = np.median(samples[:, :2, :2], axis=(1, 2))
+        outside = np.column_stack([
+            np.median(samples[:, :2, 2:], axis=(1, 2)),
+            np.median(samples[:, 2:, :2], axis=(1, 2)),
+            np.median(samples[:, 2:, 2:], axis=(1, 2)),
+        ]).min(axis=1)
+        if np.any((outside >= 152) & (outside - inside >= 48)):
+            return True
+    return False

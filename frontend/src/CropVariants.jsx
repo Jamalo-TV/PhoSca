@@ -489,6 +489,9 @@ export function getPrintOutlinePreviewHint(fullPrint) {
   }
   if (preview?.source === possibleOverextendedPrintEdge) {
     const aspect = preview.reason_codes?.includes("PRINT_ASPECT_UNCERTAIN") ? "Das Seitenverhältnis ist geschätzt. " : "";
+    if (preview.neighbor_edge_in_review) {
+      return aspect + "Der Vergleich zeigt die mögliche Papierkante an der markierten Seite. Prüfe am Original auch die Grenze zum benachbarten Abzug.";
+    }
     return aspect + (preview.protected_content_review ? "Prüfe vor einer Korrektur auch den Ausschnitt auf möglichen Inhaltsverlust."
       : "Vergleiche die mögliche Papierkante mit dem Original.");
   }

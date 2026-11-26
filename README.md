@@ -498,6 +498,15 @@ gehört. Schutzwarnungen gelten weiter und die Galerie zeigt die
 bisherige Vorschau, solange die Geometrie in Prüfung ist.
 [Beispiel Golden 33](data/evaluation/README.md#compare-an-overextended-corner-with-the-measured-edge)
 
+Die gleiche Gegenüberstellung hilft, wenn eine schwach gemessene
+Zuschnittseite schräg in die Albumseite hineinragt. PhoSca sucht am
+Original einen Übergang, der an beiden Ecken endet und zu den
+benachbarten Seiten passt. Es prüft den hellen Streifen dahinter auf
+einen weiteren durchgehenden Rand und sichtbare Markierungen. Der
+zusätzliche Zuschnitt steht als Prüfvorschau neben dem bisherigen Bild.
+Prüfe am Original, ob der Streifen zum Papierabzug gehört.
+[Beispiel Golden 05 mit Modell](data/evaluation/README.md#compare-the-lower-paper-edge-on-golden-05-with-the-model-enabled)
+
 Bei genau einer strittigen automatischen Gesicht- oder Kopfmarkierung
 kann der Editor die Stelle am Original vergrössert zeigen. Gehört sie
 zur Albumseite, kann der Reviewer das beim Speichern der vier Ecken

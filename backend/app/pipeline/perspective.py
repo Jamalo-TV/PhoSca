@@ -82,7 +82,8 @@ from app.pipeline.print_edges import (
 )
 from app.pipeline.print_outline_suggestion import (
     POSSIBLE_INWARD_PRINT_EDGE, POSSIBLE_OVEREXTENDED_PRINT_EDGE, suggest_inward_print_edge,
-    suggest_outer_print_outline, suggest_overextended_print_outline, verify_print_edge_at_claim,
+    suggest_outer_print_outline, suggest_overextended_print_outline, suggest_slanted_print_edge_comparison,
+    verify_print_edge_at_claim, visible_gap_at_unchanged_claim,
 )
 from app.pipeline.print_stock import find_outer_stock_candidate
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_OUTLINE_REVIEW
@@ -1003,6 +1004,29 @@ def _render_review_quad_preview(
         "reason_codes": reasons,
         **({"protected_content_review": True} if (prior_protection or {}).get("review_untrimmed") else {}),
     }
+
+
+def _neighbors_for_edge_comparison(
+    page: np.ndarray, previous: np.ndarray, candidate: np.ndarray, neighbor_masks: list[dict],
+) -> list[np.ndarray]:
+    peers = [(mask, outline) for mask in neighbor_masks
+             if (outline := _proposal_polygon(mask, *page.shape[1::-1])) is not None]
+    outlines = [outline for _, outline in peers]
+    overlapping = [index for index, outline in enumerate(outlines)
+                   if _material_print_intersection(candidate, cv2.convexHull(outline))]
+    if len(overlapping) != 1:
+        return outlines
+    index, = overlapping
+    mask, outline = peers[index]
+    if (mask.get("source") != "yolo_seg_mask" or mask.get("detector_source") != "yolo_onnx"
+            or mask.get("warp_quad") or any(mask.get(key) for key in _STOCK_REVIEW_CONFLICTS)):
+        return outlines
+    area, intersection = cv2.intersectConvexConvex(candidate, cv2.convexHull(outline))
+    if area <= .012 * cv2.contourArea(candidate) and visible_gap_at_unchanged_claim(page, previous, candidate, intersection):
+        # The observed gap supports this comparison. Keep the peer claim
+        # for the stored crop, review decisions and export gates.
+        outlines.pop(index)
+    return outlines
 
 
 def _linked_grid_cut(
@@ -2101,25 +2125,40 @@ def correct_photo_crop(
             if traces:
                 full_mode["suggested_edge_traces"] = [_vertices_on_page(trace, width, height) for trace in traces]
                 full_mode["suggested_edge_source"] = POSSIBLE_BACKED_PAPER_EDGE
-        if (enable_classical_retry and not manual and "PRINT_BOUNDARY_UNSUPPORTED" in full_reasons
-                and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN",
-                                          "PRINT_ASPECT_UNCERTAIN", "POSSIBLE_CONTENT_CUTOFF"}
+        uncertain_edges = set(full_reasons)
+        slanted = (mask.get("detector_source") == "yolo_onnx"
+                   and not any(mask.get(key) for key in _STOCK_REVIEW_CONFLICTS)
+                   and uncertain_edges == {"PRINT_OUTER_RIM_UNCERTAIN", "PRINT_BOUNDARY_UNSUPPORTED",
+                                           "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"})
+        if (enable_classical_retry and not manual and "PRINT_BOUNDARY_UNSUPPORTED" in uncertain_edges
+                and (slanted or uncertain_edges <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN",
+                                                       "PRINT_ASPECT_UNCERTAIN", "POSSIBLE_CONTENT_CUTOFF"})
                 and all(mode["status"] == "review_needed" for mode in modes.values())
                 and not any(full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview"))
                 and not any(mask.get(key) for key in ("warp_quad", "paper_grid_review", "film_grid_review_seam",
                                                       "crossing_print_suggestion", "fragment_outline_suggestion"))):
-            alternative = suggest_overextended_print_outline(page_image, src_points, boundary_refinement)
+            comparison = suggest_slanted_print_edge_comparison if slanted else suggest_overextended_print_outline
+            alternative = comparison(page_image, src_points, boundary_refinement)
             if alternative is not None:
                 outline, traces = alternative
                 rotation = int(result.metadata["orientation"].get("rotation_degrees") or 0) % 360
                 preview = None
-                if _keeps_protected_preview_content(page_image, src_points, outline, regions, protection):
+                marks = slanted and motif_margin_marks(
+                    page_image, corrected, cv2.perspectiveTransform(outline.reshape(1, 4, 2), matrix)[0],
+                    rectified_to_page, preview_guard=True,
+                )
+                if not marks and _keeps_protected_preview_content(page_image, src_points, outline, regions, protection):
+                    comparison_neighbors = _neighbors_for_edge_comparison(
+                        page_image, src_points, outline, neighbor_masks or [],
+                    ) if slanted else neighbor_polygons
                     preview = _render_review_quad_preview(
-                        page_image, outline, rotation, neighbor_polygons, regions, camera_matrix, page_plane,
+                        page_image, outline, rotation, comparison_neighbors, regions, camera_matrix, page_plane,
                         source=POSSIBLE_OVEREXTENDED_PRINT_EDGE, prior_protection=protection,
                     )
                 if preview is not None:
                     pixels, full_mode["outline_preview"] = preview
+                    if len(comparison_neighbors) < len(neighbor_polygons):
+                        full_mode["outline_preview"]["neighbor_edge_in_review"] = True
                     full_mode["suggested_edge_traces"] = [_vertices_on_page(trace, width, height) for trace in traces]
                     full_mode["suggested_edge_source"] = POSSIBLE_OVEREXTENDED_PRINT_EDGE
                     result = replace(result, full_print_preview=pixels)

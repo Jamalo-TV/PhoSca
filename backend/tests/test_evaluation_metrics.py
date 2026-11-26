@@ -210,6 +210,41 @@ def test_rendered_quality_measures_sampler_footprint_and_landmarks() -> None:
     assert error["foreign_beyond_1px"] > 0
 
 
+def test_opaque_review_preview_is_measured_without_making_the_mode_deliverable() -> None:
+    import numpy as np
+    from scripts.evaluate_onnx_segmentation import _rendered_quality, _review_preview_quality
+
+    mask = np.zeros((70, 90), dtype=np.uint8)
+    mask[10:50, 20:70] = 1
+    corners = np.float32([[20, 10], [69, 10], [69, 49], [20, 49]])
+    outline = [{"x": float(x / 89), "y": float(y / 69)} for x, y in corners]
+    geometry = {
+        "source": "candidate", "source_outline": outline,
+        "page_to_output": [[1, 0, -20], [0, 1, -10], [0, 0, 1]], "sampling": "owned_bilinear",
+    }
+    reference = {"verified": True, "recoverable": True, "mask": mask, "corners": corners, "shape": (40, 50)}
+    references = [{"image_only": reference}]
+    match = {"truth_index": 0, "prediction_index": 0, "mask_iou": 1., "valid_detection": True}
+    preview = np.zeros((40, 50, 3), dtype=np.uint8)
+    rendered = [{
+        "images": {}, "previews": {"image_only": preview},
+        "modes": {"image_only": {"status": "review_needed", "outline_preview": geometry}},
+    }]
+
+    row, = _review_preview_quality(references, [match], rendered)
+    assert row["metrics"]["footprint_iou"] == 1.
+    assert row["metrics"]["foreign_source_samples"] == row["metrics"]["cutoff_beyond_1px"] == 0
+    assert row["metrics"]["orientation_matches_reference"] is True
+    delivered, = _rendered_quality(references, [match], rendered, "clean", [set()])
+    assert not delivered["geometry_passes"] and not delivered["automatic_release_passes"]
+    assert "footprint_iou" not in delivered
+    unmatched, = _review_preview_quality(references, [{**match, "mask_iou": .49}], rendered)
+    assert unmatched["unscored_reason"] == "no_matched_mode_reference"
+    rendered[0]["previews"]["image_only"] = np.zeros((40, 50, 4), dtype=np.uint8)
+    transparent, = _review_preview_quality(references, [match], rendered)
+    assert transparent["unscored_reason"] == "transparent_outline_requires_coverage_scoring"
+
+
 def test_synthetic_references_include_visible_ownership_and_review_cases() -> None:
     import numpy as np
     from app.evaluation.crop_fixtures import synthetic_crop_pages
