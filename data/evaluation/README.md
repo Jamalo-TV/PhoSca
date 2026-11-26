@@ -3264,6 +3264,51 @@ rows. Automatic decisions about contour ownership require more
 source evidence there. Frozen detection, seeded geometry and
 Golden development metrics matched `6ff54ee`.
 
+#### Inspect possible paper loss in the original
+
+The browser shows the marked loss regions in the original at their
+native coordinates, with up to 24 source pixels of surrounding
+context on each side. The detail is opened on demand in the
+whole-print editor. It reads the ordinary original page image.
+Its source size uses the same oriented coordinates as the warp.
+Opening it leaves the chosen corners, the review task and downloads
+as they were. Existing held rows get the source size on reprocessing.
+
+For a disputed first manual correction based on an automatic
+visibility mask, the source comparison tests whether the marked
+pixels all lie on one side of the new outline. The deepest eligible
+strip is 28 native pixels. It compares the original Lab colors with
+samples from the page perimeter. At least 99.5% must fall within
+eight Lab units and all must fall within 13. The source fit must
+support all four sides and both corners around the disputed edge.
+A close color match adds a hint to
+look at the surrounding shadows and paper edges. The prior
+manual-ready reference still uses its stored geometry. Both crop
+modes and the legacy trimmed download remain held while loss is
+unresolved. A 480 × 320 JPEG replay with 2,140 disputed pixels
+took 9.44 ms median and 24.29 ms p95 over 100 calls for the
+native comparison and outline generation.
+
+Two source-only waivers were tried and rejected. A paired gutter
+test accepted 25 of 70 correctly separated variants and rejected
+all 72 ordinary physical overlaps. A continuous end-cap check
+rejected all 18 previously accepted bridge variants. It still
+accepted 42 of 266 counterexamples containing printed dividers or
+camouflaged overlaps. Measuring a clear gutter over much of a page
+also missed narrow occlusions in specific disputed spans. Golden 05
+has paired evidence on 555 of 555 native rows, while Golden 10 has
+around 81% supported rows with the model outlines as search seeds.
+Golden 11 has no supported continuous gutter.
+
+The backing-color comparison also matched a dark part of the
+labelled print footprint in six of eight simulated acquisition variants.
+The hypothetical waiver would remove 1,930 visible owned source
+pixels. A faint outer shadow exists beyond the mistaken mask.
+The regression keeps that kind of control, plain album backing,
+an obvious mark and genuinely omitted print texture in review.
+The color observation can be read in the source detail while
+the export and approval checks stay in place.
+
 ### Keep an unassigned paper rim in review
 
 The mixed checkpoint on the frozen `touching_same_color` input fitted one
@@ -3358,6 +3403,17 @@ The Finca Vigía restoration temporarily lifted and digitized
 original prints in the Hemingway albums. Whole-page capture IDs,
 matching loose capture IDs, downloadable originals and rights
 for both are unconfirmed. [Restoration report](https://resources.culturalheritage.org/conservators-converse/2014/06/27/42nd-annual-meeting-photographic-materials-session-may-30-preserving-ernest-hemingways-photograph-albums-and-scrapbooks-at-the-finca-vigia-by-monique-fischer-an/)
+
+The Hine/Kirtland digitizer documents two distinct captures of the
+same cards, mounted and temporarily removed. A separate local
+publication confirms the family album as the source of a named
+portrait. Native raster downloads and commercial reuse rights
+are unverified. The Hook collection supplies attributed album
+images and individual versions with published CC BY 2.0 records.
+Distinct files and timestamps leave physical recapture uncertain.
+The Met object 1997.249 already supplied the 48-print development
+page above. It remains outside independent calibration and release.
+[Intake receipt](hine-hook-album-intake.json)
 
 ### Review partial grids inside a contact print
 

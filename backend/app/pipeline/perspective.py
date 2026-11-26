@@ -55,6 +55,7 @@ from app.pipeline.print_edges import (
     print_corner_coverage,
     refine_print_boundary,
     retry_ambiguous_stock_edge,
+    strip_resembles_album_backing,
     suggest_ambiguous_stock_edge,
     suggest_missing_pale_backing_edge,
     suggest_partial_backed_edge,
@@ -731,15 +732,15 @@ def _occluding_neighbor(
 
 def _lost_visible_paper(
     page: np.ndarray, current: np.ndarray, reference: dict, neighbors: list[np.ndarray],
-) -> list[list[dict]]:
+) -> tuple[list[list[dict]], int]:
     height, width = page.shape[:2]
     previous = _explicit_quad({"warp_quad": reference["print_warp_quad"]}, "warp_quad", width, height)
     visible = _proposal_polygon({"polygon": (reference.get("segmentation_mask") or {}).get("visible_polygon")},
                                 width, height)
     if previous is None or visible is None:
-        return []
+        return [], 0
     if not reference.get("ready_before_edit") and _occluding_neighbor(page, previous, None, neighbors) is None:
-        return []
+        return [], 0
     low = np.maximum(0, np.floor(previous.min(axis=0)).astype(int) - 1)
     high = np.minimum([width, height], np.ceil(previous.max(axis=0)).astype(int) + 2)
     shape = tuple((high - low)[::-1])
@@ -761,15 +762,18 @@ def _lost_visible_paper(
     # A one-pixel band absorbs sampling noise at the competing outlines.
     owned[cv2.dilate(excluded, np.ones((3, 3), np.uint8)) != 0] = 0
     minimum = max(6, round(0.002 * cv2.contourArea(previous)))
-    if cv2.countNonZero(owned) < minimum:
-        return []
+    disputed = cv2.countNonZero(owned)
+    if disputed < minimum:
+        return [], 0
     contours, _ = cv2.findContours(owned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     outlines = []
     for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:3]:
         if cv2.contourArea(contour) >= minimum:
             points = cv2.approxPolyDP(contour, 0.5, True).reshape(-1, 2) + low
             outlines.append(_vertices_on_page(np.vstack((points, points[0])), width, height))
-    return outlines
+    backing_match = bool(outlines and not reference.get("ready_before_edit")
+                         and strip_resembles_album_backing(page, current, owned, low))
+    return outlines, disputed if backing_match else 0
 
 
 def _orient_crop(
@@ -1565,8 +1569,11 @@ def correct_photo_crop(
     src_points, quad_metrics = inspection.quad, inspection.metrics
     boundary_refinement, full_reasons = inspection.boundary, inspection.reasons.copy()
     missing_paper = []
+    backing_match_pixels = 0
     if dual_mode and manual and manual_neighbor_reference and inspection.occluding_neighbor is None and neighbor_polygons:
-        missing_paper = _lost_visible_paper(page_image, src_points, manual_neighbor_reference, neighbor_polygons)
+        missing_paper, backing_match_pixels = _lost_visible_paper(
+            page_image, src_points, manual_neighbor_reference, neighbor_polygons,
+        )
         if missing_paper:
             full_reasons.append(MANUAL_NEIGHBOR_CONTENT_LOSS)
     curve_segments = [segment for edge in boundary_refinement.values() if isinstance(edge, dict)
@@ -1763,6 +1770,9 @@ def correct_photo_crop(
             modes["full_print"]["neighbor_overlap_outline"] = [*contour, contour[0]]
         if missing_paper:
             modes["full_print"]["neighbor_content_loss_outlines"] = missing_paper
+            modes["full_print"]["neighbor_review_source_size"] = {"width": width, "height": height}
+            if backing_match_pixels:
+                modes["full_print"]["neighbor_backing_color_match_pixels"] = backing_match_pixels
         if backed_edge and manual_boundary_hold:
             modes["full_print"]["suggested_edge_source"] = POSSIBLE_BACKED_PAPER_EDGE
         split_traces = mask.get("capture_split_review_traces")

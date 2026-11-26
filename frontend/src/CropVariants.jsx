@@ -193,6 +193,32 @@ export function AlbumPageMarkReview({ mark, sourceUrl, checked, onChange, disabl
   </fieldset>;
 }
 
+export function NeighborContentReview({ fullPrint, sourceUrl }) {
+  const { width, height } = fullPrint?.neighbor_review_source_size || {};
+  const outlines = getSourceEdgeTraces(fullPrint?.neighbor_content_loss_outlines);
+  if (!(width > 1 && height > 1) || !outlines.length || !sourceUrl) return null;
+
+  return <details className="neighbor-content-review">
+    <summary>Markierte Stellen im Original ansehen</summary>
+    {Boolean(fullPrint.neighbor_backing_color_match_pixels) &&
+      <p>Die markierten Stellen haben eine ähnliche Farbe wie die Albumseite. Vergleiche die feinen Schatten und Papierkanten ringsum.</p>}
+    <div className="neighbor-content-details">
+      {outlines.map((outline, index) => {
+        const points = outline.map(({ x, y }) => [x * (width - 1), y * (height - 1)]);
+        const coordinatesX = points.map(([x]) => x), coordinatesY = points.map(([, y]) => y);
+        const left = Math.max(0, Math.min(...coordinatesX) - 24), right = Math.min(width, Math.max(...coordinatesX) + 24);
+        const top = Math.max(0, Math.min(...coordinatesY) - 24), bottom = Math.min(height, Math.max(...coordinatesY) + 24);
+        return <svg key={index} role="img" aria-label="Markierter Bereich im Original"
+          viewBox={[left, top, right - left, bottom - top].join(" ")}>
+          <image href={sourceUrl} width={width} height={height} />
+          <polyline points={points.map(([x, y]) => `${x},${y}`).join(" ")} fill="none"
+            stroke="#a21caf" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        </svg>;
+      })}
+    </div>
+  </details>;
+}
+
 export function getCropModes(photo) {
   return photo?.enhancement_applied?.correction?.crop_modes || null;
 }

@@ -11,7 +11,7 @@ import {
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
-  nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
+  NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperOutlineRequiresReview,
   scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
@@ -463,6 +463,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
       {printEdgeReviewHint && <p className="quad-hint" id="mobile-print-edge-review-hint">{printEdgeReviewHint}</p>}
+      {!editingMotif && <NeighborContentReview fullPrint={fullPrintMode} sourceUrl={item.preview_url} />}
       {albumMark && <AlbumPageMarkReview mark={albumMark} sourceUrl={item.preview_url}
         checked={albumMarkReviewId === albumMark.id} disabled={saving}
         onChange={event => setAlbumMarkReviewId(event.target.checked ? albumMark.id : null)} />}

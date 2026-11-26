@@ -729,6 +729,39 @@ select {
   border-radius: 4px;
 }
 
+.neighbor-content-review {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid #cbd8d4;
+  border-radius: 8px;
+  background: #f7faf9;
+  color: #24312d;
+}
+
+.neighbor-content-review summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.neighbor-content-review p {
+  margin: 8px 0;
+  font-size: 0.875rem;
+}
+
+.neighbor-content-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.neighbor-content-details svg {
+  display: block;
+  width: min(100%, 240px);
+  max-height: 360px;
+  border-radius: 4px;
+}
+
 .print-size-fields p {
   margin: 0 0 10px;
   font-size: 0.875rem;

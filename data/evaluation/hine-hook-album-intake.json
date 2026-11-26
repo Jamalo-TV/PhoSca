@@ -1,0 +1,116 @@
+{
+  "purpose": "Source-only lead verification for domestic physical album groups. No split assignment, no inference and no evidence promotion.",
+  "native_pairs_decoded_and_hashed": 0,
+  "new_verified_release_groups": 0,
+  "candidates": [
+    {
+      "suggested_inventory_identity": "hine-kirtland-homer-henry-hine-cabinet-card-album",
+      "source": "https://tedhine.com/HineAncestors/CommonPages/Hine-KirtlandCabinetCardPhotos/Pages/Main1.htm",
+      "physical_group": "Hine/Kirtland cabinet-card album, c. 1880s, identified by inscription Album belonging to Homer Henry Hine 1874-1958 and documented chain through Ruth Hine-Darling, album digitizer Edward Kirtland Hine Jr. in 2013.",
+      "extent": {
+        "physical_leaves_two_sided": 18,
+        "prints_approximate": 72
+      },
+      "pair_evidence": "The digitizer states that each included identified card was captured once in its physical album with two prints per scan and once after temporary removal. The page lists paired subjects in original physical order with gaps for unidentified prints. First named example is Samuel Hine and Emma Kirtland-Hine. Other named cases include Samuel Kirtland Hine and Ellen Louise Hine, and two individually named cards for Billius Kirtland and Ruthanna Frame-Kirtland. The nominal 4.25 x 6.50 in cabinet stock is not an individual measurement. Stock inserted behind album slots can be hidden in mounted view.",
+      "independent_third_party_confirmation": "https://www.riversidecemeteryjournal.com/People/People/page88.html",
+      "third_party_specific_item": "Samuel and Emma Kirtland Hine family portrait, with all five children. Riverside Cemetery Journal credits Ted Hine and the original album explicitly and describes access to his family compilation CD. The rendered illustration is not a native file or a separately mounted page.",
+      "third_party_rendered_image": "https://www.riversidecemeteryjournal.com/People/People/page88_files/hine-samuel2-2.png",
+      "rights": "No explicit commercial reproduction license or item-specific public-domain statement established. Approximate creation date was stated rather than photographer death, historic publication or transfer evidence for each card. Local journal credits a supplied image, which does not license third-party use.",
+      "retrieval": "The owner catalogue is indexed by public search. Its direct URL from the managed workspace returned HTTP 403. Source search did not expose linked native raster URLs. The third-party raster is an online publication rendition only.",
+      "status": "same_paper_and_separate_capture_documented; rights_and_native_assets_unresolved"
+    },
+    {
+      "suggested_inventory_identity": "hook-edwardian-family-album-james-morley",
+      "source": "https://www.flickr.com/photos/whatsthatpicture/sets/72157628625074501",
+      "source_mirror_category": "https://commons.wikimedia.org/wiki/Category:Hook_Edwardian_family_album",
+      "credit": "James Morley (whatsthatpicture; Photos of the Past), Hook Edwardian family album, CC BY 2.0 for the verified Commons files.",
+      "physical_group": "One early 1900s physical Hook family album bought by the digitizer, acquired with loose leaves. Published scan order is not original binding order. #3 and #4 are explicitly two sides of one sheet.",
+      "indexed_public_assets": [
+        {
+          "role": "entire page #4",
+          "flickr_id": "6600647583",
+          "source": "https://commons.wikimedia.org/wiki/File:Hook_Edwardian_family_album_-4_(6600647583).jpg",
+          "published_derivative_px": [
+            1600,
+            1129
+          ],
+          "metadata_600_dpi": true,
+          "cc_by_2_0_verified": true
+        },
+        {
+          "role": "individual #4 print in consecutive author order",
+          "flickr_id": "6600647877",
+          "source": "https://commons.wikimedia.org/wiki/File:The_Fisheries_1907_(possibly_Kent)_(6600647877).jpg",
+          "published_derivative_px": [
+            1600,
+            1328
+          ],
+          "metadata_600_dpi": true,
+          "cc_by_2_0_verified": true
+        },
+        {
+          "role": "second #4 print in consecutive author order",
+          "flickr_id": "6600648091",
+          "source": "https://www.flickr.com/photos/whatsthatpicture/6600648091/in/album-72157628625074501",
+          "cc_by_2_0_verified": false
+        },
+        {
+          "role": "entire page #8",
+          "flickr_id": "6613978745",
+          "source": "https://commons.wikimedia.org/wiki/File:Hook_Edwardian_family_album_-8_(6613978745).jpg",
+          "native_url": "https://live.staticflickr.com/7012/6613978745_e7c0e68362_o.jpg",
+          "published_derivative_px": [
+            1600,
+            1174
+          ],
+          "native_dimensions_in_xmp_px": [
+            5844,
+            4287
+          ],
+          "metadata_600_dpi": true,
+          "cc_by_2_0_verified": true
+        },
+        {
+          "role": "candidate individual #8 print in adjacent upload series",
+          "flickr_id": "6613979101",
+          "source": "https://commons.wikimedia.org/wiki/File:Edwardian_ladies_in_wonderful_large_hats_under_the_old_oak_tree,_June_1907_(6613979101).jpg",
+          "published_derivative_px": [
+            910,
+            1600
+          ],
+          "native_dimensions_in_xmp_px": [
+            1215,
+            2136
+          ],
+          "metadata_600_dpi": true,
+          "cc_by_2_0_verified": true
+        }
+      ],
+      "pairing_limit": "Owner description makes the two #4 print records locatable via photostream order. Owner describes enlargements from #8. The page #4 and first print differ one minute in XMP creation; page #8 and candidate individual file differ three minutes and have different XMP document IDs. This identifies distinct files, not independent scanner exposures. Without source pixels or the digitizer describing separate scanning, a later digital crop remains possible.",
+      "retrieval": "Native #8 asset URL returned HTTP 403 on official public retrieval. Commons version labels refer to lower-resolution published versions and no source raster has been decoded locally.",
+      "status": "open_attributed_physical_pages_for_calibration_draft; use_after_delivery_and_independence_review"
+    },
+    {
+      "suggested_inventory_identity": "met-1997-249-british-album-page-of-portraits",
+      "source": "https://www.metmuseum.org/art/collection/search/281929",
+      "official_image": "https://collectionapi.metmuseum.org/api/collection/v1/iiif/281929/608173/main-image",
+      "physical_group": "Anonymous British Album Page of Portraits, c.1855, 28.4 x 23.3 cm, Metropolitan Museum 1997.249. Material is albumen silver and salted paper print cutouts. Distinct physical provenance from Hook, not evidence of disjoint model heritage.",
+      "rights": "The item is labeled Public Domain and The Met's Open Access states commercial and noncommercial use are unrestricted.",
+      "capture_limit": "Whole physical page image only. The museum describes prints cut from cartes de visite and other material. No independently digitized same paper pieces found. Stock visible edges can be annotated for detection after intake, but there is no paper or motif reference independent of the page.",
+      "retrieval": "Public image catalog preview available by search; direct collection API workspace request returned HTTP 403. No local raster hash.",
+      "status": "known_development_physical_group_excluded_from_independent_splits",
+      "existing_product_use": "Already used as a development page for detector tiling and detection (48 reference instances). See evaluation README at the first mention of object 281929. Exclude this physical object from independent calibration and release."
+    },
+    {
+      "suggested_inventory_identity": "conlon-anne-and-jerome-family-albums",
+      "source": "https://www.conlon.org/documents/photos/",
+      "known_full_album_exports": [
+        "https://www.conlon.org/documents/books/Aunt_Ann_Conlon_Scrapbook.pdf",
+        "https://www.conlon.org/documents/books/Jerry_photo_album_2.pdf"
+      ],
+      "capture_limit": "Owner reports Anne's physical full pages were scanned in 2018. Jerome's second album was captured in 2023 and single-photo pages had prints removed for scans. There is no assertion both modes of capture are present for the same print or shown in the other Jerome album. Commercial reuse is undocumented. Both PDF links reported 404 on public retrieval.",
+      "status": "unverified"
+    }
+  ],
+  "followup_retrieval": "Direct GET for the Hine index alias, Wikimedia Commons API, Hook Flickr native file, The Met object API, and its IIIF image URL each failed at the managed proxy with CONNECT 403."
+}

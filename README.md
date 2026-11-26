@@ -141,6 +141,11 @@ hält beide Zuschnittmodi zurück. Die violette Kontur zeigt den
 konkurrierenden Nachbarvorschlag im Original. Gehört beim Ausweichen
 ein ausgelassener Streifen laut bisheriger sichtbarer Kontur zum
 Abzug, markiert der Editor auch diesen möglichen Inhaltsverlust.
+Unter «Markierte Stellen im Original ansehen» lässt sich die
+markierte Fläche mit ihrem Umfeld prüfen. Eine ähnlich gefärbte
+Albumseite liefert einen Hinweis für die Suche nach feinen Schatten
+und Papierkanten. Die geometrische Prüfung entscheidet weiter über
+die Downloads.
 Bei tatsächlich verdeckten Papierkanten hilft eine zweite Aufnahme
 mit getrennten Abzügen.
 [Beispiel Golden 05](data/evaluation/README.md#check-ordinary-corner-edits-at-neighboring-prints)

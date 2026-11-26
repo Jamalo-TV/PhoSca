@@ -846,6 +846,39 @@ def _only_pale_backing_removed(
     return bool(distance.max() <= 20 and np.mean(distance <= 14) >= .98)
 
 
+def strip_resembles_album_backing(
+    image: np.ndarray, quad: np.ndarray, bitmap: np.ndarray, origin: np.ndarray,
+) -> bool:
+    """Describe a source comparison for review without assigning paper ownership."""
+    points = cv2.findNonZero(bitmap)
+    if points is None:
+        return False
+    points = points.reshape(-1, 2) + origin
+    sides = np.roll(quad, -1, axis=0) - quad
+    lengths = np.linalg.norm(sides, axis=1)
+    maximum_depth = min(28, max(12, .08 * lengths.min()))
+    candidates = []
+    for index, (start, side, length) in enumerate(zip(quad, sides, lengths, strict=True)):
+        tangent = side / length
+        inward = np.float32([-tangent[1], tangent[0]])
+        offset = points - start
+        depth = offset @ inward
+        span = offset @ tangent
+        if depth.min() >= -maximum_depth and depth.max() < -1 and span.min() >= -1 and span.max() <= length + 1:
+            candidates.append(index)
+    if len(candidates) != 1:
+        return False
+    backing = _backing_color(image)
+    colors = image[points[:, 1], points[:, 0]].reshape(-1, 1, 3)
+    distance = np.linalg.norm(cv2.cvtColor(colors, cv2.COLOR_BGR2LAB).reshape(-1, 3) - backing, axis=1)
+    if distance.max() > 13 or np.mean(distance <= 8) < .995:
+        return False
+    candidate, evidence, reasons = refine_print_boundary(image, quad, search_radius=3)
+    return (candidate is not None and not reasons and np.linalg.norm(candidate - quad, axis=1).max() <= .85
+            and all(edge["support"] >= .88 and (edge["corner_support"] or 0) >= .82 for edge in evidence.values())
+            and _pale_backing_at_corners(image, quad, candidates[0], backing))
+
+
 def suggest_missing_pale_backing_edge(
     image: np.ndarray, quad: np.ndarray, evidence: dict, neighbors: list[np.ndarray],
 ) -> tuple[np.ndarray, dict] | None:

@@ -51,7 +51,7 @@ import {
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   deferredPrintHint, filmGridCountHint, filmGridHint, filmGridReason, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
-  nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
+  NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
 import {
@@ -2034,6 +2034,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         </>
       )}
       {!newPrint && !editingImage && printEdgeReviewHint && <p className="crop-editor-hint">{printEdgeReviewHint}</p>}
+      {!newPrint && !editingImage && <NeighborContentReview fullPrint={fullPrintMode} sourceUrl={`/api/v1/pages/${pageId}/image`} />}
       {albumMark && <AlbumPageMarkReview mark={albumMark} sourceUrl={`/api/v1/pages/${pageId}/image`}
         checked={albumMarkReviewId === albumMark.id} disabled={saveState?.saving}
         onChange={event => setAlbumMarkReviewId(event.target.checked ? albumMark.id : null)} />}

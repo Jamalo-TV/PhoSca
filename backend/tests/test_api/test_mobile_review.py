@@ -1805,7 +1805,8 @@ async def test_ordinary_preview_cannot_export_paper_shared_with_an_active_neighb
         assert await exports(photo_id) == await exports(other_id) == [404, 404, 404, 200]
 
 
-async def test_avoiding_an_overlap_cannot_omit_visible_parts_of_the_old_photo(client, monkeypatch):
+@pytest.mark.parametrize("lost", ["visible_print", "album_backing", "marked_strip", "backing_colored_print"])
+async def test_avoiding_an_overlap_preserves_visible_content_and_checks_the_original(client, monkeypatch, lost):
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto
@@ -1816,7 +1817,13 @@ async def test_avoiding_an_overlap_cannot_omit_visible_parts_of_the_old_photo(cl
     get_settings.cache_clear()
     source = np.full((320, 480, 3), 30, dtype=np.uint8)
     source[40:270, 35:265] = (67, 111, 144)
-    source[100:229, 205:380] = (118, 90, 55)
+    if lost == "backing_colored_print":
+        source[40:270, 281:283] = 17  # A faint outer shadow beyond the claimed strip.
+        source[72:87, 267:277] = 32  # Low-contrast content on the matching stock.
+    peer_left = 205 if lost == "visible_print" else 272
+    source[100:229, peer_left:380] = (118, 90, 55)
+    if lost == "marked_strip":
+        source[56:66, 264:275] = (70, 85, 235)
     album_id, page_id, photo_id = await _seed_review_data(source)
 
     def outline(left, top, right, bottom):
@@ -1825,13 +1832,15 @@ async def test_avoiding_an_overlap_cannot_omit_visible_parts_of_the_old_photo(cl
     def bounds(quad):
         return {"x1": quad[0]["x"], "y1": quad[0]["y"], "x2": quad[2]["x"], "y2": quad[2]["y"]}
 
-    old = outline(35, 40, 264, 269)
-    neighbor = outline(205, 100, 379, 228)
-    inward = outline(35, 40, 202, 269)
+    old = outline(35, 40, 264 if lost == "visible_print" else 297, 269)
+    visible = old if lost == "visible_print" else outline(35, 40, 280, 269)
+    neighbor = outline(peer_left, 100, 379, 228)
+    inward = outline(35, 40, 202 if lost == "visible_print" else 264, 269)
+    image = outline(47, 52, 191 if lost == "visible_print" else 251, 256)
     async with get_session_factory()() as session:
         photo = await session.get(ExtractedPhoto, photo_id)
         photo.bounding_box = bounds(old)
-        photo.segmentation_mask = {"source": "yolo_seg_mask", "polygon": old, "visible_polygon": old, "warp_quad": old}
+        photo.segmentation_mask = {"source": "yolo_seg_mask", "polygon": old, "visible_polygon": visible, "warp_quad": old}
         photo.enhancement_applied = {"correction": {"crop_modes": {"full_print": {
             "warp_quad": old, "status": "review_needed", "reason_codes": ["PRINT_POSSIBLY_OCCLUDED"],
         }}}}
@@ -1842,19 +1851,23 @@ async def test_avoiding_an_overlap_cannot_omit_visible_parts_of_the_old_photo(cl
 
     url = f"/api/v1/photos/{photo_id}"
     saved = await client.patch(f"{url}/bounding-box", json={"bounding_box": bounds(inward), "segmentation_mask": {
-        "source": "manual_quad", "polygon": inward, "warp_quad": inward, "print_size_mm": {"width": 120, "height": 145},
+        "source": "manual_quad", "polygon": inward, "warp_quad": inward, "image_quad": image,
+        "print_size_mm": {"width": 120, "height": 145},
     }})
     assert saved.status_code == 200, saved.text
     reprocessed = await client.post(f"{url}/reprocess")
     assert reprocessed.status_code == 200, reprocessed.text
     for response in (saved, reprocessed):
-        modes = response.json()["enhancement_applied"]["correction"]["crop_modes"]
-        assert all(mode["status"] == "review_needed" for mode in modes.values())
+        correction = response.json()["enhancement_applied"]["correction"]
+        modes = correction["crop_modes"]
+        assert all(mode["status"] == "review_needed" for mode in modes.values()), modes
         full = modes["full_print"]
         assert "MANUAL_NEIGHBOR_CONTENT_LOSS" in full["reason_codes"]
         regions = full["neighbor_content_loss_outlines"]
-        assert len(regions) == 2 and all(region[0] == region[-1] for region in regions)
+        assert regions and all(region[0] == region[-1] for region in regions)
         assert all(point["x"] > inward[1]["x"] for region in regions for point in region)
+        assert full["neighbor_review_source_size"] == {"width": 480, "height": 320}
+        assert bool(full.get("neighbor_backing_color_match_pixels")) == (lost in {"album_backing", "backing_colored_print"})
     for variant in ("full_print", "image_only", "source_corrected_trimmed"):
         assert (await client.get(f"{url}/image", params={"variant": variant})).status_code == 404
     assert (await client.get(f"{url}/image?variant=source_corrected_untrimmed")).status_code == 200
