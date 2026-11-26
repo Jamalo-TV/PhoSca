@@ -2096,6 +2096,25 @@ from a common print, including multipanel prints and decorative covers.
 The provisional album group, original images, annotations and per-image
 reports are stored locally. No private source material is checked in.
 
+Two additional spreads from the same album were annotated before running
+the detector on them. Across the three spreads the full-frame detector
+matches 6 of 35 prints with three nonmatches. The forced four-tile probe
+matches 20 of 35 with one nonmatch. The development evaluator with both
+crop branches also matches 6 of 35 and emits five nonmatches on the three
+spreads. The tile probe scores detector output before the crop stages.
+
+One tile can cover about half of a merged proposal and still suppress the
+whole proposal in dense-view selection. On the first spread this loses
+the unresolved partner on the right. A left-hand pair covers 92.49% of
+its parent with two disjoint candidates. Keeping the right parent and the
+unrelated full-frame mask yields three of eleven matches in this detector
+counterfactual. Source comparisons on two spreads follow a continuous
+ridge in the exposed album material between paired prints. Matching colour
+alone also accepts a synthetic same-colour seam. The brightness pattern
+across the ridge distinguishes those originals from the flat and
+phase-shifted controls at the sampled positions. These results were
+obtained on one physical album with selected measurement bands.
+
 ### Scalloped paper on white scanner backing
 
 The ScanCropper development fixture pins two original rasters with five loose
