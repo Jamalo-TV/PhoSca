@@ -2,7 +2,7 @@ import { Camera, Check, ChevronLeft, CircleHelp, CloudOff, Images, ListChecks, R
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addManualPhoto, confirmSharedPaperGrid, createAlbum, excludeCountReviewGroup, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, reprocessPhoto, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
 import { captureCameraImage } from "./cameraCapture.js";
-import { projectedCropAspect, resamplePerspective, samplePreviewSource } from "./cropPreview.js";
+import { motifUsesPaperAxes, projectedCropAspect, resizeMotifInPaperPlane, resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import { heldPrintCorrectionHint, wholePrintApprovalHeld } from "./cropReviewApproval.js";
 import {
@@ -263,6 +263,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const albumMark = editable && !editingMotif && !reviewedNonPrint ? markOffer : null;
   const albumMarkReview = useAlbumPageMarkReview(albumMark, item.payload?.photo_id);
   const displayedQuad = editingMotif ? motifQuad || savedQuad : quad;
+  const paperAlignedMotif = editingMotif && motifUsesPaperAxes(savedQuad, displayedQuad);
   const comparePaperEdge = !editingMotif && showsPaperEdgeComparison(fullPrintMode)
     && item.payload?.untrimmed_url && item.payload?.variant_urls?.full_print_preview;
   const [usingOutlineSuggestion, setUsingOutlineSuggestion] = useState(Boolean(initialPaperOutline));
@@ -319,13 +320,16 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       moved = true;
       const x = Math.max(0, Math.min(1, editingMotif ? initial.x + dx / rect.width : (e.clientX - rect.left) / rect.width));
       const y = Math.max(0, Math.min(1, editingMotif ? initial.y + dy / rect.height : (e.clientY - rect.top) / rect.height));
-      setMagnifier({ visible: magnifierEnabled, x, y });
+      const resizedMotif = paperAlignedMotif && resizeMotifInPaperPlane(savedQuad, displayedQuad, cornerIndex, { x, y });
+      if (paperAlignedMotif && !resizedMotif) return;
+      const magnifiedCorner = resizedMotif?.[cornerIndex] || { x, y };
+      setMagnifier({ visible: magnifierEnabled, ...magnifiedCorner });
       setEditingPreview(true);
       setDraftTouched(true);
       setSavedCropUrl(""); setSaveError("");
       if (editingMotif) {
         setMotifQuad(current => {
-          const next = (current || savedQuad).map((point, index) => index === cornerIndex ? { x, y } : point);
+          const next = resizedMotif || (current || savedQuad).map((point, index) => index === cornerIndex ? { x, y } : point);
           return !storedMotif && next.every((point, index) =>
             Math.hypot(point.x - savedQuad[index].x, point.y - savedQuad[index].y) < 1e-8) ? null : next;
         });
@@ -689,7 +693,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       )}
       {!editingMotif && uncertainLine && <p className="quad-hint">Prüfe besonders die gestrichelte Papierkante.</p>}
       {editingMotif ? <>
-        <p className="quad-hint">Setze die Ecken an die Motivgrenze. Lass alle Bildfelder und zugehörigen Beschriftungen im Zuschnitt.</p>
+        <p className="quad-hint">Setze die Ecken an die Motivgrenze. Lass alle Bildfelder und zugehörigen Beschriftungen im Zuschnitt.
+          {paperAlignedMotif && " Beim Ziehen bleiben die Motivkanten parallel zum entzerrten Papier."}
+        </p>
         {(suggestedMotif || !storedMotif) && <button className="magnifier-toggle" type="button" disabled={saving} onClick={() => {
           setMotifQuad(suggestedMotif || savedQuad);
           setDraftTouched(true);

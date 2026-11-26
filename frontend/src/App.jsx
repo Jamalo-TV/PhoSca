@@ -45,6 +45,7 @@ import {
   uploadFiles,
 } from "./api.js";
 import { captureCameraImage } from "./cameraCapture.js";
+import { motifUsesPaperAxes, resizeMotifInPaperPlane } from "./cropPreview.js";
 import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
 import EdgeMeasurement from "./EdgeMeasurement.jsx";
@@ -1511,6 +1512,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const markBounds = albumMarkReview.bounds;
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const motifCorners = selectedShape?.imageQuad || savedShape?.warpQuad;
+  const motifPaperQuad = editingImage && fullPrintMode?.status === "ready" && savedShape
+    && motifUsesPaperAxes(savedShape.warpQuad, motifCorners) ? savedShape.warpQuad : null;
   const needsMotifSelection = editingImage && !selectedShape?.imageQuad;
   const measurement = selectedShape && parsePrintSize(selectedShape.printSizeFields);
   const sizeError = editingImage ? "" : measurement?.error;
@@ -1907,7 +1910,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         dragRef.current = { photoId: photo.id, pointIndex: cornerIndex };
         if (editingImage) {
           const { width, height } = canvasRef.current.getBoundingClientRect();
-          Object.assign(dragRef.current, { corner: corners[cornerIndex], clientX: event.clientX, clientY: event.clientY, width, height });
+          Object.assign(dragRef.current, {
+            corner: corners[cornerIndex], clientX: event.clientX, clientY: event.clientY, width, height,
+            paperQuad: motifPaperQuad, motifQuad: corners,
+          });
         }
         setSaveState(null);
         canvasRef.current.setPointerCapture(event.pointerId);
@@ -1934,6 +1940,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       });
       return;
     }
+    if (Boolean(drag.corner) !== editingImage) return;
     let nextPoint = { x: clampUnit(point.x), y: clampUnit(point.y) };
     if (drag.corner) {
       const dx = event.clientX - drag.clientX;
@@ -1942,13 +1949,15 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       drag.moved = true;
       nextPoint = { x: clampUnit(drag.corner.x + dx / drag.width), y: clampUnit(drag.corner.y + dy / drag.height) };
     }
+    const resizedMotif = drag.paperQuad && resizeMotifInPaperPlane(drag.paperQuad, drag.motifQuad, pointIndex, nextPoint);
+    if (drag.paperQuad && !resizedMotif) return;
     setDraftShapes((current) => {
       const photo = photos.find((candidate) => candidate.id === photoId);
       if (!photo) return current;
       const saved = draftShapeFromPhoto(photo);
       const currentShape = current[photoId] || saved;
       const corners = editingImage ? currentShape.imageQuad || saved.warpQuad : currentShape.warpQuad;
-      const nextQuad = corners.map((corner, index) =>
+      const nextQuad = resizedMotif || corners.map((corner, index) =>
         index === pointIndex ? nextPoint : corner
       );
       const unchangedPaperCorners = editingImage && !saved.imageQuad && nextQuad.every(
@@ -2223,6 +2232,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             {edgeTraces.length > 0 && "Die gestrichelten Linien zeigen Abschnitte der gemessenen Motivkante. "}
             {!savedShape.imageQuad && "Die blauen Ecken starten am Papierrand. "}
             Verschiebe sie an die Motivgrenze und lass alle Bildfelder und zum Motiv gehörenden Beschriftungen im Zuschnitt.
+            {motifPaperQuad && " Beim Ziehen bleiben die Motivkanten parallel zum entzerrten Papier."}
           </p>
         </>
       )}

@@ -25,7 +25,10 @@ export function projectedCropAspect(corners, matrix) {
   return Number.isFinite(aspect) && aspect > 0 ? aspect : null;
 }
 
-export function resamplePerspective(pixels, corners, width, height, orientation) {
+function unitSquareProjection(corners) {
+  if (corners?.length !== 4 || corners.some(point => !Number.isFinite(point?.x) || !Number.isFinite(point?.y))) {
+    return null;
+  }
   const [a, b, c, d] = corners;
   const dx1 = b.x - c.x;
   const dx2 = d.x - c.x;
@@ -34,7 +37,7 @@ export function resamplePerspective(pixels, corners, width, height, orientation)
   const dx = a.x - b.x + c.x - d.x;
   const dy = a.y - b.y + c.y - d.y;
   const determinant = dx1 * dy2 - dx2 * dy1;
-  if (determinant === 0) return null;
+  if (!Number.isFinite(determinant) || determinant === 0) return null;
   // Map the output rectangle to the source quadrilateral by one homography.
   const g = (dx * dy2 - dx2 * dy) / determinant;
   const h = (dx1 * dy - dx * dy1) / determinant;
@@ -42,6 +45,78 @@ export function resamplePerspective(pixels, corners, width, height, orientation)
   const xDown = d.x * (1 + h) - a.x;
   const yAlong = b.y * (1 + g) - a.y;
   const yDown = d.y * (1 + h) - a.y;
+  if (![1 + g, 1 + h, 1 + g + h].every(weight => Number.isFinite(weight) && weight > 0)) return null;
+  return { a, g, h, xAlong, xDown, yAlong, yDown };
+}
+
+function sourceToSquare(point, { a, g, h, xAlong, xDown, yAlong, yDown }) {
+  const a11 = xAlong - point.x * g;
+  const a12 = xDown - point.x * h;
+  const a21 = yAlong - point.y * g;
+  const a22 = yDown - point.y * h;
+  const dx = point.x - a.x;
+  const dy = point.y - a.y;
+  const determinant = a11 * a22 - a12 * a21;
+  const x = (dx * a22 - a12 * dy) / determinant;
+  const y = (a11 * dy - dx * a21) / determinant;
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+}
+
+function squareToSource({ x, y }, { a, g, h, xAlong, xDown, yAlong, yDown }) {
+  const weight = 1 + g * x + h * y;
+  return { x: (a.x + xAlong * x + xDown * y) / weight, y: (a.y + yAlong * x + yDown * y) / weight };
+}
+
+const PAPER_AXIS_TOLERANCE = 1e-4;
+
+function paperRectangle(paperQuad, motifQuad) {
+  const projection = unitSquareProjection(paperQuad);
+  if (!projection || motifQuad?.length !== 4 || motifQuad.some(point => !point)) return null;
+  const corners = motifQuad.map(point => sourceToSquare(point, projection));
+  if (corners.some(point => !point || [point.x, point.y].some(value => value < -1e-8 || value > 1 + 1e-8))) return null;
+  const axes = corners.map((point, index) => {
+    const next = corners[(index + 1) % 4];
+    const dx = Math.abs(next.x - point.x);
+    const dy = Math.abs(next.y - point.y);
+    if (dx <= PAPER_AXIS_TOLERANCE && dy > PAPER_AXIS_TOLERANCE) return "y";
+    if (dy <= PAPER_AXIS_TOLERANCE && dx > PAPER_AXIS_TOLERANCE) return "x";
+    return null;
+  });
+  if (axes.includes(null) || axes[0] === axes[1] || axes[0] !== axes[2] || axes[1] !== axes[3]) return null;
+  return { projection, corners, axes };
+}
+
+export function motifUsesPaperAxes(paperQuad, motifQuad) {
+  return paperRectangle(paperQuad, motifQuad) !== null;
+}
+
+export function resizeMotifInPaperPlane(paperQuad, motifQuad, cornerIndex, destination) {
+  const rectangle = paperRectangle(paperQuad, motifQuad);
+  if (!rectangle || !Number.isInteger(cornerIndex) || cornerIndex < 0 || cornerIndex > 3 || !destination) return null;
+  const { projection, corners, axes } = rectangle;
+  const proposed = sourceToSquare(destination, projection);
+  if (!proposed) return null;
+  const start = corners[cornerIndex];
+  const oppositeIndex = (cornerIndex + 2) % 4;
+  const fixed = corners[oppositeIndex];
+  const x = Math.max(0, Math.min(1, proposed.x));
+  const y = Math.max(0, Math.min(1, proposed.y));
+  if ((x - fixed.x) * Math.sign(start.x - fixed.x) <= PAPER_AXIS_TOLERANCE
+      || (y - fixed.y) * Math.sign(start.y - fixed.y) <= PAPER_AXIS_TOLERANCE) return null;
+  if (Math.abs(x - start.x) < 1e-10 && Math.abs(y - start.y) < 1e-10) return motifQuad;
+  const next = axes[cornerIndex] === "x" ? { x: fixed.x, y } : { x, y: fixed.y };
+  const previous = axes[cornerIndex] === "x" ? { x, y: fixed.y } : { x: fixed.x, y };
+  const result = [...motifQuad];
+  result[cornerIndex] = squareToSource({ x, y }, projection);
+  result[(cornerIndex + 1) % 4] = squareToSource(next, projection);
+  result[(cornerIndex + 3) % 4] = squareToSource(previous, projection);
+  return result;
+}
+
+export function resamplePerspective(pixels, corners, width, height, orientation) {
+  const projection = unitSquareProjection(corners);
+  if (!projection) return null;
+  const { a, g, h, xAlong, xDown, yAlong, yDown } = projection;
 
   const turns = (orientation ?? 0) / 90;
   const outputWidth = turns % 2 ? height : width;

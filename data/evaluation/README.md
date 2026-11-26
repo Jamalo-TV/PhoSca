@@ -465,6 +465,31 @@ zero verified shared release groups. [Triol collection](https://mountaineers.atl
 [Arpee finding aid](https://sirismm.si.edu/EADpdfs/FSA.A2011.03.pdf) ·
 [Rudge individual scans](https://rudged.github.io/home/redalbumis.html)
 
+The 2,048 × 1,536 Rudge spread `12REDA.JPG` has two separately
+published matches, `REDA16.jpg` and `REDA17.jpg`. The bytes were
+matched to archive revision `9422452`. The right individual scan
+exposes motif and mount stock omitted by the album's horizontal
+window strip. The 1,003 feature inliers have held-out p95 error
+of 2.20 native pixels. A 455 × 50 native-pixel region in the strip
+maps entirely onto the individual motif and covers about 4.56% of
+the separate scan field. A second visible part of that same physical
+print lies below the strip.
+
+With the registered v37 hybrid development settings at proposal
+threshold 0.25 and acceptance threshold 0.70, the spread yields
+three proposals for two prints. The left and right matches have
+mask IoU 0.810 and 0.685, below the 0.85 threshold. One extra
+proposal covers the left album page and the right proposal misses
+the lower visible part. Both right-hand crop modes stay in review
+with boundary ambiguity, possible content cutoff and uncertain
+aspect. The classical-only run proposes the left page and misses
+the right print. These views support a development control for
+occluded content and instance ownership. The Red Album has now
+been inspected in development and remains outside calibration and
+release. The source and replay receipts stay local under
+`runs/crop-quality/rudge-red12-occlusion/`.
+[Mounted and individual files](https://github.com/rudged/home/tree/9422452820380ca089db3e0baf0cfaf3dc6c7cdc)
+
 ÉBAF documents digitization of 302 paper prints from the Notre-Dame-
 de-France albums in the Assumptionist archive. Project records
 describe scans after physical removal and subsequent thematic
@@ -5312,6 +5337,85 @@ exports are in `runs/crop-quality/native-protected-paper-review/`.
 [Development source](contact-sheet-camera-development.json) ·
 [Review geometry](../../backend/app/pipeline/off_print_advisory.py) ·
 [Upload and export regression](../../backend/tests/test_api/test_off_print_advisory_review.py)
+
+### Resize the motif in the saved paper plane
+
+On the native contact print, the separately measured motif draft
+failed `IMAGE_RECTANGLE_INCONSISTENT` when sent directly as four source
+corners. The same content envelope rendered when aligned to the saved
+paper plane. The server checks opposite lengths and right angles in
+that plane with a two-output-pixel tolerance. Four independently
+dragged corners in the skewed source view made alignment difficult.
+
+With a ready whole print, Desktop and Mobile use a single homography
+from the saved paper corners to the unit square for a motif already
+aligned to those axes. Each edge must deviate by at most 0.0001 along
+its fixed coordinate in the square. The pointer destination is
+projected into the square. Two rectangle edges follow it, with the
+opposite source corner held at its original value. Destinations are
+bounded by the paper and a move through the opposite corner keeps the
+last valid position. The projected corners shown and submitted to the
+existing editor API refer to the original. An existing deliberately
+rotated rectification uses the free-corner controls. A first motif
+starts at the paper corners. Save requires an intentional gesture or
+explicit selection, subject to the current whole-print review.
+
+The geometry regression uses the exact stored paper and previously
+tested motif from the 4,080 × 3,072 source. Two opposing drags reproduce
+the diagnostic motif within 0.001 original pixels under all four
+cyclic corner orders and both windings. Pure geometry is only one
+witness. The earlier source seam, even enclosed in its smallest
+paper-plane rectangle, would still remove all 28,044 measured dark
+header centres, 8,128 dark grid centres and 267 dark lower-band
+centres. The editor keeps the original, the marked lettering and a
+separate intentional choice in the workflow.
+
+In the normal native workflows, two opposing touch drags on Mobile
+and two mouse drags on Desktop each produce a 1,640 × 2,375 motif
+after an explicit save. The measured border is
+slightly farther from the outer paper edge than the previous diagnostic
+rectangle. The native result contains all 28,044 dark heading centres,
+2,730,535 dark grid centres, 70,839 dark lower-rail centres and 315
+anchors across 35 frames. The sampler finds full support and zero
+foreign contributions beyond the visual paper draft's one-pixel
+buffer. The 1,853 × 2,410 whole-print JPEG and its crop metadata are
+byte-identical to the state just before the motif edit. Both named
+downloads and the old trimmed alias return 200. A Desktop prep run
+observed a form refresh while paper dimensions were being entered
+immediately after reprocessing. The successful run entered the
+dimensions after the refreshed editor loaded. Both tests use the
+same diagnostic paper dimensions of 203 × 264 mm as the prior replay.
+The locked automatic metrics still match, including 18/18 detections,
+6/11 automatic-seed whole prints and 7/12 motifs. The seeded geometry
+run still passes 23/23. The source measurements and browser receipts
+are under `runs/crop-quality/paper-plane-motif-editor/`.
+[Source and reference limits](contact-sheet-camera-development.json) ·
+[Geometry regression](../../frontend/tests/cropPreview.test.js)
+
+### Check a second renderer seed against separate paper
+
+On the locked detector run, five recoverable prints match the
+right physical instances and fail one or both output modes. The
+renderer still starts at the raw detection polygon. In a shadow
+run with the registered synthetic model `c31317f`, rerunning the
+renderer from the refined `visible_paper_rim` turns `white_margin`,
+`camera_tilt` and the first `touching` print into two-mode passes.
+Their full/motif maximum corner errors are 0.493/0.083,
+0.255/0.083 and 0.631/0.094 native pixels. All three have zero
+strict content loss and foreign samples in both modes. The second
+`touching` print and the recoverable `overlap` neighbor stay held.
+
+A separate flush paper strip falsifies the apparent gain. Of 80
+stock controls, 40 satisfy the narrower proposed rule with one
+ambiguous edge, a corroborated stock fit and a passed protection
+check. All 40 become ready even though they sample between 237 and
+1,167 output pixels from the additional stock beyond the one-pixel
+buffer. An inboard colour-step probe finds all eight high-contrast
+strips and only 22 of the 40 narrow-rule cases. It also fires on one
+of four clean JPEG derivatives. The production renderer uses the raw
+detection polygon for this path.
+The shadow replays are under
+`runs/crop-quality/paper-plane-motif-editor/renderer-seed-controls/`.
 
 ### Explain a held whole print in mobile geometry review
 

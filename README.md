@@ -723,6 +723,17 @@ unklarer Motivgrenze startet der Editor am Papierrand und wartet auf
 eine bewusste Auswahl. Eine offene Motivprüfung bleibt auch nach einer
 älteren allgemeinen Geometriebestätigung sichtbar.
 
+Bei einem verfügbaren Ganzabzug kann der Motiv-Editor ein zum Papier
+paralleles Rechteck direkt auf der Originalseite bearbeiten. Die
+Position des Zeigers wird in die entzerrte Ebene des gespeicherten
+Papiers umgerechnet. Beim Ziehen verschieben sich die beiden Kanten,
+die an die aktive Ecke grenzen. Die gegenüberliegende Ecke bleibt
+an ihrem Originalpunkt und die Motivkontur bleibt innerhalb des
+Papiers. Der Editor rechnet die neuen Ecken zurück in die Aufnahme.
+Bei gespeicherten oder bewusst geladenen schrägen Motiven lassen sich
+die vier Ecken unabhängig verschieben.
+[Motiv-Rechteck in der Papierebene](data/evaluation/README.md#resize-the-motif-in-the-saved-paper-plane)
+
 Mobile zeigt offene Motivkanten und erkannte Randbeschriftungen auf der
 Originalseite. Sobald ein manuell bestätigter Ganzabzug verfügbar ist,
 lässt sich **Nur Bildmotiv** auch unter **Cropping prüfen** bearbeiten.
