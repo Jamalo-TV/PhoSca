@@ -170,6 +170,67 @@ def test_displaced_album_edges_change_only_the_comparison_and_keep_protected_cen
     assert suggest_displaced_print_preview(pale, quad, evidence, []) is None
 
 
+def test_rotated_album_layer_comparison_keeps_the_pale_strip_and_both_saved_crops(monkeypatch):
+    from app.pipeline import perspective
+    from app.pipeline.album_layer_review import suggest_album_layer_preview
+    from app.pipeline.bowed_edge_review import POSSIBLE_ALBUM_LAYER_EDGE
+    from app.pipeline.crop_sampling import _outline_mask
+    from app.pipeline.manual_paper_boundary import paper_curve_review_reference
+
+    path = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_04.jpg"
+    turned = cv2.rotate(cv2.imread(str(path)), cv2.ROTATE_180)
+    encoded, jpeg = cv2.imencode(".jpg", turned, [cv2.IMWRITE_JPEG_QUALITY, 55])
+    assert encoded
+    image = cv2.imdecode(jpeg, cv2.IMREAD_COLOR)
+    seed = _vertices([(1685, 33), (1702, 512), (1685, 1187), (1710, 1187),
+                      (1707, 1153), (1810, 1181), (2483, 1179), (2421, 33)], image)
+    mask = {"polygon": seed, "source": "yolo_seg_mask", "detector_source": "yolo_onnx"}
+    options = {"dual_mode": True, "enable_classical_retry": True}
+    with monkeypatch.context() as baseline:
+        baseline.setattr(perspective, "suggest_album_layer_preview", lambda *_, **__: None)
+        before = _crop(image, {}, mask, **options)
+    after = _crop(image, {}, mask, **options)
+
+    old, modes = before.metadata["crop_modes"], after.metadata["crop_modes"]
+    full = modes["full_print"].copy()
+    assert full.pop("suggested_edge_source") == POSSIBLE_ALBUM_LAYER_EDGE
+    on_print, continuing = full.pop("suggested_edge_traces")
+    assert len(on_print) > 20 and len(continuing) > 8
+    preview = full.pop("outline_preview")
+    assert preview["source"] == POSSIBLE_ALBUM_LAYER_EDGE and preview["source_side"] == 0
+    assert full == old["full_print"] and modes["image_only"] == old["image_only"]
+    assert all(mode["status"] == "review_needed" for mode in modes.values())
+    assert "suggested_warp_quad" not in full and paper_curve_review_reference(after.metadata) is None
+    np.testing.assert_array_equal(after.image, before.image)
+    assert after.image_only is None and after.full_print_preview.shape[2] == 4
+
+    height, width = image.shape[:2]
+    quad, outline = (normalized_vertices_to_pixels([(p["x"], p["y"]) for p in points], width, height)
+                     for points in (full["warp_quad"], preview["source_outline"]))
+    stored_footprint = _outline_mask(quad, image.shape[:2]).astype(bool)
+    comparison_footprint = _outline_mask(outline, image.shape[:2]).astype(bool)
+    assert not np.any(comparison_footprint & ~stored_footprint)
+    removed = stored_footprint & ~comparison_footprint
+    assert 18_300 <= removed.sum() <= 19_000
+    assert not removed[55:].any()  # The inner scene edge is near native y = 70.
+
+    evidence = after.metadata["boundary_refinement"]
+    assert suggest_album_layer_preview(image, quad, evidence, [_rect(1565, 23, 1600, 64)]) is None
+    missing_continuation = image.copy()
+    missing_continuation[9:95, 1520:1690] = (217, 219, 222)
+    assert suggest_album_layer_preview(missing_continuation, quad, evidence, []) is None
+    grayscale = cv2.cvtColor(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR)
+    assert suggest_album_layer_preview(grayscale, quad, evidence, []) is None
+
+    mark = {"type": "text", "source": "manual", "margin_ratio": .08,
+            "box": {"x1": 1980, "y1": 20, "x2": 2110, "y2": 34}}
+    guarded = suggest_album_layer_preview(image, quad, evidence, [], protected_regions=[mark])
+    assert guarded is not None
+    removed_with_guard = stored_footprint & ~_outline_mask(guarded.outline, image.shape[:2]).astype(bool)
+    assert not removed_with_guard[9:45, 1969:2121].any()
+    assert 0 < removed_with_guard.sum() < removed.sum()
+
+
 def test_overlapping_print_shows_only_exposed_paper_without_changing_either_crop(monkeypatch):
     from app.evaluation.crop_fixtures import synthetic_crop_pages
     from app.pipeline import perspective

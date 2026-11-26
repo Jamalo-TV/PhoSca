@@ -409,6 +409,31 @@ for the required evaluation remain open. These checks added zero shared
 verified release groups. Receipts are under
 `runs/crop-quality/displaced-print-edges/reference-intake/`.
 
+The Romanov edition records later colour scans of loose reproduction
+leaves followed by web crops. The available files cannot verify a
+separately captured, measurable photographic paper perimeter. The
+Kreis collection publishes JPEG tiles under CC BY-NC 4.0 and offers
+separate permissions and reproduction requests. Seventeen exact TIFF
+names for `SGV_10A_00031` and `SGV_10A_00050` are cross-checked against
+the archival indexes. The original rasters, the placement of each
+separately captured print on its leaf and applicable rights remain
+pending. This intake adds no verified release group. [Romanov edition](https://selinacochran.github.io/romanovball/#about-this-edition) ·
+[Kreis archive usage and orders](https://www.ekws.ch/de/archiv/nutzung)
+
+Columbia catalogs the Barbara Curtis Adachi collection's page scans
+before album dismantling and preserves the unmounted regular prints
+as a separate series. Album-page records `01-12` and `46-38` identify
+different physical albums. The published images carry a nonprofit
+educational-use license, and matching print captures with sufficient
+geometry and usage rights remain open. The Ermakov archive instead
+matches sales-album images and individual stock prints by negative
+number. Those matches can be different impressions from the same
+negative and cannot establish physical paper identity. [Columbia finding aid](https://www.columbia.edu/cu/lweb/eresources/archives/eastasian/adachi/ldpd.6226404.001b.html) ·
+[Adachi page `01-12`](https://bunraku.library.columbia.edu/images/44986/) ·
+[Adachi page `46-38`](https://bunraku.library.columbia.edu/images/46513/) ·
+[Columbia license](https://bunraku.library.columbia.edu/rights/) ·
+[Ermakov conservation report](https://resources.culturalheritage.org/pmgtopics/2011-volume-fourteen/14-17_Maes.html)
+
 The source-only preflight at `eccc049` rechecked seven tracked drafts.
 On this workspace it reported 26 missing pinned page rasters and 12
 missing independent scan assets. The drafts account for 15 final-split
@@ -5790,6 +5815,87 @@ separately measured album layer and a further 3 px guard are 22,581
 output samples with foreign material, including 21,667 wholly foreign
 samples. This case remains held. Browser captures, renderer replay
 and paired metrics are under `runs/crop-quality/displaced-print-edges/`.
+
+### Compare a continuing album layer near the capture edge
+
+The 180° JPEG55 copy of Golden 04 (`3e3a31d7…`) keeps all three
+prints. In original upright coordinates, the raw model mask for
+the left lower print reaches y = 1886. The four-corner extraction
+still reaches y = 1886. A 31 px native edge fit follows the wrong
+album line to y = 1906. The visible photo transition at y ≈ 1842–1850
+falls 36–44 px inside the initial edge. The 82 px outward retry
+cannot reach it. The held full-print rendering uses the later fit.
+
+Independent source sampling uses 288 native stations between
+x = 154 and x = 1302 in the upright orientation. The first distinct
+album layer continues from beneath the print onto the neighbouring
+page at y = 1869–1883. Four encodings give at most 1 px disagreement
+under the print. Eight measurement kernels remain within 2 px there.
+Twelve separate sight marks agree within 1 px. The pale strip
+between the photo transition and the continuing layer remains
+an ambiguous material boundary. The measurement uses no crop labels,
+detector masks or output transforms to determine the layer.
+
+Profile revision 6 adds a comparison for a held model outline with
+two strongly supported sides and a weak corner at a capture-adjacent
+edge. The native profiles look for a light-to-dark scene transition
+43–83 px inside the stored line and a shallower dark-to-light layer
+13–44 px inside. The layer must precede the scene by 15–44 px,
+with a p95 fit error at most 1.55 px and distributed source support.
+The layer continues outside at least one end while the scene stops.
+There it must show a matching chroma direction and a second, lighter
+material step across the dark band. Local line fits on both sides of
+the corner must meet within 2.5 px. A known neighbor intersecting the
+proof corridor vetoes the comparison.
+
+The optional PNG follows only supported spans and leaves a three-pixel
+reserve on the outward side of the layer. It retains protected areas
+with their padding, uncertain intervals and the ends of the stored
+rectangle. The 768 × 1160 canvas uses the same homography plus a
+one-pixel vertical translation. Both the photo colors and alpha from
+the ordinary API preview replay exactly. The separate continuation
+trace runs 18.5–159.2 native px outside the stored rectangle.
+
+| Measured quantity | Stored crop | Transparent review preview |
+| --- | ---: | ---: |
+| Native source centres beyond the independent album-layer guard | 19,508 | 825 |
+| Visible output pixels receiving material from that zone | 22,581 | 1,428 |
+| Source footprint IoU against the old annotation | 0.94526 | 0.96625 |
+| Strictly missed source centres against the old annotation | 1,248 | 1,248 |
+| Source footprint IoU against the second native optical fit | 0.94551 | 0.96650 |
+
+All 18,683 removed centres fall inside the independently bounded
+album zone. The preview adds zero centres and removes zero additional
+centres in the optical photo core. The remaining foreign samples
+include the locally retained ends. The image still loses content on
+another side. Absolute print dimensions, perspective and motif
+correspondences remain unverified.
+
+Fixed-proposal tests keep the cue after another JPEG75 encode and
+Gaussian blur at 0.8 and 1.3 px. All six short pale-rim controls
+keep their modeled paper centres. Two visible, longer pale rims,
+six overlapping mount treatments and eight ordinary shadow controls
+veto the comparison. A deliberately matched three-phase hard shadow
+still passes in the uncompressed control. Printed reproductions of
+both transitions can also pass. This comparison therefore asks the
+reviewer to identify the material at the original rather than inferring
+ownership from color alone.
+
+Normal upload and reprocessing retain the three instances, both mode
+records, and the stored JPEG bytes. Both named downloads and the
+legacy cropped download remain held. A new source claim across just
+the continuation retires the review asset. Saving unchanged mobile
+corners without physical dimensions leaves both modes in review.
+The cue does not persist a manual curve decision. Warm helper time
+was 46 ms median and 49 ms p95 across 24 calls on one OpenCV thread.
+Across eight paired evaluations the only added result is the local
+comparison on the 180° JPEG55 copy. Detection, regular crops and
+review counts match revision 5. The frozen detector retains 18/18
+detections and the seeded control retains 11/11 whole prints and
+12/12 motifs. The four Golden 04 encodings still yield 12 matches
+and two existing extra proposals on the 270° JPEG75 case.
+Receipts and the exact sampling comparison are local under
+`runs/crop-quality/continuing-album-layer/`.
 
 ### Measure seed displacement and competing print edges
 

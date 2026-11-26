@@ -247,6 +247,18 @@ wo die Übergänge messbar sind. Beide Zuschnittmodi warten weiterhin
 auf die Prüfung ihrer jeweiligen Grenzen.
 [Beispiel Golden-Seite 04](data/evaluation/README.md#compare-two-displaced-edges-on-golden-page-04)
 
+Liegt eine unsichere Zuschnittkante nahe am Aufnahmerand, kann sie
+einer Linie zwischen tieferen Albumlagen folgen. PhoSca sucht dann
+im Original nach einem Übergang zum Fotomotiv weiter innen und nach
+einer separaten Linie, die sich seitlich neben dem Foto fortsetzt.
+Helligkeit, Farbwechsel und Schichtabfolge müssen zusammenpassen.
+Die transparente Prüfvorschau blendet nur einen gemessenen Abschnitt
+hinter dieser Linie aus. Der helle Streifen am Foto und geschützte
+Bildbereiche bleiben sichtbar. Vergleiche den ausgeblendeten Streifen
+mit dem Original. Ein ähnlich gefärbter Schatten oder eine gedruckte
+Linie kann denselben Verlauf zeigen. Beide Modi bleiben in Prüfung.
+[Beispiel gedrehte Golden-Seite 04](data/evaluation/README.md#compare-a-continuing-album-layer-near-the-capture-edge)
+
 Bei hellen Papierrändern direkt nebeneinander kann der Zuschnitt an
 der inneren Bildkante enden. PhoSca prüft zusätzlich, ob sich der
 helle Streifen ausserhalb der Schnittkante bis zum benachbarten

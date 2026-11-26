@@ -5,12 +5,13 @@ import cv2
 import numpy as np
 
 from app.pipeline.adjacent_stock_review import ADJACENT_STOCK_REVIEW_SOURCE, suggest_adjacent_stock_outline
+from app.pipeline.album_layer_review import suggest_album_layer_preview
 from app.pipeline.album_windows import (
     ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves,
 )
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.bowed_edge_review import (
-    POSSIBLE_BOWED_PRINT_EDGE, POSSIBLE_DISPLACED_PRINT_EDGES, suggest_bowed_print_preview,
+    POSSIBLE_ALBUM_LAYER_EDGE, POSSIBLE_BOWED_PRINT_EDGE, POSSIBLE_DISPLACED_PRINT_EDGES, suggest_bowed_print_preview,
     suggest_displaced_print_preview,
 )
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
@@ -2038,9 +2039,14 @@ def correct_photo_crop(
                   and mask.get("detector_source") == "yolo_onnx" and "PRINT_BOUNDARY_AMBIGUOUS" in full_reasons
                   and set(full_reasons) <= {"PRINT_BOUNDARY_AMBIGUOUS", "POSSIBLE_CONTENT_CUTOFF", "PRINT_ASPECT_UNCERTAIN"}):
                 preview_source, measure = POSSIBLE_DISPLACED_PRINT_EDGES, suggest_displaced_print_preview
+            elif (protection["passed"] and mask.get("source") == "yolo_seg_mask"
+                  and mask.get("detector_source") == "yolo_onnx"
+                  and {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN"} <= set(full_reasons)
+                  and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}):
+                preview_source, measure = POSSIBLE_ALBUM_LAYER_EDGE, suggest_album_layer_preview
             if measure is not None:
                 try:
-                    options = {"protected_regions": regions} if preview_source == POSSIBLE_DISPLACED_PRINT_EDGES else {}
+                    options = {} if preview_source == POSSIBLE_BOWED_PRINT_EDGE else {"protected_regions": regions}
                     observed = measure(page_image, src_points, boundary_refinement, neighbor_polygons, **options)
                     if observed is not None:
                         preview, evidence = _render_outline_preview(

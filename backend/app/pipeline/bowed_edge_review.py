@@ -11,11 +11,12 @@ from app.pipeline.protected_regions import region_box_in_pixels
 
 POSSIBLE_BOWED_PRINT_EDGE = "possible_bowed_print_edge"
 POSSIBLE_DISPLACED_PRINT_EDGES = "possible_displaced_print_edges"
-MEASURED_PRINT_PREVIEW_SOURCES = (POSSIBLE_BOWED_PRINT_EDGE, POSSIBLE_DISPLACED_PRINT_EDGES)
+POSSIBLE_ALBUM_LAYER_EDGE = "possible_album_layer_edge"
+MEASURED_PRINT_PREVIEW_SOURCES = (POSSIBLE_BOWED_PRINT_EDGE, POSSIBLE_DISPLACED_PRINT_EDGES, POSSIBLE_ALBUM_LAYER_EDGE)
 
 
 @dataclass(frozen=True)
-class BowedPrintPreview:
+class MeasuredPrintPreview:
     side: int
     traces: list[np.ndarray]
     outline: np.ndarray
@@ -94,7 +95,7 @@ def _trace_side(
 
 def suggest_bowed_print_preview(
     image: np.ndarray, quad: np.ndarray, evidence: dict, neighbors: list[np.ndarray],
-) -> BowedPrintPreview | None:
+) -> MeasuredPrintPreview | None:
     sides = [evidence.get(name) or {} for name in _PRINT_SIDES]
     if (np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min() < 300
             or sum(side.get("support", 0) >= .90 for side in sides) < 2):
@@ -134,7 +135,7 @@ def suggest_bowed_print_preview(
             continue
         expanded = cv2.approxPolyDP(np.float32(stations + depth[:, None] * outward), .18, False)[:, 0]
         outline = np.vstack([quad[:index + 1], expanded, quad[index + 1:]])
-        results.append(BowedPrintPreview(index, traces, outline, band))
+        results.append(MeasuredPrintPreview(index, traces, outline, band))
     return results[0] if len(results) == 1 else None
 
 
@@ -231,7 +232,7 @@ def _keep_protected_content(
 def suggest_displaced_print_preview(
     image: np.ndarray, quad: np.ndarray, evidence: dict, neighbors: list[np.ndarray], *,
     protected_regions: list[dict] | None = None,
-) -> BowedPrintPreview | None:
+) -> MeasuredPrintPreview | None:
     """Compare a recovered image edge and an inset transition on adjacent sides."""
     sides = [evidence.get(name) or {} for name in _PRINT_SIDES]
     weak = [i for i, side in enumerate(sides) if side.get("support", 0) <= .36
@@ -292,4 +293,4 @@ def suggest_displaced_print_preview(
         bands.append(proof)
     outline = np.vstack([points for i, corner in enumerate(quad)
                          for points in (corner[None], sections.get(i, np.empty((0, 2), dtype=np.float32)))])
-    return BowedPrintPreview(weak[0], traces, outline, bands[0], bands[1])
+    return MeasuredPrintPreview(weak[0], traces, outline, bands[0], bands[1])
