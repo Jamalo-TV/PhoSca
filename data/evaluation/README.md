@@ -6494,6 +6494,107 @@ The `fusion_ownership` profile moves to revision 3. Paired API receipts,
 browser views, source masks, controls and benchmarks are local under
 `runs/crop-quality/nested-fallback-contours/`.
 
+### Trace scene detail across a nested flatbed proposal
+
+The photoScanner repository publishes an album page with six physical
+prints mounted on ribbed orange backing. The original embedded raster
+is 4,960 × 7,014 RGB pixels at 600 dpi. At the pinned revision, the
+author's six `truth` quadrilaterals give coarse motif positions. On the
+top-left print the annotation starts 108–113 pixels inside the paper
+and 12–19 pixels inside the visible motif. The author annotations
+therefore support count and location checks. The paper and motif
+coverage measurements below use separate native edge drafts.
+[Pinned source and author's annotations](https://github.com/ndipatri/photoScanner/tree/1000a550af25257e53af921ba61b72b65fe54657/tests)
+
+```bash
+git clone --no-checkout https://github.com/ndipatri/photoScanner.git /tmp/phosca-photoscanner-source
+git -C /tmp/phosca-photoscanner-source show 1000a550af25257e53af921ba61b72b65fe54657:tests/reference/scan-83.pdf > /tmp/phosca-scan-83.pdf
+pdfimages -j /tmp/phosca-scan-83.pdf /tmp/phosca-scan-83-native
+sha256sum /tmp/phosca-scan-83.pdf /tmp/phosca-scan-83-native-000.jpg
+```
+
+The PDF SHA-256 is
+`0d1df3d0ad8e65661c6fa703b7664813da75554187a3e8976aaf82a99032f107`.
+The JPEG SHA-256 is
+`8fcd332f56b583759ef65f0982f9b45ca198109733d98a880c533c3fd95e6b48`.
+The mixed development replay used the same registered
+`1e95a1a9…` ONNX detector at proposal threshold 0.25 and confidence
+threshold 0.70. The second replay resizes the decoded original to
+2,480 × 3,507 with OpenCV area interpolation. These are two views of
+one page. Source reuse rights and separate rectified references are
+unverified. The scans and drafts stay in local development.
+
+In the native baseline the model supplies all six observed locations.
+The classical detector proposes six regions, including two containing
+only part of the image scene. Fusion retains both fragments as separate
+regions. The upper-right fragment omits 23.78% of its draft motif
+and 35.91% of its paper. Its lower proposal edge is 494–503 pixels
+inside the true motif's lower edge. The middle-right fragment omits
+35.73% of its motif and 47.45% of its paper. The larger proposals
+contain both draft motifs and still omit about 9% of the paper in
+each. At half resolution the upper-right extra drops out, while the
+retained upper-right mask omits 5.27% of the draft motif. The
+middle-right fragment remains.
+
+The count check considers a singleton contrast-region quad with one
+model-supported owner. Their IoU must be 0.55–0.78, at least 96% of the
+fragment must be inside the owner and every other claim must cover
+less than 8%. Two adjacent sides must have supported source lines.
+The other two must lack a supported or competing line in the native
+search band. Their middle segments must lie inside the owner. On each
+segment the check follows several separated scene edges through the
+proposed cut at two or more of three rectification widths. It keeps
+both measured segments as review marks, moves the fragment to the
+count review and holds the containing print's crops for review.
+Rejection or addition of the fragment remains a reviewer decision.
+
+| View | Visible prints | Active before | Active after | New count offers |
+| --- | ---: | ---: | ---: | ---: |
+| Native | 6 | 8 | 7 | 1 |
+| Half-size | 6 | 7 | 6 | 1 |
+
+The middle-right case triggers on both views. The native upper-right
+case needs a different test because its lower cut crosses a smooth
+area of the scene. The change leaves the case open. It preserves the
+segmentation geometry of the six larger regions. A paper overlay and
+a borderless overlay with an observable intensity step keep separate
+rows across both tested quarter-turn orientations. The generated
+scene with both continuous cuts moves to review in the same tests.
+On this page the additional count check took 84 ms median CPU time
+at native size and 23 ms at half size over eight warm one-thread runs.
+Multipart upload at half size preserved the larger record's mask,
+warp quad and preview JPEG. Reprocessing kept both crop downloads
+and the legacy crop download held. The deferred polygon matches the
+removed contrast region at raster precision.
+Desktop and mobile display both traces and the original fragment
+outline. Opening or cancelling the correction leaves the count
+unchanged. Explicit mobile count confirmation withdraws just that
+fragment offer, preserves all six active rows and leaves the
+containing print's two crop downloads held.
+
+All eight paired benchmark reports agree with the previous revision
+on detection, geometry, crop modes and availability. The frozen
+detector recognized 18/18 prints. Its automatically found proposals
+passed 6/11 whole-print and 7/12 motif geometry checks. The seeded
+geometry replay passed 11/11 and 12/12. The count change advances
+the `fragmented_print_detection` validation profile to revision 4.
+
+```bash
+python -m pytest -q backend/tests/test_pipeline/test_fusion_ownership.py -k nested_scene_fragment
+```
+
+The same intake supplies a white embossed album pocket with one photo
+and an empty pocket above it (`scan-67`), and another page with two
+unobstructed photos and a previous upstream false contour spanning a
+112-pixel strip at the scanner edge (`scan-66`). The embedded JPEG
+hashes are `45c4f72fb886fcf84ca914b4c02fe8c774d31035bfdf28f0b4dad65b5527a691`
+and `9ae5f44a33eb5dce124e4efd5573f7e7b267881330eee1dde4c03f2182487534`.
+On the former, the mixed baseline has four active proposals in the
+native view and three at half size. The remaining pocket and overlap
+errors need material and count checks of their own. The page, native
+source traces and draft masks are recorded locally under
+`runs/crop-quality/nested-scene-fragment/`.
+
 ### Review a fallback outline crossing the album edge
 
 The same Golden 26 180° JPEG75 development raster has a third false

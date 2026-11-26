@@ -14,8 +14,12 @@ from app.pipeline.fusion_ownership import (
     BORROWED_FALLBACK_EDGE, NESTED_FALLBACK_CONTOUR, NESTED_FALLBACK_CONTOUR_REVIEW,
     deferred_neighbor_masks, nested_fallback_contour_spans,
 )
+from app.pipeline.geometry import order_quad_cyclic
 from app.pipeline.image_ops import load_image
-from app.pipeline.segmentation import SegmentationResult, _flag_crossing_fallback_contours, _make_detection, fuse_candidate_evidence
+from app.pipeline.segmentation import (
+    SegmentationResult, _defer_nested_scene_fragments, _flag_crossing_fallback_contours,
+    _make_detection, fuse_candidate_evidence,
+)
 
 
 _PAGE_04 = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_04.jpg"
@@ -40,6 +44,59 @@ _NESTED_CHILDREN = (
     [(638, 1502), (1283, 1159), (1288, 1789), (647, 1770)],
 )
 _NEARBY_PRINT = [(400, 142), (1390, 125), (1395, 803), (431, 817)]
+
+
+@pytest.mark.parametrize("turn", [False, True])
+@pytest.mark.parametrize("separate_layer", [None, "paper", "tone"])
+def test_nested_scene_fragment_is_deferred_only_when_the_scene_crosses_both_cuts(turn, separate_layer):
+    image = np.full((1000, 1050, 3), 135, np.uint8)
+    image[86:906, 80:973] = 230
+    image[112:875, 105:945] = (50, 85, 110)
+    features = [(297, 193), (389, 194), (550, 197), (655, 190), (817, 193), (905, 186),
+                (252, 239), (252, 359), (259, 492), (256, 664), (259, 813)]
+    for center in features:
+        cv2.ellipse(image, center, (12, 18), 15, 0, 360, (160, 125, 200), -1)
+    if separate_layer == "paper":
+        image[192:875, 255:945] = 231
+        image[206:861, 268:933] = (85, 95, 120)
+    elif separate_layer == "tone":
+        # A borderless overlay can leave similar scene details on both sides.
+        patch = image[192:875, 255:945]
+        patch[:] = np.clip(patch.astype(np.int16) + 33, 0, 255)
+    if turn:
+        image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+    height, width = image.shape[:2]
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+
+    def proposal(outline, confidence, source, detector, families, cluster):
+        points = np.float32(outline)
+        if turn:
+            points = order_quad_cyclic(np.column_stack((width - 1 - points[:, 1], points[:, 0])))
+        item = _make_detection(
+            box={}, points=points, confidence=confidence, image_width=width, image_height=height,
+            settings=settings, source=source, detector_source=detector,
+        )
+        assert item is not None and item.geometry_valid and not item.review_reasons
+        return replace(item, mask={**item.mask, "fusion": {
+            "cluster_id": cluster, "proposal_families": families, "proposal_count": len(families),
+        }})
+
+    parent = proposal([(80, 86), (972, 86), (972, 905), (80, 905)],
+                      .93, "yolo_seg_mask", "yolo_onnx", ["model"], 0)
+    child = proposal([(255, 192), (944, 192), (944, 874), (255, 874)],
+                     .68, "classical_border_quad", "contrast_region", ["classical"], 1)
+    baseline = SegmentationResult([parent, child], {"fallback_used": True})
+    result = _defer_nested_scene_fragments(image, baseline)
+
+    if separate_layer:
+        assert result is baseline
+        return
+    assert result.detections == [replace(parent, review_reasons=[NESTED_FALLBACK_CONTOUR_REVIEW])]
+    offer, = result.metadata["fusion"]["deferred_print_proposals"]
+    assert offer["reason"] == NESTED_FALLBACK_CONTOUR
+    assert offer["parent_cluster_id"] == 0
+    assert len(offer["polygon"]) == 4
+    assert len(offer["interior_edge_traces"]) == 2
 
 
 def _proposals(image, turn):

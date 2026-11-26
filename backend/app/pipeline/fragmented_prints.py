@@ -12,7 +12,7 @@ from app.pipeline.print_edges import (
 )
 
 
-FRAGMENTED_PRINT_REVISION = 3
+FRAGMENTED_PRINT_REVISION = 4
 SOURCE_FRAGMENT_PROPOSAL = "possible_source_fragmented_print"
 SOURCE_FRAGMENT_GROUP_REVIEW = "SOURCE_FRAGMENT_GROUP_REVIEW"
 FRAGMENTED_PRINT_REVIEW = "FRAGMENTED_PRINT_REVIEW"
@@ -41,6 +41,39 @@ def _image_continues_across(image: np.ndarray, strip: np.ndarray, width: int) ->
             locations[label] = float(np.median(crossing))
     extended = set(np.intersect1d(labels[8], labels[24])) & locations.keys()
     return len(extended) >= 2 and len(locations) >= 3 and np.ptp(list(locations.values())) >= .40 * width
+
+
+def nested_scene_fragment_continuities(
+    image: np.ndarray, outer: np.ndarray, fragment: np.ndarray,
+) -> list[np.ndarray]:
+    """Trace two adjacent cuts through scene detail in a contained proposal."""
+    directions = np.roll(fragment, -1, axis=0) - fragment
+    lengths = np.linalg.norm(directions, axis=1)
+    if lengths.min() < 320:
+        return []
+    radius = int(np.clip(round(.014 * lengths.min()), 12, 24))
+    strong, traces = [], []
+    for index, (start, direction) in enumerate(zip(fragment, directions, strict=True)):
+        stop = start + direction
+        line, side = _side_line(image, start, stop, radius)
+        if side["ambiguous"]:
+            return []
+        if line is not None and side["support"] >= .85 and (side["corner_support"] or 0) >= .70:
+            strong.append(index)
+            continue
+        if line is not None or side["support"] > .30:
+            return []
+        first, last = start + .10 * direction, stop - .10 * direction
+        depth = np.float32([-direction[1], direction[0]]) * .015
+        strip = np.float32([first - depth, last - depth, last + depth, first + depth])
+        if any(cv2.pointPolygonTest(outer, tuple(point), True) < 4 for point in strip):
+            return []
+        if sum(_image_continues_across(image, strip, width) for width in (600, 768, 1000)) < 2:
+            return []
+        traces.append(np.float32([first, last]))
+    if len(strong) != 2 or (strong[1] - strong[0]) == 2:
+        return []
+    return traces
 
 
 def suggest_dark_mounted_outline(
