@@ -4518,18 +4518,60 @@ def _offer_unclaimed_tiled_prints(
     })
 
 
+def _centered_tile_print_offer(
+    source: np.ndarray, image: np.ndarray, seed: SegmentationDetection, original_outline: np.ndarray,
+    claims: list[dict], infer: Callable[[np.ndarray], list[SegmentationDetection]],
+    inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
+) -> list[dict] | None:
+    """Try one closer view of an unclaimed print with an existing native fit."""
+    height, width = source.shape[:2]
+    tile_width, tile_height = round(.56 * width), round(.60 * height)
+    original = _detection_polygon(seed)
+    center = (original.min(axis=0) + original.max(axis=0)) / 2 * [width - 1, height - 1]
+    left = min(max(round(center[0] - tile_width / 2), 0), width - tile_width)
+    top = min(max(round(center[1] - tile_height / 2), 0), height - tile_height)
+    right, bottom = left + tile_width, top + tile_height
+    candidates = _tile_detections_on_page(infer(image[top:bottom, left:right]), (left, top, right, bottom), width, height)
+    matches = []
+    for candidate in candidates:
+        polygon = _detection_polygon(candidate)
+        agreement = normalized_polygon_overlap(polygon, original, raster_size=512).iou
+        if agreement >= .65:
+            matches.append((candidate, polygon, agreement))
+    if len(matches) != 1:
+        return None
+    (candidate, polygon, agreement), = matches
+    if (candidate.confidence < .80 or agreement < .90 or _detection_boundary_evidence(candidate, *inputs)["score"] < .80
+            or tiled_outline_conflicts(candidate.mask["polygon"], claims, width, height)):
+        return None
+    outline = tile_print_outline(source, polygon, require_clear_sides=True)
+    if outline is None:
+        return None
+    outline = order_quad_cyclic(outline)
+    if np.max(np.linalg.norm(outline - order_quad_cyclic(original_outline), axis=1)) > 4:
+        return None
+    fit = outline / np.float32([width - 1, height - 1])
+    if any(normalized_polygon_overlap(fit, observed, raster_size=512).iou < .85 for observed in (original, polygon)):
+        return None
+    normalized = _normalized_polygon(outline, width, height)
+    return None if tiled_outline_conflicts(normalized, claims, width, height) else normalized
+
+
 def _collect_tiled_print_offers(
     source: np.ndarray, image: np.ndarray, detections: list[SegmentationDetection],
     model_evidence: dict[int, dict[str, float]], infer: Callable[[np.ndarray], list[SegmentationDetection]],
     inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
-) -> list[list[dict]]:
+) -> tuple[list[list[dict]], tuple[SegmentationDetection, np.ndarray] | None]:
     candidates, evidence, _ = _recover_dense_prints(image, detections, model_evidence, infer, inputs)
     height, width = source.shape[:2]
     claims = [item.mask for item in detections]
     offers = []
+    retry_seed = None
     for index, candidate in enumerate(candidates):
+        strong = candidate.confidence >= .80
         if (candidate.mask.get("detector_source") != "yolo_onnx_tiled"
-                or candidate.confidence < .80 or evidence[index]["score"] < .80):
+                or candidate.confidence < .65 or evidence[index]["score"] < .80
+                or (not strong and retry_seed is not None)):
             continue
         if tiled_outline_conflicts(candidate.mask["polygon"], claims, width, height):
             continue
@@ -4537,11 +4579,16 @@ def _collect_tiled_print_offers(
             outline = tile_print_outline(source, _detection_polygon(candidate))
         except (cv2.error, ValueError, np.linalg.LinAlgError):
             continue
-        if outline is not None:
-            normalized = _normalized_polygon(outline, width, height)
-            if not tiled_outline_conflicts(normalized, claims, width, height):
-                offers.append(normalized)
-    return offers
+        if outline is None:
+            continue
+        normalized = _normalized_polygon(outline, width, height)
+        if tiled_outline_conflicts(normalized, claims, width, height):
+            continue
+        if strong:
+            offers.append(normalized)
+        else:
+            retry_seed = (candidate, outline)
+    return offers, retry_seed
 
 
 def _collect_rotated_print_offers(
@@ -4704,17 +4751,30 @@ def _segment_album_page(
                     review_started = perf_counter()
                     tile_review = {}
                     try:
-                        tile_offers.extend(_collect_tiled_print_offers(
+                        direct, retry_seed = _collect_tiled_print_offers(
                             source, image, detections, model_evidence, lambda frame: infer(frame)[0], inputs,
-                        ))
+                        )
+                        tile_offers.extend(direct)
                         if tile_offers:
                             # A successful tile pass justifies two extra full-page views.
-                            rotated = _collect_rotated_print_offers(
-                                source, image, detections, tile_offers, lambda frame: infer(frame)[0],
-                                settings.yolo_confidence_threshold,
+                            try:
+                                rotated = _collect_rotated_print_offers(
+                                    source, image, detections, tile_offers, lambda frame: infer(frame)[0],
+                                    settings.yolo_confidence_threshold,
+                                )
+                            except Exception as exc:  # The centered view can still corroborate its seed.
+                                tile_review["rotated_error"] = str(exc)
+                            else:
+                                tile_offers.extend(rotated)
+                                tile_review["rotated_candidates"] = len(rotated)
+                        if retry_seed is not None:
+                            claims = [item.mask for item in detections] + [{"polygon": outline} for outline in tile_offers]
+                            centered = _centered_tile_print_offer(
+                                source, image, *retry_seed, claims, lambda frame: infer(frame)[0], inputs,
                             )
-                            tile_offers.extend(rotated)
-                            tile_review["rotated_candidates"] = len(rotated)
+                            if centered is not None:
+                                tile_offers.append(centered)
+                                tile_review["centered_candidate"] = True
                     except Exception as exc:  # Keep earlier proposals if an optional view fails.
                         tile_review["error"] = str(exc)
                     metadata["tiled_print_review"] = {

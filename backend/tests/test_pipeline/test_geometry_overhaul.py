@@ -92,6 +92,56 @@ def test_partial_dense_tiles_improve_observed_print_and_keep_unobserved_pair(mon
     assert result_evidence[result.index(winner)]["score"] == .85
 
 
+@pytest.mark.parametrize("case", ["confirmed", "competing_match", "edge_missing", "fit_drift", "existing_claim"])
+def test_centered_tile_retry_requires_unique_native_agreement(case) -> None:
+    from app.pipeline import segmentation
+
+    page = np.full((1001, 1001, 3), (120, 68, 41), np.uint8)
+    page[400:601, 400:601] = (207, 230, 232)
+    page[416:585, 416:585] = (69, 60, 101)
+    initial = _detection({"x1": .4, "y1": .4, "x2": .6, "y2": .6}, .69, family="model")
+    fit = np.float32([[400, 400], [600, 400], [600, 600], [400, 600]])
+    confirmation = _detection({"x1": 180 / 560, "y1": 200 / 600, "x2": 380 / 560, "y2": 400 / 600}, .91, family="model")
+    matches = [confirmation]
+    claims = []
+    if case == "competing_match":
+        matches.append(_detection({"x1": 235 / 560, "y1": 200 / 600, "x2": 380 / 560, "y2": 400 / 600}, .82, family="model"))
+    if case == "edge_missing":
+        page[370:451, 370:631] = (120, 68, 41)
+    if case == "fit_drift":
+        fit += (0, 5)
+    if case == "existing_claim":
+        claims.append(_detection({"x1": .54, "y1": .55, "x2": .74, "y2": .75}, .88, family="model").mask)
+    calls = []
+
+    def infer(frame):
+        calls.append(frame.shape)
+        return matches
+
+    found = segmentation._centered_tile_print_offer(
+        page, page, initial, fit, claims, infer, segmentation._boundary_inputs(page),
+    )
+    assert calls == [(601, 561, 3)]
+    if case == "confirmed":
+        assert found is not None
+        assert np.allclose([(p["x"], p["y"]) for p in found], fit / 1000)
+        other = _detection({"x1": .04, "y1": .05, "x2": .28, "y2": .25}, .88, family="model")
+        active = segmentation.SegmentationResult([other], {})
+        suggested = segmentation._offer_unclaimed_tiled_prints(page, active, [found])
+        offer, = suggested.metadata["fusion"]["deferred_print_proposals"]
+        assert suggested.detections == active.detections
+        assert offer["reason"] == "possible_tiled_print"
+        assert offer["polygon"] == found
+        # A competing claim may become visible only after classical fusion.
+        pending = {**offer, "polygon": other.mask["polygon"], "source_mask": initial.mask}
+        late_claim = segmentation.SegmentationResult(active.detections, {
+            "fusion": {"deferred_print_proposals": [pending]},
+        })
+        assert segmentation._offer_unclaimed_tiled_prints(page, late_claim, [found]) is late_claim
+    else:
+        assert found is None
+
+
 def test_album_deskew_requires_page_level_orientation() -> None:
     from app.pipeline.page_deskew import album_rotation
 

@@ -2206,6 +2206,52 @@ The eight comparison runs retain the previous detection, crop and
 count-review results for their existing inputs.
 Local receipts are under `runs/crop-quality/opposing-print-views/`.
 
+#### Confirm a weak tile mask from a centered view
+
+Dense tile review revision 6 can retry one otherwise unclaimed tile
+winner per eligible page. The first mask must have confidence in
+`[0.65, 0.80)`, boundary score at least 0.80 and a supported native
+paper outline. The second view uses 56% of the page width and 60%
+of its height. It is centered on the mask bounds and clamped to the
+page. The same detector must return one matching mask at confidence
+and boundary score at least 0.80. A second mask with IoU of at least
+0.65 to the first proposal makes the match ambiguous. The unique
+match needs at least 0.90 mask IoU and four unambiguous source sides
+at support 0.90 or higher. Its native outline must reach 0.85 IoU
+against both masks and agree with the first native fit within four
+source pixels at each corner.
+
+Development spread U039 has SHA-256
+`d82b6a755c4dfa72a98a3a68251458e6b658b7db57140b40ee00e55adbfedebd`.
+The registered development checkpoint has SHA-256
+`1e95a1a90ff897df7099ff80675186ec1d8145f7bb07559fe918b3dd3a6db748`.
+The tile score rises from 0.692 to 0.912.
+The masks reach 0.968 IoU and the fitted corners differ by at most
+3.44 native pixels. The bottom print next to the binding on the left
+leaf appears in count review at 0.97435 IoU against the draft.
+Existing active detections and earlier count offers keep priority.
+Post-fusion validation still vetoes any overlap with current or
+pending paper claims. A separate missed print on U039 remains held
+back by a crossing classical contour.
+
+The same new offer appears at full size after JPEG75 compression.
+The JPEG55 derivative has only two eligible full-page model
+proposals, so it does not start the existing tile review. The
+75%-size JPEG75 derivative also adds no centered offer. All five
+original spiral captures keep the same active detections. The other
+four keep their previous count offers. A separate single-thread CPU
+replay measured the new view and verification at 178 ms on the
+original and 257 ms on JPEG75.
+
+The upload and reanalysis replay reproduces the offer. Adding the
+print requires current count revision and explicit confirmation.
+Reprocessing provides an untrimmed review image. Whole-print and
+motif downloads both remain in geometry review. All eight frozen and
+development comparisons keep their detection and crop metrics in
+both modes. These measurements use the registered development
+checkpoint and draft annotations.
+Local receipts are under `runs/crop-quality/centered-tile-review/`.
+
 #### Review fabric along the capture frame
 
 Fusion ownership revision 7 measures otherwise unresolved, aspect-invalid

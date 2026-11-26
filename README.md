@@ -79,9 +79,16 @@ Findet die Kachelsuche einen solchen Abzug, prüft PhoSca auch die um
 90 und 270 Grad gedrehten Modellansichten. Ein weiterer Vorschlag
 braucht eine eindeutige Übereinstimmung dieser beiden Ansichten und
 vier klar messbare Papierkanten in den Originalpixeln.
+Ein Kachelvorschlag mit schwächerer Modellkonfidenz und messbarem
+Papierrand kann eine zusätzliche Modellansicht auslösen. PhoSca
+zentriert einen engeren Ausschnitt um diesen Vorschlag. Für einen
+neuen Eintrag in der Anzahlprüfung müssen beide Masken und ihre
+nachgemessenen Papierecken übereinstimmen. Die zweite Ansicht muss
+vier eindeutige Kanten im Original bestätigen.
 Die Anzahl erhöht sich erst, wenn du den eigenen Papierabzug am
 Original bestätigst. Danach prüfst du seine Ecken und beide Zuschnitte.
-[Kachelprüfung](data/evaluation/README.md#missing-prints-in-count-review)
+[Kachelprüfung](data/evaluation/README.md#missing-prints-in-count-review) ·
+[Zweite Kachelansicht](data/evaluation/README.md#confirm-a-weak-tile-mask-from-a-centered-view)
 
 Bei sehr schmalen Modellkonturen am Aufnahmerand vergleicht PhoSca
 Farbe und Oberflächenstruktur mit der Umgebung ausserhalb der
