@@ -12,13 +12,13 @@ import {
   countGroupReviewError, CountGroupReview, crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridRimHint,
   filmGridReason, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
-  borrowedFallbackProposal, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints, frameBackingProposal,
+  borrowedFallbackProposal, captureFabricProposal, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints, frameBackingProposal,
   getDeferredParentCropHints, getDeferredPrintEvidence, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview,
-  isNestedFallbackProposal, requiresStandalonePrintFlag, projectivePrintProposal, standalonePrintReviewErrors,
+  isNestedFallbackProposal, requiresStandalonePrintFlag, projectivePrintProposal, standalonePrintReviewErrors, tiledPrintProposal,
   scannerBackingHint, scannerBackingReason,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
@@ -1112,7 +1112,8 @@ function CropReview({ albumId, goHome }) {
           }}>
           {proposal.reason === darkBackingProposal ? `Dunkle Fläche prüfen${deferredProposals.length > 1 ? ` (${index + 1})` : ""}`
             : isNestedFallbackProposal(proposal.reason) ? `Innenkontur ${index + 1} prüfen`
-              : proposal.reason === projectivePrintProposal ? "Vorgeschlagenen Abzug bearbeiten"
+              : proposal.reason === captureFabricProposal ? `Stoff am Aufnahmerand ${index + 1} prüfen`
+              : [projectivePrintProposal, tiledPrintProposal].includes(proposal.reason) ? `Vorgeschlagenen Abzug ${index + 1} prüfen`
               : embossedAlbumAction(proposal.reason) ?? ([frameBackingProposal, borrowedFallbackProposal].includes(proposal.reason) ? `Vorschlag ${index + 1} am Aufnahmerand prüfen`
                 : "Möglichen gemeinsamen Abzug prüfen")}
         </button>;

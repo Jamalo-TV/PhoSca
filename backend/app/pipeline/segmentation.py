@@ -15,6 +15,7 @@ from app.pipeline.album_leaf_review import (
     ALBUM_LEAF_COUNT_REVIEW, ALBUM_LEAF_REVIEW_CHILD, ALBUM_LEAF_REVIEW_TRACES, album_leaf_review_traces,
 )
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves
+from app.pipeline.capture_fabric_review import CAPTURE_FABRIC_PROPOSAL, capture_fabric_traces
 from app.pipeline.crossing_prints import (
     CROSSING_PRINT_REVIEW, crossing_print_outlines, near_leaf_edge_traces, staggered_print_source_traces,
 )
@@ -4315,6 +4316,56 @@ def _offer_dark_mounted_print(image: np.ndarray, result: SegmentationResult) -> 
     })
 
 
+def _defer_capture_fabric_claims(source: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    height, width = source.shape[:2]
+    candidates = [
+        index for index, item in enumerate(result.detections)
+        if item.mask.get("detector_source") == "yolo_onnx" and not item.geometry_valid
+        and set(item.review_reasons) <= {"aspect_ratio_too_wide", "aspect_ratio_too_tall"}
+        and item.review_reasons and not item.mask.get("warp_quad")
+        and len(item.mask.get("polygon") or []) >= 4
+        and not item.mask.get("visible_polygon")
+        and (item.mask.get("fusion") or {}).get("proposal_families") == ["model"]
+    ]
+    contours = [normalized_vertices_to_pixels(_detection_polygon(result.detections[index]), width, height)
+                for index in candidates]
+    try:
+        traces = capture_fabric_traces(source, contours)
+    except (cv2.error, ValueError):
+        return result
+    if not traces:
+        return result
+    fusion = result.metadata.get("fusion") or {}
+    pending = list(fusion.get("deferred_print_proposals") or [])
+    next_id = max((offer["id"] for offer in pending), default=-1) + 1
+    deferred = set()
+    for local, spans in traces.items():
+        index = candidates[local]
+        item = result.detections[index]
+        try:
+            quad, _ = quad_from_polygon(contours[local])
+            quad = order_quad_cyclic(np.clip(quad, 0, [width - 1, height - 1]))
+        except (cv2.error, ValueError):
+            continue
+        pending.append({
+            "id": next_id, "reason": CAPTURE_FABRIC_PROPOSAL,
+            "polygon": _normalized_polygon(quad, width, height),
+            "visible_polygon": item.mask["polygon"],
+            "source_mask": {key: item.mask[key] for key in ("source", "detector_source", "polygon")},
+            "fabric_similarity_traces": [_normalized_polygon(span, width, height) for span in spans],
+            "fusion_cluster_id": item.mask["fusion"]["cluster_id"],
+            "proposal_confidence": item.confidence,
+        })
+        next_id += 1
+        deferred.add(index)
+    if not deferred:
+        return result
+    return SegmentationResult(
+        [item for index, item in enumerate(result.detections) if index not in deferred],
+        {**result.metadata, "fusion": {**fusion, "deferred_print_proposals": pending}},
+    )
+
+
 def _review_truncated_dark_mount(
     image: np.ndarray, result: SegmentationResult, claims: list[np.ndarray],
 ) -> SegmentationResult:
@@ -4391,6 +4442,7 @@ def segment_album_page(
                 result = _flag_crossing_fallback_contours(source, result)
                 result = _flag_album_leaf_count_review(source, result)
                 result = _offer_dark_mounted_print(source, result)
+                result = _defer_capture_fabric_claims(source, result)
         if tile_offers:
             result = _offer_unclaimed_tiled_prints(evidence_source, result, tile_offers)
         return result

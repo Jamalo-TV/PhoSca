@@ -83,6 +83,15 @@ Die Anzahl erhöht sich erst, wenn du den eigenen Papierabzug am
 Original bestätigst. Danach prüfst du seine Ecken und beide Zuschnitte.
 [Kachelprüfung](data/evaluation/README.md#missing-prints-in-count-review)
 
+Bei sehr schmalen Modellkonturen am Aufnahmerand vergleicht PhoSca
+Farbe und Oberflächenstruktur mit der Umgebung ausserhalb der
+Albumseite. Sichtbare Papierkanten schützen angeschnittene Abzüge.
+Deutet die Messung auf Unterlage hin, zeigt die Anzahlprüfung die
+Kontur und die gemessenen Stellen separat. Du kannst einen dort
+erkennbaren Papierabzug zur Geometrieprüfung übernehmen oder die
+Anzahl ohne den Stoffvorschlag bestätigen.
+[Prüfung auf Stoff am Aufnahmerand](data/evaluation/README.md#review-fabric-along-the-capture-frame)
+
 PhoSca gleicht Vorschläge mit den Originalpixeln ab. Es prüft
 überlappende Masken, Helligkeits- und Farbverläufe entlang möglicher
 Papierkanten sowie Anzeichen für Albumfenster, Negativhüllen, getrennte

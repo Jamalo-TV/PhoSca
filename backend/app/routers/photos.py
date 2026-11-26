@@ -21,6 +21,7 @@ from app.database import get_async_session
 from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PageStatus, PhotoStatus, ProcessingRun, StageRun
 from app.pipeline.adjacent_stock_review import ADJACENT_STOCK_REVIEW_SOURCE
 from app.pipeline.bowed_edge_review import MEASURED_PRINT_PREVIEW_SOURCES
+from app.pipeline.capture_fabric_review import CAPTURE_FABRIC_PROPOSAL
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
 from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE, reviewed_outline_covers_traces
 from app.pipeline.dark_album_review import DARK_ALBUM_PROPOSAL
@@ -661,9 +662,11 @@ async def create_manual_photo(
         mask["projective_outline_review"] = True
     nested_edge_offer = (deferred or {}).get("reason") == NESTED_EDGE_CONTOUR
     tiled_offer = (deferred or {}).get("reason") == TILED_PRINT_PROPOSAL
-    if payload.confirm_standalone_print and not (nested_edge_offer or tiled_offer):
+    fabric_offer = (deferred or {}).get("reason") == CAPTURE_FABRIC_PROPOSAL
+    standalone_offer = nested_edge_offer or tiled_offer or fabric_offer
+    if payload.confirm_standalone_print and not standalone_offer:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="standalone_print_confirmation_stale")
-    if nested_edge_offer or tiled_offer:
+    if standalone_offer:
         if not payload.confirm_standalone_print:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="standalone_print_confirmation_required")
         match = normalized_polygon_overlap(
@@ -675,7 +678,7 @@ async def create_manual_photo(
                                 detail="standalone_print_outline_outside_proposal")
         mask["projective_outline_review"] = True
     elif deferred is None and any(
-        candidate.get("reason") in {NESTED_EDGE_CONTOUR, TILED_PRINT_PROPOSAL}
+        candidate.get("reason") in {NESTED_EDGE_CONTOUR, TILED_PRINT_PROPOSAL, CAPTURE_FABRIC_PROPOSAL}
         and _same_visible_outline(candidate.get("polygon"), quad, native_size=(width, height))
         for candidate in pending
     ):
@@ -739,8 +742,9 @@ async def create_manual_photo(
             (photo.enhancement_applied or {}).get("review_rejected_detection"), photo.bounding_box, photo.segmentation_mask,
         )
     ]
-    if tiled_offer:
-        claims = [candidate for candidate in pending if candidate["id"] != deferred_id]
+    if tiled_offer or fabric_offer:
+        claims = [candidate for candidate in pending if candidate["id"] != deferred_id
+                  and not (fabric_offer and candidate.get("reason") == CAPTURE_FABRIC_PROPOSAL)]
         for photo in active:
             claims.append(photo.segmentation_mask or {})
             correction = (photo.enhancement_applied or {}).get("correction") or {}
@@ -752,8 +756,10 @@ async def create_manual_photo(
                 claims.append({"polygon": [{"x": box[x], "y": box[y]} for x, y in (
                     ("x1", "y1"), ("x2", "y1"), ("x2", "y2"), ("x1", "y2"),
                 )]})
-        if any(tiled_outline_conflicts(outline, claims, width, height) for outline in (quad, deferred["polygon"])):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="tiled_print_claim_conflict")
+        outlines = (quad, deferred["polygon"]) if tiled_offer else (quad,)
+        if any(tiled_outline_conflicts(outline, claims, width, height) for outline in outlines):
+            detail = "capture_fabric_claim_conflict" if fabric_offer else "tiled_print_claim_conflict"
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
     if (nested_edge_offer or (deferred or {}).get("reason") == EMBOSSED_CARRIER_PROPOSAL) and any(
         _same_visible_outline((photo.segmentation_mask or {}).get("warp_quad"), quad, native_size=(width, height))
         for photo in active

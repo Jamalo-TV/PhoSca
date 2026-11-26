@@ -206,6 +206,51 @@ async def test_tiled_print_requires_own_paper_confirmation_and_keeps_crops_held(
         assert page.processing_metadata["steps"]["segmentation"]["fusion"]["deferred_print_proposals"] == []
 
 
+async def test_capture_fabric_choices_remain_reversible_and_cannot_restore_twice(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import Page
+    from app.pipeline.capture_fabric_review import CAPTURE_FABRIC_PROPOSAL
+
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    album_id, page_id, _ = await _seed_review_data()
+
+    def proposal(offer_id, left, right):
+        outline = [{"x": x, "y": y} for x, y in ((left, .03), (right, .03), (right, .17), (left, .17))]
+        return {"id": offer_id, "reason": CAPTURE_FABRIC_PROPOSAL, "polygon": outline}
+
+    first, alternative = proposal(0, .08, .79), proposal(1, .11, .76)
+    revision = str(uuid4())
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        page.processing_metadata = {"photo_count_revision": revision, "steps": {
+            "segmentation": {"fusion": {"deferred_print_proposals": [first, alternative]}},
+        }}
+        await session.commit()
+
+    url = f"/api/v1/pages/{page_id}/manual-photos"
+    payload = {"request_id": str(uuid4()), "deferred_proposal_id": first["id"],
+               "photo_count_revision": revision, "warp_quad": first["polygon"]}
+    refused = await client.post(url, json=payload)
+    assert (refused.status_code, refused.json()["detail"]) == (409, "standalone_print_confirmation_required")
+    accepted = await client.post(url, json={**payload, "confirm_standalone_print": True})
+    assert accepted.status_code == 201, accepted.text
+    assert accepted.json()["crop_download_urls"] == {"full_print": None, "image_only": None}
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        current = page.processing_metadata
+        assert current["steps"]["segmentation"]["fusion"]["deferred_print_proposals"] == [alternative]
+    retry = {**payload, "request_id": str(uuid4()), "deferred_proposal_id": alternative["id"],
+             "warp_quad": alternative["polygon"], "confirm_standalone_print": True}
+    stale = await client.post(url, json=retry)
+    assert (stale.status_code, stale.json()["detail"]) == (409, "deferred_print_proposal_stale")
+    overlap = await client.post(url, json={**retry, "photo_count_revision": current["photo_count_revision"]})
+    assert (overlap.status_code, overlap.json()["detail"]) == (409, "capture_fabric_claim_conflict")
+    photos = (await client.get(f"/api/v1/albums/{album_id}/photos")).json()
+    assert len(photos) == 2
+
+
 async def test_edge_trace_reads_the_exif_oriented_source_without_editing_review(client, monkeypatch):
     from PIL import Image
     from sqlalchemy import func, select

@@ -2206,6 +2206,39 @@ The eight comparison runs retain the previous detection, crop and
 count-review results for their existing inputs.
 Local receipts are under `runs/crop-quality/opposing-print-views/`.
 
+#### Review fabric along the capture frame
+
+Fusion ownership revision 7 measures otherwise unresolved, aspect-invalid
+model masks at the capture frame. It requires most of the mask to lie
+outside a warm, connected album surface. A short side of the proposal
+must show comparable chroma and high-frequency texture across its
+boundary in the source raster. A coherent colour change or narrow quiet
+paper rim vetoes the offer. The trace shows where the materials were
+compared. A stock edge hidden by texture or compression can remain
+ambiguous.
+
+On the souvenir card page, three frame masks move from the active count
+to reversible review, leaving the card and upper print among the
+two original active proposals. Both lower-print offers remain. The
+upload replay confirms the lower prints independently, dismisses the
+three fabric proposals through count review and holds both crop
+downloads after the right print is reprocessed. A separate restore
+test keeps the second overlapping alternative open and rejects
+restoring it over an active paper claim.
+
+The full-size and 75%-size JPEG75 replays still defer all three fabric
+proposals. The quarter-turn replay defers one and retains both matched
+lower prints in the active set.
+
+The production material check preserves all 108 controlled thin-rim
+variants derived from this source, plus five existing NerdScan proposals.
+A separate high-noise stress image can still lose the appearance of a
+narrow rim after compression. Those decisions stay reversible. Local
+receipts are under `runs/crop-quality/capture-fabric-review/`. The warm
+median for the three-proposal material check was 0.21 s on one development
+CPU thread during concurrent test runs. All eight comparison runs keep
+their previous detection, crop and count-review results.
+
 ### Scalloped paper on white scanner backing
 
 The ScanCropper development fixture pins two original rasters with five loose

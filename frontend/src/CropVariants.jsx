@@ -44,8 +44,9 @@ export const borrowedFallbackProposal = "possible_borrowed_print_edge";
 export const darkBackingProposal = "possible_dark_album_backing";
 export const projectivePrintProposal = "possible_projective_print";
 export const tiledPrintProposal = "possible_tiled_print";
+export const captureFabricProposal = "possible_capture_fabric";
 export function requiresStandalonePrintFlag(reason) {
-  return reason === nestedEdgeProposal || reason === tiledPrintProposal;
+  return reason === nestedEdgeProposal || reason === tiledPrintProposal || reason === captureFabricProposal;
 }
 const embossedPocketProposal = "possible_embossed_album_pocket";
 const embossedCarrierProposal = "possible_embossed_album_carrier";
@@ -64,9 +65,10 @@ export const standalonePrintConfirmation = "Hier liegt ein eigener Papierabzug."
 export const standalonePrintReviewErrors = {
   standalone_print_confirmation_required: "Bestätige, dass hier ein eigener Papierabzug aufliegt.",
   standalone_print_confirmation_stale: "Dieser Vorschlag hat sich geändert. Prüfe die aktualisierte Albumseite.",
-  standalone_print_outline_outside_proposal: "Setze die vier Ecken an den sichtbaren Papierrand des kleinen Vorschlags.",
+  standalone_print_outline_outside_proposal: "Setze die vier Ecken an den sichtbaren Papierrand des Vorschlags.",
   standalone_print_matches_detected_print: "Dieser Abzug ist bereits erfasst. Setze die Ecken an das Papier des weiteren Abzugs.",
   tiled_print_claim_conflict: "Der Vorschlag überschneidet sich mit einem erfassten Abzug. Prüfe die aktuelle Anzahl am Original.",
+  capture_fabric_claim_conflict: "Die gewählten Ecken überschneiden sich mit einem erfassten oder weiteren vorgeschlagenen Abzug.",
 };
 const deferredPrintReviewHints = {
   [nestedFallbackProposal]: {
@@ -103,6 +105,12 @@ const deferredPrintReviewHints = {
     countId: "tiled-print-count-hint",
     count: "Prüfe am Original, ob die gestrichelte Kontur einen weiteren Papierabzug zeigt.",
     draft: "Setze die vier Ecken an den sichtbaren Papierrand. Prüfe auch, ob der Rand Teil eines grösseren Abzugs ist.",
+  },
+  [captureFabricProposal]: {
+    countId: "capture-fabric-count-hint",
+    count: "Prüfe, ob die Konturen am Aufnahmerand auf der Unterlage liegen oder zu einem eigenen Papierabzug gehören.",
+    draft: "Ergänze den Abzug, wenn du seinen Papierrand am Original erkennst. Bei einem abgeschnittenen Rand hilft eine vollständige Aufnahme.",
+    evidence: "Die türkisen Linien zeigen Abschnitte mit ähnlicher Farbe und Struktur auf beiden Seiten.",
   },
   [embossedPocketProposal]: {
     countId: "embossed-pocket-count-hint",
@@ -149,6 +157,9 @@ const nestedEdgeEvidence = [
 ];
 const frameBackingEvidence = [
   { key: "surface_edge_traces", label: "Gemessener Materialwechsel am Aufnahmerand", color: "#0e7490", dash: [6, 4] },
+];
+const captureFabricEvidence = [
+  { key: "fabric_similarity_traces", label: "Ähnliche Struktur auf beiden Seiten", color: "#0e7490", dash: [6, 4] },
 ];
 const borrowedFallbackEvidence = [
   { key: "borrowed_edge_traces", label: "Gemeinsame Kante mit einem erfassten Abzug", color: "#c2410c", dash: [3, 4] },
@@ -242,6 +253,7 @@ export function getDeferredPrintEvidence(proposal) {
     : proposal?.reason === nestedFallbackProposal ? nestedFallbackEvidence
     : proposal?.reason === nestedEdgeProposal ? nestedEdgeEvidence
     : proposal?.reason === frameBackingProposal ? frameBackingEvidence
+    : proposal?.reason === captureFabricProposal ? captureFabricEvidence
     : proposal?.reason === borrowedFallbackProposal ? borrowedFallbackEvidence
     : proposal?.reason === projectivePrintProposal ? mountedPaperEvidence
     : embossedAlbumAction(proposal?.reason) ? embossedPocketEvidence : [];
@@ -253,6 +265,7 @@ export function getDeferredPrintEvidence(proposal) {
 export function standalonePrintNeedsConfirmation(reason) {
   return reason === darkBackingProposal || isNestedFallbackProposal(reason) || reason === frameBackingProposal
     || reason === borrowedFallbackProposal || reason === projectivePrintProposal || reason === tiledPrintProposal
+    || reason === captureFabricProposal
     || Boolean(embossedAlbumAction(reason));
 }
 
