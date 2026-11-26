@@ -6764,6 +6764,74 @@ and both crop modes. The validation profile advances the
 python -m pytest -q backend/tests/test_pipeline/test_embossed_carrier_paper.py
 ```
 
+### Review an embossed carrier around a detected print
+
+In the native scan 67 baseline a classical `edge_contour` surrounds
+97.1% of the active lower model mask and has IoU .583. Its polygon
+accounts for roughly 9.64 million native pixel centres and contains
+the entire independently fitted visible photo draft. About 43% of
+the broad footprint lies outside that draft. Phase measurements across
+the broad top and right edges support continuous embossed material.
+At the smaller print, the phase breaks on all four fitted sides.
+The broad bottom and left do not have equivalent measurements.
+
+The count check compares single classical outlines with one
+well-supported model child. The child must account for 45–68% IoU
+and at least 95% of its own mask must lie in the broad outline. The
+separate original-pixel fit must lie at least 98.5% inside it. A
+competing active, visible or pending proposal with at least 8% of
+its footprint inside the broad outline vetoes this path. The
+source bands around the broad contour exclude samples that can
+reach the original or measured child footprint. At least two
+sides need 40 of 97 phase-supported stations in long runs. A
+separate check looks for dark or chromatic content in the exposed
+ring after averaging the embossing cells.
+
+Three source intervals support the original native count hint.
+The upper interval spans about 2,020 pixels. The right intervals
+span about 1,260 and 420 pixels. A nearer stock boundary and a
+separate print beneath the film remain possible. In hard controls a
+second pale image can retain the crossing phase and pass the ring
+check. A more plainly visible separate print, and declared adjacent
+claims including a pending source mask, veto the count change.
+The larger proposal stays selectable and retains its raw source
+mask in neighbour checks. A linked addition requires explicit
+confirmation of another print. Using the known child's outline or
+a subregion of that print cannot consume the larger proposal.
+
+In the native multipart A/B comparison the active rows go from three
+to two, with one additional open count proposal. The actual lower
+print remains active. The wider upper proposal still needs review.
+The upper pocket offer, active masks, both crop-mode records and
+ordinary JPEGs match the prior build. The original plus all three
+registered right-angle turns and JPEG75/JPEG55 copies show three
+source intervals in the direct check. It took 273–376 ms of CPU
+time on one OpenCV thread. Across eight paired benchmarks, detection,
+geometry and both crop modes match the prior build. The count
+validation profile advances `embossed_album_pocket_review` to 2.
+Local receipts are under `runs/crop-quality/embossed-outer-carrier/exact/`.
+
+Desktop and mobile display the count hint and let the reviewer
+cancel without saving. The ordinary reprocess preserves the
+existing child and its two held modes with the carrier open. The
+unedited wide template crosses a protected region and the API
+rejects that save. On a separate test record, a manually marked
+outline in the exposed ring goes through the normal linked save
+and keeps both named downloads and the legacy trimmed route held.
+After the count decision the real child's old occlusion reason can
+clear. Its paper-boundary review, geometry and preview stay in place.
+
+The extra half-size proposal is a different failure. It lies
+within the lower print, with .186 IoU and about 99.95% containment.
+Scene texture crosses two internal sides. The remaining sides follow
+the print perimeter and continue beyond the small proposal. Nearly
+aligned copies of the same print can produce this relation. The
+half-size candidate remains active.
+
+```bash
+python -m pytest -q backend/tests/test_pipeline/test_embossed_carrier_paper.py -k carrier_count
+```
+
 The separate scan 66 replay showed no overlap with the 112-pixel
 historical scanner-bed proposal at either size. With the registered
 mixed detector and classical fallback, both views found the two

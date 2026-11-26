@@ -22,7 +22,7 @@ import {
   scannerBackingHint, scannerBackingReason,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
-  embossedPocketAction, embossedPocketProposal, embossedPocketReviewErrors,
+  embossedAlbumAction, embossedPocketReviewErrors,
   getSourceStripReview, SourceStripOutline, SourceStripReview, offPrintAdvisorySource, useAlbumPageMarkReview,
 } from "./CropVariants.jsx";
 import {
@@ -355,7 +355,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       if (deferredDraft) {
         await addManualPhoto(item.page_id, deferredDraft.requestId, quad, size, null, deferredDraft, {
           replaceMountedFragments: sourceFragmentDraft, confirmDarkBacking: darkBackingDraft,
-          confirmAlbumPocketPrint: deferredDraft.reason === embossedPocketProposal,
+          confirmAlbumPocketPrint: Boolean(embossedAlbumAction(deferredDraft.reason)),
         });
         onDeferredDraftClose(true);
         return;
@@ -1112,9 +1112,8 @@ function CropReview({ albumId, goHome }) {
           {proposal.reason === darkBackingProposal ? `Dunkle Fläche prüfen${deferredProposals.length > 1 ? ` (${index + 1})` : ""}`
             : proposal.reason === nestedFallbackProposal ? `Innenkontur ${index + 1} prüfen`
               : proposal.reason === projectivePrintProposal ? "Vorgeschlagenen Abzug bearbeiten"
-              : proposal.reason === embossedPocketProposal ? embossedPocketAction
-              : [frameBackingProposal, borrowedFallbackProposal].includes(proposal.reason) ? `Vorschlag ${index + 1} am Aufnahmerand prüfen`
-                : "Möglichen gemeinsamen Abzug prüfen"}
+              : embossedAlbumAction(proposal.reason) ?? ([frameBackingProposal, borrowedFallbackProposal].includes(proposal.reason) ? `Vorschlag ${index + 1} am Aufnahmerand prüfen`
+                : "Möglichen gemeinsamen Abzug prüfen")}
         </button>;
       })}
       <CountGroupReview groups={countGroups} selected={selectedCountGroup} busy={submitting} sourceUrl={item.preview_url}

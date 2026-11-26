@@ -3,9 +3,10 @@ import numpy as np
 import pytest
 
 from app.pipeline.embossed_album_pockets import (
-    POSSIBLE_EMBOSSED_ALBUM_PAPER_EDGES, embossed_carrier_paper_traces,
+    EMBOSSED_CARRIER_PROPOSAL, POSSIBLE_EMBOSSED_ALBUM_PAPER_EDGES, embossed_carrier_paper_traces,
 )
 from app.pipeline.perspective import correct_photo_crop
+from app.pipeline.segmentation import SegmentationDetection, SegmentationResult, _defer_embossed_pocket_claims
 
 
 _LOOSE_OUTLINE = np.float32([[211, 300], [1530, 300], [1529, 1346], [207, 1343]])
@@ -61,3 +62,45 @@ def test_embossed_carrier_traces_explain_held_crop_without_changing_either_mode(
     assert all(mode["status"] == "review_needed" for mode in modes.values())
     assert result.full_print_preview is None and result.image_only is None
     np.testing.assert_array_equal(result.image, prior.image)
+
+
+@pytest.mark.parametrize("condition", ["jacket", "visible_print", "active_neighbor", "pending_neighbor"])
+def test_embossed_carrier_count_preserves_inner_print_and_other_claims(condition):
+    image = cv2.copyMakeBorder(_album_with_print("embossed"), 0, 710, 0, 640, cv2.BORDER_REPLICATE)
+    shell = np.float32([[90, 155], [1645, 155], [1650, 1515], [90, 1515]])
+    other = np.float32([[107, 619], [203, 619], [203, 1001], [107, 1001]])
+    if condition == "visible_print":
+        cv2.fillConvexPoly(image, np.int32(other), (36, 60, 125))
+
+    def detection(points, *, model, cluster):
+        polygon = [{"x": x / 2399, "y": y / 2399} for x, y in points.tolist()]
+        box = {f"{axis}{side}": action(point[axis] for point in polygon)
+               for axis in ("x", "y") for side, action in ((1, min), (2, max))}
+        mask = {"source": "yolo_seg_mask" if model else "classical_border_quad", "polygon": polygon,
+                "detector_source": "yolo_onnx" if model else "edge_contour", "boundary_evidence": {"border_contrast": .88},
+                "fusion": {"cluster_id": cluster, "proposal_count": 1, "proposal_families": ["model" if model else "classical"]}}
+        return SegmentationDetection(box, mask, .89 if model else .68, 1.2, True, [])
+
+    jacket = detection(shell, model=False, cluster=0)
+    child = detection(_LOOSE_OUTLINE, model=True, cluster=1)
+    neighbor = detection(other, model=True, cluster=2)
+    detections = [jacket, child]
+    fusion = {"model_proposals": 1, "classical_proposals": 1}
+    if condition == "active_neighbor":
+        detections.append(neighbor)
+    if condition == "pending_neighbor":
+        disjoint = detection(other + [0, -510], model=True, cluster=2)
+        fusion["deferred_print_proposals"] = [
+            {"id": 0, "polygon": disjoint.mask["polygon"], "source_mask": neighbor.mask},
+        ]
+    prior = SegmentationResult(detections, {"fallback_used": True, "fusion": fusion})
+    result = _defer_embossed_pocket_claims(image, prior, .70)
+    if condition != "jacket":
+        assert result == prior
+        return
+    assert result.detections == [child]
+    offer, = result.metadata["fusion"]["deferred_print_proposals"]
+    assert offer["reason"] == EMBOSSED_CARRIER_PROPOSAL
+    assert offer["source_mask"]["polygon"] == jacket.mask["polygon"]
+    assert offer["contained_print_polygon"] == child.mask["polygon"]
+    assert len(offer["embossing_edge_traces"]) >= 2

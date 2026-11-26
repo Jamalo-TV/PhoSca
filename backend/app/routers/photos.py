@@ -29,7 +29,7 @@ from app.pipeline.decisions import (
     remember_ready_print_for_neighbor_review,
 )
 from app.pipeline.edge_trace import measure_edge_trace
-from app.pipeline.embossed_album_pockets import EMBOSSED_POCKET_PROPOSAL
+from app.pipeline.embossed_album_pockets import EMBOSSED_CARRIER_PROPOSAL, EMBOSSED_POCKET_PROPOSAL
 from app.pipeline.fragmented_prints import SOURCE_FRAGMENT_PROPOSAL
 from app.pipeline.geometry import normalized_polygon_overlap
 from app.pipeline.image_ops import load_image, normalized_box_to_pixels
@@ -652,7 +652,8 @@ async def create_manual_photo(
     mask = {"source": "manual_added", "manual_added": True, "polygon": quad, "visible_polygon": quad, "warp_quad": quad}
     if (deferred or {}).get("reason") == PROJECTIVE_PRINT_PROPOSAL:
         mask["projective_outline_review"] = True
-    is_pocket_offer = (deferred or {}).get("reason") == EMBOSSED_POCKET_PROPOSAL
+    embossed_reasons = (EMBOSSED_POCKET_PROPOSAL, EMBOSSED_CARRIER_PROPOSAL)
+    is_pocket_offer = (deferred or {}).get("reason") in embossed_reasons
     if payload.confirm_album_pocket_print and not is_pocket_offer:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_pocket_print_confirmation_stale")
     if is_pocket_offer:
@@ -664,9 +665,16 @@ async def create_manual_photo(
         )
         if match.second_containment < .75:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="album_pocket_outline_outside_proposal")
+        if inner := deferred.get("contained_print_polygon"):
+            existing = normalized_polygon_overlap(
+                [(point["x"], point["y"]) for point in inner], [(point["x"], point["y"]) for point in quad],
+            )
+            if existing.iou >= .85 or existing.second_containment >= .90:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    detail="album_carrier_matches_detected_print")
         mask["projective_outline_review"] = True
     elif deferred is None and any(
-        candidate.get("reason") == EMBOSSED_POCKET_PROPOSAL
+        candidate.get("reason") in embossed_reasons
         and _same_visible_outline(candidate.get("polygon"), quad, native_size=(width, height))
         for candidate in pending
     ):
@@ -703,6 +711,11 @@ async def create_manual_photo(
             (photo.enhancement_applied or {}).get("review_rejected_detection"), photo.bounding_box, photo.segmentation_mask,
         )
     ]
+    if (deferred or {}).get("reason") == EMBOSSED_CARRIER_PROPOSAL and any(
+        _same_visible_outline((photo.segmentation_mask or {}).get("warp_quad"), quad, native_size=(width, height))
+        for photo in active
+    ):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="album_carrier_matches_detected_print")
     replaced_fragments = []
     source_group = (deferred or {}).get("reason") == SOURCE_FRAGMENT_PROPOSAL
     if source_group:

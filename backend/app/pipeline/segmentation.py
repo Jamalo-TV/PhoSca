@@ -27,7 +27,9 @@ from app.pipeline.edge_prints import (
     clipped_fragment_needs_review, clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
     visible_capture_edge_traces,
 )
-from app.pipeline.embossed_album_pockets import EMBOSSED_POCKET_PROPOSAL, embossed_pocket_traces
+from app.pipeline.embossed_album_pockets import (
+    EMBOSSED_CARRIER_PROPOSAL, EMBOSSED_POCKET_PROPOSAL, embossed_outer_carrier_traces, embossed_pocket_traces,
+)
 from app.pipeline.frame_backing_review import FRAME_BACKING_COUNT_REVIEW, FRAME_BACKING_PROPOSAL, frame_backing_trace
 from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
@@ -4140,6 +4142,53 @@ def _adjacent_pocket_peer(box: dict[str, float], peer: dict[str, float]) -> bool
     return x_overlap >= .72 * width and .03 * depth <= gap <= .38 * depth
 
 
+def _embossed_carrier_offers(
+    image: np.ndarray, result: SegmentationResult, models: list[tuple[int, SegmentationDetection]], acceptance: float,
+) -> Iterator[tuple[int, np.ndarray, list[np.ndarray], list[dict]]]:
+    width, height = image.shape[1::-1]
+    outlines = [_detection_polygon(item) for item in result.detections]
+    strong = {index for index, item in models if item.confidence >= max(.85, acceptance)
+              and (item.mask.get("boundary_evidence") or {}).get("border_contrast", 0.) >= .72}
+    if not strong:
+        return
+    pending = (result.metadata.get("fusion") or {}).get("deferred_print_proposals") or []
+    unresolved = [points for offer in pending for points in (
+        offer.get("polygon"), offer.get("visible_polygon"), (offer.get("source_mask") or {}).get("polygon"),
+        (offer.get("source_mask") or {}).get("visible_polygon"),
+    ) if points and len(points) >= 3]
+    for index, item in enumerate(result.detections):
+        provenance = item.mask.get("fusion") or {}
+        if (not item.geometry_valid or item.review_reasons or item.mask.get("warp_quad") or item.mask.get("visible_polygon")
+                or item.mask.get("source") != "classical_border_quad" or item.mask.get("detector_source") != "edge_contour"
+                or provenance.get("proposal_families") != ["classical"] or provenance.get("proposal_count") != 1
+                or not .58 <= item.confidence <= .75):
+            continue
+        shell = outlines[index]
+        if len(shell) != 4 or not cv2.isContourConvex(shell) or not .15 <= cv2.contourArea(shell) <= .43:
+            continue
+        contained = [(peer, overlap) for peer, outline in enumerate(outlines) if peer != index
+                     and (overlap := normalized_polygon_overlap(shell, outline)).second_containment >= .08]
+        if len(contained) != 1:
+            continue
+        (peer, overlap), = contained
+        if peer not in strong or overlap.second_containment < .95 or not .45 <= overlap.iou <= .68:
+            continue
+        other_visible = [candidate.mask["visible_polygon"] for other, candidate in enumerate(result.detections)
+                         if other not in (peer, index) and candidate.mask.get("visible_polygon")]
+        if any(normalized_polygon_overlap(shell, [(p["x"], p["y"]) for p in polygon]).second_containment >= .08
+               for polygon in [*unresolved, *other_visible]):
+            continue
+        child = normalized_vertices_to_pixels(outlines[peer], width, height)
+        try:
+            outer = order_quad_cyclic(normalized_vertices_to_pixels(shell, width, height))
+            seed, _ = quad_from_polygon(child)
+            traces = embossed_outer_carrier_traces(image, outer, order_quad_cyclic(seed), child)
+        except (ValueError, cv2.error):
+            continue
+        if traces:
+            yield index, outer, traces, result.detections[peer].mask["polygon"]
+
+
 def _defer_embossed_pocket_claims(image: np.ndarray, result: SegmentationResult, acceptance: float) -> SegmentationResult:
     fusion = result.metadata.get("fusion") or {}
     if not result.metadata.get("fallback_used") or not fusion.get("model_proposals") or not 2 <= len(result.detections) <= 12:
@@ -4150,18 +4199,19 @@ def _defer_embossed_pocket_claims(image: np.ndarray, result: SegmentationResult,
         and item.mask.get("source") == "yolo_seg_mask" and item.mask.get("detector_source") == "yolo_onnx"
         and (item.mask.get("fusion") or {}).get("proposal_families") == ["model"]
     ]
-    peers = [item.bounding_box for _, item in models if item.confidence >= max(.85, acceptance)]
-    if not peers:
+    peer_boxes = [item.bounding_box for _, item in models if item.confidence >= max(.85, acceptance)]
+    if not peer_boxes:
         return result
     width, height = image.shape[1::-1]
     pending = list(fusion.get("deferred_print_proposals") or [])
     next_id = max((proposal["id"] for proposal in pending), default=-1) + 1
-    deferred = set()
+    offers = [(index, quad, traces, EMBOSSED_CARRIER_PROPOSAL, {"contained_print_polygon": child})
+              for index, quad, traces, child in _embossed_carrier_offers(image, result, models, acceptance)]
     for index, item in models:
         provenance = item.mask["fusion"]
         if (not .30 <= item.confidence < min(.70, acceptance) or provenance.get("proposal_count") != 1
                 or (provenance.get("boundary_evidence") or {}).get("border_contrast", 1.) > .53
-                or sum(_adjacent_pocket_peer(item.bounding_box, peer) for peer in peers) != 1):
+                or sum(_adjacent_pocket_peer(item.bounding_box, peer) for peer in peer_boxes) != 1):
             continue
         source_outline = normalized_vertices_to_pixels(_detection_polygon(item), width, height)
         try:
@@ -4170,23 +4220,28 @@ def _defer_embossed_pocket_claims(image: np.ndarray, result: SegmentationResult,
             traces = embossed_pocket_traces(image, quad)
         except (ValueError, cv2.error):
             continue
-        if not traces:
-            continue
+        if traces:
+            offers.append((index, quad, traces, EMBOSSED_POCKET_PROPOSAL, {}))
+    if not offers:
+        return result
+    deferred = set()
+    # Keep original offer IDs first for pages with both kinds of proposal.
+    for index, quad, traces, reason, extra in sorted(offers, key=lambda offer: offer[3] != EMBOSSED_POCKET_PROPOSAL):
+        item = result.detections[index]
         # The same continuous cover could hide a genuine paper print. Preserve
         # the proposal and its original ownership until explicit count review.
         pending.append({
-            "id": next_id, "reason": EMBOSSED_POCKET_PROPOSAL, "polygon": _normalized_polygon(quad, width, height),
+            "id": next_id, "reason": reason, "polygon": _normalized_polygon(quad, width, height),
             "visible_polygon": item.mask.get("visible_polygon") or item.mask["polygon"],
             "embossing_edge_traces": [_normalized_polygon(trace, width, height) for trace in traces],
             "source_mask": {key: item.mask[key] for key in ("source", "detector_source", "polygon", "visible_polygon",
                             "visible_polygon_source", "proposal_visible_polygon") if key in item.mask},
-            "fusion_cluster_id": provenance["cluster_id"],
+            "fusion_cluster_id": item.mask["fusion"]["cluster_id"],
             "proposal_confidence": item.confidence,
+            **extra,
         })
         next_id += 1
         deferred.add(index)
-    if not deferred:
-        return result
     return SegmentationResult(
         [item for index, item in enumerate(result.detections) if index not in deferred],
         {**result.metadata, "fusion": {**fusion, "deferred_print_proposals": pending}},

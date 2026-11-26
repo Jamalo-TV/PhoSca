@@ -90,7 +90,7 @@ def crop_validation_profile(settings: Settings) -> dict:
             if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "embossed_album_pocket_review": (
-            1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback
+            2 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback
             and visible_model is None else None
         ),
         "classical_line_pairs": (

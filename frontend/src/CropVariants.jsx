@@ -39,12 +39,18 @@ export const frameBackingProposal = "possible_frame_backing";
 export const borrowedFallbackProposal = "possible_borrowed_print_edge";
 export const darkBackingProposal = "possible_dark_album_backing";
 export const projectivePrintProposal = "possible_projective_print";
-export const embossedPocketProposal = "possible_embossed_album_pocket";
-export const embossedPocketAction = "Albumtasche prüfen";
+const embossedPocketProposal = "possible_embossed_album_pocket";
+const embossedCarrierProposal = "possible_embossed_album_carrier";
+export function embossedAlbumAction(reason) {
+  if (reason === embossedPocketProposal) return "Albumtasche prüfen";
+  if (reason === embossedCarrierProposal) return "Kontur um Abzug prüfen";
+  return null;
+}
 export const embossedPocketReviewErrors = {
   album_pocket_print_confirmation_required: "Bestätige, dass in dieser Tasche ein eigener Papierabzug liegt.",
   album_pocket_print_confirmation_stale: "Dieser Vorschlag hat sich geändert. Prüfe die aktualisierte Albumseite.",
   album_pocket_outline_outside_proposal: "Setze die vier Ecken an den sichtbaren Papierrand in der markierten Tasche.",
+  album_carrier_matches_detected_print: "Dieser Abzug ist bereits erfasst. Setze die Ecken an das Papier des weiteren Abzugs.",
 };
 export const standalonePrintConfirmation = "Hier liegt ein eigener Papierabzug.";
 const deferredPrintReviewHints = {
@@ -77,6 +83,12 @@ const deferredPrintReviewHints = {
     count: "Prüfe am Original, ob in der markierten Albumtasche ein Papierabzug steckt. Ist die Tasche leer und sind alle Abzüge erfasst, bestätige die Anzahl.",
     draft: "Ergänze den Abzug, wenn du sein Papier in der Tasche erkennst. Setze die vier Ecken an seinen Papierrand.",
     evidence: "An den türkis gestrichelten Abschnitten setzt sich die Prägung über die Kontur hinweg fort.",
+  },
+  [embossedCarrierProposal]: {
+    countId: "embossed-carrier-count-hint",
+    count: "Der kleinere Abzug ist bereits erfasst. Prüfe am Original, ob in der grösseren Kontur ein weiterer Papierabzug liegt.",
+    draft: "Ergänze nur einen weiteren Papierabzug. Setze die vier Ecken an dessen sichtbaren Papierrand.",
+    evidence: "An den türkis gestrichelten Abschnitten setzt sich die Prägung über die grössere Kontur fort.",
   },
 };
 const deferredParentCropHints = [
@@ -197,7 +209,7 @@ export function getDeferredPrintEvidence(proposal) {
     : proposal?.reason === frameBackingProposal ? frameBackingEvidence
     : proposal?.reason === borrowedFallbackProposal ? borrowedFallbackEvidence
     : proposal?.reason === projectivePrintProposal ? mountedPaperEvidence
-    : proposal?.reason === embossedPocketProposal ? embossedPocketEvidence : [];
+    : embossedAlbumAction(proposal?.reason) ? embossedPocketEvidence : [];
   return styles.map((style) => ({
     ...style, traces: getSourceEdgeTraces(proposal[style.key]).filter((trace) => trace.length === 2),
   })).filter(({ traces }) => traces.length);
@@ -205,7 +217,7 @@ export function getDeferredPrintEvidence(proposal) {
 
 export function standalonePrintNeedsConfirmation(reason) {
   return reason === darkBackingProposal || reason === nestedFallbackProposal || reason === frameBackingProposal
-    || reason === borrowedFallbackProposal || reason === projectivePrintProposal || reason === embossedPocketProposal;
+    || reason === borrowedFallbackProposal || reason === projectivePrintProposal || Boolean(embossedAlbumAction(reason));
 }
 
 export function deferredPrintCountHintId(reason, mobile = false) {

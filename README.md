@@ -398,6 +398,21 @@ Zuschnitten. Ein ergänzter Abzug braucht die eigene Papierprüfung
 und die Freigabe beider Zuschnittmodi.
 [Scan 67 und Gegenproben](data/evaluation/README.md#review-continuous-embossing-across-an-album-pocket)
 
+Umschliesst eine klassische Kontur einen bereits erkannten Abzug
+und einen grossen Teil der Albumhülle, prüft PhoSca die beiden
+Umrisse separat. Es sucht am kleineren Abzug nach einem Wechsel
+zwischen Bild und Prägung und prüft an der grösseren Kontur, wo
+die Prägung über deren Rand hinweg weiterläuft. Ein sichtbarer
+weiterer Abzug oder ein anderer offener Vorschlag kann gegen diese
+Zuordnung sprechen.
+
+Unter **Kontur um Abzug prüfen** erscheint der grössere Vorschlag
+mit den gemessenen Abschnitten. Der kleinere Abzug zählt weiterhin
+mit. Schau am Original nach, ob um ihn herum ein eigener Abzug
+sichtbar ist. Du kannst diesen mit seiner tatsächlichen Papierkontur
+ergänzen. Die grössere offene Kontur fliesst bis zum Anzahlentscheid
+weiter in die Zuschnittprüfung ein. [Kontur um den Abzug auf Scan 67](data/evaluation/README.md#review-an-embossed-carrier-around-a-detected-print)
+
 Wenn der Abzug selbst in einer geprägten Albumhülle liegt, kann ein
 zu weit gefasster Zuschnitt sichtbare Folie enthalten. Bei deutlich
 verschobenen Kanten sucht PhoSca im Original nach einer möglichen

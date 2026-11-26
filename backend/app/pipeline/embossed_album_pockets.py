@@ -7,6 +7,7 @@ from app.pipeline.print_edges import _PRINT_SIDES, _edge_band, _side_line
 
 
 EMBOSSED_POCKET_PROPOSAL = "possible_embossed_album_pocket"
+EMBOSSED_CARRIER_PROPOSAL = "possible_embossed_album_carrier"
 POSSIBLE_EMBOSSED_ALBUM_PAPER_EDGES = "possible_embossed_album_paper_edges"
 
 
@@ -37,10 +38,10 @@ def _repeat_vectors(signal: np.ndarray, depth: float, radius: int) -> list[np.nd
     return vectors
 
 
-def _crossing_trace(
+def _crossing_phase(
     image: np.ndarray, start: np.ndarray, end: np.ndarray, repeat: np.ndarray, sigma: float,
-) -> np.ndarray | None:
-    fractions = np.linspace(.12, .88, 23, dtype=np.float32)
+    fractions: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray] | None:
     stations = start + fractions[:, None] * (end - start)
     tangent = (end - start) / np.linalg.norm(end - start)
     normal = np.float32([-tangent[1], tangent[0]])
@@ -71,6 +72,16 @@ def _crossing_trace(
             second, second_norm = sample(grid + .5 * repeat + np.float32([dx, dy]))
             valid |= ((first * second).sum(axis=1) >= .70 * first_norm * second_norm) & (
                 first_norm >= minimum_amplitude) & (second_norm >= minimum_amplitude)
+    return stations, valid
+
+
+def _crossing_trace(
+    image: np.ndarray, start: np.ndarray, end: np.ndarray, repeat: np.ndarray, sigma: float,
+) -> np.ndarray | None:
+    measured = _crossing_phase(image, start, end, repeat, sigma, np.linspace(.12, .88, 23, dtype=np.float32))
+    if measured is None:
+        return None
+    stations, valid = measured
     supported = np.flatnonzero(valid)
     longest = max(np.split(supported, np.flatnonzero(np.diff(supported) != 1) + 1), key=len)
     if len(longest) < 15:
@@ -208,35 +219,106 @@ def _phase_break_on_rail(
     return [stations[[first, stop - 1]] for first, stop in intervals if stop - first >= 3]
 
 
-def embossed_carrier_paper_traces(image: np.ndarray, quad: np.ndarray, boundary: dict) -> list[np.ndarray]:
-    """Trace measured phase breaks around an uncertain photo in an embossed carrier."""
-    sides = [boundary.get(name) or {} for name in _PRINT_SIDES]
-    weak = [index for index, side in enumerate(sides) if side.get("support", 0) <= .36]
+def _measure_inner_print(
+    image: np.ndarray, quad: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, float, list[list[np.ndarray]]] | None:
     extent = float(np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min())
-    if (len(weak) < 2 or not any(side.get("support", 0) >= .92 for side in sides)
-            or any(side.get("ambiguous") for side in sides) or extent < 620):
-        return []
+    if extent < 620:
+        return None
     radius = min(180, round(.070 * extent))
     lines = []
     for start, end in zip(quad, np.roll(quad, -1, axis=0), strict=True):
         line, facts = _side_line(image, start, end, radius)
         if (line is None or facts["ambiguous"] or facts["support"] < .80
                 or (facts["corner_support"] or 0.) < .74 or facts["maximum_residual_px"] > 1.75):
-            return []
+            return None
         lines.append(line)
     crosses = np.cross(np.roll(lines, 1, axis=0), lines)
     if np.any(abs(crosses[:, 2]) < .25):
-        return []
+        return None
     measured = np.float32(crosses[:, :2] / crosses[:, 2, None])
     if (not cv2.isContourConvex(measured) or np.linalg.norm(measured - quad, axis=1).max() > .091 * extent
             or not .82 <= cv2.contourArea(measured) / cv2.contourArea(quad) <= 1.06):
-        return []
+        return None
     sigma = np.clip(.004 * extent, 2., 12.)
     periods = _carrier_phase_reference(image, measured, extent, sigma)
     if periods is None:
-        return []
+        return None
     measured_sides = [_phase_break_on_rail(image, start, end, periods, sigma)
                       for start, end in zip(measured, np.roll(measured, -1, axis=0), strict=True)]
     if not all(measured_sides):
+        return None
+    return measured, periods, sigma, measured_sides
+
+
+def embossed_carrier_paper_traces(image: np.ndarray, quad: np.ndarray, boundary: dict) -> list[np.ndarray]:
+    """Trace measured phase breaks around an uncertain photo in an embossed carrier."""
+    sides = [boundary.get(name) or {} for name in _PRINT_SIDES]
+    weak = [index for index, side in enumerate(sides) if side.get("support", 0) <= .36]
+    if (len(weak) < 2 or not any(side.get("support", 0) >= .92 for side in sides)
+            or any(side.get("ambiguous") for side in sides)):
         return []
+    measured = _measure_inner_print(image, quad)
+    if measured is None:
+        return []
+    measured_sides = measured[3]
     return [span for index in weak for span in measured_sides[index]]
+
+
+def _ring_has_visible_content(image: np.ndarray, shell: np.ndarray, inner: np.ndarray) -> bool:
+    low, high = np.floor(shell.min(axis=0)).astype(int), np.ceil(shell.max(axis=0)).astype(int) + 1
+    if np.any(low < 0) or np.any(high > image.shape[1::-1]):
+        return True
+    extent = high - low
+    scale = min(1., 720. / extent.max())
+    patch = image[low[1]:high[1], low[0]:high[0]]
+    local = cv2.resize(patch, tuple(np.ceil(scale * extent).astype(int)), interpolation=cv2.INTER_AREA)
+    lab = cv2.cvtColor(cv2.GaussianBlur(local, (0, 0), 1.), cv2.COLOR_BGR2LAB).astype(np.float32)
+    rings = [cv2.fillConvexPoly(np.zeros(local.shape[:2], np.uint8), np.rint((quad - low) * scale).astype(np.int32), 1)
+             for quad in (shell, inner)]
+    gap = max(3, round(14 * scale))
+    excluded = cv2.dilate(rings[1], np.ones((2 * gap + 1, 2 * gap + 1), np.uint8))
+    valid = (rings[0] != 0) & (excluded == 0)
+    count = int(valid.sum())
+    if not count:
+        return True
+    luma, chroma = lab[..., 0], np.linalg.norm(lab[..., 1:] - 128, axis=-1)
+    different = valid & ((luma < 152) | (chroma > 16))
+    if np.count_nonzero(different) > .025 * count:
+        return True
+    return cv2.connectedComponentsWithStats(np.uint8(different))[2][1:, -1].max(initial=0) > .009 * count
+
+
+def embossed_outer_carrier_traces(
+    image: np.ndarray, shell: np.ndarray, seed: np.ndarray, child: np.ndarray,
+) -> list[np.ndarray]:
+    """Compare a coarse containing outline with independently measured inner paper."""
+    measurement = _measure_inner_print(image, seed)
+    if measurement is None:
+        return []
+    inner, periods, sigma, _ = measurement
+    enclosed, _ = cv2.intersectConvexConvex(shell, inner)
+    if enclosed < .985 * cv2.contourArea(inner) or _ring_has_visible_content(image, shell, inner):
+        return []
+
+    supported_sides = []
+    for start, end in zip(shell, np.roll(shell, -1, axis=0), strict=True):
+        direction = end - start
+        repeat = periods[int(abs(direction[0]) >= abs(direction[1]))]
+        measured = _crossing_phase(image, start, end, repeat, sigma, np.linspace(.04, .96, 97, dtype=np.float32))
+        if measured is None:
+            supported_sides.append([])
+            continue
+        stations, valid = measured
+        # Samples that can reach either hypothesis for the child cannot
+        # establish continuity of exposed material around that child.
+        clearance = 4 * sigma + .5 * np.linalg.norm(repeat)
+        valid &= [all(cv2.pointPolygonTest(shape, tuple(point), True) < -clearance for shape in (inner, child))
+                  for point in stations]
+        intervals = np.flatnonzero(np.diff(np.r_[False, valid, False])).reshape(-1, 2)
+        long = [(first, stop) for first, stop in intervals if stop - first >= 10]
+        supported_sides.append([stations[[first, stop - 1]] for first, stop in long]
+                               if sum(stop - first for first, stop in long) >= 40 else [])
+    if sum(bool(spans) for spans in supported_sides) < 2:
+        return []
+    return [span for spans in supported_sides for span in spans]

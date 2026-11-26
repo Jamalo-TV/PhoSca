@@ -64,7 +64,7 @@ import {
   nestedFallbackProposal,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
-  embossedPocketAction, embossedPocketProposal, embossedPocketReviewErrors,
+  embossedAlbumAction, embossedPocketReviewErrors,
   getSourceStripReview, SourceStripReview, sourceStripColor, sourceStripContrastColor,
   offPrintAdvisorySource, useAlbumPageMarkReview,
 } from "./CropVariants.jsx";
@@ -2112,7 +2112,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         newPrint.adjacentSuggestion, newPrint.deferredProposal, {
           replaceMountedFragments: newPrint.replaceMountedFragments,
           confirmDarkBacking: darkBackingDraft && newPrint.confirmStandalonePrint,
-          confirmAlbumPocketPrint: newPrint.deferredProposal?.reason === embossedPocketProposal && newPrint.confirmStandalonePrint,
+          confirmAlbumPocketPrint: Boolean(embossedAlbumAction(newPrint.deferredProposal?.reason)) && newPrint.confirmStandalonePrint,
         });
       if (activePage.current !== pageId) return;
       setAddition(null);
@@ -2185,10 +2185,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
               {proposal.reason === sourceFragmentProposal ? "Möglichen gemeinsamen Abzug prüfen"
                 : proposal.reason === darkBackingProposal ? `Dunkle Fläche prüfen${deferredProposals.length > 1 ? ` (${index + 1})` : ""}`
                 : proposal.reason === nestedFallbackProposal ? `Innenkontur ${index + 1} prüfen`
-                : proposal.reason === embossedPocketProposal ? embossedPocketAction
-                : [frameBackingProposal, borrowedFallbackProposal].includes(proposal.reason) ? `Vorschlag ${index + 1} am Aufnahmerand prüfen`
+                : embossedAlbumAction(proposal.reason) ?? ([frameBackingProposal, borrowedFallbackProposal].includes(proposal.reason) ? `Vorschlag ${index + 1} am Aufnahmerand prüfen`
                 : proposal.reason === "possible_mounted_print" ? `Möglichen Ganzabzug ${index + 1} prüfen`
-                : `Vorschlag ${index + 1} als Abzug ergänzen`}
+                : `Vorschlag ${index + 1} als Abzug ergänzen`)}
             </button>
           ))}
           <button className="text-button compact" type="button" onClick={confirmCount}

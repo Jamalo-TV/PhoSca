@@ -73,6 +73,43 @@ async def _seed_review_data(image=None):
         return album.id, page.id, photo.id
 
 
+async def test_embossed_carrier_cannot_restore_a_manually_updated_child_outline(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, Page
+    from app.pipeline.embossed_album_pockets import EMBOSSED_CARRIER_PROPOSAL
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    get_settings.cache_clear()
+    album_id, page_id, photo_id = await _seed_review_data()
+
+    def rectangle(left, top, right, bottom):
+        return [{"x": x, "y": y} for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
+
+    saved = rectangle(.14, .18, .78, .88)
+    pending = {"id": 1, "reason": EMBOSSED_CARRIER_PROPOSAL, "polygon": rectangle(.07, .09, .90, .96),
+               "contained_print_polygon": rectangle(.22, .29, .72, .81)}
+    revision = str(uuid4())
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        page.processing_metadata = {"photo_count_revision": revision, "steps": {
+            "segmentation": {"fusion": {"deferred_print_proposals": [pending]}},
+        }}
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {**photo.segmentation_mask, "source": "manual_quad", "warp_quad": saved}
+        await session.commit()
+
+    result = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": saved, "deferred_proposal_id": 1,
+        "photo_count_revision": revision, "confirm_album_pocket_print": True,
+    })
+    assert result.status_code == 422 and result.json()["detail"] == "album_carrier_matches_detected_print"
+    assert len((await client.get(f"/api/v1/albums/{album_id}/photos")).json()) == 1
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        assert page.processing_metadata["steps"]["segmentation"]["fusion"]["deferred_print_proposals"] == [pending]
+
+
 async def test_edge_trace_reads_the_exif_oriented_source_without_editing_review(client, monkeypatch):
     from PIL import Image
     from sqlalchemy import func, select
