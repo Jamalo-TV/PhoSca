@@ -1,14 +1,17 @@
-"""Measure dark backing and borrowed photo edges for count review."""
+"""Measure disputed claims and missed mounts on dark album backing."""
 
 from dataclasses import dataclass
+from itertools import combinations
 
 import cv2
 import numpy as np
 
-from app.pipeline.print_edges import _sample_lab
+from app.pipeline.edge_prints import _photo_texture
+from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic
+from app.pipeline.print_edges import _edge_band, _line_endpoints, _sample_lab, _side_line
 
 
-DARK_ALBUM_REVIEW_REVISION = 1
+DARK_ALBUM_REVIEW_REVISION = 2
 DARK_ALBUM_PROPOSAL = "possible_dark_album_backing"
 DARK_BACKING_OUTLINE_REVIEW = "DARK_BACKING_OUTLINE_REVIEW"
 
@@ -21,6 +24,96 @@ _CORE_GRID = np.stack(np.meshgrid(_CORE_AXIS, _CORE_AXIS), axis=-1).reshape(1, -
 class DarkBackingEvidence:
     backing_traces: list[np.ndarray]
     borrowed_traces: list[np.ndarray]
+
+
+def _red_mount_centers(image: np.ndarray) -> list[np.ndarray]:
+    light, red, yellow = cv2.split(cv2.cvtColor(image, cv2.COLOR_BGR2LAB))
+    height, width = light.shape
+    inside = np.s_[height // 20:-(height // 20), width // 20:-(width // 20)]
+    dark = ((light <= 52) & (np.abs(red.astype(np.int16) - 128) <= 9)
+            & (np.abs(yellow.astype(np.int16) - 128) <= 9))
+    if dark[inside].mean() < .30:
+        return []
+
+    # Use compact red material as corner locations. A connected border
+    # printed around artwork would produce one component, not four.
+    mask = np.uint8((light >= 32) & (red >= 146))
+    _, _, regions, centers = cv2.connectedComponentsWithStats(mask)
+    return [
+        center for (_, _, w, h, area), center in zip(regions[1:], centers[1:], strict=True)
+        if 6 <= min(w, h) and max(w, h) <= 44 and .15 * w * h <= area <= .50 * w * h
+    ]
+
+
+def _dark_mounted_side_traces(image: np.ndarray, outline: np.ndarray) -> list[np.ndarray]:
+    traces = []
+    supported_sides = 0
+    for start, end in zip(outline, np.roll(outline, -1, axis=0), strict=True):
+        direction = end - start
+        radius = int(np.clip(round(.052 * np.linalg.norm(direction)), 10, 96))
+        spans = []
+        for low, high in ((.12, .37), (.37, .63), (.63, .88)):
+            first, last = start + low * direction, start + high * direction
+            line, evidence = _side_line(image, first, last, radius)
+            if line is None or evidence["ambiguous"] or evidence["support"] < .85:
+                continue
+            measured = np.float32(_line_endpoints(first, last, line))
+            band = _edge_band(image, *measured, [-7, -5, -3, 2, 4, 6])
+            if band is None:
+                continue
+            backing, face = (np.median(part, axis=1) for part in np.split(band, 2, axis=1))
+            if np.mean((backing[:, 0] <= 55) & (face[:, 0] - backing[:, 0] >= 24)) >= .80:
+                spans.append(measured)
+        supported_sides += len(spans) >= 2
+        traces.extend(spans)
+    return traces if supported_sides >= 3 else []
+
+
+def find_dark_mounted_print_review(
+    image: np.ndarray, claims: list[np.ndarray],
+) -> tuple[np.ndarray, list[np.ndarray]] | None:
+    """Offer one possible independent print with contrasting mounts covering its tips."""
+    height, width = image.shape[:2]
+    if max(height, width) < 640 or min(height, width) < 380:
+        return None
+    reduction = min(1., 800 / max(height, width))
+    working = cv2.resize(image, None, fx=reduction, fy=reduction, interpolation=cv2.INTER_AREA) if reduction < 1 else image
+    centers = _red_mount_centers(working)
+    if not 4 <= len(centers) <= 12:
+        return None
+    working_scale = np.float32(working.shape[1::-1]) - 1
+    native_scale = np.float32([width - 1, height - 1])
+    choices = []
+    for indices in combinations(range(len(centers)), 4):
+        try:
+            seed = order_quad_cyclic(np.float32([centers[index] for index in indices]))
+        except ValueError:
+            continue
+        if not .10 <= cv2.contourArea(seed) / (working.shape[0] * working.shape[1]) <= .34:
+            continue
+        directions = np.roll(seed, -1, axis=0) - seed
+        lengths = np.linalg.norm(directions, axis=1)
+        if lengths.min() < 60 or not .48 <= lengths[::2].sum() / lengths[1::2].sum() <= 2.1:
+            continue
+        unit = directions / lengths[:, None]
+        if np.max(np.abs((unit * np.roll(unit, 1, axis=0)).sum(axis=1))) > .25:
+            continue
+        # A mount at an interior join can belong to a separate print.
+        if any(cv2.pointPolygonTest(seed, tuple(center), True) >= -6
+               for index, center in enumerate(centers) if index not in indices):
+            continue
+        normalized = seed / working_scale
+        if any(normalized_polygon_overlap(normalized, claim).first_containment > .025 for claim in claims):
+            continue
+        if not _photo_texture(working, seed):
+            continue
+        outline = normalized * native_scale
+        spans = _dark_mounted_side_traces(image, outline)
+        if spans:
+            choices.append((outline, spans))
+            if len(choices) > 1:
+                return None
+    return choices[0] if choices else None
 
 
 def _dark_core(image: np.ndarray, quad: np.ndarray) -> bool:

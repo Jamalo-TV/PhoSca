@@ -7485,6 +7485,94 @@ Willett comparisons are development evidence from one physical album.
 Automatic release remains gated by the separate calibration and final
 physical album references. [Willett page 99](https://historycenter.mld.org/willett_album/items/col003_p99.html)
 
+### Recover a count offer from red photo corners and open paper edges
+
+Willett page 95 contains three physical prints. Red oval holders cover
+the corners of the upper-left American Falls dam photograph. The
+registered `1e95a1a9…` checkpoint produces no model region on that
+photograph in the native raster, its half-size derivative or the
+800 × 507 publisher JPEG. Four overlapping model tiles at each of five
+coverages also fail to find a complete print. The classical detector
+retains a partial region at native size with draft IoU 0.80966. At half
+size and publisher size its best regions reach 0.00321 and at most
+0.0019. The missed count begins in proposal generation.
+[Willett page 95](https://historycenter.mld.org/willett_album/items/col003_p95.html)
+
+Unclosed bright components and signed edges gave useful draft outlines
+on the two reduced views. On the Red Album cover, the same optical
+test also follows the decorated title leaf across the gutter. The
+selected rule uses a more specific physical witness. On a dark neutral
+page, four disjoint compact red components must form a plausible set
+of print corners. The interior must contain image detail. A fifth
+mount inside or just outside the outline vetoes the candidate because
+it can belong to a separate print. No existing claim may cover more
+than 2.5% of the proposed footprint.
+On at least three sides, two separate spans must have a fitted line
+and a dark-to-bright transition on the original raster. The stored
+quadrilateral joins the mount centres as an editable starting outline.
+It exposes neither the hidden tips nor a measured aspect ratio.
+
+| Source | Existing target mask IoU | Count offer IoU against paper draft | Measured spans |
+| --- | ---: | ---: | ---: |
+| Native 6,016 × 3,812 | 0.80966 | Existing claim vetoes a second offer | 0 |
+| OpenCV AREA50, 3,008 × 1,906 | 0.00321 | 0.95276 | 7 |
+| Publisher JPEG, 800 × 507 | ≤ 0.0019 | 0.94826 | 7 |
+
+The native JPEG SHA-256 is
+`1cf86c7d9c1688a07c156aabc4cb11edbfd4f9860959bd14e56d6ce8fb5d8a73`.
+The publisher derivative SHA-256 is
+`b72a9d0db344fde822223dce8fe7d4e49217248d8e81ab0c2b5108ca6d563caf`.
+The draft extrapolates under the holders. It supports locating the
+print for count review. Exact corner, aspect, projected content and
+motif measurements require separate unobstructed references.
+Willett 80 shows a second copy of the scene with different visible
+paper borders. A native scene registration from page 80 to page 95
+has 338 held inliers, median error 1.04 pixels and p95 3.25 pixels.
+The registered points describe visible scene details. The repeated
+image stays in the same album group.
+[Willett page 80](https://historycenter.mld.org/willett_album/items/col003_p80.html)
+
+The offer is separate from the active count and the existing crop
+masks. The original-image editor shows the measured spans along the
+visible paper and prompts the reviewer to set the corners. Confirming
+the count can withdraw the offer. Adding the corresponding print
+enters the existing projective-outline review and requires separate
+paper confirmation. Both modes remain held while the visible edges
+cannot validate the proposed outline.
+
+The publisher upload keeps three rows, and the half-size upload
+keeps four. Each gains one deferred offer. The existing masks, mode
+records and preview JPEGs match the previous revision. Desktop and
+mobile require explicit confirmation of a separate print before
+adding it. Manual addition, reprocessing and an explicit check of
+unchanged corners keep both crop modes and the legacy trimmed
+download held. The ordinary preview remains available. Source-only
+testing finds the offer across all four turns of both raster sizes.
+One of four publisher JPEG55 quarter-turn cases abstains after
+recompression. All four tested JPEG75 views still show the offer.
+
+The independent development replay screened 170 views. Forty reached
+the normal segmentation replay and 35 invoked the mount check. The
+two Willett 95 views above were the only new offers. The replay also
+kept the Red Album title leaf and the separate mounted pairs on
+Willett 38 and 46 out of this recovery path. Several views are
+derivatives of one acquisition. These are development controls.
+With cached claim masks and one OpenCV thread, the isolated check
+took 93 ms median on the native page and 130 ms on the half-size
+page. The eight paired crop reports match the baseline on
+detection, measured geometry and availability in both modes. The
+frozen detector still matches 18/18 prints, and the seeded crop
+run passes 11/11 whole prints and 12/12 motifs.
+
+The new count check uses `dark_album_review` validation revision 2.
+The source and development
+receipts are recorded locally under
+`runs/crop-quality/dark-mounted-print-review/`.
+
+```bash
+python -m pytest -q backend/tests/test_pipeline/test_fragmented_prints.py -k red_mount
+```
+
 ### Preview a motif with one disputed paper edge
 
 The `white_margin` and `camera_tilt` controls already had a supported
@@ -7809,3 +7897,25 @@ of the physical album and scanner captures. Downloadable native pairs,
 independent capture of unmounted prints and rights for the museum
 rasters remain unverified. The article itself carries CC BY 4.0.
 [Conservation study](https://isprs-archives.copernicus.org/articles/XLVIII-M-2-2023/1449/2023/)
+
+The Starrett Scrapbook, accession `2002.05`, has a documented batch
+of 94 mounted page scans and 511 independent scans of the prints
+after removal. The finding aid maps page 1 to prints 1–3 and page 2 to
+prints 4–6. The three page 1 prints measure 120.65 × 92.075 mm each.
+The public gallery provides page images. The matched native print
+scans and usage permission require archival access. The catalogue
+dimensions establish physical paper proportions. Motif dimensions
+and visible corner coverage still need native pixel verification.
+[Digitization project](https://www.skyscraper.org/viva2/scrapbook/) ·
+[Print and page crosswalk](https://old.skyscraper.org/viva2/collections/findingaids/esbb.html) ·
+[Image access and rights](https://www.skyscraper.org/rights-reproductions/)
+
+Grey Roots identifies the Aberdeen volume 1 (`WIF22`) and Woodford
+volume 1 (`WIF56`) as separate Tweedsmuir books. The archive documents
+page scans and additional high-resolution scanning of each photo.
+Native paired rasters, exact print identifiers and evaluation rights
+remain unverified. The workspace requests for the public PDFs
+returned HTTP 403. Both collections remain source leads.
+[Digitization project](https://greyroots.com/collections-and-research/archives/tweedsmuirs) ·
+[Aberdeen](https://greyroots.com/sites/default/files/aberdeen_tweedsmuir_vol._1.pdf) ·
+[Woodford](https://greyroots.com/sites/default/files/woodford_tweedsmuir_history_vol._1_part_1.pdf)

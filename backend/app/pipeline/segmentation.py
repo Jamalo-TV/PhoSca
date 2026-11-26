@@ -21,7 +21,7 @@ from app.pipeline.crossing_prints import (
 from app.pipeline.crossing_fallback_review import (
     CROSSING_FALLBACK_COUNT_REVIEW, CROSSING_FALLBACK_TRACES, crossing_fallback_review_traces,
 )
-from app.pipeline.dark_album_review import DARK_ALBUM_PROPOSAL, inspect_dark_album_backing
+from app.pipeline.dark_album_review import DARK_ALBUM_PROPOSAL, find_dark_mounted_print_review, inspect_dark_album_backing
 from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
     clipped_fragment_needs_review, clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
@@ -4132,6 +4132,36 @@ def _defer_dark_album_claims(image: np.ndarray, result: SegmentationResult, acce
     }})
 
 
+def _offer_dark_mounted_print(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    metadata = result.metadata
+    fusion = metadata.get("fusion") or {}
+    if (not metadata.get("fallback_used") or not fusion.get("model_proposals")
+            or not 2 <= len(result.detections) <= 12):
+        return result
+    pending = list(fusion.get("deferred_print_proposals") or [])
+    claims = [_detection_polygon(item) for item in result.detections]
+    for item in result.detections:
+        if (visible := item.mask.get("visible_polygon")) and len(visible) >= 3:
+            claims.append(np.float32([(point["x"], point["y"]) for point in visible]))
+    for proposal in pending:
+        if (polygon := proposal.get("visible_polygon") or proposal.get("polygon")) and len(polygon) >= 3:
+            claims.append(np.float32([(point["x"], point["y"]) for point in polygon]))
+    suggestion = find_dark_mounted_print_review(image, claims)
+    if suggestion is None:
+        return result
+    outline, traces = suggestion
+    height, width = image.shape[:2]
+    pending.append({
+        "id": max((prior["id"] for prior in pending), default=-1) + 1,
+        "reason": PROJECTIVE_PRINT_PROPOSAL,
+        "polygon": _normalized_polygon(outline, width, height),
+        "mounted_paper_edge_traces": [_normalized_polygon(trace, width, height) for trace in traces],
+    })
+    return SegmentationResult(result.detections, {
+        **metadata, "fusion": {**fusion, "deferred_print_proposals": pending},
+    })
+
+
 def segment_album_page(
     image: np.ndarray, settings: Settings, *, source_image: np.ndarray | None = None,
     protected_regions: list[dict] | None = None,
@@ -4174,6 +4204,7 @@ def segment_album_page(
             if source is not None:
                 result = _flag_crossing_fallback_contours(source, result)
                 result = _flag_album_leaf_count_review(source, result)
+                result = _offer_dark_mounted_print(source, result)
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership

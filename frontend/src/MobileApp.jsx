@@ -18,7 +18,7 @@ import {
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview,
-  nestedFallbackProposal,
+  nestedFallbackProposal, projectivePrintProposal,
   scannerBackingHint, scannerBackingReason,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
@@ -1108,6 +1108,7 @@ function CropReview({ albumId, goHome }) {
           }}>
           {proposal.reason === darkBackingProposal ? `Dunkle Fläche prüfen${deferredProposals.length > 1 ? ` (${index + 1})` : ""}`
             : proposal.reason === nestedFallbackProposal ? `Innenkontur ${index + 1} prüfen`
+              : proposal.reason === projectivePrintProposal ? "Vorgeschlagenen Abzug bearbeiten"
               : [frameBackingProposal, borrowedFallbackProposal].includes(proposal.reason) ? `Vorschlag ${index + 1} am Aufnahmerand prüfen`
                 : "Möglichen gemeinsamen Abzug prüfen"}
         </button>;

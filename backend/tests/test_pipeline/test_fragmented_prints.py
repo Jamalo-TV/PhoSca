@@ -6,10 +6,12 @@ import numpy as np
 import pytest
 
 from app.config import Settings
+from app.evaluation.crop_fixtures import _photograph
 from app.pipeline import projective_prints, segmentation
 from app.pipeline.adjacent_prints import ADJACENT_PRINT_REVIEW, adjacent_album_edge_outlines
 from app.pipeline.crop_validation import automatic_crop_review_reasons
 from app.pipeline.crossing_prints import staggered_print_source_traces
+from app.pipeline.dark_album_review import find_dark_mounted_print_review
 from app.pipeline.enhancement import prepare_for_cutout
 from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW, measure_extended_print_outline,
@@ -18,6 +20,43 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic
 from app.pipeline.image_ops import load_image
 from app.pipeline.perspective import correct_photo_crop
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
+
+
+@pytest.mark.parametrize("turn", [0, 1])
+@pytest.mark.parametrize("case", ["photo", "existing_claim", "unmounted", "paper_notice", "light_backing", "inside_mount"])
+def test_red_mount_proposal_requires_distinct_photo_and_original_paper_edges(turn, case):
+    image = np.full((520, 800, 3), 183 if case == "light_backing" else 31, np.uint8)
+    if case == "paper_notice":
+        image[75:295, 116:481] = 199
+        cv2.putText(image, "ARCHIVE", (170, 192), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (31, 31, 31), 2)
+    else:
+        pattern = _photograph(220, 365, np.random.default_rng(256), white=False)
+        rng = np.random.default_rng(543)
+        for _ in range(33):
+            x, y = rng.integers([9, 9], [355, 210])
+            cv2.ellipse(pattern, (x, y), (11, 7), 28, 0, 360, (165, 208, 231), -1)
+        image[75:295, 116:481] = pattern
+    corners = np.float32([(116, 75), (480, 75), (480, 294), (116, 294)])
+    if case != "unmounted":
+        for index, corner in enumerate(corners.astype(int)):
+            cv2.ellipse(image, tuple(corner), (12, 17), 30 if index % 2 else -25, 0, 360, (34, 62, 150), 3)
+    if case == "inside_mount":
+        cv2.ellipse(image, (280, 78), (12, 17), -25, 0, 360, (34, 62, 150), 3)
+    if turn:
+        corners = order_quad_cyclic(np.column_stack((image.shape[0] - 1 - corners[:, 1], corners[:, 0])))
+        image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+    scale = np.float32(image.shape[1::-1]) - 1
+    claim = corners * .87 + .13 * corners.mean(axis=0)
+    result = find_dark_mounted_print_review(image, [claim / scale] if case == "existing_claim" else [])
+
+    if case == "photo":
+        assert result is not None
+        outline, spans = result
+        np.testing.assert_allclose(outline, corners, atol=1)
+        assert len(spans) >= 6
+        assert all(abs(cv2.pointPolygonTest(corners, tuple(point), True)) < 2 for span in spans for point in span)
+    else:
+        assert result is None
 
 
 def _scene(case="continuous", turns=0):
