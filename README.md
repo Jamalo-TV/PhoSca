@@ -1046,6 +1046,16 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
 
 ### Nächste technische Hypothesen
 
+Am linken Rudge-Abzug verbessert eine aus den Originalpixeln gemessene
+Kontur mit seitlicher Toleranz die Überlappung mit dem vorläufigen Entwurf
+von 0,8104 auf 0,9414 und erhält alle darin markierten Pixelzentren.
+Dieselbe Kantenmessung würde bei einem separat erfassten Nachbarabzug
+rund 5 % der projizierten Papierfläche abschneiden. Sie eignet sich
+deshalb in diesem Zustand für die Analyse und als Ausgangspunkt für
+eine Prüfhilfe. Beide Zuschnittmodi dieses Rudge-Falls bleiben zur
+Prüfung zurückgehalten.
+[Messung, Aufnahmepaar und Gegenprobe](data/evaluation/README.md#measure-the-curved-opening-on-the-left-of-rudge-page-12)
+
 1. **Bei konkurrierenden Linien das Papier zuordnen.** Im eingefrorenen
    Kontrolllauf liegt bei allen sieben umstrittenen Seiten eine
    korrekte Papierkante bereits im Suchband. Die Bewertung kann eine

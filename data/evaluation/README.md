@@ -5556,6 +5556,73 @@ adds no independent release group. The native receipts and controls are under
 [Native gutter check](../../backend/app/pipeline/album_leaf_review.py) ·
 [Count action regression](../../backend/tests/test_api/test_album_leaf_count_review.py)
 
+### Measure the curved opening on the left of Rudge page 12
+
+The left model proposal keeps all 317,200 pixel centres in the six-point
+visible-opening draft and adds 74,196 outside it. The excess is concentrated
+where the proposal follows the album board. The independently scanned
+`REDA16.jpg` registers to the original page with 160 inliers and a
+2.44 original-pixel p95 on spatially withheld matches. Its lower edge
+projects more than 150 original pixels into the backing below the opening.
+The motif itself projects to rows 1,109–1,114, below the visible lap at
+rows 1,065–1,067.
+The registration helps locate the printed material. The projected rectangle
+describes the separately scanned stock, including material hidden on the page.
+
+A development replay fits signed lightness transitions around the model
+proposal in the 2,048 × 1,536 original. Straight fits on the left, right
+and bottom have 93.6%, 100% and 100% sampled support, with p95 positional
+deviations of 1.6–1.7 original pixels. A single fitted parabola has only
+40.6% support in the right quarter of the top edge. A locally connected
+path, with a penalty on step size and endpoint distance from the side fits,
+follows the visible transitions at all 128 stations. It crosses between
+the upper mount seam and the scalloped material. It depends only on the
+original pixels and the proposal. The draft and the registered scan are
+used afterwards to inspect the result.
+
+| Mask intersected with the model proposal | Draft IoU | Draft centres removed | Centres outside the draft |
+| --- | ---: | ---: | ---: |
+| Original model proposal | 0.810432 | 0 | 74,196 |
+| Fitted outline | 0.948108 | 1,280 | 16,011 |
+| Fitted outline with a 6 px outward guard | 0.936743 | 0 | 21,420 |
+| Fitted outline with an 8 px outward guard | 0.932064 | 0 | 23,120 |
+| Fitted outline with an 8 px left-side guard | 0.941403 | 0 | 19,744 |
+
+For the mask comparison, rasterize the outlines with OpenCV subpixel shift
+4 on the original grid. For the two uniform guards, keep centres within
+the specified Euclidean distance of the candidate and inside the original
+model mask. The uniform 6 px variant loses 6–18 draft centres after JPEG
+re-encoding at qualities 55, 75 and 95 or Gaussian blur at sigma 0.6.
+The 8 px experiment keeps all draft centres in these four replays and
+scores IoU 0.9321–0.9328. The left-side guard shifts each candidate vertex
+left by `8 × clamp(1 − (x − L(y)) / 42, 0, 1)`, where `L(y)` is the fitted
+left line. It scores 0.94126–0.94211 across the original and the four
+variants and retains all draft centres. It addresses the side with
+50,871 of the initial 74,196 centres outside the draft.
+These guards measure sensitivity to the approximate outline. The tan stock
+next to the fitted boundary still needs its own verified visible reference.
+
+On page 13, the same optical fit accepts the upper-left of four registered
+physical prints both at native quality and after JPEG75. It abstains on
+the other three and on a dark empty opening. The 8 px left-side guard
+still loses 5,161 of 99,403 projected print centres on that upper-left
+control. An altered copy of page 12 with a subtle additional outer border
+also passes, demonstrating that the
+fit can pick an internal graphic line when a plausible outer boundary
+exists. A single-thread replay took 275–439 ms across the five page 12
+inputs. The result remains a development measurement. The product keeps
+the original mask, and both modes remain held in this case. The existing
+count review still lets the user exclude the album leaf separately.
+
+Source `12REDA.JPG` has SHA-256 `fc02f806a28c2284a44cfbb8679a75c448c1036293404e45589667f147240be0`.
+The tested guide vertices in native pixels are
+`(256,404) (256,1041) (326,1067) (829,1064) (850,880) (850,404)`.
+The development reference vertices are
+`(314,1058) (361,438) (446,419) (690,411) (836,414) (823,1062)`.
+The probe, overlay and stage measurements are retained locally under
+`/tmp/phosca-rudge-red12-aperture-independent/`.
+[Pinned source and independent scan](https://github.com/rudged/home/tree/9422452820380ca089db3e0baf0cfaf3dc6c7cdc)
+
 ### Explain a held whole print in mobile geometry review
 
 In revision `9b78009`, Mobile can offer **Korrekt & vollständig**
