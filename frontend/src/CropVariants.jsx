@@ -97,11 +97,12 @@ export function getPrintEdgeReviewHint(fullPrint) {
 }
 
 export function getMotifBoundaryReviewHint(motif) {
-  if (motif?.status === "review_needed" && motif.reason_codes?.includes(markedMotifMarginReason)) {
+  if (motif?.status !== "review_needed") return null;
+  if (motif.reason_codes?.includes(markedMotifMarginReason)) {
     return markedMotifMarginHint;
   }
-  return motif?.status === "review_needed" && motif.reason_codes?.includes(curvedMotifReviewReason)
-    ? curvedMotifReviewHint : null;
+  if (motif.reason_codes?.includes(curvedMotifReviewReason)) return curvedMotifReviewHint;
+  return motif.reason_codes?.includes("IMAGE_RECTANGLE_INCONSISTENT") ? reviewMessages.IMAGE_RECTANGLE_INCONSISTENT : null;
 }
 
 export function getMotifMarginMarks(motif) {
@@ -118,6 +119,13 @@ export function getPrintOutlinePreviewHint(fullPrint) {
 
 export function getCropModes(photo) {
   return photo?.enhancement_applied?.correction?.crop_modes || null;
+}
+
+export function canEditMobileMotif(photo, modes) {
+  const { segmentation_confidence: confidence = photo?.confidence } = photo || {};
+  const quad = photo?.segmentation_mask?.warp_quad;
+  return confidence === null && modes?.full_print?.status === "ready" && Boolean(modes.image_only)
+    && quad?.length === 4 && getSourceEdgeTraces([quad]).length === 1;
 }
 
 export function CropOrientationField({ value, onChange, disabled }) {
@@ -167,7 +175,7 @@ const reviewMessages = {
   IMAGE_BOUNDARY_UNCERTAIN: "Die Grenze zwischen Rahmen und Bildmotiv muss geprüft werden.",
   [curvedMotifReviewReason]: curvedMotifReviewHint,
   [markedMotifMarginReason]: markedMotifMarginHint,
-  WIDE_MOTIF_CONFIRMATION_REQUIRED: "Prüfe den Motivvorschlag im Desktop-Editor und speichere die Motivecken.",
+  WIDE_MOTIF_CONFIRMATION_REQUIRED: "Prüfe den Motivvorschlag im Editor und speichere die Motivecken.",
   IMAGE_VISIBILITY_UNCERTAIN: "Das vollständige Bildmotiv konnte nicht bestätigt werden.",
   IMAGE_BORDER_CLASSIFICATION_DISABLED: "Die automatische Bestimmung der Motivgrenze ist deaktiviert.",
   IMAGE_RECTANGLE_INCONSISTENT: "Die Motivecken passen nicht zum entzerrten Abzug. Prüfe die Motivgrenze.",
@@ -254,7 +262,9 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
         <>
           <p className="crop-mode-status" role="status">{reviewMessage}</p>
           {mobile && mode === "image_only" && getMotifBoundaryReviewHint(result) && (
-            <p className="crop-mode-status">Die Motivecken kannst du im Desktop-Editor setzen.</p>
+            <p className="crop-mode-status">{canEditMobileMotif(photo, getCropModes(photo))
+              ? "Öffne «Cropping prüfen» und wähle beim Abzug «Nur Bildmotiv»."
+              : "Die Motivecken kannst du im Desktop-Editor setzen."}</p>
           )}
           {preview && <img className="crop-variant-image" src={preview} alt={previewAlt} />}
           {outlinePreviewHint && <p className="crop-mode-status">{outlinePreviewHint}</p>}

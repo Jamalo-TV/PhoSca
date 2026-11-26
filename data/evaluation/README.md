@@ -2966,8 +2966,8 @@ manual review and test paper dimensions.
 A full-print JPEG can be available while the motif has its own unresolved
 geometry. The review queue now uses both modes. A new complete geometry
 approval returns 409 while a motif boundary, visibility or protected-content
-check is open. Mobile points to the desktop motif editor and leaves the
-other review answers and Skip available. A disabled motif classifier or
+check is open. At this milestone, Mobile pointed to the desktop motif
+editor and left the other review answers and Skip available. A disabled motif classifier or
 an older crop without a motif mode can still complete the geometry review.
 
 On the 33% JPEG75 contact print, the prior application had accepted a
@@ -2978,6 +2978,52 @@ After the desktop motif edit, both Gallery downloads matched the earlier
 verified JPEGs byte for byte. A fresh mobile approval then completed the
 task. A focused test also keeps the task open when reprocessing resolves
 the motif on the same paper mask without a fresh approval.
+
+### Review and correct the motif on mobile
+
+On both 33% contact-sheet derivatives, the ready whole print has a
+contested motif seam. At 203 × 264 mm the fitted right edge bends 2.558
+rectified pixels on JPEG75 and 2.543 on the lossless derivative, above
+the 2.25-pixel review threshold. Native sampling sees a second parallel
+transition about three to five pixels further in. The top edge only
+has fragmentary support. A strong mark check detects one region of
+the heading from approximately `(829, 161)` to `(996, 178)` in the
+original. The mark region covers only a part of the complete header.
+
+A candidate enclosing the high-contrast paper samples retained the
+development header points and all 35 panels on both derivatives. It
+retained a wide right strip where the existing paper fit also includes
+some exterior pixels. The same candidate lost all 135 marked pixels of
+a generated faint date near the top, and kept 59 of 135 on a left-side
+variant. Some physically separate row controls also satisfied both
+film-grid witness checks. These counterexamples leave the current
+boundary and release decisions in force. The source overlay draws the
+measured sections and prompts the reviewer to check beyond them.
+
+After the paper outline is saved and the whole print is ready, the
+phone editor can switch between the paper and the motif. With a held
+motif it starts at the paper corners until the reviewer drags an edge,
+chooses to include the paper boundary or loads an existing measured
+suggestion. A tap, one-pixel drag, fully reverted drag or exterior quad
+cannot save a first motif. The live output aspect uses the source-to-
+paper homography. Saving sends the existing outer box, stored paper
+vertices, visible polygon, paper measures and the intentional motif
+quad to the usual edit route. The named motif URL appears when the
+renderer makes that mode ready.
+
+On a normal JPEG75 upload, both corrected variants and the old trimmed
+alias were downloaded after the deliberate phone edit. The original
+whole-print download was byte-identical. The active four proposals,
+their count revision and the stored outer geometry stayed the same.
+The 538 × 783 motif retained 1,938/1,938 source heading samples,
+251,331/251,331 grid samples and 315/315 anchors across all 35 image
+fields. The recorded matrix independently reproduced the export with
+owned sampling and JPEG luma mean absolute error of 1.48. The lossless
+upload reproduced the same phone workflow, with both overlapping
+fragments explicitly rejected. Its 538 × 783 export preserved
+1,940/1,940 heading samples, 250,457/250,457 grid samples and the same
+315 anchors. Both tests use development paper dimensions and existing
+source pixel anchors. They provide manual workflow receipts.
 
 ### Review visible markings outside the proposed motif
 

@@ -91,3 +91,14 @@ export function getStoredMotifQuad(photo, mode) {
   return photo.segmentation_mask?.image_quad
     ?? (mode?.status === "ready" ? mode.warp_quad || photo.image_quad : null);
 }
+
+export function motifFitsPaper(motif, paper) {
+  const tolerance = 1e-8;
+  return motif.every(point => {
+    const sides = paper.map((start, index) => {
+      const end = paper[(index + 1) % paper.length];
+      return (end.x - start.x) * (point.y - start.y) - (end.y - start.y) * (point.x - start.x);
+    });
+    return sides.every(side => side >= -tolerance) || sides.every(side => side <= tolerance);
+  });
+}

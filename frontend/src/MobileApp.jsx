@@ -1,10 +1,11 @@
 import { Camera, Check, ChevronLeft, CircleHelp, CloudOff, Images, ListChecks, RefreshCw, Save, Upload, WandSparkles, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createAlbum, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
-import { resamplePerspective, samplePreviewSource } from "./cropPreview.js";
+import { projectedCropAspect, resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import {
-  adjacentPrintHint, captureRequiresReview, captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, crossingPrintHint,
+  adjacentPrintHint, canEditMobileMotif, captureRequiresReview, captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants,
+  cropModeLabels, crossingPrintHint,
   crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridReason, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
@@ -15,7 +16,7 @@ import {
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
-  getPaperGridReview, getPaperGridReviewGroups,
+  getPaperGridReview, getPaperGridReviewGroups, getStoredMotifQuad, motifFitsPaper,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
@@ -34,6 +35,7 @@ const cropAnswers = {
 };
 
 const motifDesktopReviewHint = "Setze die Motivecken im Desktop-Editor, bevor du den Zuschnitt als vollständig bestätigst.";
+const motifReviewHint = "Prüfe und speichere «Nur Bildmotiv», bevor du den Zuschnitt als vollständig bestätigst.";
 
 function OnlineBadge() {
   const [online, setOnline] = useState(navigator.onLine);
@@ -142,9 +144,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.crossing_print_suggestion));
   const fullPrintMode = reviewedNonPrint ? null : item.payload?.crop_modes?.full_print;
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
+  const motifMode = item.payload?.crop_modes?.image_only;
   const motifReviewPending = !reviewedNonPrint && item.payload?.motif_review_pending;
-  const motifBoundaryReviewHint = getMotifBoundaryReviewHint(item.payload?.crop_modes?.image_only);
-  const motifMarginMarks = motifReviewPending ? getMotifMarginMarks(item.payload?.crop_modes?.image_only) : [];
+  const motifBoundaryReviewHint = getMotifBoundaryReviewHint(motifMode);
+  const motifMarginMarks = motifReviewPending ? getMotifMarginMarks(motifMode) : [];
+  const motifTraces = motifReviewPending ? getSourceEdgeTraces(motifMode?.suggested_seam_traces) : [];
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
   const initialPaperOutline = openPaperOutline && paperGrid?.cut === null && printSuggestion;
@@ -159,12 +163,20 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.scalloped_alternate_polygon));
   const savedQuad = sanitizeReviewPolygon(item.payload?.segmentation_mask?.warp_quad);
   const measuredQuad = storedMeasurement && (savedQuad || sanitizeReviewPolygon(item.payload?.warp_quad));
+  const canEditMotif = editable && !reviewedNonPrint && isValidQuad(savedQuad)
+    && canEditMobileMotif(item.payload, item.payload?.crop_modes);
+  const storedMotif = cyclicReviewQuad(sanitizeReviewPolygon(getStoredMotifQuad(item.payload || {}, motifMode)));
+  const suggestedMotif = cyclicReviewQuad(sanitizeReviewPolygon(motifMode?.suggested_warp_quad));
   const initialOuter = () => initialPaperOutline || (isValidQuad(measuredQuad) ? measuredQuad : initialQuad(
     item.payload?.confidence === null && savedQuad ? savedQuad : item.payload?.warp_quad,
     visiblePolygon,
     sourceBox,
   ));
   const [quad, setQuad] = useState(initialOuter); const [saving, setSaving] = useState(false);
+  const [editMode, setEditMode] = useState("full_print");
+  const [motifQuad, setMotifQuad] = useState(storedMotif);
+  const editingMotif = canEditMotif && editMode === "image_only";
+  const displayedQuad = editingMotif ? motifQuad || savedQuad : quad;
   const [usingOutlineSuggestion, setUsingOutlineSuggestion] = useState(Boolean(initialPaperOutline));
   const [editingPreview, setEditingPreview] = useState(Boolean(initialPaperOutline && !outlinePreviewHint));
   const [measurementFields, setMeasurementFields] = useState(() => printSizeInputs(storedMeasurement));
@@ -175,6 +187,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const [magnifier, setMagnifier] = useState({ visible: false, x: 0, y: 0 });
   useEffect(() => {
     setQuad(initialOuter());
+    setEditMode("full_print");
+    setMotifQuad(storedMotif);
     setUsingOutlineSuggestion(Boolean(initialPaperOutline));
     setEditingPreview(Boolean(initialPaperOutline && !outlinePreviewHint));
     setMeasurementFields(printSizeInputs(storedMeasurement));
@@ -184,45 +198,79 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     setSaveError("");
   }, [item.id]);
   const box = quadToBox(quad);
-  const validQuad = !editable || isValidQuad(quad);
+  const validQuad = !editable || isValidQuad(displayedQuad);
+  const motifOutside = editingMotif && !motifFitsPaper(displayedQuad, savedQuad);
+  const validMotif = editingMotif && motifQuad && validQuad && !motifOutside;
   const crossingNeedsCorrection = crossingOutline && initialOuter()?.every(
     (point, index) => point.x === quad?.[index]?.x && point.y === quad?.[index]?.y,
   );
   const { size, error: sizeError } = parsePrintSize(measurementFields);
   function moveCorner(event, cornerIndex) {
-    if (!editable || !quad) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId);
+    if (!editable || !displayedQuad || saving) return;
+    const pointerId = event.pointerId;
+    event.preventDefault(); event.currentTarget.setPointerCapture(pointerId);
     const svg = event.currentTarget.ownerSVGElement; const rect = svg.getBoundingClientRect();
+    const startX = event.clientX, startY = event.clientY;
+    const initial = displayedQuad[cornerIndex];
+    let moved = false;
     const move = e => {
+      if (e.pointerId !== pointerId) return;
       e.preventDefault();
-      const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)); const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if (editingMotif && !moved && Math.hypot(dx, dy) < 2) return;
+      moved = true;
+      const x = Math.max(0, Math.min(1, editingMotif ? initial.x + dx / rect.width : (e.clientX - rect.left) / rect.width));
+      const y = Math.max(0, Math.min(1, editingMotif ? initial.y + dy / rect.height : (e.clientY - rect.top) / rect.height));
       setMagnifier({ visible: magnifierEnabled, x, y });
       setEditingPreview(true);
       setSavedCropUrl(""); setSaveError("");
+      if (editingMotif) {
+        setMotifQuad(current => {
+          const next = (current || savedQuad).map((point, index) => index === cornerIndex ? { x, y } : point);
+          return !storedMotif && next.every((point, index) =>
+            Math.hypot(point.x - savedQuad[index].x, point.y - savedQuad[index].y) < 1e-8) ? null : next;
+        });
+        return;
+      }
       setQuad(current => current.map((point,index) => index === cornerIndex ? { x, y } : point));
     };
-    const initialX = quad[cornerIndex].x; const initialY = quad[cornerIndex].y;
-    setMagnifier({ visible: magnifierEnabled, x: initialX, y: initialY });
-    const up = () => { setMagnifier(current => ({ ...current, visible: false })); removeEventListener("pointermove", move); removeEventListener("pointerup", up); };
-    addEventListener("pointermove", move); addEventListener("pointerup", up, { once: true });
+    setMagnifier({ visible: magnifierEnabled, x: initial.x, y: initial.y });
+    const up = e => {
+      if (e.pointerId !== pointerId) return;
+      setMagnifier(current => ({ ...current, visible: false }));
+      removeEventListener("pointermove", move); removeEventListener("pointerup", up); removeEventListener("pointercancel", up);
+    };
+    addEventListener("pointermove", move); addEventListener("pointerup", up); addEventListener("pointercancel", up);
   }
   async function save() {
-    if (!validQuad || sizeError || crossingNeedsCorrection) return; setSaving(true); setSaveError("");
+    if (editingMotif ? !validMotif : (!validQuad || sizeError || crossingNeedsCorrection)) return;
+    setSaving(true); setSaveError("");
     try {
-      const saved = await patchBoundingBox(item.payload.photo_id, box, {
+      const mask = editingMotif ? {
+        polygon: item.payload.segmentation_mask?.polygon || savedQuad,
+        visible_polygon: visiblePolygon || savedQuad, warp_quad: savedQuad,
+        image_quad: motifQuad, ...(storedMeasurement ? { print_size_mm: storedMeasurement } : {}),
+        source: "manual_mobile_motif",
+      } : {
         polygon: quad,
         visible_polygon: usingOutlineSuggestion ? quad : (visiblePolygon || quad),
         warp_quad: quad,
         print_size_mm: size,
         ...(orientation !== savedOrientation ? { orientation_degrees: orientation } : {}),
         source: "manual_mobile_quad",
-      }, Boolean(printSuggestion));
+      };
+      const saved = await patchBoundingBox(item.payload.photo_id, editingMotif ? sourceBox : box, mask,
+        !editingMotif && Boolean(printSuggestion));
       const savedDegrees = saved.segmentation_mask?.orientation_degrees ?? null;
       setOrientation(savedDegrees);
       setSavedOrientation(savedDegrees);
       const cropModes = getCropModes(saved);
+      setMotifQuad(cyclicReviewQuad(sanitizeReviewPolygon(getStoredMotifQuad(saved, cropModes?.image_only))));
       const held = captureRequiresReview(cropModes?.full_print) || paperOutlineRequiresReview(cropModes?.full_print);
-      setSavedCropUrl(held ? "" : `/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`);
-      onSaved?.(cropModes, saved.segmentation_mask, saved.motif_review_pending);
+      const cropUrl = editingMotif ? saved.crop_download_urls?.image_only
+        : !held && `/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`;
+      setSavedCropUrl(cropUrl || "");
+      onSaved?.(saved);
     } catch (error) {
       setSaveError(error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message === "print_outline_review_required" ? printOutlineSaveHint
@@ -288,22 +336,42 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const overlayHints = [countOutlines.length && "mobile-fragment-count-review-hint",
     captureSplitGroups.length && "mobile-capture-split-count-hint",
     filmGridGroups.length && "mobile-film-grid-count-hint", paperGridGroups.length && "mobile-paper-grid-count-hint",
+    editable && motifTraces.length && "mobile-motif-seam-hint",
   ].filter(Boolean).join(" ");
   const paperTraceOverlay = printEdgeTraces.map((trace, index) => (
     <polyline key={index} points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />
   ));
-  return <><div className={`review-image overlay-image ${validQuad ? "" : "invalid-quad"}`} onContextMenu={event=>event.preventDefault()}>
+  return <>
+    {canEditMotif && <div className="task-switch" role="group" aria-label="Ausschnitt bearbeiten">
+      {Object.entries(cropModeLabels).map(([mode, label]) => (
+        <button key={mode} type="button" className={editMode === mode ? "active" : ""} aria-pressed={editMode === mode}
+          disabled={saving} onClick={() => {
+            if (editMode === mode) return;
+            setEditMode(mode);
+            setEditingPreview(mode === "image_only" && Boolean(motifQuad));
+            setSavedCropUrl("");
+            setSaveError("");
+          }}>{label}</button>
+      ))}
+    </div>}
+    <div className={`review-image overlay-image ${validQuad && !motifOutside ? "" : "invalid-quad"}`}
+      onContextMenu={event=>event.preventDefault()}>
     <div className="review-image-frame">
       <img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"
         aria-describedby={overlayHints || undefined} />
       <svg viewBox="0 0 1000 1000" preserveAspectRatio="none">
-        {editable && quad ? <g>
+        {editable && displayedQuad ? <g>
           {visiblePolygon && <polygon points={visiblePolygon.map(point => `${point.x * 1000},${point.y * 1000}`).join(" ")}
             fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9" />}
-          <polygon className="editable-quad" points={quad.map(point => `${point.x * 1000},${point.y * 1000}`).join(" ")} />
-          {uncertainLine}{alternateOverlay}{paperTraceOverlay}
-          {quad.map((point, index) => <g key={index}>
+          <polygon className="editable-quad" points={displayedQuad.map(point => `${point.x * 1000},${point.y * 1000}`).join(" ")} />
+          {!editingMotif && <>{uncertainLine}{alternateOverlay}{paperTraceOverlay}</>}
+          {motifTraces.length > 0 && <g aria-label="Gemessene Abschnitte einer möglichen Motivkante" fill="none"
+            stroke="#2563eb" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none">
+            {motifTraces.map((trace, index) => <polyline key={index}
+              points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />)}
+          </g>}
+          {displayedQuad.map((point, index) => <g key={index}>
             <circle className="drag-handle" cx={point.x * 1000} cy={point.y * 1000} r="25" onPointerDown={event => moveCorner(event, index)} />
             <text className="corner-label" x={point.x * 1000 + 28} y={point.y * 1000 - 22}>{index + 1}</text>
           </g>)}
@@ -322,7 +390,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         left: `${lensX}%`, top: `${lensY}%`, backgroundImage: `url(${item.preview_url})`, backgroundPosition: `${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%`,
       }}><i /></div>}
     </div>
-    <span>{validQuad ? overlayLabel : "Ecken kreuzen sich"}</span>
+    <span>{!validQuad ? "Ecken kreuzen sich" : motifOutside ? "Alle Motivecken müssen auf dem Abzug liegen" : overlayLabel}</span>
   </div>
     {item.page_id && (
       <div className="edge-measurement-controls">
@@ -342,6 +410,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     {captureSplitGroups.length > 0 && <p className="quad-hint" id="mobile-capture-split-count-hint">{captureSplitReviewHint}</p>}
     {filmGridGroups.length > 0 && <p className="quad-hint" id="mobile-film-grid-count-hint">{filmGridCountHint}</p>}
     {paperGridGroups.length > 0 && <p className="quad-hint" id="mobile-paper-grid-count-hint">{paperGridCountHint}</p>}
+    {editable && motifTraces.length > 0 && <p className="quad-hint" id="mobile-motif-seam-hint">
+      Die blau gestrichelten Linien zeigen gemessene Abschnitte einer möglichen Motivkante. Prüfe den Inhalt auch ausserhalb der Linien.
+    </p>}
     {nestedOutlines.length > 0 && <p className="quad-hint">{nestedPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
     {deferredProposals.length > 0 && <p className="quad-hint">{deferredPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
     {measurementPage && measurementPage === item.page_id && <EdgeMeasurement key={item.page_id} pageId={item.page_id}
@@ -360,11 +431,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
       {printEdgeReviewHint && <p className="quad-hint" id="mobile-print-edge-review-hint">{printEdgeReviewHint}</p>}
       {motifReviewPending && <p className="quad-hint" id="mobile-motif-review-hint">
-        {motifBoundaryReviewHint && `${motifBoundaryReviewHint} `}{motifDesktopReviewHint}
+        {motifBoundaryReviewHint && `${motifBoundaryReviewHint} `}{canEditMotif ? motifReviewHint : motifDesktopReviewHint}
       </p>}
       {adjacentOutline && <p className="quad-hint">{adjacentPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
       {scallopedAlternate && <p className="quad-hint">Prüfe den gestrichelten Vorschlag am Original. Wähle «Prints zusammen», falls dort ein eigener Abzug aufliegt.</p>}
-      {(fragmentOutline || crossingOutline || printSuggestion) && (
+      {!editingMotif && (fragmentOutline || crossingOutline || printSuggestion) && (
         <button className="magnifier-toggle" type="button" disabled={saving} onClick={() => {
           const suggestion = crossingOutline || printSuggestion || cyclicReviewQuad(fragmentOutline?.quad);
           if (!suggestion) return;
@@ -375,10 +446,18 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           setSaveError("");
         }}>{paperGrid && usingOutlineSuggestion ? "Gemessenen Aussenumriss zurücksetzen" : "Aussenumriss in den Editor laden"}</button>
       )}
-      {uncertainLine && <p className="quad-hint">Prüfe besonders die gestrichelte Papierkante.</p>}
-      <div className="quad-hint">Vier nummerierte Ecken frei verschieben · danach wird das Foto geradegerichtet</div>
+      {!editingMotif && uncertainLine && <p className="quad-hint">Prüfe besonders die gestrichelte Papierkante.</p>}
+      {editingMotif ? <>
+        <p className="quad-hint">Setze die Ecken an die Motivgrenze. Lass alle Bildfelder und zugehörigen Beschriftungen im Zuschnitt.</p>
+        {(suggestedMotif || !storedMotif) && <button className="magnifier-toggle" type="button" disabled={saving} onClick={() => {
+          setMotifQuad(suggestedMotif || savedQuad);
+          setEditingPreview(true);
+          setSavedCropUrl("");
+          setSaveError("");
+        }}>{suggestedMotif ? "Motivvorschlag in den Editor laden" : "Motiv reicht bis zum Papierrand"}</button>}
+      </> : <div className="quad-hint">Vier nummerierte Ecken frei verschieben · danach wird das Foto geradegerichtet</div>}
       <button className={`magnifier-toggle ${magnifierEnabled ? "active" : ""}`} onClick={()=>setMagnifierEnabled(value=>!value)}><ZoomIn size={18}/>{magnifierEnabled ? "Lupe beim Ziehen aktiv" : "Lupe einschalten"}</button>
-      <PrintSizeFields
+      {!editingMotif && <><PrintSizeFields
         value={measurementFields}
         onChange={(fields) => {
           setMeasurementFields(fields);
@@ -394,15 +473,18 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         setEditingPreview(true);
         setSavedCropUrl("");
         setSaveError("");
-      }} />
-      <button className="save-crop" onClick={save} disabled={saving || !validQuad || Boolean(sizeError) || crossingNeedsCorrection}>
-        <Save size={18}/>{saving ? "Richtet das Bild …" : "Viereck speichern & geraderichten"}
+      }} /></>}
+      <button className="save-crop" onClick={save} disabled={saving
+        || (editingMotif ? !validMotif : (!validQuad || Boolean(sizeError) || crossingNeedsCorrection))}>
+        <Save size={18}/>{saving ? "Richtet das Bild …" : editingMotif ? "Motivzuschnitt speichern" : "Viereck speichern & geraderichten"}
       </button>
       {saveError && <p className="crop-save-error">{saveError}</p>}
-      {quad && <LiveCropPreview src={item.preview_url} quad={quad} savedCropUrl={savedCropUrl}
-        outlinePreviewUrl={editingPreview ? null : item.payload?.variant_urls?.full_print_preview}
-        outlinePreviewHint={outlinePreviewHint}
-        measuredAspect={size ? size.width / size.height : null} orientation={orientation} />}
+      {displayedQuad && !motifOutside && <LiveCropPreview src={item.preview_url} quad={displayedQuad} savedCropUrl={savedCropUrl}
+        outlinePreviewUrl={editingPreview ? null : item.payload?.variant_urls?.[editingMotif ? "image_only_preview" : "full_print_preview"]}
+        outlinePreviewHint={editingMotif ? motifBoundaryReviewHint : outlinePreviewHint}
+        measuredAspect={!editingMotif && size ? size.width / size.height : null}
+        referenceMatrix={editingMotif ? fullPrintMode.page_to_output : null}
+        orientation={editingMotif ? item.payload?.orientation?.rotation_degrees : orientation} />}
     </>}
   </>;
 }
@@ -461,7 +543,7 @@ function isValidQuad(quad) {
   return sameDirection && area>0.001;
 }
 
-function drawQuadPreview(canvas, { image, pixels }, quad, measuredAspect, orientation) {
+function drawQuadPreview(canvas, { image, pixels }, quad, measuredAspect, orientation, referenceMatrix) {
   const [first, second, third] = quad;
   const clockwise = (second.x - first.x) * (third.y - first.y) - (second.y - first.y) * (third.x - first.x) > 0;
   const ordered = clockwise ? quad : [quad[1], quad[0], quad[3], quad[2]];
@@ -480,7 +562,7 @@ function drawQuadPreview(canvas, { image, pixels }, quad, measuredAspect, orient
   const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
   const rawWidth=Math.max(distance(source[0],source[1]),distance(source[3],source[2]),1);
   const rawHeight=Math.max(distance(source[0],source[3]),distance(source[1],source[2]),1);
-  const aspect = measuredAspect || rawWidth / rawHeight;
+  const aspect = measuredAspect || (referenceMatrix && projectedCropAspect(source, referenceMatrix)) || rawWidth / rawHeight;
   const limit = 720;
   const width = Math.max(1, Math.min(limit, Math.round(limit * aspect), Math.max(240, Math.round(rawWidth))));
   const height = Math.min(limit, Math.max(1, Math.round(width / aspect)));
@@ -495,7 +577,7 @@ function drawQuadPreview(canvas, { image, pixels }, quad, measuredAspect, orient
   canvas.getContext("2d", { alpha: false }).putImageData(new ImageData(result.data, result.width, result.height), 0, 0);
 }
 
-function LiveCropPreview({ src, quad, savedCropUrl, outlinePreviewUrl, outlinePreviewHint, measuredAspect, orientation }) {
+function LiveCropPreview({ src, quad, savedCropUrl, outlinePreviewUrl, outlinePreviewHint, measuredAspect, orientation, referenceMatrix }) {
   const canvasRef = useRef(null);
   const [sample, setSample] = useState(null);
   const previewUrl = savedCropUrl || outlinePreviewUrl;
@@ -509,10 +591,10 @@ function LiveCropPreview({ src, quad, savedCropUrl, outlinePreviewUrl, outlinePr
   useEffect(() => {
     if (previewUrl || !sample || sample.src !== src || !isValidQuad(quad)) return;
     const frame = requestAnimationFrame(() => {
-      if (canvasRef.current) drawQuadPreview(canvasRef.current, sample, quad, measuredAspect, orientation);
+      if (canvasRef.current) drawQuadPreview(canvasRef.current, sample, quad, measuredAspect, orientation, referenceMatrix);
     });
     return () => cancelAnimationFrame(frame);
-  }, [sample, src, quad, measuredAspect, orientation, previewUrl]);
+  }, [sample, src, quad, measuredAspect, orientation, previewUrl, referenceMatrix]);
   const title = savedCropUrl ? "Gerichteter Ausschnitt" : outlinePreviewUrl ? "Abzugsvorschau zur Prüfung" : "Live-Ausschnitt";
   const detail = savedCropUrl ? "Perspektive wurde aus den vier Ecken korrigiert" : outlinePreviewUrl
     ? outlinePreviewHint || "Vorschau folgt der gezackten Papierkante" : "Vorschau folgt allen vier Ecken live";
@@ -582,19 +664,27 @@ function CropReview({ albumId, goHome }) {
     setAnswerError("");
     setMessage("");
   }
-  function updateSavedCropModes(cropModes, segmentationMask, motifReviewPending) {
+  function updateSavedCropModes(saved) {
+    const cropModes = getCropModes(saved);
     if (cropModes) {
+      const mask = saved.segmentation_mask;
       setQueue(current => current?.key === queueKey ? { ...current, rows: current.rows.map(task => {
         if (task.id !== item.id) return task;
-        const variantUrls = { ...task.payload.variant_urls };
+        const variantUrls = { ...task.payload.variant_urls, ...saved.crop_download_urls };
         if (!cropModes.full_print?.outline_preview) delete variantUrls.full_print_preview;
-        return { ...task, payload: { ...task.payload, crop_modes: cropModes, segmentation_mask: segmentationMask,
-          motif_review_pending: motifReviewPending, variant_urls: variantUrls } };
+        if (!cropModes.image_only?.outline_preview) delete variantUrls.image_only_preview;
+        return { ...task, payload: { ...task.payload, crop_modes: cropModes, segmentation_mask: mask,
+          bounding_box: saved.bounding_box, confidence: saved.segmentation_confidence,
+          polygon: mask?.polygon, visible_polygon: mask?.visible_polygon || mask?.polygon,
+          warp_quad: cropModes.full_print?.warp_quad || mask?.warp_quad,
+          image_quad: mask?.image_quad, print_size_mm: mask?.print_size_mm,
+          orientation: saved.enhancement_applied?.correction?.orientation,
+          motif_review_pending: saved.motif_review_pending, variant_urls: variantUrls } };
       }) } : current);
     }
     setMessage(captureRequiresReview(cropModes?.full_print) || paperOutlineRequiresReview(cropModes?.full_print)
       ? "Vier Ecken gespeichert. Die Papierkante bleibt in Prüfung."
-      : motifReviewPending ? "Vier Ecken gespeichert. Der Motivzuschnitt bleibt in Prüfung."
+      : saved.motif_review_pending ? "Vier Ecken gespeichert. Der Motivzuschnitt bleibt in Prüfung."
         : "Vier Ecken gespeichert und Perspektive korrigiert");
   }
   async function record(value) {
@@ -620,7 +710,8 @@ function CropReview({ albumId, goHome }) {
         setIndex((current) => current + 1);
       }
     } catch (error) {
-      setAnswerError(error.message === "motif_geometry_review_required" ? motifDesktopReviewHint : error.message);
+      const motifHint = canEditMobileMotif(item.payload, item.payload?.crop_modes) ? motifReviewHint : motifDesktopReviewHint;
+      setAnswerError(error.message === "motif_geometry_review_required" ? motifHint : error.message);
       await load().catch(() => {});
     } finally {
       setSubmitting(false);

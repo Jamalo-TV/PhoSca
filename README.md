@@ -218,6 +218,18 @@ unklarer Motivgrenze startet der Editor am Papierrand und wartet auf
 eine bewusste Auswahl. Eine offene Motivprüfung bleibt auch nach einer
 älteren allgemeinen Geometriebestätigung sichtbar.
 
+Mobile zeigt offene Motivkanten und erkannte Randbeschriftungen auf der
+Originalseite. Sobald ein manuell bestätigter Ganzabzug verfügbar ist,
+lässt sich **Nur Bildmotiv** auch unter **Cropping prüfen** bearbeiten.
+Die Motivecken bleiben ein eigener Entwurf. Ein Antippen, eine Bewegung
+unter zwei Bildschirmpixeln oder eine zurückgezogene Ecke genügt beim
+ersten Entwurf für die Speicherung nicht. Die Vorschau verwendet das
+Seitenverhältnis aus der entzerrten Papierebene. Beim Speichern gehen
+die unveränderten Papierecken, Masse und die gewählte Drehung mit den
+Motivecken an die bestehende Editor-API. Die Freigabe des Motivs setzt
+eine gültige Geometrie und die bestehende Prüfung voraus.
+[Motivkorrektur am Kontaktabzug](data/evaluation/README.md#review-and-correct-the-motif-on-mobile)
+
 Nach einer Änderung rendert die API die Varianten erneut vom
 Albumoriginal. Ein Modus kann eine Vorschau mit Korrekturhinweisen
 zeigen, während sein Download gesperrt bleibt. Die Galerie lädt die

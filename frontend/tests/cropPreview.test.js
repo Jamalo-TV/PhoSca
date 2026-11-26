@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resamplePerspective } from "../src/cropPreview.js";
+import { projectedCropAspect, resamplePerspective } from "../src/cropPreview.js";
 
 function coordinateGrid(width, height) {
   const data = new Uint8ClampedArray(width * height * 4);
@@ -14,6 +14,14 @@ function color(image, x, y) {
   const offset = 4 * (y * image.width + x);
   return [...image.data.slice(offset, offset + 4)];
 }
+
+test("the motif preview measures its aspect in the rectified paper plane", () => {
+  const corners = [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 3, y: 3 }, { x: 1, y: 3 }];
+  const projection = [[1, -1 / 3, 0], [0, 1, 0], [0, -1 / 6, 1]];
+  const rotated = [projection[1], [-1, 1 / 3, 0], projection[2]];
+  assert.equal(projectedCropAspect(corners, projection), 2 / 3);
+  assert.equal(projectedCropAspect(corners, rotated), 2 / 3);
+});
 
 test("a trapezoid is projected continuously instead of using two affine triangles", () => {
   const corners = [{ x: 2, y: 2 }, { x: 8, y: 2 }, { x: 6, y: 8 }, { x: 4, y: 8 }];

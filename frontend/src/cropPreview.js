@@ -12,6 +12,19 @@ export function samplePreviewSource(image) {
   return context.getImageData(0, 0, width, height);
 }
 
+export function projectedCropAspect(corners, matrix) {
+  const projected = corners.map(({ x, y }) => {
+    const [u, v, scale] = matrix.map(row => row[0] * x + row[1] * y + row[2]);
+    return { x: u / scale, y: v / scale };
+  });
+  const lengths = projected.map((start, index) => {
+    const end = projected[(index + 1) % projected.length];
+    return Math.hypot(end.x - start.x, end.y - start.y);
+  });
+  const aspect = (lengths[0] + lengths[2]) / (lengths[1] + lengths[3]);
+  return Number.isFinite(aspect) && aspect > 0 ? aspect : null;
+}
+
 export function resamplePerspective(pixels, corners, width, height, orientation) {
   const [a, b, c, d] = corners;
   const dx1 = b.x - c.x;

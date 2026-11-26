@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFragmentReviewOutlines, getPaperGridReviewGroups,
-  getStoredMotifQuad,
+  getStoredMotifQuad, motifFitsPaper,
 } from "../src/cropReviewOutlines.js";
 
 const quad = [{ x: .1, y: .2 }, { x: .7, y: .2 }, { x: .7, y: .8 }, { x: .1, y: .8 }];
@@ -13,6 +13,17 @@ test("held motif geometry requires selection while a saved or ready motif can be
   assert.equal(getStoredMotifQuad({ image_quad: quad }, held), null);
   assert.equal(getStoredMotifQuad({ segmentation_mask: { image_quad: quad } }, held), quad);
   assert.equal(getStoredMotifQuad({}, { status: "ready", warp_quad: quad }), quad);
+});
+
+test("motif corners may touch the paper while exterior corners fail on either winding", () => {
+  const paper = [quad[0], { x: .65, y: .3 }, quad[2], quad[3]];
+  const inside = [{ x: .2, y: .3 }, { x: .6, y: .35 }, { x: .65, y: .75 }, { x: .2, y: .75 }];
+  const outside = [inside[0], { x: .66, y: .3 }, inside[2], inside[3]];
+  for (const outline of [paper, [...paper].reverse()]) {
+    assert.equal(motifFitsPaper(paper, outline), true);
+    assert.equal(motifFitsPaper(inside, outline), true);
+    assert.equal(motifFitsPaper(outside, outline), false);
+  }
 });
 
 test("a shared outline appears once with the same three supported sides and separate weak edge", () => {
