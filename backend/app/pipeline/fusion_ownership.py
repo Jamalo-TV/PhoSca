@@ -11,7 +11,7 @@ from app.pipeline.geometry import (
 from app.pipeline.print_edges import _edge_band, _line_endpoints, _side_line, refine_print_boundary
 
 
-FUSION_OWNERSHIP_REVISION = 5
+FUSION_OWNERSHIP_REVISION = 6
 NESTED_FALLBACK_CONTOUR = "nested_fallback_contour"
 NESTED_FALLBACK_CONTOUR_REVIEW = "NESTED_FALLBACK_CONTOUR_REVIEW"
 BORROWED_FALLBACK_EDGE = "possible_borrowed_print_edge"

@@ -7,7 +7,7 @@ import { heldPrintCorrectionHint, wholePrintApprovalHeld } from "./cropReviewApp
 import {
   actionableCountGroups, adjacentPrintHint, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
   captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, cropProtectionErrors, CropVariants,
-  cropModeLabels, crossingPrintHint,
+  cropModeLabels, crossingFallbackTraceStyles, crossingPrintHint,
   countGroupReviewError, CountGroupReview, crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridRimHint,
   filmGridReason, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
@@ -23,7 +23,7 @@ import {
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
 } from "./CropVariants.jsx";
 import {
-  getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
+  getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
 } from "./cropReviewOutlines.js";
@@ -400,13 +400,20 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     </g>
   ));
   const countGroupOverlay = selectedCountGroup && (
-    <g aria-label={selectedCountGroup.kind === "film" ? "Vorschläge zur Prüfung der Negativhülle" : "Vorschläge zur Prüfung der Papierkante"}
+    <g aria-label={selectedCountGroup.kind === "film" ? "Vorschläge zur Prüfung der Negativhülle"
+      : selectedCountGroup.kind === "crossing" ? "Schräger Vorschlag zur Anzahlprüfung" : "Vorschläge zur Prüfung der Papierkante"}
       fill="#0e7490" fillOpacity="0.11"
       stroke="#0e7490" strokeWidth="6" pointerEvents="none">
       {detections.filter(({ photo_id }) => selectedCountGroup.photoIds.has(photo_id)).map(detection => {
         const polygon = sanitizeReviewPolygon(detection.visible_polygon || detection.polygon);
         return polygon && <polygon key={detection.photo_id}
           points={polygon.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />;
+      })}
+      {selectedCountGroup.kind === "crossing" && selectedCountGroup.traces.map((line, index) => {
+        const { color, dash, label } = crossingFallbackTraceStyles[index];
+        return <polyline key={label} aria-label={label} fill="none" stroke={color} strokeWidth="8"
+          strokeDasharray={dash.map(value => value * 2).join(" ")}
+          points={line.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />;
       })}
     </g>
   );
@@ -819,7 +826,7 @@ function CropReview({ albumId, goHome }) {
   const paperGridOutlineParents = getPaperGridOutlineParents(countDetections).filter(parent =>
     cyclicReviewQuad(sanitizeReviewPolygon(parent.crop_modes?.full_print?.suggested_warp_quad)));
   const countGroups = actionableCountGroups(filmGridGroups, paperJoinGroups,
-    getActionablePaperGridReviewGroups(paperGridGroups, countDetections));
+    getActionablePaperGridReviewGroups(paperGridGroups, countDetections), getCrossingFallbackReviewGroups(countDetections));
   const selectedCountGroup = groupSelection?.pageId === item?.id
     ? countGroups.find(({ key }) => key === groupSelection?.key) : null;
   const approvalBlocked = fullPrintHeld || captureReviewPending || paperOutlinePending || deferredParentReviewPending
@@ -919,7 +926,7 @@ function CropReview({ albumId, goHome }) {
     returnCountId.current = item.id;
     try {
       const event = sharedPaper ? await confirmSharedPaperGrid(item.id, groupSelection?.revision, group, "mobile-v2")
-        : await excludeCountReviewGroup(item.id, item.payload.photo_count_revision, group, "mobile-v2");
+        : await excludeCountReviewGroup(item.id, groupSelection?.revision, group, "mobile-v2");
       await load();
       if (sharedPaper) setConfirmedPaperGrid({ pageId: item.id, eventId: event.id });
     } catch (error) {

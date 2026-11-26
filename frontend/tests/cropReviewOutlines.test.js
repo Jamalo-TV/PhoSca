@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFragmentReviewOutlines,
+  getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
+  getFilmGridReviewSeams, getFragmentReviewOutlines,
   getPaperGridOutlineParents, getPaperGridReviewGroups,
   getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
 } from "../src/cropReviewOutlines.js";
@@ -25,6 +26,23 @@ test("motif corners may touch the paper while exterior corners fail on either wi
     assert.equal(motifFitsPaper(inside, outline), true);
     assert.equal(motifFitsPaper(outside, outline), false);
   }
+});
+
+test("a crossing count hint selects only its current, held automatic proposal", () => {
+  const traces = quad.map((point, index) => [point, quad[(index + 1) % quad.length]]);
+  const mask = { crossing_fallback_review_traces: traces };
+  const modes = { full_print: { status: "review_needed" }, image_only: { status: "review_needed" } };
+  const held = { photo_id: "crossed", confidence: .77, segmentation_mask: mask, crop_modes: modes };
+  const [group, ...others] = getCrossingFallbackReviewGroups([
+    held, { ...held, photo_id: "removed", reviewed_non_print: true },
+    { ...held, photo_id: "manual", confidence: null },
+    { ...held, photo_id: "ready", crop_modes: { ...modes, full_print: { status: "ready" } } },
+    { ...held, photo_id: "incomplete", segmentation_mask: { crossing_fallback_review_traces: traces.slice(0, 3) } },
+  ]);
+  assert.deepEqual(others, []);
+  assert.equal(group.kind, "crossing");
+  assert.deepEqual(group.photoIds, new Set(["crossed"]));
+  assert.deepEqual(group.traces, traces);
 });
 
 test("a shared outline appears once with the same three supported sides and separate weak edge", () => {

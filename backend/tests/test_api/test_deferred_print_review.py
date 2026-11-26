@@ -714,11 +714,12 @@ async def test_shared_rim_requires_a_paper_edit_before_manual_export(client, mon
         assert (await client.get(f"{url}/image?variant={variant}")).status_code == 200
 
 
-@pytest.mark.parametrize("kind", ["film", "paper"])
+@pytest.mark.parametrize("kind", ["film", "paper", "crossing"])
 async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kind):
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ReviewEvent
+    from app.pipeline.crossing_fallback_review import CROSSING_FALLBACK_COUNT_REVIEW, CROSSING_FALLBACK_TRACES
     from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
     from app.pipeline.segmentation import SegmentationDetection, SegmentationResult
     from app.services import pipeline
@@ -738,21 +739,29 @@ async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kin
     linked = [vertices(25, 30, 179, 121), vertices(26, 131, 181, 228)]
     if kind == "film":
         linked.insert(0, vertices(20, 24, 184, 233))
+    elif kind == "crossing":
+        linked = linked[:1]
     paper = [vertices(206, 21, 375, 234), vertices(218, 132, 362, 232)]
     seam = [{"x": 0.08, "y": 0.48}, {"x": 0.45, "y": 0.49}]
     traces = [[{"x": x, "y": .49}, {"x": x, "y": .54}] for x in (.05, .46)]
-    mask_key = "film_grid_review_seam" if kind == "film" else "paper_join_review_traces"
-    reason = FILM_GRID_REVIEW if kind == "film" else PAPER_JOIN_REVIEW
+    mask_key, reason, evidence = {
+        "film": ("film_grid_review_seam", FILM_GRID_REVIEW, seam),
+        "paper": ("paper_join_review_traces", PAPER_JOIN_REVIEW, traces),
+        "crossing": (CROSSING_FALLBACK_TRACES, CROSSING_FALLBACK_COUNT_REVIEW, [*traces, seam, seam[::-1]]),
+    }[kind]
     detections = []
     for polygon in [*linked, *paper]:
         bounds = {"x1": polygon[0]["x"], "y1": polygon[0]["y"], "x2": polygon[2]["x"], "y2": polygon[2]["y"]}
         mask = {"source": "yolo_seg_mask", "polygon": polygon}
         if polygon in linked:
-            mask[mask_key] = seam if kind == "film" else traces
+            mask[mask_key] = evidence
         detections.append(SegmentationDetection(
             bounds, mask, 0.81, 1.0, False, [reason if polygon in linked else PAPER_GRID_REVIEW],
         ))
-    monkeypatch.setattr(pipeline, "segment_album_page", lambda *_, **__: SegmentationResult(detections, {}))
+    pending = [{"id": 4, "reason": "unclear_overlap", "polygon": vertices(185, 31, 199, 202)}] if kind == "crossing" else []
+    monkeypatch.setattr(pipeline, "segment_album_page", lambda *_, **__: SegmentationResult(
+        detections, {"fusion": {"deferred_print_proposals": pending}},
+    ))
     image = np.full((260, 400, 3), 42, np.uint8)
     image[24:234, 20:185] = (53, 82, 110)
     image[21:235, 206:376] = (89, 137, 186)
@@ -779,9 +788,15 @@ async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kin
               "idempotency_key": uuid4().hex, "metadata": metadata}
     incomplete = await client.post(event_url, json={**answer, "metadata": {**metadata, ids_key: group_ids[:-1]}})
     assert incomplete.status_code == 422
-    for selection in ([*group_ids[:-1], paper_before[0]["photo_id"]], [group_ids[0]] * len(group_ids)):
+    wrong_selections = [[*group_ids[:-1], paper_before[0]["photo_id"]]]
+    if len(group_ids) > 1:
+        wrong_selections.append([group_ids[0]] * len(group_ids))
+    for selection in wrong_selections:
         wrong = await client.post(event_url, json={**answer, "metadata": {**metadata, ids_key: selection}})
         assert wrong.status_code == 409 and wrong.json()["detail"] == f"{kind}_review_group_stale"
+    if kind == "crossing":
+        unconfirmed = await client.post(event_url, json={**answer, "reason_code": None})
+        assert unconfirmed.status_code == 422 and unconfirmed.json()["detail"] == "crossing_confirmation_required"
     assert (await client.get(queue_url)).json() == [task]
 
     confirmed = await client.post(event_url, json=answer)
@@ -796,6 +811,7 @@ async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kin
     after = current["payload"]
     assert after["detection_count"] == 2 and after["photo_count_revision"] == event_id
     assert after["detections"] == paper_before
+    assert after["deferred_print_proposals"] == pending
     rows = (await client.get(f"{album_url}/photos")).json()
     assert {row["id"] for row in rows} == {row["photo_id"] for row in paper_before}
     for photo_id in group_ids:
@@ -815,7 +831,8 @@ async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kin
         assert len(event.event_metadata["snapshot"]["photos"]) == len(detections)
 
     count = await client.post(event_url, json={
-        **answer, "answer": "correct", "idempotency_key": uuid4().hex, "metadata": {"photo_count_revision": event_id},
+        **answer, "answer": "correct", "idempotency_key": uuid4().hex,
+        "metadata": {"photo_count_revision": event_id, "deferred_proposal_ids": [row["id"] for row in pending]},
     })
     assert count.status_code == 201, count.text
     assert (await client.get(queue_url)).json() == []

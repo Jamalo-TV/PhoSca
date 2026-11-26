@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import cv2
@@ -6,6 +7,7 @@ import pytest
 
 from app.config import Settings
 from app.evaluation.crop_fixtures import _photograph
+from app.pipeline.crossing_fallback_review import CROSSING_FALLBACK_COUNT_REVIEW, CROSSING_FALLBACK_TRACES
 from app.pipeline.enhancement import prepare_for_cutout
 from app.pipeline.frame_backing_review import FRAME_BACKING_COUNT_REVIEW, FRAME_BACKING_PROPOSAL
 from app.pipeline.fusion_ownership import (
@@ -13,7 +15,7 @@ from app.pipeline.fusion_ownership import (
     deferred_neighbor_masks, nested_fallback_contour_spans,
 )
 from app.pipeline.image_ops import load_image
-from app.pipeline.segmentation import _make_detection, fuse_candidate_evidence
+from app.pipeline.segmentation import SegmentationResult, _flag_crossing_fallback_contours, _make_detection, fuse_candidate_evidence
 
 
 _PAGE_04 = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_04.jpg"
@@ -297,3 +299,78 @@ def test_model_with_weak_score_can_anchor_a_count_review_without_releasing_neigh
     assert deferred_neighbor_masks({"fusion": evidence}) == [
         {key: suspect.mask[key] for key in ("source", "detector_source", "polygon")},
     ]
+
+
+def test_crossing_fallback_records_original_traces_without_removing_or_narrowing_a_proposal():
+    rotated = cv2.rotate(load_image(_PAGE_04), cv2.ROTATE_90_CLOCKWISE)
+    ok, jpeg = cv2.imencode(".jpg", rotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    assert ok
+    source = cv2.imdecode(jpeg, cv2.IMREAD_COLOR)
+    height, width = source.shape[:2]
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    outlines = (
+        [(1174, 89), (50, 139), (50, 853), (964, 870), (895, 850), (1161, 841)],
+        [(552, 832), (553, 1604), (1683, 1613), (1691, 832), (1240, 836), (1093, 881), (890, 851), (1170, 832)],
+        [(98, 1605), (98, 2298), (451, 2309), (536, 2353), (1188, 2352), (1195, 1605),
+         (561, 1605), (1021, 1632), (578, 1654), (400, 1605)],
+        [(40, 860), (537, 852), (1171, 1866), (60, 2300)],
+    )
+    rows = []
+    for index, (outline, confidence) in enumerate(zip(outlines, (.922, .958, .432, .768), strict=True)):
+        detection = _make_detection(
+            box={}, points=np.float32(outline), confidence=confidence, image_width=width, image_height=height,
+            settings=settings, source="yolo_seg_mask" if index < 3 else "classical_border_quad",
+            detector_source="yolo_onnx" if index < 3 else "edge_contour",
+        )
+        assert detection is not None
+        rows.append(detection)
+    fused, evidence = fuse_candidate_evidence(prepare_for_cutout(source)[0], rows[:3], rows[3:], ownership_source=source)
+    baseline = SegmentationResult(fused, {"fallback_used": True, "fusion": evidence})
+    before = next(row for row in fused if row.mask["detector_source"] == "edge_contour")
+    marked = _flag_crossing_fallback_contours(source, baseline)
+    assert len(marked.detections) == 4 and marked.metadata == baseline.metadata
+    updated, = [row for row in marked.detections if CROSSING_FALLBACK_TRACES in row.mask]
+    assert updated.review_reasons == [CROSSING_FALLBACK_COUNT_REVIEW]
+    traces = updated.mask[CROSSING_FALLBACK_TRACES]
+    assert replace(updated, mask={key: value for key, value in updated.mask.items() if key != CROSSING_FALLBACK_TRACES},
+                   review_reasons=[]) == before
+    assert [row for row in marked.detections if row is not updated] == [row for row in fused if row is not before]
+    assert all(len(trace) == 2 for trace in traces) and len(traces) == 4
+    camera_points = np.array([[(p["x"] * (width - 1), p["y"] * (height - 1)) for p in trace] for trace in traces])
+    np.testing.assert_allclose(np.linalg.norm(camera_points[:, 0] - camera_points[:, 1], axis=1),
+                               [497, 180, 779, 1113], atol=9)
+
+    missing_extension = source.copy()
+    missing_extension[650:845, :45] = (204, 209, 217)
+    assert _flag_crossing_fallback_contours(missing_extension, baseline).detections == fused
+
+    # An aligned edge outside the proposed outline can have the pale material
+    # on the opposite side. It does not continue the measured transition.
+    end = np.float32([26.79, 860.18])
+    direction = np.float32([-.0249, -.9997])
+    normal = np.float32([-direction[1], direction[0]])
+    rows, cols = np.ogrid[:height, :width]
+    along = (cols - end[0]) * direction[0] + (rows - end[1]) * direction[1]
+    across = (cols - end[0]) * normal[0] + (rows - end[1]) * normal[1]
+    stripe = (along > 0) & (along < 228) & (np.abs(across) < 49)
+    feather = np.minimum.reduce([along[stripe] / 4, (228 - along[stripe]) / 19, (49 - abs(across[stripe])) / 15])
+    alpha = np.clip(feather, 0, 1)[:, None]
+    backing = np.float32([152, 161, 171])
+    pale = np.float32([225, 225, 225])
+    tones = backing + np.clip(across[stripe] + .5, 0, 1)[:, None] * (pale - backing)
+    reversed_extension = source.copy()
+    reversed_extension[stripe] = np.uint8(np.rint((1 - alpha) * source[stripe] + alpha * tones))
+    assert _flag_crossing_fallback_contours(reversed_extension, baseline).detections == fused
+
+    mark = [{"x": x / (width - 1), "y": y / (height - 1)} for x, y in [(12, 705), (43, 705), (43, 800), (12, 800)]]
+    with_pending = replace(baseline, metadata={**baseline.metadata, "fusion": {
+        **evidence, "deferred_print_proposals": [{"id": 4, "polygon": mark, "reason": "unclear_overlap"}],
+    }})
+    assert _flag_crossing_fallback_contours(source, with_pending).detections == fused
+    extra = replace(before, mask={"source": "classical_border_quad", "detector_source": "contrast_region", "polygon": mark})
+    with_active = replace(baseline, detections=[*fused, extra])
+    assert _flag_crossing_fallback_contours(source, with_active).detections == [*fused, extra]
+
+    independent = source.copy()
+    independent[1194:1309, 308:370] = _photograph(115, 62, np.random.default_rng(2819), white=False)
+    assert _flag_crossing_fallback_contours(independent, baseline).detections == fused

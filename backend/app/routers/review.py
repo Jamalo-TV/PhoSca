@@ -24,6 +24,7 @@ from app.models import (
     StageRun,
 )
 from app.pipeline.decisions import is_reviewed_non_print, motif_geometry_requires_review
+from app.pipeline.crossing_fallback_review import CROSSING_FALLBACK_COUNT_REVIEW, CROSSING_FALLBACK_TRACES
 from app.pipeline.manual_paper_boundary import PAPER_CLAIM_OVERLAP_CHECKS, paper_claims_need_overlap_check
 from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
 from app.pipeline.protected_regions import album_mark_source_matches
@@ -45,8 +46,9 @@ class MobileReviewAnswer(BaseModel):
 
 
 GROUP_EXCLUSIONS = {
-    "exclude_film_group": (3, "film_grid_review_seam", "film_group_photo_ids", FILM_GRID_REVIEW, "film"),
-    "exclude_paper_group": (2, "paper_join_review_traces", "paper_group_photo_ids", PAPER_JOIN_REVIEW, "paper"),
+    "exclude_film_group": (3, 2, "film_grid_review_seam", "film_group_photo_ids", FILM_GRID_REVIEW, "film"),
+    "exclude_paper_group": (2, 2, "paper_join_review_traces", "paper_group_photo_ids", PAPER_JOIN_REVIEW, "paper"),
+    "exclude_crossing_group": (1, 4, CROSSING_FALLBACK_TRACES, "crossing_group_photo_ids", CROSSING_FALLBACK_COUNT_REVIEW, "crossing"),
 }
 CONFIRM_SHARED_PAPER_GRID = "confirm_shared_paper_grid"
 COUNT_GROUP_ACTIONS = {*GROUP_EXCLUSIONS, CONFIRM_SHARED_PAPER_GRID}
@@ -312,7 +314,9 @@ def _validate_enhancement_decision(payload: MobileReviewAnswer, context: dict) -
 
 
 def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[ExtractedPhoto]:
-    size, mask_key, request_key, review_reason, name = GROUP_EXCLUSIONS[payload.answer]
+    size, trace_count, mask_key, request_key, review_reason, name = GROUP_EXCLUSIONS[payload.answer]
+    if name == "crossing" and payload.reason_code != "non_photo_object":
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="crossing_confirmation_required")
     submitted = payload.metadata.get(request_key)
     if not isinstance(submitted, list) or len(submitted) != size or not all(isinstance(photo_id, str) for photo_id in submitted):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{name}_group_selection_invalid")
@@ -324,7 +328,7 @@ def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[Extrac
         and (photo.segmentation_mask or {}).get(mask_key) == evidence
     }
     if (context["page"].status not in {PageStatus.completed, PageStatus.review_needed}
-            or not isinstance(evidence, list) or len(evidence) != 2 or len(selected) != size
+            or not isinstance(evidence, list) or len(evidence) != trace_count or len(selected) != size
             or group != {photo.id for photo in selected}
             or any(
                 review_reason not in ((photo.enhancement_applied or {}).get("segmentation_review_reasons") or [])
@@ -332,6 +336,11 @@ def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[Extrac
                 for photo in selected
             )):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{name}_review_group_stale")
+    if name == "crossing":
+        modes = ((selected[0].enhancement_applied or {}).get("correction") or {}).get("crop_modes") or {}
+        if (any(not isinstance(trace, list) or len(trace) != 2 for trace in evidence)
+                or any((modes.get(mode) or {}).get("status") != "review_needed" for mode in ("full_print", "image_only"))):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="crossing_review_group_stale")
     return selected
 
 

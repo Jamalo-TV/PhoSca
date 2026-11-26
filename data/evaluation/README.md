@@ -459,6 +459,16 @@ zero verified shared release groups. [Triol collection](https://mountaineers.atl
 [Arpee finding aid](https://sirismm.si.edu/EADpdfs/FSA.A2011.03.pdf) ·
 [Rudge individual scans](https://rudged.github.io/home/redalbumis.html)
 
+ÉBAF documents digitization of 302 paper prints from the Notre-Dame-
+de-France albums in the Assumptionist archive. Project records
+describe scans after physical removal and subsequent thematic
+cataloguing. The public finding aid leaves the original print-to-
+leaf crosswalk and separate native leaf exposures unverified.
+Access and reproduction require authorization from the community.
+No usable native pair with a proven split assignment is available
+from this intake. [ÉBAF collection history](https://www.ebaf.edu/the-photographic-collection/history-of-the-funds/) ·
+[Assumptionist finding aid](https://archives.openjerusalem.org/index.php/archives-of-the-community-of-the-augustinian-fathers-of-the-assumption-in-jerusalem)
+
 The source-only preflight at `eccc049` rechecked seven tracked drafts.
 On this workspace it reported 26 missing pinned page rasters and 12
 missing independent scan assets. The drafts account for 15 final-split
@@ -6174,6 +6184,75 @@ the paired-reference drafts and both archive calibration drafts.
 It reports zero verified crops in either mode and zero shared
 verified physical groups. The Adachi archive catalog and this
 regression set add no release references or calibration scores.
+
+### Review a diagonal fallback contour on the original
+
+On the same 270° JPEG75 capture, classical cluster 3 remains
+active. Its two long diagonals have source fit support 0.2589
+and 0.2054. The two supported sides score 0.9821 and 0.8304.
+The proposal is a singleton edge contour with confidence 0.768
+and a mixed boundary score of 0.625. The cue considers it
+where two model outlines cover between 42% and 72% of its
+area in total, with at least 10% coverage each, and a third
+model outline is available. Those outlines must have raw
+confidence at least 0.40 and boundary evidence at least 0.65.
+The check runs on the native source after the classical fallback
+on pages with four to twelve active detections, for convex
+proposals at least 4 native px away from the capture frame.
+
+The two weak sides must each have one continuous span with
+at least 26 native px clearance inside a different model outline
+and from all other model outlines. The native band measures
+connected Canny features reaching both sides of the line.
+At least eight features, nine distinct 12 px bins and a span of
+40% of the inspected strip are required. The actual source spans
+cover about 779 and 1,113 px. They locate details to compare at
+the original.
+
+The independently refitted side of a third model print must
+agree with one strong line. The other strong line must
+continue outside the candidate, with consistent pale-side
+polarity across its end. The actual external measured trace
+is 180 px long. Known active and pending contours veto the
+external measurement where they claim the sampled area.
+Broad independent texture in the part outside the model masks
+also vetoes the cue.
+
+The first version matched a parallel extension with the pale
+material on the opposite side. A matched-polarity requirement
+keeps the authentic continuation and rejects the six reversed
+polarity controls across shifts and re-encoding. A further
+check excludes an actively or tentatively claimed extension
+even when the claim comes from the classical detector.
+Deliberately hidden 4- and 9-row rear prints retain all four
+traces. The larger rear region and the isolated textured
+corner veto the cue. A photograph of the whole scene printed
+as one matte sheet still yields the same measured evidence.
+The count remains a reviewer decision.
+
+Desktop and Mobile show the four measured segments and the one
+selected footprint. Opening and cancelling are local actions.
+The explicit exclusion looks up the current page-count revision,
+the selected UUID, the four traces, and the two held crop modes.
+It records the original mask in review history. The existing
+pending cluster 4 remains available. In the real round trip
+the active count changes from four to three, with three matches
+at IoU 0.85. Masks, both mode transforms, and stored JPEG bytes
+of the three retained photos remain identical after
+reprocessing. The middle and right photos lose the spurious
+occlusion reason. Curved-edge, corner and aspect issues still
+hold the named and legacy cropped exports.
+
+The raw detector across the four encodings stays at 12 matches
+and one active extra before count review. The helper takes 186 ms
+median and 229 ms p95 CPU time for 31 warm calls with one OpenCV
+thread. The `fusion_ownership` profile moves to revision 6.
+Across eight paired replays, the only recorded change is the
+review annotation on cluster 3. The frozen detector stays at
+18/18, and the seeded geometry retains 11/11 whole-print and
+12/12 motif passes.
+Browser, reprocessing and native receipts are local under
+`runs/crop-quality/diagonal-fallback-review/`.
 
 ### Measure seed displacement and competing print edges
 

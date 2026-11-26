@@ -226,6 +226,11 @@ const groupReviewLabels = {
     confirm: "Beide Vorschläge aus der Abzugsliste nehmen",
     prompt: "Entferne die beiden türkis markierten Vorschläge gemeinsam, wenn sie zur selben Zeichnung oder zu einem anderen Gegenstand ohne Fotoabzug gehören. Für die Einzelkorrektur eines Fotoabzugs wähle «Abbrechen».",
   },
+  crossing: {
+    open: "Schrägen Vorschlag prüfen",
+    confirm: "Diesen Vorschlag aus der Abzugsliste nehmen",
+    prompt: "Orange markiert die gemessene Nachbarkante und die Linie, die ausserhalb des Vorschlags weiterläuft. Türkis markiert Linien in zwei Bildmotiven. Prüfe am Original, ob der hervorgehobene Vorschlag einen eigenen Papierabzug zeigt. Bei einem Abzug oder bei Unsicherheit wähle «Abbrechen».",
+  },
   "paper-grid": {
     open: "Zusammengehörigkeit prüfen",
     confirm: "Als einen Abzug zählen",
@@ -256,7 +261,7 @@ export function CountGroupReview({ groups, selected, busy, onSelect, onConfirm }
   </div>;
 }
 
-export function actionableCountGroups(filmGroups, paperGroups, paperGridGroups = []) {
+export function actionableCountGroups(filmGroups, paperGroups, paperGridGroups = [], crossingGroups = []) {
   return [
     ...filmGroups.filter(({ photoIds }) => photoIds.size === 3).map(group => ({ ...group, kind: "film" })),
     ...paperGroups.map(group => ({ ...group, kind: "paper" })),
@@ -266,8 +271,16 @@ export function actionableCountGroups(filmGroups, paperGroups, paperGridGroups =
       return { ...group, kind: "paper-grid", key: JSON.stringify(["paper-grid", group.key, parentId, ...fragmentIds]),
         parentId, fragmentIds, photoIds: new Set([parentId, ...fragmentIds]) };
     }),
+    ...crossingGroups,
   ];
 }
+
+export const crossingFallbackTraceStyles = [
+  { color: "#b45309", dash: [9, 5], label: "Gemeinsame Kante mit einem Nachbarabzug" },
+  { color: "#b45309", dash: [9, 5], label: "Fortsetzung der Linie ausserhalb des Vorschlags" },
+  { color: "#0891b2", dash: [3, 5], label: "Linie im ersten Bildmotiv" },
+  { color: "#0891b2", dash: [3, 5], label: "Linie im zweiten Bildmotiv" },
+];
 
 export function getDeferredPrintProposals(proposals) {
   return Array.isArray(proposals) ? proposals.filter((proposal) => Number.isInteger(proposal?.id) && proposal.id >= 0

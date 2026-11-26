@@ -15,6 +15,9 @@ from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURC
 from app.pipeline.crossing_prints import (
     CROSSING_PRINT_REVIEW, crossing_print_outlines, near_leaf_edge_traces, staggered_print_source_traces,
 )
+from app.pipeline.crossing_fallback_review import (
+    CROSSING_FALLBACK_COUNT_REVIEW, CROSSING_FALLBACK_TRACES, crossing_fallback_review_traces,
+)
 from app.pipeline.dark_album_review import DARK_ALBUM_PROPOSAL, inspect_dark_album_backing
 from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
@@ -3789,6 +3792,60 @@ def _flag_disputed_paper_joins(image: np.ndarray, result: SegmentationResult) ->
     return SegmentationResult(updated, result.metadata)
 
 
+def _flag_crossing_fallback_contours(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    detections = result.detections
+    if not result.metadata.get("fallback_used") or not 4 <= len(detections) <= 12:
+        return result
+    models = [index for index, item in enumerate(detections) if item.geometry_valid and not item.review_reasons
+              and not item.mask.get("warp_quad") and item.mask.get("source") == "yolo_seg_mask"
+              and item.mask.get("detector_source") == "yolo_onnx" and item.confidence >= .40
+              and (item.mask.get("boundary_evidence") or {}).get("score", 0) >= .65]
+    if len(models) < 3:
+        return result
+    height, width = image.shape[:2]
+    polygons = [_detection_polygon(item) for item in detections]
+    native = [normalized_vertices_to_pixels(polygon, width, height) for polygon in polygons]
+    peers = [native[model] for model in models]
+    uncounted = []
+    for offer in (result.metadata.get("fusion") or {}).get("deferred_print_proposals") or []:
+        outline = offer.get("visible_polygon") or offer.get("polygon") or []
+        if len(outline) >= 3:
+            uncounted.append(normalized_vertices_to_pixels([(point["x"], point["y"]) for point in outline], width, height))
+    updated = detections.copy()
+    for index, item in enumerate(detections):
+        fusion = item.mask.get("fusion") or {}
+        boundary = item.mask.get("boundary_evidence") or {}
+        if (not item.geometry_valid or item.review_reasons or item.mask.get("warp_quad")
+                or item.mask.get("source") != "classical_border_quad" or item.mask.get("detector_source") != "edge_contour"
+                or fusion.get("proposal_count") != 1 or fusion.get("proposal_families") != ["classical"]
+                or not .55 <= item.confidence <= .86 or not .45 <= boundary.get("score", 0) <= .71):
+            continue
+        outline = polygons[index]
+        if len(outline) != 4 or not cv2.isContourConvex(outline):
+            continue
+        ownership = [normalized_polygon_overlap(outline, polygons[model]).first_containment for model in models]
+        inside = [part for part in ownership if part >= .10]
+        if len(inside) != 2 or not .42 <= sum(inside) <= .72:
+            continue
+        quad = native[index]
+        gap_to_frame = np.minimum(quad, [width - 1, height - 1] - quad)
+        if np.any(gap_to_frame < 4):
+            continue
+        try:
+            other_claims = [polygon for peer, polygon in enumerate(native)
+                            if peer != index and peer not in models and len(polygon) >= 3]
+            traces = crossing_fallback_review_traces(image, quad, peers, extension_claims=[*other_claims, *uncounted])
+        except (cv2.error, ValueError, np.linalg.LinAlgError):
+            continue
+        if traces:
+            updated[index] = replace(
+                item, mask={**item.mask, CROSSING_FALLBACK_TRACES: [
+                    _normalized_polygon(trace, width, height) for trace in traces
+                ]}, review_reasons=[CROSSING_FALLBACK_COUNT_REVIEW],
+            )
+    return SegmentationResult(updated, result.metadata)
+
+
 def _offer_projective_print_review(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
     metadata = result.metadata
     fusion = metadata.get("fusion") or {}
@@ -3995,6 +4052,8 @@ def segment_album_page(
             # The rim is a count-review annotation. Add it after ownership
             # and backing checks that use review reasons to skip proposals.
             result = _flag_conflicting_film_grids(evidence_source, result, require_clear_rim=True)
+            if source is not None:
+                result = _flag_crossing_fallback_contours(source, result)
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership

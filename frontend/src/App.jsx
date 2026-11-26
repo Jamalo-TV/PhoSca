@@ -50,7 +50,7 @@ import EdgeMeasurement from "./EdgeMeasurement.jsx";
 import {
   actionableCountGroups, adjacentPrintHint, AlbumPageMarkReview, captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, cropProtectionErrors,
   CropOrientationField, CropVariants, cropModeLabels, getCropModes,
-  crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
+  crossingFallbackTraceStyles, crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   countGroupReviewError, CountGroupReview, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints,
   borrowedFallbackProposal, filmGridCountHint, filmGridHint, filmGridReason, filmGridRimHint, frameBackingProposal,
   getDeferredPrintEvidence, getDeferredPrintProposals, getDeferredParentCropHints, getSourceEdgeTraces,
@@ -63,7 +63,7 @@ import {
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
 } from "./CropVariants.jsx";
 import {
-  getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
+  getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getPaperJoinReviewGroups, getStoredMotifQuad,
 } from "./cropReviewOutlines.js";
@@ -1439,7 +1439,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       return quad ? [{ photo, quad }] : [];
     }) : [], [reviewingCount, newPrint, editingImage, photos]);
   const countGroups = useMemo(() => actionableCountGroups(filmGridGroups, paperJoinGroups,
-    getActionablePaperGridReviewGroups(paperGridGroups, photos)), [filmGridGroups, paperJoinGroups, paperGridGroups, photos]);
+    getActionablePaperGridReviewGroups(paperGridGroups, photos),
+    reviewingCount && !newPrint && !editingImage ? getCrossingFallbackReviewGroups(photos) : []),
+  [filmGridGroups, paperJoinGroups, paperGridGroups, photos, reviewingCount, newPrint, editingImage]);
   const selectedCountGroup = groupSelection?.pageId === pageId
     ? countGroups.find(({ key }) => key === groupSelection?.key) : null;
   const paperGridMask = selected?.segmentation_confidence != null && !rejectedDetection
@@ -1733,6 +1735,20 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         context.lineTo(end.x * canvas.width, end.y * canvas.height);
         context.stroke();
       }
+      context.restore();
+    }
+    if (selectedCountGroup?.kind === "crossing") {
+      context.save();
+      context.lineWidth = 3;
+      selectedCountGroup.traces.forEach(([start, end], index) => {
+        const { color, dash } = crossingFallbackTraceStyles[index];
+        context.strokeStyle = color;
+        context.setLineDash(dash);
+        context.beginPath();
+        context.moveTo(start.x * canvas.width, start.y * canvas.height);
+        context.lineTo(end.x * canvas.width, end.y * canvas.height);
+        context.stroke();
+      });
       context.restore();
     }
     if (!newPrint && !editingImage && (paperGridGroups.length || paperGrid?.cut)) {
@@ -2119,7 +2135,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             </button>
           ))}
           <button className="text-button compact" type="button" onClick={confirmCount}
-            disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving || selectedCountGroup?.kind === "paper-grid"}>
+            disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving || selectedCountGroup?.kind === "paper-grid"
+              || selectedCountGroup?.kind === "crossing"}>
             {currentCountReview?.saving ? "Anzahl wird gespeichert …" : "Anzahl bestätigen"}
           </button>
         </div>
@@ -2413,7 +2430,7 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
       if (group.kind === "paper-grid") {
         return await confirmSharedPaperGrid(page.id, displayedRevision, group, "desktop");
       }
-      return await excludeCountReviewGroup(page.id, page.processing_metadata?.photo_count_revision, group, "desktop");
+      return await excludeCountReviewGroup(page.id, displayedRevision, group, "desktop");
     } finally {
       await refreshCorrections().catch(() => {});
     }

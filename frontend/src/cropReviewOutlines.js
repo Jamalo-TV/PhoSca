@@ -68,6 +68,20 @@ export function getPaperJoinReviewGroups(photos) {
   return getTraceReviewGroups(photos, "paper_join_review_traces").filter(({ photoIds }) => photoIds.size === 2);
 }
 
+export function getCrossingFallbackReviewGroups(photos) {
+  return photos.flatMap(photo => {
+    const id = photo.photo_id ?? photo.id;
+    const { segmentation_confidence: confidence = photo.confidence } = photo;
+    const traces = photo.segmentation_mask?.crossing_fallback_review_traces;
+    const modes = photo.crop_modes || photo.enhancement_applied?.correction?.crop_modes;
+    if (!id || photo.reviewed_non_print || confidence == null
+        || !Array.isArray(traces) || traces.length !== 4
+        || !traces.every(line => Array.isArray(line) && line.length === 2 && line.every(isNormalizedPoint))
+        || ![modes?.full_print, modes?.image_only].every(mode => mode?.status === "review_needed")) return [];
+    return [{ kind: "crossing", key: JSON.stringify(["crossing", id, traces]), traces, photoIds: new Set([id]) }];
+  });
+}
+
 export function getPaperGridReviewGroups(photos) {
   const groups = new Map();
   for (const photo of photos) {

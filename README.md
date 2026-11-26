@@ -371,6 +371,25 @@ entscheidet über die Vorschläge. Für den Export braucht jeder
 Zuschnittmodus seine eigene Freigabe.
 [Beispiel Golden 04 bei 270° und JPEG75](data/evaluation/README.md#review-a-fallback-contour-sharing-a-weakly-detected-print-edge)
 
+Unter **Schrägen Vorschlag prüfen** zeigt die Anzahlprüfung einen
+aktiven Vorschlag mit vier Messstrecken auf der Originalseite.
+Orange markiert eine Kante, die mit einem erfassten Nachbarabzug
+übereinstimmt, und eine zweite Linie, die ausserhalb des Vorschlags
+mit der hellen Fläche auf derselben Seite weiterläuft. Türkis
+markiert zwei Abschnitte, an denen Bilddetails quer durch den
+vorgeschlagenen Umriss laufen. Auch ein tatsächlich verdeckter
+Abzug kann solche Spuren ergeben. Prüfe, ob irgendwo ein eigener
+Papierrand oder eigener Bildinhalt sichtbar ist.
+
+Mit **Diesen Vorschlag aus der Abzugsliste nehmen** entfernst du
+nur den hervorgehobenen Vorschlag aus der Anzahl. Bis dahin zählt
+er mit und seine Fläche fliesst in die Zuschnittprüfung ein.
+PhoSca speichert den Entscheid mit der geprüften Kontur und der
+aktuellen Anzahlrevision. Die übrigen Abzüge können anschliessend
+mit den noch offenen Nachbarmasken neu berechnet werden. Bei einem
+eigenen Abzug oder bei Unsicherheit kannst du den Dialog abbrechen.
+[Beispiel mit zwei querlaufenden Bildmotiven](data/evaluation/README.md#review-a-diagonal-fallback-contour-on-the-original)
+
 Wenn ein klassisch erkannter Umriss eine Ecke diagonal abschneidet,
 kann **Ganzer Abzug** eine zweite Vorschau anbieten. PhoSca verlängert
 die beiden betroffenen Seiten in einem begrenzten Suchbereich und
