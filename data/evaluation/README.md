@@ -2766,6 +2766,19 @@ album backing, a transparent carrier or a separately printed strip. All
 foreign sample centres increase from 1,932 to 4,830 with the previous
 preview corners preserved. Both modes stay in Review.
 
+Another scratch trial allows one trusted flank to face an independently
+detected neighboring print. The new side has to extend outwards, leave
+all existing source pixels in the crop and add only measured matching
+stock. On the frozen left `touching` print, maximum corner error falls
+from 5.469 to 0.624 native pixels, omitted centres beyond one pixel fall
+from 1,320 to zero, and foreign source contributions fall from 99 to zero.
+Both modes remain in review. The trial preserved all other 56 rendered
+outputs and the detector assignments. No independent real print was
+improved. In 160 blind layouts the trial made no corrections. Twenty
+reached the final pixel checks and failed on insufficient outward gain,
+neighbor ownership or incompatible stock colour. This branch remains
+exploratory.
+
 #### Show competing edges in Review
 
 For an already-held whole-print crop, retain the two strong alternatives
@@ -2842,6 +2855,38 @@ retains 11/11 and 12/12. Final Golden retains 29/29 matches, and the 12
 blurred Domoritz prints retain the exact baseline metrics in both modes.
 The draft-only measures and scratch re-render comparison are recorded
 with the [near-neighbor edge trials](#compare-paper-edge-previews-beside-a-neighboring-proposal).
+
+#### Keep the interrupted-edge check across manual edits
+
+On `062feff`, saving the same four Domoritz corners erased the source
+spans and the unsupported-edge reason. Without measurements, aspect
+uncertainty still held both modes. Entering test dimensions of 100 ×
+140 mm made the unchanged whole print downloadable. Its lower-right
+corner was still about ten native pixels outside the observed edge.
+Reprocessing reproduced both results.
+
+The editor now records the original warp and source spans on the first
+manual save. If the edit still belongs to the same print, one side
+must cover all measured endpoints within two native pixels. The check
+persists through repeated edits and reprocessing, and the download path
+checks the current receipt. A manual orientation or aspect change
+leaves the disputed side in review. Deliberately moving the edge onto
+the observed spans clears this specific hold. Aspect, motif and source
+sampling still run normally. An undo restores the hold if the edge
+again misses the spans.
+
+The normal upload, edit and reprocess replay confirms both holds and
+both corrections with and without test dimensions. Across the four
+measured endpoints, maximum deviation falls from 9.657 native pixels
+to less than 0.001 pixel after the explicit edit. The untouched blur
+between the measured spans still needs inspection by the editor.
+Against the unblurred source-line development model, the whole-print
+footprint IoU in the no-size arm rises from 0.9756 to 0.9875 and foreign
+samples beyond one native pixel fall from 1,484 to zero. Omitted source
+centres beyond one pixel increase from six to nine. The motif remains a
+manual result without an independently verified motif reference here.
+The stored-reference association and side agreement took a warm median
+of 0.124 ms and p95 of 0.192 ms across 100 one-thread calls.
 
 ### Compare a large mounted print with album-container proposals
 
@@ -2994,6 +3039,16 @@ with one OpenCV thread. The regression verifies the open line and the unchanged
 rectified raster, mode geometry and review statuses. The trace is available
 when the face guard also flags possible content cutoff. That warning remains
 in effect for both modes.
+
+The left print on Golden page 33 has a larger overrun. Its top-left
+preview corner is 129.62 native pixels from the source line and includes
+album handwriting. A scratch fit based on terminating adjacent paper
+edges moves only the left side. Against the source-only development
+mask, whole-preview IoU rises from 0.9107 to 0.9954. Foreign contributions
+beyond one pixel fall from 72,458 to 1,564 and omitted centres remain
+three. The source fit repeats on the original, JPEG70, blurred and
+mirrored variants. A nearby, similarly pale cover can also pass the
+source test, so the application keeps its existing geometry.
 
 ### Keep an unassigned paper rim in review
 
@@ -4031,6 +4086,13 @@ noise and pixel grids. The saved transfer inventories do not contain the
 two exact Colony file hashes. Earlier near-duplicate comparisons did not
 cover this candidate or the Russell album.
 
+With complete spatial quadrants held out, the p95 residual of the same
+American Colony landmarks is 2.890 native pixels for axis-aligned crop
+and resize, 0.467 for an affine fit and 0.383 for a projective fit. Across
+nine paired draft mode records, affine p95 is 0.153–0.910 pixels. The
+coordinate matches remain compatible with digitally transformed
+derivatives. Capture independence still needs the actual two rasters.
+
 The Getty Bayard album was disbound in the 1980s. The published page
 viewer reconstructs the volume digitally. Catalogued dimensions and
 individual print records are available, but the viewer does not establish
@@ -4087,6 +4149,18 @@ accessions stay in intake.
 [ST 40219](https://collections.museumsvictoria.com.au/items/384572) ·
 [ST 40220](https://collections.museumsvictoria.com.au/items/407538) ·
 [Hinged print](https://collections.museumsvictoria.com.au/items/1561811)
+
+The Turku City Museum Ramsay collection `VA9901` catalogues seven
+physical family albums and 725 individually described prints. Volume 1
+lists `VA9901-1-a1.tif` through `VA9901-1-a26.tif` as page media. The
+Public Domain Mark print `VA9901:1:48` lists `VA9901-1-48.tif` and the
+same reproduction photographer as the volume. The exact page match
+and two native rasters remain unverified after the API and preview
+requests returned HTTP 403. Screen for duplicated images between the
+volumes before treating them as independent groups.
+[Ramsay collection](https://finna.fi/Record/aipa.node-8323?lng=en-gb) ·
+[Volume 1](https://www.finna.fi/Record/tmk.161614005277700) ·
+[Print record](https://www.finna.fi/Record/tmk.162305386114000)
 
 The Bancroft Red Album study documents a mounted, measured print on
 page 8 and a 1999 State Library of Queensland copy negative showing the

@@ -1446,10 +1446,14 @@ def correct_photo_crop(
             print_edge_traces = [_vertices_on_page(trace, width, height)]
     checked_manual_boundary = dual_mode and manual and manual_boundary_reference is not None
     capture_outline = checked_manual_boundary and manual_boundary_reference.get("capture_outline")
+    backed_edge = checked_manual_boundary and bool(manual_boundary_reference.get("backed_edge_review"))
     if checked_manual_boundary:
         manual_boundary_hold, print_edge_traces = check_manual_paper_boundary(page_image, src_points, manual_boundary_reference)
         if manual_boundary_hold:
-            full_reasons.append(MANUAL_CAPTURE_OUTLINE_REVIEW if capture_outline else MANUAL_PAPER_BOUNDARY_REVIEW)
+            if backed_edge:
+                full_reasons.append(PRINT_EDGE_CONFIRMATION)
+            else:
+                full_reasons.append(MANUAL_CAPTURE_OUTLINE_REVIEW if capture_outline else MANUAL_PAPER_BOUNDARY_REVIEW)
     manual_scalloped = _proposal_polygon({"polygon": manual_scalloped_polygon}, width, height) if dual_mode and manual else None
     if manual_scalloped is not None:
         full_reasons.append(SCALLOPED_PRINT_REVIEW)
@@ -1585,6 +1589,8 @@ def correct_photo_crop(
             }
             if capture_outline:
                 metadata["manual_paper_boundary"]["capture_outline_verified"] = not manual_boundary_hold
+            if backed_edge:
+                metadata["manual_paper_boundary"]["backed_edge_verified"] = not manual_boundary_hold
         observed = _source_visible_outline(
             page_image, mask, inspection, visible, neighbor_polygons, neighbor_masks or [],
         )
@@ -1608,6 +1614,8 @@ def correct_photo_crop(
             if print_outline is not None and trim_border else None,
         )
         modes = result.metadata["crop_modes"]
+        if backed_edge and manual_boundary_hold:
+            modes["full_print"]["suggested_edge_source"] = POSSIBLE_BACKED_PAPER_EDGE
         split_traces = mask.get("capture_split_review_traces")
         if not manual and (capture_traces := split_traces or mask.get("capture_edge_review_traces")):
             full_mode = modes["full_print"]

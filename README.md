@@ -300,7 +300,13 @@ folgen diesem Vertrag.
 
 Eine manuelle Geometriekorrektur löscht die automatische
 `segmentation_confidence`. Die Geometrie-, Zuordnungs- und
-Samplingprüfungen gelten weiterhin. Bei einer automatischen
+Samplingprüfungen gelten weiterhin. Bei einem Hinweis auf eine
+unterbrochene Papierkante speichert PhoSca die Messabschnitte aus
+dem Original im Prüfprotokoll. Beide Zuschnitte bleiben in Prüfung,
+bis dieselbe manuell gewählte Seite beide Abschnitte mit höchstens
+zwei nativen Pixeln Abweichung abdeckt. Eingetragene Masse ändern
+das Seitenverhältnis. Ihre Eingabe löst die Kantenprüfung nicht auf.
+Bei einer automatischen
 Erkennung überprüft der Download-Endpunkt den Freigabenachweis auch
 beim Abruf. Ein alter Zustand `ready` genügt deshalb nach einer
 Änderung der Konfiguration oder des Freigabedokuments allein nicht.

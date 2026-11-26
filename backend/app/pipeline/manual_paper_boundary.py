@@ -6,7 +6,8 @@ import numpy as np
 from app.pipeline.edge_prints import CAPTURE_EDGE_HOLD
 from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels, order_quad_cyclic
 from app.pipeline.print_edges import (
-    _backing_color, _edge_band, _side_line, _stock_ring, bowed_print_sides, refine_print_boundary,
+    POSSIBLE_BACKED_PAPER_EDGE, _backing_color, _edge_band, _side_line, _stock_ring, bowed_print_sides,
+    refine_print_boundary,
 )
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_CONFLICT
 
@@ -107,6 +108,15 @@ def paper_curve_review_reference(correction: dict) -> dict | None:
             "traces": full.get("suggested_edge_traces") or []}
 
 
+def backed_edge_review_reference(print_mode: dict) -> dict | None:
+    if print_mode.get("status") != "review_needed" or print_mode.get("suggested_edge_source") != POSSIBLE_BACKED_PAPER_EDGE:
+        return None
+    quad, traces = print_mode.get("warp_quad") or [], print_mode.get("suggested_edge_traces") or []
+    if len(quad) != 4 or not traces or any(len(trace) < 2 for trace in traces):
+        return None
+    return {"warp_quad": quad, "traces": traces}
+
+
 def manual_paper_reference(metadata: dict, crop_quad: list[dict] | None) -> dict | None:
     review = metadata.get("review_provenance") or {}
     trace_curve = review.get("paper_trace_review")
@@ -133,6 +143,11 @@ def manual_paper_reference(metadata: dict, crop_quad: list[dict] | None) -> dict
     seed = mask.get("warp_quad") or mask.get("polygon") or []
     if capture_outline and original.get("segmentation_confidence") is not None:
         return {"capture_outline": True, "warp_quad": previous_print or seed, "outline": outline, "curve": curve}
+    if (backed_edge := review.get("backed_edge_review")) and len(crop_quad or []) == 4:
+        prior, edited = ([(point["x"], point["y"]) for point in shape] for shape in (backed_edge["warp_quad"], crop_quad))
+        overlap = normalized_polygon_overlap(prior, edited)
+        if overlap.iou >= .82 or max(overlap.first_containment, overlap.second_containment) >= .90:
+            return {"backed_edge_review": backed_edge["traces"]}
     if trace_curve:
         return {"warp_quad": trace_curve["warp_quad"], "outline": [], "curve": trace_curve,
                 "legacy_extended": False, "trace_review": True}
@@ -191,6 +206,9 @@ def manual_paper_download_needs_review(metadata: dict, crop_quad: list[dict] | N
     if reference is None:
         return False
     check = (metadata.get("correction") or {}).get("manual_paper_boundary") or {}
+    if reference.get("backed_edge_review"):
+        return (check.get("revision") != MANUAL_PAPER_BOUNDARY_REVISION
+                or check.get("backed_edge_verified") is not True or check.get("requires_review") is not False)
     if reference.get("capture_outline"):
         return (
             check.get("revision") != MANUAL_PAPER_BOUNDARY_REVISION
@@ -532,6 +550,21 @@ def _confirmed_capture_outline(image: np.ndarray, quad: np.ndarray, previous: np
 
 
 def check_manual_paper_boundary(image: np.ndarray, current: np.ndarray, reference: dict) -> tuple[bool, list]:
+    if backed_traces := reference.get("backed_edge_review"):
+        points = normalized_vertices_to_pixels(
+            [(point["x"], point["y"]) for trace in backed_traces for point in trace], *image.shape[1::-1],
+        )
+        # The measured spans must all lie against the same edited side. A
+        # change elsewhere or in the output aspect cannot align that side.
+        for start, stop in zip(current, np.roll(current, -1, axis=0), strict=True):
+            tangent = stop - start
+            length = float(np.linalg.norm(tangent))
+            axis = tangent / length
+            along = (points - start) @ axis
+            across = (points - start) @ np.float32([-axis[1], axis[0]])
+            if along.min() >= -2 and along.max() <= length + 2 and np.max(np.abs(across)) <= 2:
+                return False, []
+        return True, backed_traces
     if reference.get("capture_outline"):
         current = order_quad_cyclic(current)
         curve = reference.get("curve")

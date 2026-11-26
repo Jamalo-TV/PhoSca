@@ -278,6 +278,99 @@ async def test_manual_export_checks_the_server_owned_paper_outline(client, monke
     assert replay.json()["enhancement_applied"]["correction"]["manual_paper_boundary"]["requires_review"] is held
 
 
+async def test_manual_edit_keeps_the_disputed_straight_side_in_review_until_both_spans_align(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.print_edges import POSSIBLE_BACKED_PAPER_EDGE, PRINT_EDGE_CONFIRMATION
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    get_settings.cache_clear()
+    height, width = 570, 670
+    page = np.full((height, width, 3), 242, np.uint8)
+    page[74:413, 330:551] = (47, 68, 81)
+    page[123:225, 490:551] = 232
+    _, _, photo_id = await _seed_review_data(page)
+
+    def vertices(points):
+        return [{"x": x / (width - 1), "y": y / (height - 1)} for x, y in points]
+
+    original = vertices([(330, 74), (551, 74), (560, 412), (330, 412)])
+    corrected = vertices([(330, 74), (550, 74), (550, 412), (330, 412)])
+    traces = [vertices([(550, 84), (550, 117)]), vertices([(550, 235), (550, 404)])]
+
+    def box(quad):
+        return {"x1": min(point["x"] for point in quad), "x2": max(point["x"] for point in quad),
+                "y1": min(point["y"] for point in quad), "y2": max(point["y"] for point in quad)}
+
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.bounding_box = box(original)
+        photo.segmentation_mask = {"source": "yolo_seg_mask", "polygon": original}
+        photo.enhancement_applied = {"correction": {"crop_modes": {"full_print": {
+            "status": "review_needed", "warp_quad": original, "suggested_edge_source": POSSIBLE_BACKED_PAPER_EDGE,
+            "suggested_edge_traces": traces,
+        }}}}
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+
+    async def save(quad):
+        response = await client.patch(f"{url}/bounding-box", json={
+            "bounding_box": box(quad), "segmentation_mask": {
+                "source": "manual_quad", "polygon": quad, "warp_quad": quad,
+                "image_quad": vertices([(340, 86), (537, 86), (537, 398), (340, 398)]),
+                "print_size_mm": {"width": 110, "height": 169},
+            },
+        })
+        assert response.status_code == 200, response.text
+        return response.json()["enhancement_applied"]["correction"]
+
+    async def verify_exports(expected):
+        for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+            assert (await client.get(f"{url}/image?variant={variant}")).status_code == expected
+        assert (await client.get(f"{url}/image?variant=source_corrected_untrimmed")).status_code == 200
+
+    partly_edited = [*corrected[:2], *original[2:]]
+    for quad in (original, partly_edited):
+        saved = await save(quad)
+        assert saved["manual_paper_boundary"]["backed_edge_verified"] is False
+        modes = saved["crop_modes"]
+        assert all(mode["status"] == "review_needed" for mode in modes.values())
+        assert PRINT_EDGE_CONFIRMATION in modes["full_print"]["reason_codes"]
+        assert modes["full_print"]["suggested_edge_traces"] == traces
+        await verify_exports(404)
+
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        metadata = dict(photo.enhancement_applied)
+        stale = dict(metadata["correction"])
+        stale.pop("manual_paper_boundary")
+        stale["crop_modes"] = {mode: {**value, "status": "ready"} for mode, value in stale["crop_modes"].items()}
+        metadata["correction"] = stale
+        metadata["variants"] = {
+            **metadata["variants"], **{mode: {"path": photo.original_storage_path} for mode in stale["crop_modes"]},
+        }
+        photo.enhancement_applied = metadata
+        await session.commit()
+    await verify_exports(404)
+    replay = await client.post(f"{url}/reprocess")
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["enhancement_applied"]["correction"]["manual_paper_boundary"]["backed_edge_verified"] is False
+
+    saved = await save(corrected)
+    assert saved["manual_paper_boundary"]["backed_edge_verified"] is True
+    assert all(mode["status"] == "ready" for mode in saved["crop_modes"].values())
+    assert "suggested_edge_traces" not in saved["crop_modes"]["full_print"]
+    await verify_exports(200)
+
+    reverted = await save(original)
+    assert reverted["manual_paper_boundary"]["backed_edge_verified"] is False
+    await verify_exports(404)
+
+
 async def test_capture_outline_hold_survives_manual_edit_and_legacy_exports(client, monkeypatch, tmp_path):
     from copy import deepcopy
 

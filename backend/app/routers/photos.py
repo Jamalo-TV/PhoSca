@@ -25,7 +25,7 @@ from app.pipeline.decisions import is_reviewed_non_print, photo_is_reviewed_non_
 from app.pipeline.edge_trace import measure_edge_trace
 from app.pipeline.image_ops import load_image, normalized_box_to_pixels
 from app.pipeline.manual_paper_boundary import (
-    PAPER_GRID_OVERLAP_REVIEW, capture_outline_review_required, hold_overlapping_paper_claim_modes,
+    PAPER_GRID_OVERLAP_REVIEW, backed_edge_review_reference, capture_outline_review_required, hold_overlapping_paper_claim_modes,
     original_prediction_mask, paper_curve_from_review_traces, paper_curve_review_reference,
     overlapping_paper_claims, paper_claim_groups,
 )
@@ -692,6 +692,9 @@ async def update_photo_bounding_box(
         curve = paper_curve_review_reference(previous_correction)
         if curve is not None:
             review_provenance.setdefault("paper_curve_review", deepcopy(curve))
+        backed_edge = backed_edge_review_reference(print_mode)
+        if backed_edge is not None:
+            review_provenance.setdefault("backed_edge_review", deepcopy(backed_edge))
     review_provenance.setdefault("original_prediction", before)
     review_provenance.setdefault("prediction_provenance", prediction_provenance)
     _claim_missing_print_trace(page, review_provenance, segmentation_mask.get("warp_quad"), width, height)

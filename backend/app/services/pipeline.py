@@ -437,6 +437,7 @@ async def perspective_correction_task_logic(
                      or mask.get(REVIEWED_CROSSING_OUTLINE) is True or bool(mask.get("crossing_print_suggestion"))
                      or capture_edge_requires_review(mask) or boundary_needs_review or bool(paper_claims)
                      or scalloped_outline is not None
+                     or bool((manual_boundary or {}).get("backed_edge_review"))
                      or (manual_boundary or {}).get("capture_outline") is True)
     loads_source = page_image is None
     if page_image is None:
