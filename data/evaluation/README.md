@@ -7617,7 +7617,7 @@ All three fall inside the experimental outline. The larger warp
 also includes about 49,262 holder pixel centres. Its estimated
 foreign bilinear sample weight is 1.26%. The preview guard rejects
 the render because a new face-detector region crosses the upper-left
-holder. The review shows the measured open spans on the original.
+holder. Revision 3 shows the measured open spans on the original.
 
 In 40 paired registered replays, this annotation appeared only on
 native Willett 95. Both smaller Willett 95 count offers matched the
@@ -7629,6 +7629,66 @@ reports. The frozen detector matches 18/18 prints and the seeded
 geometry run passes 11/11 whole prints and 12/12 motifs.
 `dark_album_review` advances to revision 3. Receipts remain local
 under `runs/crop-quality/truncated-dark-mount-review/`.
+
+### Compare only measured strips beside a mounted print
+
+The larger trial warp for native Willett 95 regains the bridge and
+also crosses the upper-left protected region and the physical holders.
+Four closed red rings alone cannot establish which pixels they
+cover. In four of twelve controls with a low-contrast printed subject
+inside a ring, the ring remains optically consistent. The review
+preview never uses its interior as evidence to delete image content.
+
+The narrower comparison starts with the existing source footprint.
+It selects a dominant open paper edge and resamples the original
+pixels at neighbouring stations. Each addition needs an unambiguous
+dark-to-bright transition with a valid backing sample. Short and
+unsupported runs leave gaps on the transparent canvas. The preview
+uses the existing homography, translated so that the supported
+extension fits on the canvas. The saved crop retains its current warp.
+
+Source-centre coverage checks require every old centre to remain.
+An addition that intersects a protected region or another photo claim
+is rejected. A closed red contour and its enclosed centre act as an
+overlap veto. Added pixels must also avoid the one-pixel neighbourhood
+of that contour. The premultiplied warp uses only the resulting
+source coverage. A subsequent manual claim on the measured expansion
+band removes the preview.
+
+On the 6,016 × 3,812 source, the held PNG measures 2,721 × 1,866.
+Against the development draft, the preview adds 279,887 visible source
+centres, loses zero old centres and reduces the omitted visible
+fraction from 18.02% to 11.91%. The addition introduces zero
+out-of-draft source centres and zero output pixels with foreign
+interpolation weight. The known holder contours contribute zero
+source taps. One of three previously missed bridge landmarks is
+visible in the comparison. The remaining gaps and the physical
+corners still need review.
+
+All four quarter-turn inputs with rotated source annotations produce
+the same native centre counts. The isolated check took 300–432 ms
+of CPU time with one OpenCV thread. The native upload preserved three
+active rows, their warps and ordinary JPEG bytes. Desktop and mobile
+display the JPEG and PNG together. The primary field's two-pixel
+interior has full preview coverage. Nineteen output centres exactly
+on the old left viewport seam have zero alpha within numerical
+precision of the boundary. Reprocessing reproduces the PNG bytes.
+A manual test claim placed solely within the addition retires the
+preview, and another reprocess keeps that comparison withdrawn.
+
+The PNG belongs to the review of **Ganzer Abzug**. Both export
+statuses are held, and the motif mode retains its own boundary
+review. The same source measurements appear on the original page.
+All eight paired benchmarks match the previous measured results in
+both crop modes. The frozen detector still matches 18/18 prints and
+the seeded run passes 11/11 whole prints and 12/12 motifs.
+The `dark_album_review` validation profile advances to revision 4.
+Native samples and alpha metrics are local under
+`runs/crop-quality/mounted-bridge-strip/`.
+
+```bash
+python -m pytest -q backend/tests/test_pipeline/test_fragmented_prints.py -k mounted_strip
+```
 
 ### Preview a motif with one disputed paper edge
 
@@ -7984,3 +8044,15 @@ reference packets. It found none of the 26 pinned page images or the
 from the parked Getty, Rijksmuseum and Met calibration manifest
 received HTTP 403 from the network tunnel before any image arrived.
 No image was scored and the draft split roles are unchanged.
+
+Te Papa catalogues physical albums `AL.000638` and `AL.000640`
+with linked print objects and a public reuse declaration for the
+marked media. In `AL.000640`, individual records `O.048980`,
+`O.048985` and `O.048987` record motif dimensions of 292 × 190,
+206 × 153 and 289 × 188 mm. The catalogue has to be checked on
+the original pixels for the leaf-to-print links, physical stock
+corners and independent captures. The official media and catalogue
+gateway returned HTTP 403 in this intake. These albums remain
+source leads. [Album AL.000638](https://collections.tepapa.govt.nz/object/1840035) ·
+[Album AL.000640](https://collections.tepapa.govt.nz/object/1840095) ·
+[Media terms](https://www.tepapa.govt.nz/learn/research/datasets/collections-api/api-terms-of-use)

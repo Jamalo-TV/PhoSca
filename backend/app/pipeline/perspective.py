@@ -13,7 +13,7 @@ from app.pipeline.album_windows import (
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.bowed_edge_review import (
     POSSIBLE_ALBUM_LAYER_EDGE, POSSIBLE_BOWED_PRINT_EDGE, POSSIBLE_DISPLACED_PRINT_EDGES, POSSIBLE_LOCAL_PRINT_EDGE,
-    suggest_bowed_print_preview, suggest_displaced_print_preview,
+    POSSIBLE_MOUNTED_EDGE_STRIP, suggest_bowed_print_preview, suggest_displaced_print_preview,
 )
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
 from app.pipeline.dark_album_review import DARK_BACKING_OUTLINE_REVIEW, DARK_MOUNTED_EDGE_SOURCE
@@ -42,6 +42,7 @@ from app.pipeline.motif_boundary import close_motif_outline, motif_outline_corne
 from app.pipeline.motif_margin import (
     HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE, held_print_motif_margin_marks, motif_margin_marks,
 )
+from app.pipeline.mounted_edge_preview import suggest_mounted_strip_preview
 from app.pipeline.off_print_advisory import off_print_advisory_regions
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.manual_paper_boundary import (
@@ -2144,6 +2145,22 @@ def correct_photo_crop(
         if PROJECTIVE_PRINT_OUTLINE_REVIEW in full_reasons and (mounted_traces := mask.get("mounted_paper_edge_traces")):
             full_mode["suggested_edge_traces"] = mounted_traces
             full_mode["suggested_edge_source"] = DARK_MOUNTED_EDGE_SOURCE
+            if enable_classical_retry and not manual and all(mode["status"] == "review_needed" for mode in modes.values()):
+                try:
+                    traces = [normalized_vertices_to_pixels([(p["x"], p["y"]) for p in trace], width, height)
+                              for trace in mounted_traces if len(trace) == 2]
+                    strip = suggest_mounted_strip_preview(page_image, src_points, traces, neighbor_polygons, regions)
+                    if strip is not None:
+                        pixels, preview = _render_outline_preview(
+                            page_image, strip.outline, np.asarray(full_mode["page_to_output"]),
+                        )
+                        full_mode["outline_preview"] = {
+                            **preview, "source": POSSIBLE_MOUNTED_EDGE_STRIP, "source_side": strip.side,
+                            "source_search_band": _vertices_on_page(strip.search_band, width, height),
+                        }
+                        result = replace(result, full_print_preview=pixels)
+                except (ValueError, cv2.error, np.linalg.LinAlgError):
+                    pass
         if (competing_segments and not manual and "PRINT_BOUNDARY_AMBIGUOUS" in full_reasons
                 and not full_mode.get("suggested_edge_traces") and not full_mode.get("suggested_warp_quad")
                 and not (mask.get("film_grid_review_seam") or mask.get("paper_grid_review"))

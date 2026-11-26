@@ -11,7 +11,7 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic
 from app.pipeline.print_edges import _edge_band, _line_endpoints, _sample_lab, _side_line
 
 
-DARK_ALBUM_REVIEW_REVISION = 3
+DARK_ALBUM_REVIEW_REVISION = 4
 DARK_ALBUM_PROPOSAL = "possible_dark_album_backing"
 DARK_BACKING_OUTLINE_REVIEW = "DARK_BACKING_OUTLINE_REVIEW"
 DARK_MOUNTED_EDGE_SOURCE = "dark_mounted_paper_edges"

@@ -497,6 +497,9 @@ export function getPrintOutlinePreviewHint(fullPrint) {
   if (preview?.source === possibleBowedPrintEdge) {
     return "Die Prüfvorschau ergänzt nur den am Original gemessenen sichtbaren Streifen. Der vollständige Papierrand ist noch unklar.";
   }
+  if (preview?.source === "possible_mounted_edge_strip") {
+    return "Die Prüfvorschau ergänzt sichtbare Bildteile an den gemessenen Kanten. Transparente Lücken zeigen, wo der Papierrand unklar bleibt. Vergleiche beide Ansichten am Original.";
+  }
   if (preview?.source === possibleInwardPrintCorner) {
     const aspect = preview.reason_codes?.includes("PRINT_ASPECT_UNCERTAIN") ? " Das Seitenverhältnis ist geschätzt." : "";
     return `Die Vorschau ergänzt die am Original gemessene Ecke.${aspect}`;
@@ -518,7 +521,7 @@ export function getPrintOutlinePreviewHint(fullPrint) {
 export function showsPaperEdgeComparison(fullPrint) {
   return [possibleOverextendedPrintEdge, possibleInwardPrintCorner, possibleBowedPrintEdge,
     possibleDisplacedPrintEdges, possibleAlbumLayerEdge, possibleLocalPrintEdge,
-    disputedGridPreview].includes(fullPrint?.outline_preview?.source);
+    "possible_mounted_edge_strip", disputedGridPreview].includes(fullPrint?.outline_preview?.source);
 }
 
 export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outlinePreview }) {

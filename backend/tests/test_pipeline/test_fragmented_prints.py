@@ -11,6 +11,7 @@ from app.pipeline import projective_prints, segmentation
 from app.pipeline.adjacent_prints import ADJACENT_PRINT_REVIEW, adjacent_album_edge_outlines
 from app.pipeline.crop_validation import automatic_crop_review_reasons
 from app.pipeline.crossing_prints import staggered_print_source_traces
+from app.pipeline.crop_sampling import _outline_mask
 from app.pipeline.dark_album_review import find_dark_mounted_print_review
 from app.pipeline.enhancement import prepare_for_cutout
 from app.pipeline.fragmented_prints import (
@@ -18,16 +19,12 @@ from app.pipeline.fragmented_prints import (
 )
 from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic
 from app.pipeline.image_ops import load_image
+from app.pipeline.mounted_edge_preview import suggest_mounted_strip_preview
 from app.pipeline.perspective import correct_photo_crop
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
 
 
-@pytest.mark.parametrize("turn", [0, 1])
-@pytest.mark.parametrize("case", [
-    "photo", "existing_claim", "unmounted", "paper_notice", "light_backing", "inside_mount",
-    "truncated_claim", "complete_claim", "truncated_with_neighbor",
-])
-def test_red_mount_proposal_requires_distinct_photo_and_original_paper_edges(turn, case):
+def _red_mounted_scene(case):
     image = np.full((520, 800, 3), 183 if case == "light_backing" else 31, np.uint8)
     if case == "paper_notice":
         image[75:295, 116:481] = 199
@@ -45,6 +42,16 @@ def test_red_mount_proposal_requires_distinct_photo_and_original_paper_edges(tur
             cv2.ellipse(image, tuple(corner), (12, 17), 30 if index % 2 else -25, 0, 360, (34, 62, 150), 3)
     if case == "inside_mount":
         cv2.ellipse(image, (280, 78), (12, 17), -25, 0, 360, (34, 62, 150), 3)
+    return image, corners
+
+
+@pytest.mark.parametrize("turn", [0, 1])
+@pytest.mark.parametrize("case", [
+    "photo", "existing_claim", "unmounted", "paper_notice", "light_backing", "inside_mount",
+    "truncated_claim", "complete_claim", "truncated_with_neighbor",
+])
+def test_red_mount_proposal_requires_distinct_photo_and_original_paper_edges(turn, case):
+    image, corners = _red_mounted_scene(case)
     if turn:
         corners = order_quad_cyclic(np.column_stack((image.shape[0] - 1 - corners[:, 1], corners[:, 0])))
         image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
@@ -66,6 +73,38 @@ def test_red_mount_proposal_requires_distinct_photo_and_original_paper_edges(tur
         assert all(abs(cv2.pointPolygonTest(corners, tuple(point), True)) < 2 for span in spans for point in span)
     else:
         assert result is None
+
+
+@pytest.mark.parametrize("case", ["visible", "protected_addition", "protected_original", "neighbor", "open_ring"])
+def test_mounted_strip_adds_only_supported_centers_outside_existing_crop(case):
+    image, corners = _red_mounted_scene("photo")
+    current = np.float32([(135, 125), (461, 125), (461, 276), (135, 276)])
+    top_span = np.float32([(182, 75), (407, 75)])
+    peers, regions = [], []
+    if case == "protected_addition":
+        regions.append({"type": "text", "box": {"x1": 230, "y1": 85, "x2": 280, "y2": 103}})
+    elif case == "protected_original":
+        regions.append({"type": "text", "box": {"x1": 230, "y1": 165, "x2": 280, "y2": 183}})
+    elif case == "neighbor":
+        peers.append(np.float32([(209, 82), (280, 82), (280, 115), (209, 115)]))
+    elif case == "open_ring":
+        image[54:75, 106:123] = 31
+    suggestion = suggest_mounted_strip_preview(image, current, [top_span], peers, regions)
+
+    if case not in {"visible", "protected_original"}:
+        assert suggestion is None
+        return
+    assert suggestion is not None and suggestion.side == 0
+    old = _outline_mask(current.astype(np.float64), image.shape[:2])
+    stock = _outline_mask(corners.astype(np.float64), image.shape[:2])
+    visible = _outline_mask(suggestion.outline.astype(np.float64), image.shape[:2])
+    assert np.all(old <= visible)
+    assert np.all(visible <= stock)
+    assert np.count_nonzero(visible > old) > 10_000
+    mounts = np.zeros_like(visible)
+    for index, corner in enumerate(corners.astype(int)):
+        cv2.ellipse(mounts, tuple(corner), (14, 19), 30 if index % 2 else -25, 0, 360, 1, -1)
+    assert not np.any(visible & mounts)
 
 
 def _scene(case="continuous", turns=0):
