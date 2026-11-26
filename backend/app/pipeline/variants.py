@@ -12,6 +12,7 @@ from app.core.metrics import RELEASE_DECISIONS
 from app.pipeline.camera_calibration import capture_calibration
 from app.pipeline.crop_validation import crop_validation_evidence
 from app.pipeline.decisions import photo_is_reviewed_non_print
+from app.pipeline.edge_prints import capture_edge_requires_review
 from app.pipeline.image_ops import calculate_blur_score
 from app.pipeline.manual_paper_boundary import (
     manual_paper_download_needs_review, manual_scalloped_outline, paper_claims_need_overlap_check,
@@ -244,7 +245,7 @@ def variant_path_from_photo(photo: Any, variant: str) -> str | None:
     automatic = getattr(photo, "segmentation_confidence", None) is not None
     mask = getattr(photo, "segmentation_mask", None) or {}
     if variant in {"full_print", "image_only", "source_corrected_trimmed"}:
-        if mask.get("capture_edge_clipped") is True:
+        if capture_edge_requires_review(mask):
             return None
         if paper_claims_need_overlap_check(mask, metadata, automatic=automatic):
             return None

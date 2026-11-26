@@ -46,7 +46,7 @@ import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
 import EdgeMeasurement from "./EdgeMeasurement.jsx";
 import {
-  adjacentPrintHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
+  adjacentPrintHint, captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   deferredPrintHint, filmGridCountHint, filmGridHint, filmGridReason, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
@@ -54,7 +54,7 @@ import {
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
 import {
-  getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
+  getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getPaperGridReview, getPaperGridReviewGroups, getStoredMotifQuad,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -1407,9 +1407,14 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const paperGrid = useMemo(() => getPaperGridReview(paperGridMask), [paperGridMask]);
   const paperGridGroups = useMemo(() => reviewingCount && !newPrint && !editingImage ? getPaperGridReviewGroups(photos) : [],
     [reviewingCount, newPrint, editingImage, photos]);
+  const captureSplitGroups = useMemo(() => reviewingCount && !newPrint && !editingImage ? getCaptureSplitReviewGroups(photos) : [],
+    [reviewingCount, newPrint, editingImage, photos]);
+  const captureSplitReview = selected?.segmentation_confidence != null && !rejectedDetection
+    && selected.segmentation_mask?.capture_split_review_traces?.length === 2;
   const detectionReviewHint = (crossingReview && crossingPrintHint) || (scannerReview && scannerBackingHint)
     || (overlapReview && clippedOverlapHint) || (filmGridSeam && filmGridHint)
-    || (paperGrid && (paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint)) || (fragmentReview && fragmentOutlineHint);
+    || (paperGrid && (paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint)) || (fragmentReview && fragmentOutlineHint)
+    || (captureSplitReview && "Prüfe, ob dieser Vorschlag einen eigenen Papierabzug zeigt.");
   const fragmentMask = fragmentReview && !rejectedDetection ? selected.segmentation_mask : null;
   const fragmentOutline = useMemo(() => getFragmentOutline(fragmentMask), [fragmentMask]);
   const suggestedNeighbor = selected?.segmentation_mask?.adjacent_print_suggestion;
@@ -1620,18 +1625,18 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       });
       context.restore();
     }
-    if (countOutlines.length) {
+    if (countOutlines.length || captureSplitGroups.length) {
       context.save();
       context.strokeStyle = "#2563eb";
       context.lineWidth = 3;
-      for (const { supportedSides, weakEdge } of countOutlines) {
-        for (const [line, dashes] of [[supportedSides, [9, 5]], [weakEdge, [2, 5]]]) {
-          context.setLineDash(dashes);
-          context.beginPath();
-          context.moveTo(line[0].x * canvas.width, line[0].y * canvas.height);
-          line.slice(1).forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
-          context.stroke();
-        }
+      const lines = countOutlines.flatMap(({ supportedSides, weakEdge }) => [[supportedSides, [9, 5]], [weakEdge, [2, 5]]]);
+      lines.push(...captureSplitGroups.flatMap(({ traces }) => traces.map(trace => [trace, [9, 5]])));
+      for (const [line, dashes] of lines) {
+        context.setLineDash(dashes);
+        context.beginPath();
+        context.moveTo(line[0].x * canvas.width, line[0].y * canvas.height);
+        line.slice(1).forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
+        context.stroke();
       }
       context.restore();
     }
@@ -1690,7 +1695,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         context.fillText(String(index + 1), x + 9, y - 7);
       });
     }
-  }, [alternateOutline, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage,
+  }, [alternateOutline, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups,
     printSuggestion,
     missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, selectedPhotoId, showMissingEdges]);
@@ -1939,6 +1944,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       )}
       {currentCountReview?.error && <p role="alert">{currentCountReview.error}</p>}
       {countOutlines.length > 0 && <p className="crop-editor-hint" id="fragment-count-review-hint">{fragmentCountHint}</p>}
+      {captureSplitGroups.length > 0 && <p className="crop-editor-hint" id="capture-split-count-hint">{captureSplitReviewHint}</p>}
       {filmGridGroups.length > 0 && <p className="crop-editor-hint" id="film-grid-count-hint">{filmGridCountHint}</p>}
       {paperGridGroups.length > 0 && <p className="crop-editor-hint" id="paper-grid-count-hint">{paperGridCountHint}</p>}
       {!newPrint && !editingImage && !selected && pendingNested > 0 && (
@@ -2017,6 +2023,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         aria-describedby={[
           countOutlines.length && "fragment-count-review-hint", filmGridGroups.length && "film-grid-count-hint",
           paperGridGroups.length && "paper-grid-count-hint",
+          captureSplitGroups.length && "capture-split-count-hint",
           editingImage && motifMarginMarks.length && !crossingReview && !needsPrintReview && "motif-margin-marks-hint",
         ].filter(Boolean).join(" ") || undefined}
       />

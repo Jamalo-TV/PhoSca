@@ -22,7 +22,7 @@ from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
     measure_extended_print_outline, measure_fragmented_print, suggest_fragmented_outline,
 )
-from app.pipeline.fusion_ownership import unsupported_fallback_ownership
+from app.pipeline.fusion_ownership import _covered_area, unsupported_fallback_ownership
 from app.pipeline.geometry import (
     PolygonOverlap,
     normalized_polygon_overlap,
@@ -1601,6 +1601,52 @@ def _unrotate_capture_quad(quad: np.ndarray, turns: int, width: int, height: int
     return order_quad_cyclic(np.column_stack(choices[turns]))
 
 
+def _capture_split_claimants(
+    quad: np.ndarray, on_current_side: dict[int, PolygonOverlap], polygons: dict[int, np.ndarray],
+    detections: list[SegmentationDetection], width: int, height: int,
+) -> list[int]:
+    """Find rival pieces on different sides of the same measured capture corner."""
+    if not on_current_side or max(match.second_containment for match in on_current_side.values()) >= .85:
+        return []
+    frame = [
+        [(f"{axis}{suffix}", value) for suffix, value, edge in (("1", 0., 0), ("2", 1., limit))
+         if np.count_nonzero(quad[:, coordinate] == edge) == 2]
+        for coordinate, (axis, limit) in enumerate((("x", width - 1), ("y", height - 1)))
+    ]
+    if any(len(sides) != 1 for sides in frame):
+        return []
+    (x_side,), (y_side,) = frame
+    outline = pixel_vertices_to_normalized(quad, width, height)
+    left, top = outline.min(axis=0)
+    right, bottom = outline.max(axis=0)
+    outer_box = {"x1": left, "y1": top, "x2": right, "y2": bottom}
+    claims = {index: normalized_polygon_overlap(polygon, outline) for index, polygon in polygons.items()
+              if _normalized_box_overlap(outer_box, detections[index].bounding_box)[0] > 0}
+    if any(match.first_containment >= .90 and match.second_containment >= .85 for match in claims.values()):
+        return []
+    parts = [index for index, match in claims.items()
+             if .38 <= match.second_containment <= .83 and match.first_containment >= .96
+             and detections[index].geometry_valid and not detections[index].review_reasons]
+    models = [index for index in parts if detections[index].mask.get("source") == "yolo_seg_mask"]
+    if len(models) != 2 or not any(index in on_current_side for index in models):
+        return []
+    first, second = models
+    boxes = [detections[index].bounding_box for index in models]
+    x_key, x_end = x_side
+    y_key, y_end = y_side
+    across_corner = ((abs(boxes[0][x_key] - x_end) < .008 and abs(boxes[1][y_key] - y_end) < .008)
+                     or (abs(boxes[1][x_key] - x_end) < .008 and abs(boxes[0][y_key] - y_end) < .008))
+    if not across_corner or normalized_polygon_overlap(polygons[first], polygons[second]).iou > .04:
+        return []
+    if _covered_area(quad, [normalized_vertices_to_pixels(polygons[index], width, height) for index in models]) < .85:
+        return []
+    classical = [index for index in parts if index in on_current_side
+                 and detections[index].mask.get("detector_source") == "edge_contour"
+                 and all(normalized_polygon_overlap(polygons[index], polygons[model]).second_containment >= .10
+                         for model in models)]
+    return [*models, *classical]
+
+
 def _recover_capture_edge_prints(
     image: np.ndarray, result: SegmentationResult, settings: Settings,
 ) -> SegmentationResult:
@@ -1635,8 +1681,14 @@ def _recover_capture_edge_prints(
         ambiguous = {index for _, matches in outline_owners for index in matches
                      if len(matches) != 1 or degree[index] != 1}
         supported_conflicts = []
+        splits = []
         replacements = {}
         for quad, matches in outline_owners:
+            split = _capture_split_claimants(quad, matches, polygons, detections, width, height)
+            if split and all(other is quad or cv2.intersectConvexConvex(quad, other)[0] <= .5 for other in quads):
+                ambiguous.update(split)
+                splits.append((quad, split))
+                continue
             # An ambiguous match leaves its contenders intact. It cannot
             # invalidate a disjoint outline with a unique owner.
             if len(matches) > 1:
@@ -1663,12 +1715,12 @@ def _recover_capture_edge_prints(
             mask = {**item.mask, "warp_quad": item.mask["polygon"], "capture_edge_clipped": True}
             replacements[index] = replace(item, mask=mask, review_reasons=[CAPTURE_EDGE_HOLD, *item.review_reasons])
         if len(replacements) >= 2:
-            proposals.append((replacements, ambiguous, supported_conflicts))
+            proposals.append((replacements, ambiguous, supported_conflicts, splits))
     # A corner can produce two distinct edge interpretations. Keep the
     # original suggestions in this case.
     if len(proposals) != 1:
         return result
-    replacements, ambiguous, supported_conflicts = proposals[0]
+    replacements, ambiguous, supported_conflicts, splits = proposals[0]
     updated = [replacements.get(index, item) for index, item in enumerate(detections)]
     metadata = {**result.metadata, "capture_edge_outlines_recovered": len(replacements)}
     recovered = [_detection_polygon(item) for item in replacements.values()]
@@ -1676,6 +1728,15 @@ def _recover_capture_edge_prints(
     additional = [(quad, pixel_vertices_to_normalized(quad, width, height)) for quad, _ in supported_conflicts]
     rejected = set()
     overlap_reviews = 0
+    for visible_quad, claimants in splits:
+        traces = [_normalized_polygon(side, width, height)
+                  for side in visible_capture_edge_traces(image, visible_quad)]
+        for index in claimants:
+            item = updated[index]
+            updated[index] = replace(item, mask={**item.mask, "capture_split_review_traces": traces},
+                                     review_reasons=[CAPTURE_EDGE_HOLD, *item.review_reasons])
+    if splits:
+        metadata["capture_edge_split_reviews"] = len(splits)
     for visible_quad, matches in supported_conflicts:
         if len(matches) != 2:
             continue

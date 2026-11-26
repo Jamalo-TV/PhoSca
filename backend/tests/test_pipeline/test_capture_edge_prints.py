@@ -9,7 +9,8 @@ import pytest
 from app.config import Settings
 from app.pipeline import segmentation
 from app.pipeline.edge_prints import (
-    CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
+    CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CAPTURE_SPLIT_REVIEW_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW,
+    SCANNER_BACKING_REVIEW,
 )
 from app.pipeline.perspective import correct_photo_crop
 from app.pipeline.variants import variant_path_from_photo
@@ -276,6 +277,70 @@ def test_ambiguous_match_keeps_its_proposals_but_allows_separate_recovery(ambigu
     assert all(item is prior for item, prior in zip(result.detections[2:], original.detections[2:], strict=True))
 
 
+@pytest.mark.parametrize("gap", [1, 8])
+def test_capture_recovery_respects_native_gutter_from_paper_to_frame(gap):
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    page, _ = scan_with_backing_rails(settings, "scanner")
+    page[949:1230, 705:705 + gap] = page[945, 705]
+
+    def lower_outlines():
+        return [quad for quad in segmentation.clipped_print_outlines(page) if quad[:, 1].mean() > 1000]
+
+    # A mark stopping before the frame leaves the original paper extent intact.
+    full, = lower_outlines()
+    assert full[:, 0].min() < 455
+    page[1230:, 705:705 + gap] = page[945, 705]
+
+    # A throughgoing gap forbids the merged extent. The wider gap also
+    # resolves the right sheet individually in contour discovery.
+    measured = lower_outlines()
+    if gap == 8:
+        right, = measured
+        assert right[:, 0].min() > 705
+    else:
+        assert measured == []
+    assert len(segmentation.clipped_print_outlines(page)) == 2 + len(measured)
+
+
+def test_capture_corner_with_orthogonal_claimants_shows_two_traces_without_changing_geometry():
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    page, original = scan_with_backing_rails(settings, "scanner")
+    height, width = page.shape[:2]
+    candidates = [
+        ([[707, 956], [959, 956], [959, 1319], [707, 1319]], "yolo_seg_mask", "yolo_onnx"),
+        ([[459, 956], [706, 956], [706, 1319], [459, 1319]], "yolo_seg_mask", "yolo_onnx"),
+        ([[502, 996], [959, 1000], [959, 1210], [581, 1220]], "classical_border_quad", "edge_contour"),
+    ]
+    parts = [segmentation._make_detection(
+        box={}, points=np.float32(points), confidence=.91, image_width=width, image_height=height,
+        settings=settings, source=source, detector_source=detector_source,
+    ) for points, source, detector_source in candidates]
+    baseline = segmentation.SegmentationResult([*original.detections[:2], *parts], {})
+
+    result = segmentation._recover_capture_edge_prints(page, baseline, settings)
+
+    assert result.metadata["capture_edge_outlines_recovered"] == 2
+    assert result.metadata["capture_edge_split_reviews"] == 1
+    traces = result.detections[2].mask["capture_split_review_traces"]
+    assert len(traces) == 2
+    assert all(len(line) == 2 and not any(line[0][axis] == line[1][axis] in (0., 1.)
+                                         for axis in ("x", "y")) for line in traces)
+    for prior, item in zip(parts, result.detections[2:], strict=True):
+        assert item.bounding_box == prior.bounding_box
+        assert item.mask == {**prior.mask, "capture_split_review_traces": traces}
+        assert item.review_reasons == [CAPTURE_EDGE_HOLD]
+        params = dict(dual_mode=True, auto_orient=False, protect_regions=False)
+        previous_crop = correct_photo_crop(page, prior.bounding_box, prior.mask, **params)
+        crop = correct_photo_crop(page, item.bounding_box, item.mask, **params)
+        np.testing.assert_array_equal(crop.rectified_untrimmed, previous_crop.rectified_untrimmed)
+        modes = crop.metadata["crop_modes"]
+        assert all(mode["status"] == "review_needed" and CAPTURE_EDGE_HOLD in mode["reason_codes"]
+                   for mode in modes.values())
+        assert modes["full_print"]["suggested_edge_source"] == CAPTURE_SPLIT_REVIEW_SOURCE
+        assert modes["full_print"]["suggested_edge_traces"] == traces
+        assert "suggested_warp_quad" not in modes["full_print"] and "suggested_edge_traces" not in modes["image_only"]
+
+
 @pytest.mark.parametrize("case,separate_fragment,scanner_review,fragment_review", [
     ("scanner", False, True, True),
     ("scanner", True, True, False),
@@ -336,10 +401,15 @@ def test_supported_capture_conflict_gives_review_hints_without_removing_candidat
     assert "suggested_warp_quad" not in whole and "suggested_edge_traces" not in modes["image_only"]
 
 
-def test_capture_edge_hold_applies_to_stale_download_metadata():
+@pytest.mark.parametrize("mask", [
+    {"capture_edge_clipped": True},
+    {"capture_split_review_traces": [[{"x": 0., "y": .6}, {"x": .5, "y": .6}],
+                                     [{"x": .5, "y": .6}, {"x": .5, "y": 1.}]]},
+])
+def test_capture_edge_hold_applies_to_stale_download_metadata(mask):
     modes = ("full_print", "image_only", "source_corrected_trimmed")
     photo = SimpleNamespace(
-        segmentation_mask={"capture_edge_clipped": True},
+        segmentation_mask=mask,
         enhancement_applied={
             "correction": {"crop_modes": {mode: {"status": "ready"} for mode in modes[:2]}},
             "variants": {mode: {"path": "/previous-crop.jpg"}

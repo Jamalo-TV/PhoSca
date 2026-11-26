@@ -35,6 +35,7 @@ export const printOutlineSaveHint = "Prüfe und speichere zuerst die Papierkontu
 export const captureOutlineReviewReason = "PRINT_CAPTURE_OUTLINE_REVIEW";
 const captureAtEdgeReason = "PRINT_AT_CAPTURE_EDGE";
 const captureAtEdgeHint = "Der Abzug reicht über den Aufnahmerand hinaus. Für einen vollständigen Zuschnitt brauchst du eine neue Aufnahme.";
+export const captureSplitReviewHint = "Die gestrichelten Linien zeigen einen möglichen gemeinsamen Papierrand. Prüfe am Original, wie viele Abzüge dort liegen.";
 export const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
 const curvedMotifReviewReason = "IMAGE_BOUNDARY_CURVED";
 const curvedMotifReviewHint = "Die Motivkante verläuft unregelmässig. Prüfe am Original, welche Bildfelder und Beschriftungen zum Motiv gehören.";
@@ -79,6 +80,7 @@ export function getPrintEdgeReviewHint(fullPrint) {
     return printEdgeReviewHints.PRINT_CURVED_OUTLINE_REVIEW;
   }
   if (getSourceEdgeTraces(fullPrint?.suggested_edge_traces).length) {
+    if (fullPrint.suggested_edge_source === "capture_edge_split") return captureSplitReviewHint;
     if (fullPrint.suggested_edge_source === "capture_edge_boundary") {
       return `Die gestrichelten Linien zeigen die sichtbaren Papierkanten. ${captureAtEdgeHint}`;
     }
@@ -188,6 +190,7 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
   const clippedOverlapUncertain = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
   const captureEdgeClipped = photo.segmentation_mask?.capture_edge_clipped === true;
+  const captureSplit = getCropModes(photo)?.full_print?.suggested_edge_source === "capture_edge_split";
   const pendingPaperEdge = getCropModes(photo)?.full_print?.reason_codes?.includes("PRINT_EDGE_CONFIRMATION_REQUIRED");
   const scallopedOutline = mode === "full_print" && result?.reason_codes?.includes(scallopedOutlineReviewReason);
   const printOutline = photo.urls?.full_print_preview;
@@ -195,7 +198,7 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
   const motifPreview = photo.urls?.image_only_preview;
   const preview = mode === "image_only"
     ? motifPreview || ((possibleMultipanel || possibleFragmentedPrint || possibleFragmentOutline || scannerBackingUncertain || clippedOverlapUncertain || possibleFilmGrid
-        || paperGrid || captureEdgeClipped || pendingPaperEdge || result?.reason_codes?.includes(markedMotifMarginReason)) && fullPreview)
+        || paperGrid || captureEdgeClipped || captureSplit || pendingPaperEdge || result?.reason_codes?.includes(markedMotifMarginReason)) && fullPreview)
     : fullPreview;
   const previewAlt = mode === "image_only" && motifPreview
     ? "Konturgetreue Motivvorschau zur Prüfung"
@@ -206,6 +209,7 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
     && getPrintOutlinePreviewHint(getCropModes(photo)?.full_print);
   const reviewMessage = (captureEdgeClipped
     && "Der vorgeschlagene Abzug reicht bis an den Aufnahmerand. Lade für den Zuschnitt eine Aufnahme hoch, die ihn ganz zeigt.")
+    || (captureSplit && captureSplitReviewHint)
     || (possibleNestedPrint && nestedPrintHint)
     || (possibleMultipanel && reviewMessages.MULTIPANEL_PRINT_REVIEW)
     || (possibleFragmentedPrint && reviewMessages.FRAGMENTED_PRINT_REVIEW)

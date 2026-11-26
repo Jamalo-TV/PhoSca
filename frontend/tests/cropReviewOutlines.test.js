@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  getFilmGridReviewSeams, getFragmentReviewOutlines, getPaperGridReviewGroups, getStoredMotifQuad,
+  getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFragmentReviewOutlines, getPaperGridReviewGroups,
+  getStoredMotifQuad,
 } from "../src/cropReviewOutlines.js";
 
 const quad = [{ x: .1, y: .2 }, { x: .7, y: .2 }, { x: .7, y: .8 }, { x: .1, y: .8 }];
@@ -50,6 +51,21 @@ test("a film divider appears once while multiple active proposals still mark it"
   assert.deepEqual(getFilmGridReviewSeams([
     row, row, { ...second, segmentation_confidence: null },
     { ...row, id: "invalid", segmentation_mask: { film_grid_review_seam: [line[0], { x: 1.2, y: .5 }] } },
+  ]), []);
+});
+
+test("a shared capture corner shows only its measured sides while proposals are unresolved", () => {
+  const traces = [[{ x: 0, y: .65 }, { x: .6, y: .66 }], [{ x: .6, y: .66 }, { x: .59, y: 1 }]];
+  const first = { id: "a", segmentation_confidence: .7, segmentation_mask: { capture_split_review_traces: traces } };
+  const second = { photo_id: "b", confidence: .8, segmentation_mask: structuredClone(first.segmentation_mask) };
+  const [group, ...others] = getCaptureSplitReviewGroups([first, second]);
+  assert.deepEqual(others, []);
+  assert.deepEqual(group.traces, traces);
+  assert.deepEqual(group.photoIds, new Set(["a", "b"]));
+  assert.deepEqual(getCaptureSplitReviewGroups([
+    first, first, { ...second, reviewed_non_print: true },
+    { ...second, photo_id: "manual", confidence: null },
+    { ...second, photo_id: "invalid", segmentation_mask: { capture_split_review_traces: traces.slice(0, 1) } },
   ]), []);
 });
 

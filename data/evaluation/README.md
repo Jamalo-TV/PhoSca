@@ -1539,6 +1539,92 @@ The mixed native capture step took 309.73 to 294.13 ms median and
 other regression jobs were active. It uses the already measured
 outline for the two coordinate traces.
 
+### Review a shared capture corner and preserve separate prints
+
+Revision 9 adds two safeguards to the same native source path. Contour
+discovery closes gaps in a reduced raster. Before accepting the fitted
+outline, PhoSca samples the original along the measured physical side
+and towards the opposite capture edge. A narrow dark anchor must begin
+at the paper edge. The traced groove must stay darker than both
+shoulders over at least 66% of the path and reach both end sections.
+Flank offsets of 4 and 7 or 6 and 10 native pixels test narrow and
+wider gaps. The comparison uses Lab lightness. A supported groove
+disqualifies the combined extent. The reduced search can still find
+an individual sheet on its own side of a wider gap.
+
+For a remaining capture-corner outline the recovery compares contenders
+at both frame edges. The review path requires a disjoint source outline
+with two well-supported visible sides, two contained model pieces with
+at most 0.04 mutual IoU, at least 85% combined coverage and independent
+recovery of two other prints on this capture edge. It retains a
+classical proposal in the group when it crosses both model pieces and
+has the same frame-side support. The stored `capture_split_review_traces`
+contains only the two physical lines. Desktop and mobile count review
+draw the group once while at least two proposals remain active. Both
+crop modes hold `PRINT_AT_CAPTURE_EDGE`. The source traces belong to
+`full_print` review. The existing mask, warp and review preview stay
+available for each proposal. The ordinary named download routes and
+legacy trimmed alias enforce the hold even if older metadata says ready.
+
+The original 180° case stays at 2/3 detections with four extra proposals.
+Two learned pieces cover 91.2% of the visible fitted footprint. A third
+classical proposal crosses both. The measured outline has 0.9963 native
+IoU against the development draft. Its two observed sides meet near
+`(1149.32, 2109.29)` at 2179 × 3000. Frame limits at `x=0` and `y=2999`
+are excluded from the display. Re-running the registered model in the
+opposite orientation on the same source yields one plausible proposal
+with 0.9521 IoU to that footprint. The same retry also proposes one
+sheet for a physical two-sheet composite. A visually near-registered
+simulated layer can preserve the original measured outline as well.
+The deployed path keeps the contenders for review because retry
+confidence and scene continuity leave the paper count ambiguous.
+
+The paired separation controls insert a slanted scanner gap 0.5 to 8
+native pixels wide in the same source, using continuous artwork,
+subpixel displacement and a different photograph. The old recovery
+extended one learned sheet across its neighbour. The new check keeps
+both learned sheets in the seven controls, including JPEG75 and mild
+blur. The measured sheet IoU that had degraded to 0.512–0.515 recovers
+to 0.856–0.969. A dark printed streak that stops before the frame keeps
+the paper outline. These are generated counterexamples built from a
+single development scan. They measure a false-merge regression and
+support the review policy for this capture pattern.
+
+Paired modes on the three linked original proposals retain their
+rectified review pixels. The standard upload populates both editors
+with six active suggestions and the same two source edges. Geometry
+approval returns HTTP 409, both mode exports and the old trimmed alias
+return HTTP 404 and the review JPEG returns HTTP 200. The desktop and
+mobile wrong-object action removes one active proposal at a time. Mobile
+removes the shared count overlay when only one linked suggestion remains.
+That suggestion keeps its own source overlay and crop hold.
+
+The original 0°, 90° and 270° replays retain their previous counts and
+native recoveries. Two aligned separation controls at 0.5 and 1 pixel
+receive a linked review. In the blurred two-pixel control, both learned
+sheet masks survive, but the minimum of two independently recovered
+outlines prevents the capture pass from keeping its one remaining
+unrelated fit or issuing the linked hint. A full-bleed printed line
+with the exact appearance of scanner ground can also remain ambiguous.
+
+The 180° capture pass took 1096.95 to 331.18 ms median and 1949.81 to
+634.86 ms at p95 over 15 warm paired one-thread calls with other tests
+running. Converting the rotated view to a contiguous raster before the
+native measurements removes repeated full-image copies in OpenCV. The
+frozen detector control retains 18/18 detections. The seeded geometry
+run retains 11/11 whole-print and 12/12 motif passes. Aggregate
+detection, geometry and crop-mode metrics match the previous revision
+also on Golden, the upright NerdScan runs, Domoritz, both contact-sheet
+JPEGs and the stock challenge.
+
+`backend/tests/test_pipeline/test_capture_edge_prints.py` builds both
+native gutter widths, the early-ending line and the competing corner
+proposals without an external raster. To replay the source review,
+rotate the SHA-256-pinned 2179 × 3000 development PNG by two quarter
+turns without interpolation. Upload the resulting PNG with the same
+registered mixed detector and pass both the count and geometry review
+queues. The rotated raster stays local.
+
 ## Four neighboring loose prints on a flatbed
 
 The published 600 × 851 JPEG shows four separate prints that the author
@@ -3252,3 +3338,16 @@ No Copyright – United States designation. The mounted page rasters
 could not be located publicly, so no pair enters the final split.
 [Finding aid](https://sos-tn-gov-files.s3.amazonaws.com/forms/KLEEMAN_KARL_M_WORLD_WAR_I_PHOTOGRAPH_COLLECTION_1914-1918.pdf) ·
 [Individual print](https://teva.contentdm.oclc.org/digital/collection/WWI/id/83/)
+
+The Library of Congress record for `LOT 15564` documents 22 physical
+cartes de visite and tintypes dismounted for digitization. The record
+lists no known publication restrictions. The June 2022 auction trail
+has yet to link an original mounted page raster to a specific item from
+the lot. The catalogue API returned HTTP 403 from this workspace.
+[Library of Congress lot record](https://www.loc.gov/item/2023630850/)
+
+The Getty finding aid for the Pascal Sébah album `2010.R.16` documents
+117 prints dismounted from their pages. The manifest request returned
+HTTP 403. An independent capture before dismounting and reuse terms
+for the paired images remain unverified.
+[Getty finding aid](https://www.getty.edu/research/collections/static/pdf/2010.R.16.pdf)

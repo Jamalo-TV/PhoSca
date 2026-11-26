@@ -50,6 +50,7 @@ from app.pipeline.decisions import ReviewReason, component_review_reasons, confi
 from app.pipeline.dedup import compute_phash, hamming_distance
 from app.pipeline.degradation import analyze_degradation
 from app.pipeline.dl_enhancement import dl_enhance_photo
+from app.pipeline.edge_prints import capture_edge_requires_review
 from app.pipeline.enhancement import conservative_enhance_photo, prepare_for_cutout
 from app.pipeline.exif import write_caption_exif
 from app.pipeline.geometry import normalized_vertices_to_pixels
@@ -434,7 +435,7 @@ async def perspective_correction_task_logic(
 
     precise_crops = (settings.enable_precise_photo_crops or mask.get("manual_added") is True
                      or mask.get(REVIEWED_CROSSING_OUTLINE) is True or bool(mask.get("crossing_print_suggestion"))
-                     or mask.get("capture_edge_clipped") is True or boundary_needs_review or bool(paper_claims)
+                     or capture_edge_requires_review(mask) or boundary_needs_review or bool(paper_claims)
                      or scalloped_outline is not None
                      or (manual_boundary or {}).get("capture_outline") is True)
     loads_source = page_image is None

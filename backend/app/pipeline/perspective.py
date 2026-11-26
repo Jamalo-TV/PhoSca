@@ -10,7 +10,9 @@ from app.pipeline.album_windows import (
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
 from app.pipeline.decisions import MOTIF_MARGIN_MARKS_REVIEW
-from app.pipeline.edge_prints import CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE
+from app.pipeline.edge_prints import (
+    CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CAPTURE_SPLIT_REVIEW_SOURCE, capture_edge_requires_review,
+)
 from app.pipeline.crossing_prints import CROSSING_PRINT_REVIEW, REVIEWED_CROSSING_OUTLINE
 from app.pipeline.fragmented_prints import EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW
 from app.pipeline.geometry import (
@@ -1253,8 +1255,7 @@ def _inspect_print(
                         and normalized_polygon_overlap(outline, leaf.print_outline).first_containment >= .80):
                     reasons.append(ALBUM_WINDOW_OCCLUDED if leaf.aperture_quad is not None else ALBUM_WINDOW_STOCK_UNCERTAIN)
                     break
-        measured_capture = not manual and bool(mask.get("capture_edge_review_traces"))
-        if mask.get("capture_edge_clipped") is True or measured_capture or (
+        if mask.get("capture_edge_clipped") is True or (not manual and capture_edge_requires_review(mask)) or (
             (not manual or manual_outline) and np.any((quad < 0.5) | (quad > np.array([width, height]) - 1.5))
         ):
             reasons.append(CAPTURE_EDGE_HOLD)
@@ -1598,10 +1599,11 @@ def correct_photo_crop(
             if print_outline is not None and trim_border else None,
         )
         modes = result.metadata["crop_modes"]
-        if not manual and (capture_traces := mask.get("capture_edge_review_traces")):
+        split_traces = mask.get("capture_split_review_traces")
+        if not manual and (capture_traces := split_traces or mask.get("capture_edge_review_traces")):
             full_mode = modes["full_print"]
             full_mode.setdefault("suggested_edge_traces", []).extend(capture_traces)
-            full_mode["suggested_edge_source"] = CAPTURE_EDGE_SOURCE
+            full_mode["suggested_edge_source"] = CAPTURE_SPLIT_REVIEW_SOURCE if split_traces else CAPTURE_EDGE_SOURCE
         if not manual and (scalloped_outline := mask.get("scalloped_ownership_outline")):
             full_mode = modes["full_print"]
             full_mode["suggested_warp_quad"] = mask["scalloped_ownership_group"]

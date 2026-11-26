@@ -9,11 +9,18 @@ from app.pipeline.geometry import order_quad_cyclic
 from app.pipeline.print_edges import _side_line
 
 
-CAPTURE_EDGE_REVISION = 8
+CAPTURE_EDGE_REVISION = 9
 CAPTURE_EDGE_SOURCE = "capture_edge_boundary"
+CAPTURE_SPLIT_REVIEW_SOURCE = "capture_edge_split"
 CAPTURE_EDGE_HOLD = "PRINT_AT_CAPTURE_EDGE"
 SCANNER_BACKING_REVIEW = "SCANNER_BACKING_UNCERTAIN"
 CLIPPED_PRINT_OVERLAP_REVIEW = "CLIPPED_PRINT_OVERLAP_UNCERTAIN"
+
+
+def capture_edge_requires_review(mask: dict) -> bool:
+    return mask.get("capture_edge_clipped") is True or bool(
+        mask.get("capture_edge_review_traces") or mask.get("capture_split_review_traces")
+    )
 
 
 def _photo_texture(image: np.ndarray, quad: np.ndarray) -> bool:
@@ -82,6 +89,69 @@ def _visible_edge_supported(
     return np.mean((outside <= backing + 42) & (inside - outside >= 16)) >= .78
 
 
+def _sample_gutter_light(image: np.ndarray, points: np.ndarray) -> np.ndarray:
+    x, y = np.moveaxis(points.astype(np.float32), -1, 0)
+    pixels = cv2.remap(image, x.copy(), y.copy(), cv2.INTER_NEAREST, borderMode=cv2.BORDER_REPLICATE)
+    return cv2.cvtColor(pixels, cv2.COLOR_BGR2LAB)[..., 0].astype(np.float32)
+
+
+def _gutter_reaches_frame(image: np.ndarray, start: np.ndarray, end: np.ndarray, frame_axis: np.ndarray) -> bool:
+    length = float(np.linalg.norm(end - start))
+    depths = np.linspace(3 / length, 1 - 3 / length, 192, dtype=np.float32)
+    offsets = np.float32([-10, -7, -6, -4, -.8, 0, .8, 4, 6, 7, 10])
+    extent = min(32, round(.025 * length))
+    shifts = np.arange(1, extent + 1, 2)
+    for shift in np.r_[0, shifts, -shifts]:
+        advance = end + shift * frame_axis - start
+        direction = advance / np.linalg.norm(advance)
+        across = np.float32([direction[1], -direction[0]])
+        centers = start + depths[:, None] * advance
+        light = _sample_gutter_light(image, centers[:, None, :] + offsets[:, None] * across)
+        gutter = light[:, 4:7].min(axis=1)
+        for near_columns, far_columns in (((3, 7), (1, 9)), ((2, 8), (0, 10))):
+            near = light[:, near_columns].min(axis=1) - gutter
+            far = light[:, far_columns].min(axis=1) - gutter
+            supported = (near >= 13) & (far >= 20)
+            sections = supported.reshape(8, -1).mean(axis=1)
+            if supported.mean() >= .66 and min(sections[0], sections[-1]) >= .60 and (sections >= .45).sum() >= 6:
+                return True
+    return False
+
+
+def _has_backing_gutter(image: np.ndarray, quad: np.ndarray, backing: float) -> bool:
+    """Find a narrow, original-pixel gap from a paper side to the opposite frame."""
+    ends = np.roll(quad, -1, axis=0)
+    frame = _frame_sides(quad, ends, image)
+    for side in np.flatnonzero(~frame & np.roll(frame, 2)):
+        start, stop = quad[side], ends[side]
+        far_start, far_stop = quad[(side - 1) % 4], quad[(side - 2) % 4]
+        vector = stop - start
+        length = float(np.linalg.norm(vector))
+        tangent = vector / length
+        inward = np.float32([-tangent[1], tangent[0]])
+        fractions = np.linspace(.035, .965, min(16384, int(length * 1.5) + 1), dtype=np.float32)
+        centers = start + fractions[:, None] * vector
+        points = centers[:, None, :] + np.float32([-5, 2, 8, 16])[:, None] * inward
+        bands = points[:, :, None, :] + np.float32([-5, 0, 5])[:, None] * tangent
+        light = _sample_gutter_light(image, bands.reshape(len(points), -1, 2)).reshape(-1, 4, 3)
+        contrast = np.minimum(light[:, 1:, 0], light[:, 1:, 2]) - light[:, 1:, 1]
+        narrow = contrast >= 20
+        anchors = np.flatnonzero(
+            (light[:, 0, 1] <= min(108, backing + 42)) & narrow[:, 0] & (narrow.sum(axis=1) >= 2)
+        )
+        if not len(anchors):
+            continue
+        far_vector = far_stop - far_start
+        frame_axis = far_vector / np.linalg.norm(far_vector)
+        for run in np.split(anchors, np.flatnonzero(np.diff(anchors) > 1) + 1):
+            if (fractions[run[-1]] - fractions[run[0]]) * length > 9:
+                continue
+            fraction = np.mean(fractions[run])
+            if _gutter_reaches_frame(image, start + fraction * vector, far_start + fraction * far_vector, frame_axis):
+                return True
+    return False
+
+
 def _measure_clipped_outline(image: np.ndarray, seed: np.ndarray, backing: float) -> np.ndarray | None:
     height, width = image.shape[:2]
     radius = int(np.clip(round(min(height, width) * .004), 4, 18))
@@ -117,6 +187,10 @@ def _measure_clipped_outline(image: np.ndarray, seed: np.ndarray, backing: float
     # Check the last source column itself. A thin scanner border can vanish
     # in the working image and would make a fully captured print look cut.
     if np.mean(native_edge > backing + 38) < .68 or not _photo_texture(image, quad):
+        return None
+    # A coarse morphological close can connect separate prints across a
+    # hairline scanner gap. Keep individual detector candidates in this case.
+    if _has_backing_gutter(image, quad, backing):
         return None
     return quad
 
@@ -154,6 +228,8 @@ def clipped_print_outlines(image: np.ndarray) -> list[np.ndarray]:
         high = np.float32([width - 1, height - 1])
         small_high = np.float32([small_width - 1, small_height - 1])
         seed = np.where(seed == small_high, high, seed * (high / small_high))
+        # OpenCV would copy a rotated, strided view on every native sample.
+        image = np.ascontiguousarray(image)
         quad = _measure_clipped_outline(image, seed, backing)
         if quad is not None:
             outlines.append(quad)

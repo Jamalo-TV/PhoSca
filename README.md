@@ -64,6 +64,21 @@ System kann Teilvorschläge zusammenführen oder bei unklarer Zuordnung
 eine zusätzliche Kontur zur Prüfung anzeigen. Die sichtbare Maske und
 die vier Eckpunkte für die Entzerrung werden getrennt gespeichert.
 
+Bei hellen Abzügen auf dunklem Scannergrund sucht PhoSca einen am
+Aufnahmerand abgeschnittenen Umriss zunächst im verkleinerten Bild.
+Es misst die sichtbaren Seiten anschliessend im Original und prüft,
+ob ein dünner Streifen Scannergrund quer zwischen der Papierkante
+und dem gegenüberliegenden Aufnahmerand verläuft. Ein bestätigter
+Streifen sperrt den gemeinsamen Umriss. Wenn zwei Modellvorschläge
+an unterschiedlichen Aufnahmerändern enden und den gemeinsamen
+Umriss weitgehend abdecken, kann die Anzahl offen bleiben. PhoSca
+erhält dann beide Masken und zeigt die gemessenen Papierkanten als
+gestrichelte Linien in der Anzahlprüfung. In der Einzelprüfung
+zeichnet **Ganzer Abzug** dieselben Kanten ein. Beide Zuschnitte
+bleiben in Prüfung, bis die physische Zuordnung und die vollständige
+Aufnahme geklärt sind.
+[Prüfung am Aufnahmerand](data/evaluation/README.md#review-a-shared-capture-corner-and-preserve-separate-prints)
+
 Die ONNX-Koordinaten werden nach dem Entfernen des Letterbox-Paddings
 auf das Quellbild zurückgerechnet. Eine auf eine Linie kollabierte
 Vorhersage kann verworfen werden, während die übrigen Vorschläge einer
@@ -510,6 +525,14 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
   Bei angeschnittenen Originalen hilft eine neue Aufnahme mit sichtbar
   belassenen Papierrändern. [Entwicklungsreferenz](data/evaluation/nerdscan-clipped-development.json) ·
   [Auswertung](data/evaluation/README.md#show-the-visible-paper-sides-in-a-clipped-overlap)
+- **Derselbe Scan um 180° gedreht.** Die Erkennung trifft zwei von drei
+  Abzügen und liefert vier zusätzliche Vorschläge. Drei Vorschläge
+  überdecken Teile desselben randnahen Abzugs. Die Anzahlprüfung
+  zeigt seine zwei sichtbaren Papierseiten und verknüpft damit die
+  drei Vorschläge. Falsche Teilvorschläge lassen sich einzeln
+  entfernen. Bei künstlich getrennten Abzügen auf demselben Scan
+  bleiben die beiden Einzelmasken erhalten.
+  [Original und Gegenproben](data/evaluation/README.md#review-a-shared-capture-corner-and-preserve-separate-prints)
 
 Die Abbildung enthält generierte Testbilder und lässt sich lokal neu berechnen.
 
