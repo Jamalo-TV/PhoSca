@@ -25,9 +25,10 @@ from app.models import (
 )
 from app.pipeline.decisions import is_reviewed_non_print, motif_geometry_requires_review
 from app.pipeline.manual_paper_boundary import PAPER_CLAIM_OVERLAP_CHECKS, paper_claims_need_overlap_check
+from app.pipeline.protected_regions import album_mark_source_matches
 from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
-from app.schemas import ReviewItem
-from app.services.pipeline import page_fusion_evidence
+from app.schemas import PhotoRead, ReviewItem
+from app.services.pipeline import page_fusion_evidence, photo_views_for_current_album_marks
 
 router = APIRouter(prefix="/api/v1/review", tags=["review"])
 
@@ -443,6 +444,11 @@ async def add_review_event(
         photo = context["photo"]
         correction = (photo.enhancement_applied or {}).get("correction") or {}
         full_mode = (correction.get("crop_modes") or {}).get("full_print")
+        mark = ((photo.enhancement_applied or {}).get("review_provenance") or {}).get("reviewed_album_mark")
+        page = context["page"]
+        if mark and (not get_settings().enable_protected_region_guard or page is None
+                     or not album_mark_source_matches(mark, page.file_hash_sha256, page.processing_metadata)):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_page_mark_review_stale")
         if full_mode and not variant_path_from_photo(photo, "full_print"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -564,7 +570,7 @@ def _first_url(urls: dict[str, str | None], names: tuple[str, ...]) -> str | Non
     return next((urls.get(name) for name in names if urls.get(name)), None)
 
 
-def _photo_review_payload(photo: ExtractedPhoto) -> dict:
+def _photo_review_payload(photo: ExtractedPhoto | PhotoRead) -> dict:
     metadata = deepcopy(photo.enhancement_applied or {})
     mask = deepcopy(photo.segmentation_mask or {})
     correction = deepcopy(metadata.get("correction") or {})
@@ -698,13 +704,14 @@ async def get_review_queue(
                 )
             )
         ).all()
-        for photo in candidate_photos:
+        views = await photo_views_for_current_album_marks(session, list(candidate_photos))
+        for photo, view in zip(candidate_photos, views, strict=True):
             if not include_rejected and _rejected_detection(photo):
                 continue
-            if await _geometry_review_is_current(session, photo):
+            if view is photo and await _geometry_review_is_current(session, photo):
                 continue
-            payload = _photo_review_payload(photo)
-            review_status = PhotoStatus.review_needed if payload["motif_review_pending"] else photo.status
+            payload = _photo_review_payload(view)
+            review_status = PhotoStatus.review_needed if payload["motif_review_pending"] else view.status
             items.append(
                 ReviewItem(
                     item_type="geometry",

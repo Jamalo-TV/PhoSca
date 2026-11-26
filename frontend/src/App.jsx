@@ -46,7 +46,8 @@ import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
 import EdgeMeasurement from "./EdgeMeasurement.jsx";
 import {
-  adjacentPrintHint, captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants, cropModeLabels, getCropModes,
+  adjacentPrintHint, AlbumPageMarkReview, albumPageMarkErrors, captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason,
+  CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   deferredPrintHint, filmGridCountHint, filmGridHint, filmGridReason, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
@@ -1371,6 +1372,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const [draftShapes, setDraftShapes] = useState({});
   const [editMode, setEditMode] = useState("full_print");
   const [saveState, setSaveState] = useState(null);
+  const [albumMarkReviewId, setAlbumMarkReviewId] = useState(null);
   const [addition, setAddition] = useState(null);
   const [countReview, setCountReview] = useState(null);
   const dragRef = useRef(null);
@@ -1453,6 +1455,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const fullPrintPreview = selected?.variant_urls?.full_print_preview || selected?.urls?.full_print_preview;
   const untrimmedPrint = selected?.untrimmed_url || selected?.variant_urls?.source_corrected_untrimmed;
   const comparePaperEdge = untrimmedPrint && fullPrintMode?.outline_preview?.source === possibleOverextendedPrintEdge;
+  const albumMark = !newPrint && !editingImage && !rejectedDetection ? selected?.correction?.album_page_mark_review : null;
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const motifCorners = selectedShape?.imageQuad || savedShape?.warpQuad;
   const needsMotifSelection = editingImage && !selectedShape?.imageQuad;
@@ -1679,6 +1682,15 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       context.restore();
     }
+    if (albumMark) {
+      const { x1, y1, x2, y2 } = albumMark.bounds;
+      context.save();
+      context.strokeStyle = "#facc15";
+      context.lineWidth = 3;
+      context.setLineDash([]);
+      context.strokeRect(x1 * canvas.width, y1 * canvas.height, (x2 - x1) * canvas.width, (y2 - y1) * canvas.height);
+      context.restore();
+    }
     if (newPrint?.corners.length) {
       const points = newPrint.corners.map(({ x, y }) => [x * canvas.width, y * canvas.height]);
       context.strokeStyle = "#2563eb";
@@ -1697,7 +1709,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         context.fillText(String(index + 1), x + 9, y - 7);
       });
     }
-  }, [alternateOutline, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage,
+  }, [albumMark, alternateOutline, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups,
     printSuggestion,
     missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, selectedPhotoId, showMissingEdges]);
@@ -1845,12 +1857,14 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     }
     setSaveState({ photoId: selected.id, mode: editMode, saving: true });
     try {
-      const result = await onSaveBox(selected.id, box, mask, Boolean(printSuggestion && !editingImage));
+      const markId = albumMark?.id === albumMarkReviewId ? albumMarkReviewId : null;
+      const result = await onSaveBox(selected.id, box, mask, Boolean(printSuggestion && !editingImage), markId);
+      setAlbumMarkReviewId(null);
       const url = result.urls?.[editMode] || (!getCropModes(result) && !editingImage ? result.urls?.original : null);
       setSaveState({ photoId: selected.id, mode: editMode, url });
     } catch (error) {
       const message = error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
-        : error.message === "print_outline_review_required" ? printOutlineSaveHint : error.message;
+        : error.message === "print_outline_review_required" ? printOutlineSaveHint : albumPageMarkErrors[error.message] || error.message;
       setSaveState({ photoId: selected.id, mode: editMode, error: message });
     }
   }
@@ -2001,6 +2015,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         </>
       )}
       {!newPrint && !editingImage && printEdgeReviewHint && <p className="crop-editor-hint">{printEdgeReviewHint}</p>}
+      {albumMark && <AlbumPageMarkReview mark={albumMark} sourceUrl={`/api/v1/pages/${pageId}/image`}
+        checked={albumMarkReviewId === albumMark.id} disabled={saveState?.saving}
+        onChange={event => setAlbumMarkReviewId(event.target.checked ? albumMark.id : null)} />}
       {editingImage && crossingReview && <p className="crop-editor-hint">{crossingPrintSaveHint}</p>}
       {needsPrintReview && !crossingReview && <p className="crop-editor-hint">{printOutlineSaveHint}</p>}
       {editingImage && selected && !crossingReview && !needsPrintReview && (
@@ -2167,8 +2184,8 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
     await refresh();
   }
 
-  async function saveBox(photoId, box, segmentationMask = null, confirmPrintOutline = false) {
-    await patchBoundingBox(photoId, box, segmentationMask, confirmPrintOutline);
+  async function saveBox(photoId, box, segmentationMask = null, confirmPrintOutline = false, albumMarkReviewId = null) {
+    await patchBoundingBox(photoId, box, segmentationMask, confirmPrintOutline, albumMarkReviewId);
     const [detail] = await Promise.all([getPhoto(photoId), refreshCorrections()]);
     return detail;
   }

@@ -8,11 +8,46 @@ a hard veto.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import threading
 from typing import Any, Iterable
 
 import cv2
 import numpy as np
+
+
+PROTECTED_REGION_REVISION = 2
+PAGE_FACE_SUGGESTIONS = {
+    "opencv_haarcascade_frontalface_default": "face",
+    "opencv_haarcascade_profileface": "head",
+}
+
+
+def protected_region_key(region: dict) -> dict:
+    return {"type": region.get("type", "unknown"), "source": region.get("source", "unknown"),
+            "box": region.get("box", region)}
+
+
+def is_advisory_page_face(region: dict) -> bool:
+    return (PAGE_FACE_SUGGESTIONS.get(region.get("source")) == region.get("type")
+            and region.get("source") in PAGE_FACE_SUGGESTIONS
+            and not any(region.get(flag) for flag in ("pinned", "verified", "is_verified")))
+
+
+def protected_region_digest(regions: list[dict]) -> str:
+    return hashlib.sha256(json.dumps(regions, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def album_mark_matches_quad(review: dict, quad: list[dict] | None) -> bool:
+    return isinstance(quad, list) and len(quad) == 4 and review.get("warp_quad") == quad
+
+
+def album_mark_source_matches(review: dict, page_sha256: str, page_metadata: dict) -> bool:
+    protection = ((page_metadata or {}).get("steps") or {}).get("protected_regions") or {}
+    regions = protection.get("regions")
+    return (review.get("page_sha256") == page_sha256 and protection.get("enabled", True)
+            and isinstance(regions, list) and review.get("protected_regions_sha256") == protected_region_digest(regions))
 
 
 def region_box_in_pixels(region: dict[str, Any], width: int, height: int) -> tuple[float, float, float, float] | None:
@@ -49,7 +84,9 @@ def merge_protected_regions(*groups: Iterable[dict[str, Any]]) -> list[dict[str,
         record = dict(region)
         record["type"] = str(record.get("type", "subject"))
         record.setdefault("margin_ratio", _MARGINS.get(record["type"], 0.10))
-        duplicate = next((item for item in merged if item["type"] == record["type"] and _iou(item, record) >= 0.85), None)
+        advisory = is_advisory_page_face(record)
+        duplicate = next((item for item in merged if item["type"] == record["type"] and _iou(item, record) >= 0.85
+                          and is_advisory_page_face(item) == advisory), None)
         if duplicate is None:
             merged.append(record)
         elif float(record.get("confidence", 0.0)) > float(duplicate.get("confidence", 0.0)):
@@ -144,5 +181,5 @@ def validate_protected_regions(
         )
         inside = [cv2.pointPolygonTest(contour, (float(x), float(y)), False) >= 0 for x, y in corners]
         if not all(inside) and (require_containment or any(inside)):
-            violations.append({"type": region.get("type", "unknown"), "source": region.get("source", "unknown"), "box": region.get("box", region)})
+            violations.append(protected_region_key(region))
     return {"passed": not violations, "violations": violations, "regions_checked": len(regions)}

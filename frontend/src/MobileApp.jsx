@@ -4,7 +4,8 @@ import { createAlbum, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop,
 import { projectedCropAspect, resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import {
-  adjacentPrintHint, canEditMobileMotif, captureRequiresReview, captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants,
+  adjacentPrintHint, AlbumPageMarkReview, albumPageMarkErrors, canEditMobileMotif, captureRequiresReview,
+  captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, CropVariants,
   cropModeLabels, crossingPrintHint,
   crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridReason, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
@@ -176,6 +177,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const [editMode, setEditMode] = useState("full_print");
   const [motifQuad, setMotifQuad] = useState(storedMotif);
   const editingMotif = canEditMotif && editMode === "image_only";
+  const albumMark = editable && !editingMotif && !reviewedNonPrint ? item.payload?.correction?.album_page_mark_review : null;
+  const [albumMarkReviewId, setAlbumMarkReviewId] = useState(null);
   const displayedQuad = editingMotif ? motifQuad || savedQuad : quad;
   const comparePaperEdge = !editingMotif && fullPrintMode?.outline_preview?.source === possibleOverextendedPrintEdge
     && item.payload?.untrimmed_url && item.payload?.variant_urls?.full_print_preview;
@@ -261,8 +264,10 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         ...(orientation !== savedOrientation ? { orientation_degrees: orientation } : {}),
         source: "manual_mobile_quad",
       };
+      const markId = albumMark?.id === albumMarkReviewId ? albumMarkReviewId : null;
       const saved = await patchBoundingBox(item.payload.photo_id, editingMotif ? sourceBox : box, mask,
-        !editingMotif && Boolean(printSuggestion));
+        !editingMotif && Boolean(printSuggestion), markId);
+      setAlbumMarkReviewId(null);
       const savedDegrees = saved.segmentation_mask?.orientation_degrees ?? null;
       setOrientation(savedDegrees);
       setSavedOrientation(savedDegrees);
@@ -276,7 +281,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     } catch (error) {
       setSaveError(error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message === "print_outline_review_required" ? printOutlineSaveHint
-        : error.message || "Ausschnitt konnte nicht gespeichert werden.");
+        : albumPageMarkErrors[error.message] || error.message || "Ausschnitt konnte nicht gespeichert werden.");
     }
     finally { setSaving(false); }
   }
@@ -382,6 +387,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           <text x={box.x1 * 1000 + 12} y={box.y1 * 1000 + 38}>{index + 1}</text>
         </g>)}
         {nestedOverlay}{deferredOverlay}{fragmentCountOverlay}{captureSplitOverlay}{filmGridOverlay}{paperGridOverlay}
+        {albumMark && <rect x={albumMark.bounds.x1 * 1000} y={albumMark.bounds.y1 * 1000}
+          width={(albumMark.bounds.x2 - albumMark.bounds.x1) * 1000} height={(albumMark.bounds.y2 - albumMark.bounds.y1) * 1000}
+          aria-label="Zu prüfende Schutzmarkierung" style={{ fill: "none", stroke: "#facc15", strokeWidth: 6, pointerEvents: "none" }} />}
         {editable && motifMarginMarks.map((region, index) => (
           <polygon key={index} aria-label="Mögliche Beschriftung am Papierrand" fill="none" stroke="#b45309" strokeWidth="5"
             pointerEvents="none" points={region.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
@@ -432,6 +440,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
       {printEdgeReviewHint && <p className="quad-hint" id="mobile-print-edge-review-hint">{printEdgeReviewHint}</p>}
+      {albumMark && <AlbumPageMarkReview mark={albumMark} sourceUrl={item.preview_url}
+        checked={albumMarkReviewId === albumMark.id} disabled={saving}
+        onChange={event => setAlbumMarkReviewId(event.target.checked ? albumMark.id : null)} />}
       {motifReviewPending && <p className="quad-hint" id="mobile-motif-review-hint">
         {motifBoundaryReviewHint && `${motifBoundaryReviewHint} `}{canEditMotif ? motifReviewHint : motifDesktopReviewHint}
       </p>}
@@ -679,6 +690,7 @@ function CropReview({ albumId, goHome }) {
         if (!cropModes.full_print?.outline_preview) delete variantUrls.full_print_preview;
         if (!cropModes.image_only?.outline_preview) delete variantUrls.image_only_preview;
         return { ...task, payload: { ...task.payload, crop_modes: cropModes, segmentation_mask: mask,
+          correction: saved.enhancement_applied?.correction,
           bounding_box: saved.bounding_box, confidence: saved.segmentation_confidence,
           polygon: mask?.polygon, visible_polygon: mask?.visible_polygon || mask?.polygon,
           warp_quad: cropModes.full_print?.warp_quad || mask?.warp_quad,

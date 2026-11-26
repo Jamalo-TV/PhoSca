@@ -11,7 +11,7 @@ from app.models import Album, AuditLog, ExtractedPhoto, OCRResult, OCRTextType, 
 from app.pipeline.decisions import is_reviewed_non_print, photo_is_reviewed_non_print
 from app.schemas import AlbumCreate, AlbumRead, AlbumStats, AnalyzeRequest, JobQueued, PageRead, PhotoRead
 from app.services.deletion import delete_album_with_assets
-from app.services.pipeline import process_pages_serialized
+from app.services.pipeline import photo_views_for_current_album_marks, process_pages_serialized
 from app.tasks.pipeline import process_pages_task
 
 router = APIRouter(prefix="/api/v1/albums", tags=["albums"])
@@ -203,7 +203,7 @@ async def list_album_photos(
     include_rejected: bool = False,
     session: AsyncSession = Depends(get_async_session),
     principal: Principal | None = Depends(get_principal),
-) -> list[ExtractedPhoto]:
+) -> list[ExtractedPhoto | PhotoRead]:
     await album_for_principal(session, album_id, principal)
     query = select(ExtractedPhoto).where(ExtractedPhoto.album_id == album_id)
     if status_filter is not None:
@@ -214,6 +214,5 @@ async def list_album_photos(
         caption_exists = select(OCRResult.id).where(OCRResult.photo_id == ExtractedPhoto.id, OCRResult.text_type == OCRTextType.caption).exists()
         query = query.where(caption_exists if has_caption else ~caption_exists)
     photos = (await session.scalars(query.order_by(ExtractedPhoto.created_at.asc()))).all()
-    if include_rejected:
-        return list(photos)
-    return [photo for photo in photos if not photo_is_reviewed_non_print(photo)]
+    visible = list(photos) if include_rejected else [photo for photo in photos if not photo_is_reviewed_non_print(photo)]
+    return await photo_views_for_current_album_marks(session, visible)

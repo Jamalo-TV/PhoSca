@@ -65,7 +65,8 @@ from app.pipeline.print_outline_suggestion import (
 )
 from app.pipeline.print_stock import find_outer_stock_candidate
 from app.pipeline.protected_regions import (
-    detect_protected_regions, merge_protected_regions, region_box_in_pixels, validate_protected_regions,
+    PAGE_FACE_SUGGESTIONS, detect_protected_regions, is_advisory_page_face, merge_protected_regions, protected_region_key,
+    region_box_in_pixels, validate_protected_regions,
 )
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVIEW, SCALLOPED_PRINT_REVISION
 from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE, refine_visible_paper_rim
@@ -435,12 +436,9 @@ def _analysis_padding(
 
 
 _UNIT_QUAD = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype=np.float32)
-_PAGE_FACE_SUGGESTIONS = {"opencv_haarcascade_frontalface_default", "opencv_haarcascade_profileface"}
-
-
 def _advisory_face_overlap(protection: dict, allow_page_face_overlap: bool) -> bool:
     return allow_page_face_overlap and all(
-        violation["source"] in _PAGE_FACE_SUGGESTIONS for violation in protection["violations"]
+        violation["source"] in PAGE_FACE_SUGGESTIONS for violation in protection["violations"]
     )
 
 
@@ -909,9 +907,8 @@ def _keeps_protected_preview_content(
         box = region_box_in_pixels(region, width, height)
         if box is None:
             continue
-        key = {"type": region.get("type", "unknown"), "source": region.get("source", "unknown"),
-               "box": region.get("box", region)}
-        if key in advisory and key["source"] in _PAGE_FACE_SUGGESTIONS:
+        key = protected_region_key(region)
+        if key in advisory and key["source"] in PAGE_FACE_SUGGESTIONS:
             continue
         x1, y1, x2, y2 = box
         pad = float(region.get("margin_ratio", .08)) * max(x2 - x1, y2 - y1)
@@ -922,6 +919,29 @@ def _keeps_protected_preview_content(
         if before - after > 1:
             return False
     return True
+
+
+def _regions_after_album_mark_review(
+    page: np.ndarray, quad: np.ndarray, regions: list[dict], review: dict,
+) -> list[dict]:
+    width, height = page.shape[1::-1]
+    target = review["region"]
+    region_indices = [index for index, region in enumerate(regions) if protected_region_key(region) == target]
+    if len(region_indices) != 1 or not is_advisory_page_face(regions[region_indices[0]]):
+        raise ValueError("album_page_mark_review_stale")
+    index, = region_indices
+    original = _explicit_quad({"warp_quad": review["previous_quad"]}, "warp_quad", width, height)
+    box = region_box_in_pixels(regions[index], width, height)
+    if box is None or original is None:
+        raise ValueError("album_page_mark_review_stale")
+    x1, y1, x2, y2 = box
+    center = ((x1 + x2) / 2, (y1 + y2) / 2)
+    if cv2.pointPolygonTest(original, center, True) < 2 or cv2.pointPolygonTest(quad, center, True) > -2:
+        raise ValueError("album_page_mark_inside_crop")
+    remaining = [region for other, region in enumerate(regions) if other != index]
+    if not _keeps_protected_preview_content(page, original, quad, remaining, {}):
+        raise ValueError("protected_region_cut")
+    return remaining
 
 
 def _dual_crop_result(
@@ -1419,6 +1439,7 @@ def correct_photo_crop(
     neighbor_masks: list[dict] | None = None,
     manual_boundary_reference: dict | None = None,
     manual_scalloped_polygon: list[dict] | None = None,
+    reviewed_album_mark: dict | None = None,
 ) -> CropResult:
     height, width = page_image.shape[:2]
     mask = mask or {}
@@ -1442,6 +1463,10 @@ def correct_photo_crop(
     regions = [] if not protect_regions else (
         protected_regions if protected_regions is not None else detect_protected_regions(page_image)
     )
+    if reviewed_album_mark is not None:
+        if not manual or not protect_regions or not dual_mode:
+            raise ValueError("album_page_mark_review_stale")
+        regions = _regions_after_album_mark_review(page_image, src_points, regions, reviewed_album_mark)
     visible = _proposal_polygon(mask, width, height) if dual_mode else None
     neighbor_polygons = [
         points for neighbor in neighbor_masks or []
@@ -1496,6 +1521,8 @@ def correct_photo_crop(
         for edge in boundary_refinement.values() if isinstance(edge, dict)
     )
     protection, corner_mount_detected = inspection.protection, inspection.corner_mount
+    if reviewed_album_mark is not None:
+        protection["reviewed_album_mark_id"] = reviewed_album_mark["id"]
     boundary_supports_preview = bool(boundary_refinement and set(full_reasons) <= _CROP_PREVIEW_REASONS and visible is not None)
     target_width, target_height, aspect, aspect_reasons = _crop_dimensions(
         src_points, width, height, metric=dual_mode, camera_matrix=camera_matrix, print_aspect_ratio=print_aspect_ratio,

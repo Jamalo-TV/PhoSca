@@ -121,9 +121,11 @@ export async function getReviewProgress() {
   return parseResponse(await apiFetch("/api/v1/review/progress"));
 }
 
-export async function patchBoundingBox(photoId, boundingBox, segmentationMask = null, confirmPrintOutline = false) {
+export async function patchBoundingBox(photoId, boundingBox, segmentationMask = null, confirmPrintOutline = false,
+  albumPageMarkReviewId = null) {
   const body = segmentationMask ? { bounding_box: boundingBox, segmentation_mask: segmentationMask } : { bounding_box: boundingBox };
   if (confirmPrintOutline) body.confirm_print_outline = true;
+  if (albumPageMarkReviewId) body.album_page_mark_review_id = albumPageMarkReviewId;
   return parseResponse(
     await apiFetch(`/api/v1/photos/${photoId}/bounding-box`, {
       method: "PATCH",

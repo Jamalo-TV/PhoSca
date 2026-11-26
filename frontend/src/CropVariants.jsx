@@ -32,6 +32,11 @@ export const crossingPrintReason = "CROSSING_PRINT_OUTLINE_REVIEW";
 export const crossingPrintHint = "Prüfe am Original, ob die gestrichelte Kontur einen eigenen Abzug zeigt. Falls die durchgezogene Markierung falsch ist, lade die gestrichelte Kontur und setze die Ecken an den Papierrand.";
 export const crossingPrintSaveHint = "Korrigiere und speichere zuerst die vier Ecken unter «Ganzer Abzug».";
 export const printOutlineSaveHint = "Prüfe und speichere zuerst die Papierkontur unter «Ganzer Abzug».";
+export const albumPageMarkErrors = {
+  album_page_mark_review_stale: "Die Schutzmarkierung hat sich geändert. Öffne die aktuelle Prüfung erneut.",
+  album_page_mark_inside_crop: "Setze die Ecken so, dass die Mitte der markierten Stelle ausserhalb des Abzugs liegt.",
+  protected_region_cut: "Der Ausschnitt schneidet einen geschützten Bildbereich ab. Prüfe die sichtbaren Bereiche im Original.",
+};
 export const captureOutlineReviewReason = "PRINT_CAPTURE_OUTLINE_REVIEW";
 const captureAtEdgeReason = "PRINT_AT_CAPTURE_EDGE";
 const competingPrintEdges = "competing_print_edges";
@@ -150,6 +155,29 @@ export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint }) {
     </figure>
     {hint && <p>{hint}</p>}
   </div>;
+}
+
+export function AlbumPageMarkReview({ mark, sourceUrl, checked, onChange, disabled }) {
+  const { width = 1, height = 1 } = mark.source_size || {};
+  const { x1, y1, x2, y2 } = mark.bounds;
+  const left = x1 * (width - 1), right = x2 * (width - 1);
+  const top = y1 * (height - 1), bottom = y2 * (height - 1);
+  const pad = .65 * Math.max(right - left, bottom - top);
+  const x = Math.max(0, left - pad), y = Math.max(0, top - pad);
+  const view = [x, y, Math.min(width, right + pad) - x, Math.min(height, bottom + pad) - y];
+  return <fieldset className="print-size-fields album-page-mark-review">
+    <legend>Schutzmarkierung prüfen</legend>
+    <p>Vergleiche die gelb umrahmte Stelle mit dem Original. Prüfe danach die vier Ecken des Abzugs.</p>
+    {width > 1 && height > 1 && <svg className="album-page-mark-detail" role="img" aria-label="Vergrösserung der Schutzmarkierung im Original"
+      viewBox={view.join(" ")}>
+      <image href={sourceUrl} width={width} height={height} />
+      <rect x={left} y={top} width={right - left} height={bottom - top} fill="none" stroke="#facc15" strokeWidth="2" />
+    </svg>}
+    <label>
+      <input type="checkbox" checked={checked} onChange={onChange} disabled={disabled} />
+      Die markierte Stelle gehört zur Albumseite.
+    </label>
+  </fieldset>;
 }
 
 export function getCropModes(photo) {

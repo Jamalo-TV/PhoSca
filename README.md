@@ -116,6 +116,15 @@ gehört. Schutzwarnungen gelten weiter und die Galerie zeigt die
 bisherige Vorschau, solange die Geometrie in Prüfung ist.
 [Beispiel Golden 33](data/evaluation/README.md#compare-an-overextended-corner-with-the-measured-edge)
 
+Bei genau einer strittigen automatischen Gesicht- oder Kopfmarkierung
+kann der Editor die Stelle am Original vergrössert zeigen. Gehört sie
+zur Albumseite, kann der Reviewer das beim Speichern der vier Ecken
+bestätigen. Die Markierung wird nur für diesen Abzug und diese Ecken
+aus der Prüfung genommen. Weitere geschützte Stellen bleiben geprüft.
+Ändern sich die Originaldatei oder ihre Schutzbereiche, wird die
+Freigabe erneut geprüft. Das Seitenverhältnis wird separat bestimmt.
+[Beispiel Schutzmarkierung](data/evaluation/README.md#review-one-album-page-mark-during-a-corner-edit)
+
 Ein grosser Vorschlag, der wegen mehrerer innerer Konturen als
 Albumfläche verworfen wurde, kann in der Anzahlprüfung wieder zur
 Auswahl stehen. Dafür prüft PhoSca drei Aussenkanten am dunklen

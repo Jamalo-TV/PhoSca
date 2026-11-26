@@ -116,6 +116,7 @@ class BoundingBoxUpdate(StrictSchema):
     bounding_box: BoundingBox
     segmentation_mask: ReviewSegmentationMask | None = None
     confirm_print_outline: bool = False
+    album_page_mark_review_id: Annotated[UUID, Field(strict=False)] | None = None
 
 
 class AdjacentPrintSuggestion(StrictSchema):

@@ -3085,9 +3085,8 @@ and the legacy trimmed alias return HTTP 404. Geometry approval returns
 HTTP 409. Desktop and Mobile show the two previews together, with a
 possible-content-loss warning and estimated aspect. The Gallery keeps
 the current JPEG. The alternate adds no editable corner preset.
-Manual saves of the old corners and of the exact comparison corners
-both return `422 protected_region_cut` for this print. The existing
-face protection therefore still governs the editable crop.
+At `e0a9dbf`, manual saves of the old corners and of the exact
+comparison corners both return `422 protected_region_cut` for this print.
 
 Against the independent source-line development mask, the 879 × 1033
 current preview has footprint IoU 0.9107, 8.14% foreign samples and
@@ -3107,6 +3106,55 @@ extends the real paper into the wedge with a low-contrast marked strip.
 The plausible alternative still appears and can omit roughly 8,200–9,000
 owned rectified sample centres containing the mark. The current preview
 remains available for this reason.
+
+#### Review one album page mark during a corner edit
+
+Golden page 33 has one disputed frontal-face region at source pixels
+`(263, 1231)–(320, 1288)`. The outline surrounds the album inscription
+and a small part of the print's sky. The photographed face lies well
+inside the print, near `(627, 1078)`. The same Haar model also finds real
+faces. The reviewer can now inspect the marked source area at a larger
+scale before identifying it as part of the album page.
+
+PhoSca offers this review only when an existing held comparison has
+exactly one disputed advisory page-face or page-head detection with a
+unique matching region record. Manual, pinned and verified regions
+stay outside that offer. The review ID belongs to the current server
+correction. The submitted corners must move the centre of the marked
+box from inside the old crop to outside the edited crop, at least two
+native pixels from each outline. The renderer compares protected
+overlap with the prior crop so a wholly omitted unselected region can
+still veto the edit. It excludes only the matched detection and keeps
+local crop protection. The automatic detector uses the original set.
+
+The recorded decision binds the exact region, source SHA-256, digest
+of the page's protection list and four submitted corners. An edit to
+other corners requires its own protection check. Reprocessing checks
+the same binding. If source evidence changes, the photo detail, album
+and review queue suppress named URLs, previously issued URLs return
+404, and geometry approval returns 409. An overlap invalidating the
+comparison also removes the old review offer. The validation profile
+binds protected-region identity revision 2, which preserves separate
+advisory and trusted records when merging overlapping detections.
+
+The standard upload and browser tests show the selected mark only on
+the left print. Selecting it performs no write. The normal save with
+the original corners returns 422. An explicit corrected outline saves
+and preserves the upper-level aspect requirement. On Golden 33 the
+no-size edit keeps both named exports held with `PRINT_ASPECT_UNCERTAIN`.
+With test dimensions of 100 × 140 mm, the exact manual outline can
+produce both named JPEGs. Those dimensions demonstrate the contract
+and supply no physical aspect reference. A second pinned text region
+omitted by the new crop still returns 422. A different print's review
+ID and a stale source digest each return 409.
+
+The source-line development check for the exact manual outline with
+unknown dimensions gives maximum corner deviation 1.88 native pixels
+and three omitted centres beyond one native pixel, the same strict
+cutoff as the original. Foreign contributions beyond one pixel fall
+from 72,662 to 2,464. On a common 750 × 1050 comparison canvas, the p95
+projected error of five source landmarks drops from 68.06 to 1.69 px.
+Independent motif and physical dimensions are still pending.
 
 ### Keep an unassigned paper rim in review
 

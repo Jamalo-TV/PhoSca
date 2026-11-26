@@ -65,7 +65,11 @@ from app.pipeline.page_plane import MeasuredPrintReference, PrintPagePlane
 from app.pipeline.perspective import apply_refined_visibility, correct_photo_crop, page_plane_from_prints
 from app.pipeline.presets import get_enhancement_config
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
-from app.pipeline.protected_regions import detect_protected_regions
+from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
+from app.pipeline.protected_regions import (
+    album_mark_matches_quad, album_mark_source_matches, detect_protected_regions, is_advisory_page_face,
+    protected_region_digest, protected_region_key, region_box_in_pixels,
+)
 from app.pipeline.quality import segmentation_review_reasons
 from app.pipeline.segmentation import segment_album_page
 from app.pipeline.variants import (
@@ -73,6 +77,7 @@ from app.pipeline.variants import (
     build_variant_bundle,
 )
 from app.schemas.common import PrintSizeMM
+from app.schemas.pipeline import PhotoRead
 from app.services.dlq import quarantine_page_failure
 from app.services.provenance import (
     asset_for_path,
@@ -85,6 +90,70 @@ from app.services.provenance import (
 
 logger = structlog.get_logger(__name__)
 _local_pipeline_lock = asyncio.Lock()
+
+
+def _album_mark_review_offer(
+    page: Page, source: np.ndarray, stage_id: UUID, correction: dict, regions: list[dict],
+) -> dict | None:
+    full = (correction.get("crop_modes") or {}).get("full_print") or {}
+    preview = full.get("outline_preview") or {}
+    protection = correction.get("protected_regions") or {}
+    violations = protection.get("violations") or []
+    if (full.get("status") != "review_needed" or preview.get("source") != POSSIBLE_OVEREXTENDED_PRINT_EDGE
+            or not correction.get(f"{FULL_PRINT_REVIEW_PREVIEW}_asset_id")
+            or not protection.get("review_untrimmed") or len(violations) != 1):
+        return None
+    violation, = violations
+    matched = [region for region in regions if protected_region_key(region) == violation]
+    if len(matched) != 1 or not is_advisory_page_face(matched[0]):
+        return None
+    width, height = source.shape[1::-1]
+    box = region_box_in_pixels(violation, width, height)
+    if box is None:
+        return None
+    x1, y1, x2, y2 = box
+    center = ((x1 + x2) / 2, (y1 + y2) / 2)
+    before, alternate = [normalized_vertices_to_pixels([(p["x"], p["y"]) for p in quad], width, height)
+                         for quad in (full["warp_quad"], preview["source_outline"])]
+    if cv2.pointPolygonTest(before, center, True) < 2 or cv2.pointPolygonTest(alternate, center, True) > -2:
+        return None
+    return {"id": str(stage_id), "page_sha256": page.file_hash_sha256, "region": violation,
+            "protected_regions_sha256": protected_region_digest(regions),
+            "source_size": {"width": width, "height": height},
+            "bounds": {"x1": x1 / (width - 1), "y1": y1 / (height - 1), "x2": x2 / (width - 1), "y2": y2 / (height - 1)}}
+
+
+async def photo_views_for_current_album_marks(
+    session: AsyncSession, photos: list[ExtractedPhoto],
+) -> list[ExtractedPhoto | PhotoRead]:
+    marks = {photo.id: mark for photo in photos
+             if (mark := ((photo.enhancement_applied or {}).get("review_provenance") or {}).get("reviewed_album_mark"))}
+    if not marks:
+        return photos
+    page_ids = {photo.page_id for photo in photos if photo.id in marks}
+    pages = {page.id: page for page in await session.scalars(select(Page).where(Page.id.in_(page_ids)))}
+    guard_enabled = get_settings().enable_protected_region_guard
+    views = []
+    for photo in photos:
+        page = pages.get(photo.page_id)
+        mark = marks.get(photo.id)
+        if not mark or (guard_enabled and page is not None
+                        and album_mark_source_matches(mark, page.file_hash_sha256, page.processing_metadata)):
+            views.append(photo)
+            continue
+        view = PhotoRead.model_validate(photo)
+        view.status = PhotoStatus.review_needed
+        metadata = deepcopy(view.enhancement_applied)
+        correction = metadata.get("correction") or {}
+        (correction.get("protected_regions") or {}).pop("reviewed_album_mark_id", None)
+        for mode in (correction.get("crop_modes") or {}).values():
+            mode["status"] = "review_needed"
+            mode["reason_codes"] = list(dict.fromkeys(["album_page_mark_review_stale", *(mode.get("reason_codes") or [])]))
+        for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+            (metadata.get("variants") or {}).pop(variant, None)
+        view.enhancement_applied = metadata
+        views.append(view)
+    return views
 
 
 def page_fusion_evidence(metadata: dict | None) -> dict:
@@ -390,14 +459,25 @@ async def perspective_correction_task_logic(
     automatic_detection = photo.segmentation_confidence is not None
     metadata = photo.enhancement_applied or {}
     mask = photo.segmentation_mask or {}
+    page_steps = (photo.page.processing_metadata or {}).get("steps") or {}
+    protection_evidence = page_steps.get("protected_regions") or {}
+    protected_regions = protection_evidence.get("regions") if protection_evidence.get("enabled", True) else None
     paper_claims = paper_claim_groups(mask, None if automatic_detection else original_prediction_mask(metadata))
     if automatic_detection:
         paper_claims.pop(PAPER_GRID_OVERLAP_REVIEW, None)
     current_quad = mask.get("warp_quad") or mask.get("polygon")
+    reviewed_mark = None if automatic_detection else (metadata.get("review_provenance") or {}).get("reviewed_album_mark")
+    stale_mark = reviewed_mark and (
+        not settings.enable_protected_region_guard
+        or not album_mark_source_matches(reviewed_mark, photo.page.file_hash_sha256, photo.page.processing_metadata)
+        or not album_mark_matches_quad(reviewed_mark, current_quad)
+    )
     manual_boundary = None if automatic_detection else manual_paper_reference(metadata, current_quad)
     scalloped_outline = None if automatic_detection else manual_scalloped_outline(metadata, current_quad)
     boundary_needs_review = manual_boundary is not None and manual_paper_download_needs_review(metadata, current_quad)
     previous = metadata.get("correction") or {}
+    mark_recheck = reviewed_mark and (stale_mark or
+        (previous.get("protected_regions") or {}).get("reviewed_album_mark_id") != reviewed_mark["id"])
     modes = previous.get("crop_modes") or {}
     boundary_check = previous.get("manual_paper_boundary") or {}
     boundary_recheck = boundary_needs_review and (
@@ -411,7 +491,7 @@ async def perspective_correction_task_logic(
         or (previous_motif.get("status") == "ready"
             and previous_motif.get("scalloped_motif_ownership_revision") != SCALLOPED_PRINT_REVISION)
     )
-    if (skip_if_exists and not boundary_recheck and not paper_claim_recheck and not scalloped_recheck
+    if (skip_if_exists and not boundary_recheck and not paper_claim_recheck and not scalloped_recheck and not mark_recheck
             and photo.original_storage_path and Path(photo.original_storage_path).exists()):
         full_mode = modes.get("full_print") or {}
         image_mode = modes.get("image_only") or {}
@@ -437,6 +517,7 @@ async def perspective_correction_task_logic(
                      or mask.get(REVIEWED_CROSSING_OUTLINE) is True or bool(mask.get("crossing_print_suggestion"))
                      or capture_edge_requires_review(mask) or boundary_needs_review or bool(paper_claims)
                      or scalloped_outline is not None
+                     or reviewed_mark is not None
                      or bool((manual_boundary or {}).get("backed_edge_review"))
                      or (manual_boundary or {}).get("capture_outline") is True)
     loads_source = page_image is None
@@ -445,9 +526,6 @@ async def perspective_correction_task_logic(
             load_crop_source, Path(photo.page.storage_path), photo.page.file_hash_sha256,
             settings.camera_calibration_path if precise_crops else None,
         )
-    page_steps = (photo.page.processing_metadata or {}).get("steps") or {}
-    protection_evidence = page_steps.get("protected_regions") or {}
-    protected_regions = protection_evidence.get("regions") if protection_evidence.get("enabled", True) else None
     neighbor_masks = []
     measured_references = []
     paper_claim_conflicts: set[str] = set()
@@ -481,6 +559,8 @@ async def perspective_correction_task_logic(
             if reference is not None:
                 measured_references.append(reference)
     try:
+        if stale_mark:
+            raise ValueError("album_page_mark_review_stale")
         size = (photo.segmentation_mask or {}).get("print_size_mm")
         manual_aspect = None
         if not automatic_detection and size is not None:
@@ -514,6 +594,7 @@ async def perspective_correction_task_logic(
             neighbor_masks=neighbor_masks,
             manual_boundary_reference=manual_boundary,
             manual_scalloped_polygon=None if paper_claim_conflicts else scalloped_outline,
+            **({"reviewed_album_mark": reviewed_mark} if reviewed_mark else {}),
         )
         corrected = crop_result.image
         correction_metadata = crop_result.metadata
@@ -665,6 +746,10 @@ async def perspective_correction_task_logic(
         "untrimmed_asset_id": str(untrimmed_asset.id),
         "trimmed_asset_id": str(trimmed_asset.id) if trimmed_asset else None,
     }
+    if automatic_detection and isinstance(protected_regions, list):
+        offer = _album_mark_review_offer(photo.page, page_image, stage.id, correction_metadata, protected_regions)
+        if offer is not None:
+            correction_metadata["album_page_mark_review"] = offer
     reason_codes: list[str] = []
     if orientation_reason:
         reason_codes.append(orientation_reason)

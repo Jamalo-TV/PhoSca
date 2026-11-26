@@ -371,6 +371,99 @@ async def test_manual_edit_keeps_the_disputed_straight_side_in_review_until_both
     await verify_exports(404)
 
 
+async def test_album_page_mark_is_bound_to_the_reviewed_crop_and_source(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, Page
+    from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
+    from app.pipeline.protected_regions import protected_region_digest
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    image = np.full((480, 640, 3), 232, np.uint8)
+    image[85:395, 270:593] = (59, 90, 131)
+    album_id, page_id, photo_id = await _seed_review_data(image)
+    mark = {"type": "face", "source": "opencv_haarcascade_frontalface_default",
+            "box": {"x1": 221, "y1": 209, "x2": 294, "y2": 267}}
+    trusted = {"type": "text", "source": "manual", "box": {"x1": 240, "y1": 280, "x2": 255, "y2": 300}}
+    review_id = str(uuid4())
+
+    def shape(left, top, right, bottom):
+        return [{"x": x / 639, "y": y / 479} for x, y in [(left, top), (right, top), (right, bottom), (left, bottom)]]
+
+    original = shape(235, 85, 592, 394)
+    edited = shape(270, 85, 592, 394)
+
+    def box(quad):
+        return {"x1": quad[0]["x"], "x2": quad[2]["x"], "y1": quad[0]["y"], "y2": quad[2]["y"]}
+
+    async def write_protection(regions, *, renew_offer=False):
+        async with get_session_factory()() as session:
+            page = await session.get(Page, page_id)
+            page.processing_metadata = {"steps": {"protected_regions": {"enabled": True, "regions": regions}}}
+            if renew_offer:
+                photo = await session.get(ExtractedPhoto, photo_id)
+                photo.bounding_box = box(original)
+                photo.segmentation_mask = {"source": "yolo_seg_mask", "polygon": original}
+                photo.enhancement_applied = {"correction": {
+                    "crop_modes": {"full_print": {"status": "review_needed", "warp_quad": original,
+                        "outline_preview": {"source": POSSIBLE_OVEREXTENDED_PRINT_EDGE}}},
+                    "album_page_mark_review": {"id": review_id, "page_sha256": page.file_hash_sha256,
+                        "protected_regions_sha256": protected_region_digest(regions), "region": mark},
+                }}
+            await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+
+    async def save(quad, selected=None):
+        payload = {"bounding_box": box(quad), "segmentation_mask": {
+            "source": "manual_quad", "polygon": quad, "warp_quad": quad, "image_quad": shape(281, 97, 580, 382),
+            "print_size_mm": {"width": 161, "height": 154.5},
+        }}
+        if selected:
+            payload["album_page_mark_review_id"] = selected
+        return await client.patch(f"{url}/bounding-box", json=payload)
+
+    await write_protection([mark, trusted], renew_offer=True)
+    response = await save(edited, review_id)
+    assert response.status_code == 422 and response.json()["detail"] == "protected_region_cut"
+    await write_protection([mark], renew_offer=True)
+    assert (await save(edited)).status_code == 422
+    assert (await save(edited, str(uuid4()))).status_code == 409
+    response = await save(original, review_id)
+    assert response.status_code == 422 and response.json()["detail"] == "album_page_mark_inside_crop"
+    response = await save(edited, review_id)
+    assert response.status_code == 200, response.text
+    result = response.json()["enhancement_applied"]
+    assert result["review_provenance"]["reviewed_album_mark"]["warp_quad"] == edited
+    assert result["correction"]["protected_regions"]["reviewed_album_mark_id"] == review_id
+
+    async def download_codes():
+        return [(await client.get(f"{url}/image", params={"variant": variant})).status_code
+                for variant in ("full_print", "image_only", "source_corrected_trimmed")]
+
+    assert await download_codes() == [200, 200, 200]
+    assert (await client.post(f"{url}/reprocess")).status_code == 200
+    assert await download_codes() == [200, 200, 200]
+    assert (await save(edited, review_id)).status_code == 409
+    assert (await save(original)).status_code == 422
+    assert await download_codes() == [200, 200, 200]
+
+    await write_protection([mark, trusted])
+    assert await download_codes() == [404, 404, 404]
+    detail = (await client.get(url)).json()
+    assert detail["crop_download_urls"] == {"full_print": None, "image_only": None}
+    assert detail["urls"]["full_print"] is None
+    album, = (await client.get(f"/api/v1/albums/{album_id}/photos")).json()
+    assert album["crop_download_urls"] == detail["crop_download_urls"]
+    task, = (await client.get("/api/v1/review/queue", params={"type": "geometry", "photo_id": str(photo_id)})).json()
+    assert task["status"] == "review_needed" and task["payload"]["variant_urls"]["full_print"] is None
+    assert (await client.post(f"{url}/reprocess")).status_code == 200
+    assert await download_codes() == [404, 404, 404]
+
+
 async def test_capture_outline_hold_survives_manual_edit_and_legacy_exports(client, monkeypatch, tmp_path):
     from copy import deepcopy
 

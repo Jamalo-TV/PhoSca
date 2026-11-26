@@ -33,6 +33,7 @@ from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.perspective import manual_print_intersects, validate_review_quads
 from app.pipeline.presets import available_presets
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
+from app.pipeline.protected_regions import album_mark_matches_quad, album_mark_source_matches
 from app.pipeline.variants import (
     CROP_REVIEW_PREVIEWS,
     FULL_PRINT_REVIEW_PREVIEW,
@@ -50,6 +51,7 @@ from app.services.pipeline import (
     page_fusion_evidence,
     persistence_task_logic,
     perspective_correction_task_logic,
+    photo_views_for_current_album_marks,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["photos"])
@@ -93,7 +95,7 @@ async def _locked_review_photo(
     return page, await _photo_for_principal(session, photo_id, principal, for_update=True)
 
 
-def _photo_urls(photo: ExtractedPhoto) -> dict[str, str | None]:
+def _photo_urls(photo: ExtractedPhoto | PhotoRead) -> dict[str, str | None]:
     return variant_urls(photo)
 
 
@@ -247,6 +249,7 @@ async def _review_overlapping_crops(
             preview.get("source_outline"), quad, width, height,
         ):
             full_mode.pop("outline_preview")
+            correction.pop("album_page_mark_review", None)
             if full_mode.get("suggested_edge_source") == POSSIBLE_OVEREXTENDED_PRINT_EDGE:
                 full_mode.pop("suggested_edge_source", None)
                 full_mode.pop("suggested_edge_traces", None)
@@ -338,9 +341,10 @@ async def get_photo(
 ) -> PhotoDetail:
     photo = await _photo_for_principal(session, photo_id, principal)
     await session.refresh(photo, attribute_names=["ocr_results"])
-    data = PhotoDetail.model_validate(photo)
+    view, = await photo_views_for_current_album_marks(session, [photo])
+    data = PhotoDetail.model_validate(view)
     data.ocr_results = [OCRRead.model_validate(result) for result in photo.ocr_results]
-    data.urls = _photo_urls(photo)
+    data.urls = _photo_urls(view)
     return data
 
 
@@ -356,6 +360,12 @@ async def get_photo_image(
     if rejected and variant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
     selected_variant = variant or released_variant_from_photo(photo)
+    mark = ((photo.enhancement_applied or {}).get("review_provenance") or {}).get("reviewed_album_mark")
+    if mark and selected_variant in {"full_print", "image_only", "source_corrected_trimmed"}:
+        page = await session.get(Page, photo.page_id)
+        if (page is None or not get_settings().enable_protected_region_guard
+                or not album_mark_source_matches(mark, page.file_hash_sha256, page.processing_metadata)):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
     selected_path = variant_path_from_photo(photo, selected_variant)
     if not selected_path or not Path(selected_path).exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
@@ -379,10 +389,11 @@ async def get_photo_variants(
     principal: Principal | None = Depends(get_principal),
 ) -> dict:
     photo = await _photo_for_principal(session, photo_id, principal)
+    view, = await photo_views_for_current_album_marks(session, [photo])
     return {
-        "selected_variant": released_variant_from_photo(photo),
-        "variants": variants_from_metadata(photo.enhancement_applied),
-        "urls": _photo_urls(photo),
+        "selected_variant": released_variant_from_photo(view),
+        "variants": variants_from_metadata(view.enhancement_applied),
+        "urls": _photo_urls(view),
     }
 
 
@@ -687,6 +698,24 @@ async def update_photo_bounding_box(
         ]
     metadata.pop("review_rejected_detection", None)
     review_provenance = deepcopy(metadata.get("review_provenance") or {})
+    if payload.album_page_mark_review_id is not None:
+        offer = correction.get("album_page_mark_review") or {}
+        if (payload.segmentation_mask is None or payload.segmentation_mask.warp_quad is None
+                or str(payload.album_page_mark_review_id) != offer.get("id")
+                or not album_mark_source_matches(offer, page.file_hash_sha256, page.processing_metadata)
+                or (full_print.get("outline_preview") or {}).get("source") != POSSIBLE_OVEREXTENDED_PRINT_EDGE
+                or photo_is_reviewed_non_print(photo)):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_page_mark_review_stale")
+        review_provenance["reviewed_album_mark"] = {
+            **deepcopy(offer), "previous_quad": deepcopy(full_print["warp_quad"]),
+            "warp_quad": deepcopy(segmentation_mask["warp_quad"]), "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        session.add(AuditLog(entity_type="photo", entity_id=photo.id, action="album_page_mark_reviewed",
+                             details=deepcopy(review_provenance["reviewed_album_mark"])))
+    elif (reviewed_mark := review_provenance.get("reviewed_album_mark")) and not album_mark_matches_quad(
+        reviewed_mark, segmentation_mask.get("warp_quad"),
+    ):
+        review_provenance.pop("reviewed_album_mark")
     if before["segmentation_confidence"] is not None:
         previous_correction = metadata.get("correction") or {}
         print_mode = (previous_correction.get("crop_modes") or {}).get("full_print") or {}

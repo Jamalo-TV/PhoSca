@@ -709,6 +709,26 @@ select {
   font-weight: 600;
 }
 
+.album-page-mark-review label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.album-page-mark-review input {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  accent-color: #805e0a;
+}
+
+.album-page-mark-detail {
+  display: block;
+  width: min(100%, 180px);
+  border-radius: 4px;
+}
+
 .print-size-fields p {
   margin: 0 0 10px;
   font-size: 0.875rem;
