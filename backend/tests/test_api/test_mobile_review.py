@@ -1502,10 +1502,21 @@ async def test_measured_crop_stays_held_while_a_linked_proposal_overlaps(client,
         for variant in ("full_print", "image_only", "source_corrected_trimmed"):
             assert (await client.get(f"{parent_url}/image", params={"variant": variant})).status_code == 404
 
+    geometry_queue = {"type": "geometry", "album_id": str(album_id), "include_rejected": "false"}
+    parent_task = {**geometry_queue, "photo_id": str(parent_id), "limit": 1}
+    child_task = {**geometry_queue, "photo_id": str(child_id), "limit": 1}
+    first, = (await client.get("/api/v1/review/queue", params={**geometry_queue, "limit": 1})).json()
+    assert first["id"] == str(child_id)
+    targeted, = (await client.get("/api/v1/review/queue", params=parent_task)).json()
+    assert targeted["id"] == str(parent_id)
+
     result = await save(parent_url, outer, motif=outer)
     assert result.status_code == 200, result.text
     modes = result.json()["enhancement_applied"]["correction"]["crop_modes"]
     assert all(mode["status"] == "review_needed" and reason in mode["reason_codes"] for mode in modes.values())
+    targeted, = (await client.get("/api/v1/review/queue", params=parent_task)).json()
+    assert targeted["id"] == str(parent_id) and targeted["payload"]["crop_modes"] == modes
+    assert (await client.get("/api/v1/review/queue", params={**parent_task, "album_id": str(uuid4())})).json() == []
     await held_downloads()
     count_item, = (await client.get("/api/v1/review/queue", params={"type": "segmentation", "album_id": str(album_id)})).json()
     confirmed = await client.post("/api/v1/review/events", json={
@@ -1519,6 +1530,7 @@ async def test_measured_crop_stays_held_while_a_linked_proposal_overlaps(client,
         "task_type": "geometry", "task_id": str(child_id), "answer": "wrong_object", "idempotency_key": uuid4().hex,
     })
     assert rejected.status_code == 201, rejected.text
+    assert (await client.get("/api/v1/review/queue", params=child_task)).json() == []
     reprocessed = await client.post(f"{parent_url}/reprocess")
     assert reprocessed.status_code == 200, reprocessed.text
     assert reprocessed.json()["crop_download_urls"]["full_print"]
@@ -1537,9 +1549,9 @@ async def test_measured_crop_stays_held_while_a_linked_proposal_overlaps(client,
         "task_type": "geometry", "task_id": str(parent_id), "answer": "correct", "idempotency_key": uuid4().hex,
     })
     assert approved.status_code == 201, approved.text
-    geometry_queue = {"type": "geometry", "album_id": str(album_id), "include_rejected": "false"}
     before_restore = (await client.get("/api/v1/review/queue", params=geometry_queue)).json()
     assert str(parent_id) not in {row["id"] for row in before_restore}
+    assert (await client.get("/api/v1/review/queue", params=parent_task)).json() == []
 
     restored = await client.patch(f"{child_url}/bounding-box", json={"bounding_box": bounds(child_polygon),
                                    "segmentation_mask": {"polygon": child_polygon}})

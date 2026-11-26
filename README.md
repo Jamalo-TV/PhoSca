@@ -79,6 +79,17 @@ bleiben in Prüfung, bis die physische Zuordnung und die vollständige
 Aufnahme geklärt sind.
 [Prüfung am Aufnahmerand](data/evaluation/README.md#review-a-shared-capture-corner-and-preserve-separate-prints)
 
+Bei einem strittigen Mehrbildabzug verknüpft PhoSca den gemessenen
+Aussenumriss mit dem vorhandenen Gesamtvorschlag und markiert die
+Schnittlinien der Teilvorschläge. **Aussenumriss prüfen** lädt die
+gemessenen Ecken als Entwurf für diesen Abzug. Auf dem Desktop wird
+der Abzug auf der Seite ausgewählt. Mobile lädt seine Geometrieaufgabe
+direkt anhand der Abzug-ID. Beim Öffnen und Verschieben der Ecken
+bleibt die gespeicherte Anzahl gleich. Erst Speichern übernimmt die
+Ecken. Überlappende Vorschläge halten beide Zuschnitte in Prüfung, bis
+der Reviewer ihre Zuordnung geklärt hat.
+[Beispiel Kontaktabzug](data/evaluation/README.md#open-the-measured-contact-outline-from-count-review)
+
 Die ONNX-Koordinaten werden nach dem Entfernen des Letterbox-Paddings
 auf das Quellbild zurückgerechnet. Eine auf eine Linie kollabierte
 Vorhersage kann verworfen werden, während die übrigen Vorschläge einer

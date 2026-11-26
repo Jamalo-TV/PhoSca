@@ -84,4 +84,5 @@ test("each paper-grid cut follows its own active proposal", () => {
     new Map([["second", secondCut]]));
   assert.deepEqual(getPaperGridReviewGroups([parent, { ...first, confidence: null }]), []);
   assert.deepEqual(getPaperGridReviewGroups([{ ...parent, reviewed_non_print: true }, first, second]), []);
+  assert.deepEqual(getPaperGridReviewGroups([parent, { ...parent, id: "other-outer" }, first, second]), []);
 });

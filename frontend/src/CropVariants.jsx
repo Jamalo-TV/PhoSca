@@ -42,6 +42,7 @@ const curvedMotifReviewHint = "Die Motivkante verläuft unregelmässig. Prüfe a
 const markedMotifMarginReason = "IMAGE_MARGIN_MARKS_REVIEW";
 const markedMotifMarginHint = "Am Papierrand sind mögliche Beschriftungen sichtbar. Prüfe den ganzen Rand am Original und nimm alle zum Bild gehörenden Beschriftungen in den Zuschnitt auf.";
 const printEdgeReviewHints = {
+  PRINT_EDGE_CONFIRMATION_REQUIRED: printOutlineSaveHint,
   PRINT_SHADOW_EDGE_REVIEW: "Prüfe die markierte Kante am Original. Achte darauf, wo der Schatten endet und der Abzug beginnt.",
   PRINT_FAINT_OUTER_RIM_REVIEW: "Prüfe am Original, ob der helle Rand zur markierten Papierkante des Abzugs gehört.",
   PRINT_SHARED_RIM_UNCERTAIN: "Prüfe die Kante am benachbarten Abzug. Wenn der Papierrand unklar bleibt, hilft eine Aufnahme mit getrennten Abzügen.",
@@ -67,6 +68,12 @@ export function getDeferredPrintProposals(proposals) {
 
 export function captureRequiresReview(fullPrint) {
   return fullPrint?.reason_codes?.some(reason => reason === captureAtEdgeReason || reason === captureOutlineReviewReason);
+}
+
+export function paperOutlineRequiresReview(fullPrint) {
+  return fullPrint?.status === "review_needed" && fullPrint.reason_codes?.some(
+    reason => reason === "PRINT_EDGE_CONFIRMATION_REQUIRED" || reason === "PAPER_GRID_OVERLAP_REVIEW",
+  );
 }
 
 export function getPrintEdgeReviewHint(fullPrint) {

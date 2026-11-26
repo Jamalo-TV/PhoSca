@@ -2861,6 +2861,59 @@ The added review stage took 114 ms median for JPEG75 and 182 ms for the
 lossless copy in 25 warm runs with one OpenCV thread and concurrent test
 load. Both crop-mode metrics reproduced across the regression sets.
 
+### Open the measured contact outline from count review
+
+The JPEG75 parent and its six-vertex fragment pass the initial overlap
+checks. At the proposed cut, native row 500 maps to row 502 in the
+rectified grid. The stricter deferral check finds no rail witness there.
+The review search finds one at row 496 with a pitch of 17 rows. JPEG55
+passes the stricter check with the cut mapped to row 489 and a witness
+at row 495. The lossless derivative also misses the deferral gate on
+initial overlap. It still yields a measured outline and two cut lines
+for review. The active evaluation counts remain 0/1 with five extra
+proposals on JPEG75 and 0/1 with six on the lossless derivative.
+
+A separate neighboring proposal outside the paper boundary leaves the
+JPEG75 review group available. A competing claim inside it or a verified
+material rim makes the group check abstain. Nine generated one- to
+three-pixel muted rim controls, at offsets up to six native pixels,
+retain all five active proposals and produce no shared review group.
+
+**Aussenumriss prüfen** now opens the measured quad for the sole active
+whole-print row in a count group. Desktop loads the quad into the existing
+inline editor. Mobile requests the geometry task by photo UUID within
+the current album and opens it with the draft already applied. The
+request honours the same tenant, rejection and completed-review filters
+as the ordinary queue. The tested lossless parent was item 33 in the
+unfiltered order, outside its default 25-item slice. If the target was
+resolved while the count screen was open, Mobile offers a return to the
+same count page.
+
+Both clients were tested with both exact derivative uploads. Opening the
+draft preserves the active proposal IDs, count revision, masks, both
+crop mode records and review JPEG hashes. Both named downloads and the
+legacy trimmed alias return 404, and the review JPEG remains available.
+Saving the draft with test dimensions of 203 × 264 mm leaves both modes
+held while the linked fragment still overlaps. Explicit fragment
+rejection and reprocessing make the tested whole-print output available.
+The motif continues to show curvature and margin-marking reasons.
+
+| Draft whole-print metric | JPEG75 before | JPEG75 after save | Lossless before | Lossless after save |
+| --- | ---: | ---: | ---: | ---: |
+| Rendered footprint IoU | 0.8295 | 0.9870 | 0.8246 | 0.9875 |
+| Visible area cut off | 16.77% | 1.22% | 17.27% | 1.17% |
+| Maximum corner error in source pixels | 68.56 | 5.71 | 69.19 | 5.71 |
+| Foreign interpolation contribution | 0.515% | 0.101% | 0.410% | 0.113% |
+| Output pixels with foreign taps beyond one source pixel | 1,928 | 158 | 1,489 | 222 |
+
+The derivative manifests share a draft paper annotation. Independent
+physical aspect and motif landmarks are unavailable for this measurement.
+The measured action is a review improvement. The active detector and
+its thresholds remain as documented above. Targeted task lookup averaged
+4.41 ms for JPEG75 and 4.91 ms for lossless in eight warm local requests
+per source. The saved render metrics are identical before and after
+rejecting the linked fragments.
+
 ### Keep manual exports held while paper proposals overlap
 
 Saving a measured outer rectangle now checks the other active members of

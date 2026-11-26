@@ -101,11 +101,12 @@ export async function getPageOcr(pageId) {
   return parseResponse(await apiFetch(`/api/v1/pages/${pageId}/ocr`));
 }
 
-export async function getReviewQueue(albumId, type, { includeRejected = true } = {}) {
+export async function getReviewQueue(albumId, type, { includeRejected = true, photoId, signal } = {}) {
   const params = new URLSearchParams({ type });
   if (albumId) params.set("album_id", albumId);
   if (type === "geometry" && !includeRejected) params.set("include_rejected", "false");
-  return parseResponse(await apiFetch(`/api/v1/review/queue?${params}`));
+  if (type === "geometry" && photoId) params.set("photo_id", photoId);
+  return parseResponse(await apiFetch(`/api/v1/review/queue?${params}`, { signal }));
 }
 
 export async function submitReviewEvent(payload) {

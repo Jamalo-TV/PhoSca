@@ -1815,6 +1815,18 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     dragRef.current = null;
   }
 
+  function loadPrintOutline(photo, quad) {
+    if (!photo || !quad) return;
+    onSelectPhoto(photo.id);
+    setEditMode("full_print");
+    setDraftShapes((current) => ({ ...current, [photo.id]: {
+      ...(current[photo.id] || draftShapeFromPhoto(photo)),
+      warpQuad: quad, visiblePolygon: quad, visibleFollowsWarp: true,
+      boundingBox: boundingBoxFromPolygon(quad), imageQuad: null, usingOutlineSuggestion: true,
+    } }));
+    setSaveState(null);
+  }
+
   async function saveSelected() {
     if (!selected || sizeError || needsMotifSelection || crossingNeedsCorrection || needsPrintReview) return;
     const box = editingImage ? selected.bounding_box : selectedShape.boundingBox;
@@ -1946,7 +1958,22 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {countOutlines.length > 0 && <p className="crop-editor-hint" id="fragment-count-review-hint">{fragmentCountHint}</p>}
       {captureSplitGroups.length > 0 && <p className="crop-editor-hint" id="capture-split-count-hint">{captureSplitReviewHint}</p>}
       {filmGridGroups.length > 0 && <p className="crop-editor-hint" id="film-grid-count-hint">{filmGridCountHint}</p>}
-      {paperGridGroups.length > 0 && <p className="crop-editor-hint" id="paper-grid-count-hint">{paperGridCountHint}</p>}
+      {paperGridGroups.length > 0 && <>
+        <p className="crop-editor-hint" id="paper-grid-count-hint">{paperGridCountHint}</p>
+        <div className="manual-print-actions">
+          {paperGridGroups.map(({ key, parents }, index) => {
+            const [parentId] = parents;
+            const parent = photos.find(photo => photo.id === parentId);
+            const proposed = (parent?.crop_modes || getCropModes(parent))?.full_print?.suggested_warp_quad;
+            const quad = cyclicQuad(sanitizePolygon(proposed));
+            if (!quad) return null;
+            return <button key={key} className="text-button compact" type="button" disabled={saveState?.saving}
+              aria-describedby="paper-grid-count-hint" onClick={() => loadPrintOutline(parent, quad)}>
+              {`Aussenumriss prüfen${paperGridGroups.length > 1 ? ` (${index + 1})` : ""}`}
+            </button>;
+          })}
+        </div>
+      </>}
       {!newPrint && !editingImage && !selected && pendingNested > 0 && (
         <p className="crop-editor-hint" role="status">
           {pendingNested === 1 ? "1 unklarer Vorschlag" : `${pendingNested} unklare Vorschläge`}. Wähle einen Abzug mit gestrichelter Innenkontur.
@@ -1997,15 +2024,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       )}
       {!newPrint && !editingImage && (fragmentOutline || crossingOutline || printSuggestion) && (
         <>
-          <button className="text-button compact" type="button" disabled={saveState?.saving} onClick={() => {
-            const quad = crossingOutline || printSuggestion || cyclicQuad(fragmentOutline?.quad);
-            if (!quad) return;
-            setDraftShapes((current) => ({ ...current, [selected.id]: {
-              ...selectedShape, warpQuad: quad, visiblePolygon: quad, visibleFollowsWarp: true,
-              boundingBox: boundingBoxFromPolygon(quad), imageQuad: null, usingOutlineSuggestion: true,
-            } }));
-            setSaveState(null);
-          }}>
+          <button className="text-button compact" type="button" disabled={saveState?.saving}
+            onClick={() => loadPrintOutline(selected, crossingOutline || printSuggestion || cyclicQuad(fragmentOutline?.quad))}>
             Aussenumriss in den Editor laden
           </button>
           {fragmentOutline && selectedShape.usingOutlineSuggestion

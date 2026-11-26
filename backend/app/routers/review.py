@@ -629,6 +629,7 @@ def _photo_review_payload(photo: ExtractedPhoto) -> dict:
 @router.get("/queue", response_model=list[ReviewItem])
 async def get_review_queue(
     album_id: UUID | None = None,
+    photo_id: UUID | None = None,
     review_type: str = Query(default="segmentation", alias="type", pattern="^(segmentation|ocr|geometry|enhancement)$"),
     limit: int = Query(default=25, ge=1, le=100),
     include_rejected: bool = True,
@@ -681,6 +682,8 @@ async def get_review_queue(
         query = select(ExtractedPhoto)
         if album_id:
             query = query.where(ExtractedPhoto.album_id == album_id)
+        if photo_id:
+            query = query.where(ExtractedPhoto.id == photo_id)
         if principal is not None:
             query = query.where(ExtractedPhoto.album.has(tenant_id=principal.tenant_id))
         priority = case(

@@ -10,7 +10,8 @@ import {
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
   nestedPrintHint, printOutlineSaveHint,
-  paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, scannerBackingHint, scannerBackingReason,
+  paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperOutlineRequiresReview,
+  scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
@@ -111,7 +112,7 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome, uplo
   </main></div>;
 }
 
-function DetectionOverlay({ item, editable = false, countOutlines, captureSplitGroups, filmGridGroups, paperGridGroups, onSaved }) {
+function DetectionOverlay({ item, editable = false, openPaperOutline, countOutlines, captureSplitGroups, filmGridGroups, paperGridGroups, onSaved }) {
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
   const [showMissingEdges, setShowMissingEdges] = useState(false);
@@ -146,6 +147,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, captureSplitG
   const motifMarginMarks = motifReviewPending ? getMotifMarginMarks(item.payload?.crop_modes?.image_only) : [];
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
+  const initialPaperOutline = openPaperOutline && paperGrid?.cut === null && printSuggestion;
   const printEdgeTraces = getSourceEdgeTraces(fullPrintMode?.suggested_edge_traces);
   const adjacentOutline = item.payload?.confidence != null
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.adjacent_print_suggestion));
@@ -157,14 +159,14 @@ function DetectionOverlay({ item, editable = false, countOutlines, captureSplitG
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.scalloped_alternate_polygon));
   const savedQuad = sanitizeReviewPolygon(item.payload?.segmentation_mask?.warp_quad);
   const measuredQuad = storedMeasurement && (savedQuad || sanitizeReviewPolygon(item.payload?.warp_quad));
-  const initialOuter = () => isValidQuad(measuredQuad) ? measuredQuad : initialQuad(
+  const initialOuter = () => initialPaperOutline || (isValidQuad(measuredQuad) ? measuredQuad : initialQuad(
     item.payload?.confidence === null && savedQuad ? savedQuad : item.payload?.warp_quad,
     visiblePolygon,
     sourceBox,
-  );
+  ));
   const [quad, setQuad] = useState(initialOuter); const [saving, setSaving] = useState(false);
-  const [usingOutlineSuggestion, setUsingOutlineSuggestion] = useState(false);
-  const [editingPreview, setEditingPreview] = useState(false);
+  const [usingOutlineSuggestion, setUsingOutlineSuggestion] = useState(Boolean(initialPaperOutline));
+  const [editingPreview, setEditingPreview] = useState(Boolean(initialPaperOutline && !outlinePreviewHint));
   const [measurementFields, setMeasurementFields] = useState(() => printSizeInputs(storedMeasurement));
   const [orientation, setOrientation] = useState(storedOrientation);
   const [savedOrientation, setSavedOrientation] = useState(storedOrientation);
@@ -173,8 +175,8 @@ function DetectionOverlay({ item, editable = false, countOutlines, captureSplitG
   const [magnifier, setMagnifier] = useState({ visible: false, x: 0, y: 0 });
   useEffect(() => {
     setQuad(initialOuter());
-    setUsingOutlineSuggestion(false);
-    setEditingPreview(false);
+    setUsingOutlineSuggestion(Boolean(initialPaperOutline));
+    setEditingPreview(Boolean(initialPaperOutline && !outlinePreviewHint));
     setMeasurementFields(printSizeInputs(storedMeasurement));
     setOrientation(storedOrientation);
     setSavedOrientation(storedOrientation);
@@ -218,7 +220,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, captureSplitG
       setOrientation(savedDegrees);
       setSavedOrientation(savedDegrees);
       const cropModes = getCropModes(saved);
-      const held = captureRequiresReview(cropModes?.full_print);
+      const held = captureRequiresReview(cropModes?.full_print) || paperOutlineRequiresReview(cropModes?.full_print);
       setSavedCropUrl(held ? "" : `/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`);
       onSaved?.(cropModes, saved.segmentation_mask, saved.motif_review_pending);
     } catch (error) {
@@ -352,7 +354,8 @@ function DetectionOverlay({ item, editable = false, countOutlines, captureSplitG
         <p className="quad-hint">{scannerBackingHint}</p>
       )}
       {filmGrid && <p className="quad-hint">{filmGridHint}</p>}
-      {paperGrid && <p className="quad-hint">{paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint}</p>}
+      {paperGrid && (paperGrid.cut || !usingOutlineSuggestion)
+        && <p className="quad-hint">{paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint}</p>}
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
       {printEdgeReviewHint && <p className="quad-hint" id="mobile-print-edge-review-hint">{printEdgeReviewHint}</p>}
@@ -370,7 +373,7 @@ function DetectionOverlay({ item, editable = false, countOutlines, captureSplitG
           if (suggestion !== printSuggestion || !outlinePreviewHint) setEditingPreview(true);
           setSavedCropUrl("");
           setSaveError("");
-        }}>Aussenumriss in den Editor laden</button>
+        }}>{paperGrid && usingOutlineSuggestion ? "Gemessenen Aussenumriss zurücksetzen" : "Aussenumriss in den Editor laden"}</button>
       )}
       {uncertainLine && <p className="quad-hint">Prüfe besonders die gestrichelte Papierkante.</p>}
       <div className="quad-hint">Vier nummerierte Ecken frei verschieben · danach wird das Foto geradegerichtet</div>
@@ -520,18 +523,38 @@ function LiveCropPreview({ src, quad, savedCropUrl, outlinePreviewUrl, outlinePr
 }
 
 function CropReview({ albumId, goHome }) {
-  const [type, setType] = useState("segmentation"); const [items, setItems] = useState([]); const [index, setIndex] = useState(0); const [message, setMessage] = useState("");
+  const [type, setType] = useState("segmentation"); const [index, setIndex] = useState(0); const [message, setMessage] = useState("");
+  const [queue, setQueue] = useState(null);
+  const [focusedPhotoId, setFocusedPhotoId] = useState(null);
   const [answerError, setAnswerError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const returnCountId = useRef(null);
   const leavingRef=useRef(false); const goHomeRef=useRef(goHome);
-  const load = useCallback(async () => {
-    setItems(await getReviewQueue(albumId || undefined, type, { includeRejected: false }));
-    setIndex(0);
-  }, [albumId, type]);
-  useEffect(() => { load().catch(e => setMessage(e.message)); }, [load]); const item = items[index];
-  const captureReviewPending = type === "geometry" && captureRequiresReview(item?.payload?.crop_modes?.full_print);
+  const queueKey = JSON.stringify([albumId, type, focusedPhotoId]);
+  const load = useCallback(async (signal) => {
+    const rows = await getReviewQueue(albumId || undefined, type, { includeRejected: false, photoId: focusedPhotoId, signal });
+    if (signal?.aborted) return;
+    const target = focusedPhotoId && rows[0]?.payload;
+    const validTarget = !focusedPhotoId || (getPaperGridReview(target?.segmentation_mask)?.cut === null
+      && cyclicReviewQuad(sanitizeReviewPolygon(target?.crop_modes?.full_print?.suggested_warp_quad)));
+    const countIndex = type === "segmentation" ? rows.findIndex(row => row.id === returnCountId.current) : -1;
+    if (type === "segmentation") returnCountId.current = null;
+    setQueue({ key: queueKey, rows: validTarget ? rows : [] });
+    setIndex(Math.max(0, countIndex));
+  }, [albumId, type, focusedPhotoId, queueKey]);
+  useEffect(() => {
+    const controller = new AbortController();
+    load(controller.signal).catch(error => { if (!controller.signal.aborted) setMessage(error.message); });
+    return () => controller.abort();
+  }, [load]);
+  const loading = queue?.key !== queueKey;
+  const items = loading ? [] : queue.rows;
+  const item = items[index];
+  const fullPrint = item?.payload?.crop_modes?.full_print;
+  const captureReviewPending = type === "geometry" && captureRequiresReview(fullPrint);
+  const paperOutlinePending = type === "geometry" && paperOutlineRequiresReview(fullPrint);
   const motifReviewPending = type === "geometry" && item?.payload?.motif_review_pending;
-  const approvalHint = captureReviewPending ? "mobile-print-edge-review-hint"
+  const approvalHint = captureReviewPending || paperOutlinePending ? "mobile-print-edge-review-hint"
     : motifReviewPending ? "mobile-motif-review-hint" : undefined;
   const deferredProposals = getDeferredPrintProposals(item?.payload?.deferred_print_proposals);
   const countOutlines = type === "segmentation" ? getFragmentReviewOutlines(item?.payload?.detections || []) : [];
@@ -552,17 +575,24 @@ function CropReview({ albumId, goHome }) {
     return ()=>removeEventListener("popstate",keepReviewOpen);
   },[]);
   function leaveReview(){ leavingRef.current=true; history.back(); }
+  function switchTask(nextType, photoId = null) {
+    if (photoId) returnCountId.current = item.id;
+    setFocusedPhotoId(photoId);
+    setType(nextType);
+    setAnswerError("");
+    setMessage("");
+  }
   function updateSavedCropModes(cropModes, segmentationMask, motifReviewPending) {
     if (cropModes) {
-      setItems(current => current.map(task => {
+      setQueue(current => current?.key === queueKey ? { ...current, rows: current.rows.map(task => {
         if (task.id !== item.id) return task;
         const variantUrls = { ...task.payload.variant_urls };
         if (!cropModes.full_print?.outline_preview) delete variantUrls.full_print_preview;
         return { ...task, payload: { ...task.payload, crop_modes: cropModes, segmentation_mask: segmentationMask,
           motif_review_pending: motifReviewPending, variant_urls: variantUrls } };
-      }));
+      }) } : current);
     }
-    setMessage(captureRequiresReview(cropModes?.full_print)
+    setMessage(captureRequiresReview(cropModes?.full_print) || paperOutlineRequiresReview(cropModes?.full_print)
       ? "Vier Ecken gespeichert. Die Papierkante bleibt in Prüfung."
       : motifReviewPending ? "Vier Ecken gespeichert. Der Motivzuschnitt bleibt in Prüfung."
         : "Vier Ecken gespeichert und Perspektive korrigiert");
@@ -584,8 +614,11 @@ function CropReview({ albumId, goHome }) {
         reason_code: value === "correct" ? null : value,
         idempotency_key: crypto.randomUUID(), metadata,
       });
-      setMessage("Antwort gespeichert");
-      setIndex((current) => current + 1);
+      if (focusedPhotoId) switchTask("segmentation");
+      else {
+        setMessage("Antwort gespeichert");
+        setIndex((current) => current + 1);
+      }
     } catch (error) {
       setAnswerError(error.message === "motif_geometry_review_required" ? motifDesktopReviewHint : error.message);
       await load().catch(() => {});
@@ -594,15 +627,25 @@ function CropReview({ albumId, goHome }) {
     }
   }
   return <div className="mobile-shell crop-review-shell"><MobileHeader title="Cropping prüfen" onBack={leaveReview}/><main className="mobile-content"><div className="review-top"><div><span>Kurze Sitzung</span><strong>{Math.min(index + 1, items.length || 5)} / {Math.min(items.length, 5) || 5}</strong></div><div className="review-progress"><i style={{width:`${Math.min(100, index / Math.max(1, Math.min(items.length,5)) * 100)}%`}}/></div></div>
-    <div className="task-switch"><button className={type === "segmentation" ? "active" : ""} onClick={() => setType("segmentation")} disabled={submitting}>Printanzahl</button><button className={type === "geometry" ? "active" : ""} onClick={() => setType("geometry")} disabled={submitting}>Crop-Qualität</button></div>
+    <div className="task-switch"><button className={type === "segmentation" ? "active" : ""} onClick={() => switchTask("segmentation")} disabled={submitting}>Printanzahl</button><button className={type === "geometry" ? "active" : ""} onClick={() => switchTask("geometry")} disabled={submitting}>Crop-Qualität</button></div>
     {answerError && <p role="alert">{answerError}</p>}
     {item ? <>
-      <DetectionOverlay item={item} editable={type === "geometry"} countOutlines={countOutlines} captureSplitGroups={captureSplitGroups}
+      <DetectionOverlay item={item} editable={type === "geometry"} openPaperOutline={Boolean(focusedPhotoId)}
+        countOutlines={countOutlines} captureSplitGroups={captureSplitGroups}
         filmGridGroups={filmGridGroups} paperGridGroups={paperGridGroups} onSaved={updateSavedCropModes} />
+      {paperGridGroups.map(({ key, parents }, groupIndex) => {
+        const [parentId] = parents;
+        const parent = item.payload.detections.find(row => row.photo_id === parentId);
+        if (!cyclicReviewQuad(sanitizeReviewPolygon(parent?.crop_modes?.full_print?.suggested_warp_quad))) return null;
+        return <button key={key} className="magnifier-toggle" type="button" disabled={submitting}
+          aria-describedby="mobile-paper-grid-count-hint" onClick={() => switchTask("geometry", parentId)}>
+          {`Aussenumriss prüfen${paperGridGroups.length > 1 ? ` (${groupIndex + 1})` : ""}`}
+        </button>;
+      })}
       <section className="answer-grid">
         {cropAnswers[type].map(([value,label]) => (
           <button key={value} className={value === "correct" ? "good" : ""}
-            disabled={submitting || (value === "correct" && (captureReviewPending || motifReviewPending))}
+            disabled={submitting || (value === "correct" && (captureReviewPending || paperOutlinePending || motifReviewPending))}
             aria-describedby={value === "correct" ? approvalHint : undefined}
             onClick={() => record(value)}>
             {value === "correct" && (deferredProposals.length || countOutlines.length || captureSplitGroups.length || filmGridGroups.length || paperGridGroups.length)
@@ -610,7 +653,14 @@ function CropReview({ albumId, goHome }) {
           </button>
         ))}
       </section>
-    </> : <section className="review-done"><Check size={48}/><h2>{message || "Keine Aufgaben offen"}</h2><p>Neue Aufgaben erscheinen nach der Bildanalyse automatisch.</p><button onClick={load}><RefreshCw/> Neu laden</button></section>}{item && <button className="skip-task" disabled={submitting} onClick={() => setIndex(i => i + 1)}>Überspringen</button>}
+    </> : <section className="review-done"><Check size={48}/><h2>{message || (loading ? "Prüfaufgaben werden geladen …"
+      : focusedPhotoId ? "Dieser Abzug ist nicht mehr in der Prüfung" : "Keine Aufgaben offen")}</h2>
+      {focusedPhotoId ? <button onClick={() => switchTask("segmentation")}>Zurück zur Printanzahl</button>
+        : <button onClick={() => load().catch(error => setMessage(error.message))}><RefreshCw/> Neu laden</button>}
+    </section>}{item && <button className="skip-task" disabled={submitting}
+      onClick={() => focusedPhotoId ? switchTask("segmentation") : setIndex(i => i + 1)}>
+      {focusedPhotoId ? "Zurück zur Printanzahl" : "Überspringen"}
+    </button>}
   </main></div>;
 }
 
