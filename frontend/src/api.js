@@ -125,7 +125,7 @@ export function excludeCountReviewGroup(pageId, revision, { kind, photoIds }, ui
     task_type: "segmentation", task_id: pageId, answer: `exclude_${kind}_group`,
     reason_code: kind === "film" ? "film_carrier" : "non_photo_object",
     idempotency_key: crypto.randomUUID(),
-    metadata: { ui, page_id: pageId, photo_count_revision: revision, [`${kind}_group_photo_ids`]: [...photoIds] },
+    metadata: { ui, page_id: pageId, photo_count_revision: revision ?? null, [`${kind}_group_photo_ids`]: [...photoIds] },
   });
 }
 

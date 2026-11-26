@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  albumLeafSourceWindow, getAlbumLeafReviewGroups,
   filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
   getFilmGridReviewSeams, getFragmentReviewOutlines,
   getPaperGridOutlineParents, getPaperGridReviewGroups,
@@ -43,6 +44,38 @@ test("a crossing count hint selects only its current, held automatic proposal", 
   assert.equal(group.kind, "crossing");
   assert.deepEqual(group.photoIds, new Set(["crossed"]));
   assert.deepEqual(group.traces, traces);
+});
+
+test("an album leaf can be excluded only while exactly one active matched child remains", () => {
+  const traces = [[{ x: .51, y: .2 }, { x: .52, y: .8 }], [{ x: .56, y: .22 }, { x: .56, y: .79 }]];
+  const held = { status: "review_needed" };
+  const leaf = { id: "leaf", segmentation_confidence: .72, segmentation_mask: {
+    album_leaf_review_traces: traces, album_leaf_review_child: quad,
+  }, enhancement_applied: { correction: { crop_modes: { full_print: held, image_only: held } } } };
+  const child = { photo_id: "print", confidence: .83, segmentation_mask: { polygon: structuredClone(quad) } };
+  const [group, ...others] = getAlbumLeafReviewGroups([leaf, child]);
+  assert.deepEqual(others, []);
+  assert.equal(group.kind, "album_leaf");
+  assert.equal(group.childId, child.photo_id);
+  assert.equal(group.child, quad);
+  assert.deepEqual(group.traces, traces);
+  assert.deepEqual([...group.photoIds], [leaf.id]);
+
+  const moved = structuredClone(child);
+  moved.segmentation_mask.polygon[0].x += .01;
+  const unheld = { ...leaf, crop_modes: { full_print: held, image_only: { status: "ready" } } };
+  for (const rows of [[leaf], [leaf, moved], [leaf, { ...child, confidence: null }],
+    [leaf, { ...child, reviewed_non_print: true }], [leaf, child, { ...child, photo_id: "duplicate" }], [unheld, child]]) {
+    assert.deepEqual(getAlbumLeafReviewGroups(rows), []);
+  }
+});
+
+test("an album leaf detail shows both rail centers with original context", () => {
+  const traces = [[{ x: .4, y: .1 }, { x: .41, y: .82 }], [{ x: .48, y: .19 }, { x: .49, y: .89 }]];
+  const { view: [left, top, width, height], ticks } = albumLeafSourceWindow(traces, 2048, 1536);
+  assert.equal(ticks.length, 4);
+  assert.ok(ticks.flat().every(([x, y]) => left < x && x < left + width && top < y && y < top + height));
+  assert.ok(left >= 0 && top >= 0 && left + width <= 2048 && top + height <= 1536);
 });
 
 test("a shared outline appears once with the same three supported sides and separate weak edge", () => {

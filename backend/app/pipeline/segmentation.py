@@ -11,6 +11,9 @@ import numpy as np
 
 from app.config import Settings
 from app.pipeline.adjacent_prints import ADJACENT_PRINT_REVIEW, adjacent_album_edge_outlines
+from app.pipeline.album_leaf_review import (
+    ALBUM_LEAF_COUNT_REVIEW, ALBUM_LEAF_REVIEW_CHILD, ALBUM_LEAF_REVIEW_TRACES, album_leaf_review_traces,
+)
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves
 from app.pipeline.crossing_prints import (
     CROSSING_PRINT_REVIEW, crossing_print_outlines, near_leaf_edge_traces, staggered_print_source_traces,
@@ -3846,6 +3849,56 @@ def _flag_crossing_fallback_contours(image: np.ndarray, result: SegmentationResu
     return SegmentationResult(updated, result.metadata)
 
 
+def _flag_album_leaf_count_review(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    detections = result.detections
+    if not result.metadata.get("fallback_used") or len(detections) < 2:
+        return result
+    height, width = image.shape[:2]
+    polygons = [_detection_polygon(item) for item in detections]
+    pending = (result.metadata.get("fusion") or {}).get("deferred_print_proposals") or []
+    pending_outlines = [offer.get("visible_polygon") or offer.get("polygon") or [] for offer in pending]
+    updated = detections.copy()
+    for index, item in enumerate(detections):
+        outline = polygons[index]
+        fusion = item.mask.get("fusion") or {}
+        if (not item.geometry_valid or item.review_reasons or item.mask.get("warp_quad")
+                or item.mask.get("source") != "classical_border_quad" or item.mask.get("detector_source") != "edge_contour"
+                or fusion.get("proposal_count") != 1 or fusion.get("proposal_families") != ["classical"]
+                or len(outline) != 4 or not cv2.isContourConvex(outline) or not .18 <= cv2.contourArea(outline) <= .48):
+            continue
+        contained = [peer for peer, polygon in enumerate(polygons) if peer != index
+                     and normalized_polygon_overlap(outline, polygon).second_containment >= .08]
+        if len(contained) != 1:
+            continue
+        child_index, = contained
+        child = detections[child_index]
+        proof = child.mask.get("boundary_evidence") or {}
+        overlap = normalized_polygon_overlap(outline, polygons[child_index])
+        if (not child.geometry_valid or child.review_reasons or child.confidence < .50
+                or len(child.mask.get("polygon") or []) < 4
+                or child.mask.get("source") != "yolo_seg_mask" or child.mask.get("detector_source") != "yolo_onnx"
+                or proof.get("score", 0.) < .58 or proof.get("border_contrast", 0.) < .66
+                or overlap.second_containment < .97 or not .28 <= overlap.iou <= .66):
+            continue
+        # Leave this choice to the general count editor when another visible
+        # proposal in the area still needs to be accounted for.
+        if any(len(points) >= 3 and normalized_polygon_overlap(
+            outline, [(point["x"], point["y"]) for point in points],
+        ).second_containment >= .08 for points in pending_outlines):
+            continue
+        try:
+            traces = album_leaf_review_traces(image, normalized_vertices_to_pixels(outline, width, height))
+        except (ValueError, cv2.error, np.linalg.LinAlgError):
+            continue
+        if traces:
+            updated[index] = replace(item, mask={
+                **item.mask,
+                ALBUM_LEAF_REVIEW_TRACES: [_normalized_polygon(trace, width, height) for trace in traces],
+                ALBUM_LEAF_REVIEW_CHILD: [point.copy() for point in child.mask["polygon"]],
+            }, review_reasons=[ALBUM_LEAF_COUNT_REVIEW])
+    return SegmentationResult(updated, result.metadata)
+
+
 def _offer_projective_print_review(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
     metadata = result.metadata
     fusion = metadata.get("fusion") or {}
@@ -4054,6 +4107,7 @@ def segment_album_page(
             result = _flag_conflicting_film_grids(evidence_source, result, require_clear_rim=True)
             if source is not None:
                 result = _flag_crossing_fallback_contours(source, result)
+                result = _flag_album_leaf_count_review(source, result)
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership

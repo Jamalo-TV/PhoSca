@@ -23,8 +23,9 @@ from app.models import (
     ReviewEvent,
     StageRun,
 )
-from app.pipeline.decisions import is_reviewed_non_print, motif_geometry_requires_review
+from app.pipeline.album_leaf_review import ALBUM_LEAF_COUNT_REVIEW, ALBUM_LEAF_REVIEW_CHILD, ALBUM_LEAF_REVIEW_TRACES
 from app.pipeline.crossing_fallback_review import CROSSING_FALLBACK_COUNT_REVIEW, CROSSING_FALLBACK_TRACES
+from app.pipeline.decisions import is_reviewed_non_print, motif_geometry_requires_review
 from app.pipeline.manual_paper_boundary import PAPER_CLAIM_OVERLAP_CHECKS, paper_claims_need_overlap_check
 from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
 from app.pipeline.protected_regions import album_mark_source_matches
@@ -49,6 +50,9 @@ GROUP_EXCLUSIONS = {
     "exclude_film_group": (3, 2, "film_grid_review_seam", "film_group_photo_ids", FILM_GRID_REVIEW, "film"),
     "exclude_paper_group": (2, 2, "paper_join_review_traces", "paper_group_photo_ids", PAPER_JOIN_REVIEW, "paper"),
     "exclude_crossing_group": (1, 4, CROSSING_FALLBACK_TRACES, "crossing_group_photo_ids", CROSSING_FALLBACK_COUNT_REVIEW, "crossing"),
+    "exclude_album_leaf_group": (
+        1, 2, ALBUM_LEAF_REVIEW_TRACES, "album_leaf_group_photo_ids", ALBUM_LEAF_COUNT_REVIEW, "album_leaf",
+    ),
 }
 CONFIRM_SHARED_PAPER_GRID = "confirm_shared_paper_grid"
 COUNT_GROUP_ACTIONS = {*GROUP_EXCLUSIONS, CONFIRM_SHARED_PAPER_GRID}
@@ -315,7 +319,7 @@ def _validate_enhancement_decision(payload: MobileReviewAnswer, context: dict) -
 
 def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[ExtractedPhoto]:
     size, trace_count, mask_key, request_key, review_reason, name = GROUP_EXCLUSIONS[payload.answer]
-    required_reason = {"film": "film_carrier", "crossing": "non_photo_object"}.get(name)
+    required_reason = {"film": "film_carrier", "crossing": "non_photo_object", "album_leaf": "non_photo_object"}.get(name)
     if required_reason and payload.reason_code != required_reason:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{name}_confirmation_required")
     submitted = payload.metadata.get(request_key)
@@ -337,13 +341,20 @@ def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[Extrac
                 for photo in selected
             )):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{name}_review_group_stale")
-    if name == "crossing" and any(not isinstance(trace, list) or len(trace) != 2 for trace in evidence):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="crossing_review_group_stale")
-    if name in ("film", "crossing"):
+    if name in ("crossing", "album_leaf") and any(not isinstance(trace, list) or len(trace) != 2 for trace in evidence):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{name}_review_group_stale")
+    if name in ("film", "crossing", "album_leaf"):
         for photo in selected:
             modes = ((photo.enhancement_applied or {}).get("correction") or {}).get("crop_modes") or {}
             if any((modes.get(mode) or {}).get("status") != "review_needed" for mode in ("full_print", "image_only")):
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{name}_review_group_stale")
+    if name == "album_leaf":
+        leaf, = selected
+        child_outline = (leaf.segmentation_mask or {}).get(ALBUM_LEAF_REVIEW_CHILD)
+        children = [photo for photo in context["photos"] if photo.id != leaf.id and photo.segmentation_confidence is not None
+                    and (photo.segmentation_mask or {}).get("polygon") == child_outline]
+        if not isinstance(child_outline, list) or len(child_outline) < 4 or len(children) != 1:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_leaf_review_group_stale")
     return selected
 
 
@@ -541,13 +552,14 @@ async def add_review_event(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Prüfe die gestrichelten Konturen, bevor du die Anzahl bestätigst.",
             )
-        if payload.answer in ("exclude_film_group", CONFIRM_SHARED_PAPER_GRID):
+        count_review_kind = {"exclude_film_group": "film", "exclude_album_leaf_group": "album_leaf",
+                             CONFIRM_SHARED_PAPER_GRID: "paper_grid"}.get(payload.answer)
+        if count_review_kind:
             count_confirmed = await session.scalar(select(_completed_review_exists("segmentation", Page.id)).where(
                 Page.id == payload.task_id,
             ))
             if count_confirmed:
-                kind = "film" if payload.answer == "exclude_film_group" else "paper_grid"
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{kind}_review_group_stale")
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{count_review_kind}_review_group_stale")
         if payload.answer in GROUP_EXCLUSIONS:
             context["excluded_group"] = _group_for_review(payload, context)
         elif payload.answer == CONFIRM_SHARED_PAPER_GRID:

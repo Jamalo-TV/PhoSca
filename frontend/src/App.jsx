@@ -52,6 +52,7 @@ import EdgeMeasurement from "./EdgeMeasurement.jsx";
 import {
   actionableCountGroups, adjacentPrintHint, AlbumPageMarkReview, captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, cropProtectionErrors,
   CropOrientationField, CropVariants, cropModeLabels, getCropModes,
+  albumLeafChildStyle, albumLeafTraceStyle,
   crossingFallbackTraceStyles, crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   countGroupReviewError, CountGroupReview, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints,
   borrowedFallbackProposal, filmGridCountHint, filmGridHint, filmGridReason, filmGridRimHint, frameBackingProposal,
@@ -67,7 +68,7 @@ import {
   offPrintAdvisorySource, useAlbumPageMarkReview,
 } from "./CropVariants.jsx";
 import {
-  getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
+  getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getPaperJoinReviewGroups, getStoredMotifQuad,
 } from "./cropReviewOutlines.js";
@@ -1446,7 +1447,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     }) : [], [reviewingCount, newPrint, editingImage, photos]);
   const countGroups = useMemo(() => actionableCountGroups(getActionableFilmGridReviewGroups(filmGridGroups, photos), paperJoinGroups,
     getActionablePaperGridReviewGroups(paperGridGroups, photos),
-    reviewingCount && !newPrint && !editingImage ? getCrossingFallbackReviewGroups(photos) : []),
+    reviewingCount && !newPrint && !editingImage ? [...getCrossingFallbackReviewGroups(photos), ...getAlbumLeafReviewGroups(photos)] : []),
   [filmGridGroups, paperJoinGroups, paperGridGroups, photos, reviewingCount, newPrint, editingImage]);
   const selectedCountGroup = groupSelection?.pageId === pageId
     ? countGroups.find(({ key }) => key === groupSelection?.key) : null;
@@ -1769,18 +1770,29 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       context.restore();
     }
-    if (selectedCountGroup?.kind === "crossing") {
+    if (selectedCountGroup?.kind === "crossing" || selectedCountGroup?.kind === "album_leaf") {
+      const isAlbumLeaf = selectedCountGroup.kind === "album_leaf";
+      const evidence = selectedCountGroup.traces.map((points, index) => ({
+        points, ...(isAlbumLeaf ? albumLeafTraceStyle : crossingFallbackTraceStyles[index]),
+      }));
+      if (isAlbumLeaf) evidence.push({ points: selectedCountGroup.child, closed: true, ...albumLeafChildStyle });
       context.save();
-      context.lineWidth = 3;
-      selectedCountGroup.traces.forEach(([start, end], index) => {
-        const { color, dash } = crossingFallbackTraceStyles[index];
-        context.strokeStyle = color;
-        context.setLineDash(dash);
+      for (const { points: [first, ...rest], color, contrast, dash, closed } of evidence) {
         context.beginPath();
-        context.moveTo(start.x * canvas.width, start.y * canvas.height);
-        context.lineTo(end.x * canvas.width, end.y * canvas.height);
+        context.moveTo(first.x * canvas.width, first.y * canvas.height);
+        rest.forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
+        if (closed) context.closePath();
+        if (contrast) {
+          context.strokeStyle = contrast;
+          context.lineWidth = 5;
+          context.setLineDash([]);
+          context.stroke();
+        }
+        context.strokeStyle = color;
+        context.lineWidth = 3;
+        context.setLineDash(dash);
         context.stroke();
-      });
+      }
       context.restore();
     }
     if (!newPrint && !editingImage && (paperGridGroups.length || paperGrid?.cut)) {
@@ -2175,8 +2187,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             </button>
           ))}
           <button className="text-button compact" type="button" onClick={confirmCount}
-            disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving || selectedCountGroup?.kind === "paper-grid"
-              || selectedCountGroup?.kind === "crossing"}>
+            disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving
+              || ["paper-grid", "crossing", "album_leaf"].includes(selectedCountGroup?.kind)}>
             {currentCountReview?.saving ? "Anzahl wird gespeichert …" : "Anzahl bestätigen"}
           </button>
         </div>

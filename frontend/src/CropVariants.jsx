@@ -1,6 +1,6 @@
 import { Download } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { filmSourceWindow, getPaperGridReview } from "./cropReviewOutlines.js";
+import { useEffect, useId, useMemo, useState } from "react";
+import { albumLeafSourceWindow, filmSourceWindow, getPaperGridReview } from "./cropReviewOutlines.js";
 
 export const cropModeLabels = {
   full_print: "Ganzer Abzug",
@@ -235,6 +235,11 @@ const groupReviewLabels = {
     confirm: "Diesen Vorschlag aus der Abzugsliste nehmen",
     prompt: "Orange markiert die gemessene Nachbarkante und die Linie, die ausserhalb des Vorschlags weiterläuft. Türkis markiert Linien in zwei Bildmotiven. Prüfe am Original, ob der hervorgehobene Vorschlag einen eigenen Papierabzug zeigt. Bei einem Abzug oder bei Unsicherheit wähle «Abbrechen».",
   },
+  album_leaf: {
+    open: "Mögliche Albumseite",
+    confirm: "Grossen Vorschlag aus der Abzugsliste nehmen",
+    prompt: "Entferne den grossen Vorschlag nur, wenn er das Albumblatt zeigt. Prüfe den kleineren Fotoabzug separat. Türkis markiert gemessene Linien am möglichen Albumfalz, Violett den kleineren Vorschlag.",
+  },
   "paper-grid": {
     open: "Zusammengehörigkeit prüfen",
     confirm: "Als einen Abzug zählen",
@@ -242,7 +247,7 @@ const groupReviewLabels = {
   },
 };
 
-function FilmGroupSourceDetails({ sourceUrl, line, rim }) {
+function CountGroupSourceDetails({ sourceUrl, group }) {
   const [source, setSource] = useState(null);
   useEffect(() => {
     if (!sourceUrl) return;
@@ -253,12 +258,16 @@ function FilmGroupSourceDetails({ sourceUrl, line, rim }) {
   }, [sourceUrl]);
   if (source?.url !== sourceUrl) return null;
   const { width, height } = source;
-  const details = [
-    ["Zwischenraum im Raster", filmSourceWindow(line, width, height)],
-    ["Möglicher durchsichtiger Saum", filmSourceWindow(rim, width, height)],
-  ].filter(([, detail]) => detail);
+  const albumLeaf = group.kind === "album_leaf";
+  const details = (albumLeaf ? [
+    ["Möglicher Albumfalz im Original", albumLeafSourceWindow(group.traces, width, height)],
+  ] : [
+    ["Zwischenraum im Raster", filmSourceWindow(group.line, width, height)],
+    ["Möglicher durchsichtiger Saum", filmSourceWindow(group.rim, width, height)],
+  ]).filter(([, detail]) => detail);
   if (!details.length) return null;
-  return <section className="film-source-details" aria-label="Vergrösserte Originalausschnitte">
+  return <section className={`count-group-source-details ${albumLeaf ? "album-leaf-source-details" : "film-source-details"}`}
+    aria-label="Vergrösserte Originalausschnitte">
     {details.map(([label, { view, ticks }]) => <figure key={label}>
       <svg viewBox={view.join(" ")} role="img" aria-label={label}>
         <image href={sourceUrl} width={width} height={height} />
@@ -275,22 +284,25 @@ function FilmGroupSourceDetails({ sourceUrl, line, rim }) {
 }
 
 export function CountGroupReview({ groups, selected, busy, sourceUrl, onSelect, onConfirm }) {
+  const promptId = useId();
   if (!groups.length) return null;
   const labels = selected && groupReviewLabels[selected.kind];
-  const exclusions = groups.filter(({ kind }) => kind !== "paper-grid");
+  const exclusions = groups.filter(({ kind }) => kind !== "paper-grid" && kind !== "album_leaf");
   const sharedPaper = groups.filter(({ kind }) => kind === "paper-grid");
+  const albumLeaves = groups.filter(({ kind }) => kind === "album_leaf");
   return <div className="count-group-review">
     {selected ? <>
-      <p className="crop-editor-hint" role="status">{labels.prompt}</p>
-      {selected.kind === "film" && sourceUrl && <FilmGroupSourceDetails sourceUrl={sourceUrl} line={selected.line} rim={selected.rim} />}
-      <button type="button" className="primary-button" disabled={busy}
+      <p id={promptId} className="crop-editor-hint" role="status">{labels.prompt}</p>
+      {sourceUrl && (selected.kind === "film" || selected.kind === "album_leaf")
+        && <CountGroupSourceDetails sourceUrl={sourceUrl} group={selected} />}
+      <button type="button" className="primary-button" disabled={busy} aria-describedby={promptId}
         onClick={() => onConfirm(selected)}>
         {busy ? "Vorschläge werden geprüft …" : labels.confirm}
       </button>
       <button type="button" className="text-button" disabled={busy} onClick={() => onSelect(null)}>Abbrechen</button>
     </> : groups.map((group) => {
       const { key, kind } = group;
-      const peers = kind === "paper-grid" ? sharedPaper : exclusions;
+      const peers = kind === "paper-grid" ? sharedPaper : kind === "album_leaf" ? albumLeaves : exclusions;
       return <button key={key} type="button" className="text-button" disabled={busy} onClick={() => onSelect(key)}>
         {`${groupReviewLabels[kind].open}${peers.length > 1 ? ` (${peers.indexOf(group) + 1})` : ""}`}
       </button>;
@@ -298,7 +310,7 @@ export function CountGroupReview({ groups, selected, busy, sourceUrl, onSelect, 
   </div>;
 }
 
-export function actionableCountGroups(filmGroups, paperGroups, paperGridGroups = [], crossingGroups = []) {
+export function actionableCountGroups(filmGroups, paperGroups, paperGridGroups = [], singleProposalGroups = []) {
   return [
     ...filmGroups.map(group => ({ ...group, kind: "film" })),
     ...paperGroups.map(group => ({ ...group, kind: "paper" })),
@@ -308,7 +320,7 @@ export function actionableCountGroups(filmGroups, paperGroups, paperGridGroups =
       return { ...group, kind: "paper-grid", key: JSON.stringify(["paper-grid", group.key, parentId, ...fragmentIds]),
         parentId, fragmentIds, photoIds: new Set([parentId, ...fragmentIds]) };
     }),
-    ...crossingGroups,
+    ...singleProposalGroups,
   ];
 }
 
@@ -318,6 +330,13 @@ export const crossingFallbackTraceStyles = [
   { color: "#0891b2", dash: [3, 5], label: "Linie im ersten Bildmotiv" },
   { color: "#0891b2", dash: [3, 5], label: "Linie im zweiten Bildmotiv" },
 ];
+
+export const albumLeafTraceStyle = {
+  color: "#67e8f9", contrast: "#164e63", dash: [9, 5], label: "Gemessene Linien am möglichen Albumfalz",
+};
+export const albumLeafChildStyle = {
+  color: "#7e22ce", contrast: "#f3e8ff", dash: [4, 4], label: "Kleinerer Fotoabzug zur Einzelprüfung",
+};
 
 export function getDeferredPrintProposals(proposals) {
   return Array.isArray(proposals) ? proposals.filter((proposal) => Number.isInteger(proposal?.id) && proposal.id >= 0

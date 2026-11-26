@@ -12,12 +12,12 @@ export function getFragmentOutline(mask) {
   return { quad, weakEdge: [quad[edge], quad[next]], supportedSides: [...quad.slice(next), ...quad.slice(0, next)] };
 }
 
-function filmReviewLine(line) {
+function sourceReviewLine(line) {
   return Array.isArray(line) && line.length === 2 && line.every(isNormalizedPoint) ? line : null;
 }
 
 export function filmSourceWindow(line, width, height) {
-  if (!filmReviewLine(line) || !Number.isFinite(width) || !Number.isFinite(height) || width < 2 || height < 2) return null;
+  if (!sourceReviewLine(line) || !Number.isFinite(width) || !Number.isFinite(height) || width < 2 || height < 2) return null;
   const boxWidth = Math.min(width, Math.max(48, .13 * Math.min(width, height)));
   const boxHeight = Math.min(height, boxWidth * 2 / 3);
   const [a, b] = line.map(({ x, y }) => [x * (width - 1) + .5, y * (height - 1) + .5]);
@@ -33,6 +33,19 @@ export function filmSourceWindow(line, width, height) {
     Math.min(height - boxHeight, Math.max(0, y - boxHeight / 2)), boxWidth, boxHeight], ticks };
 }
 
+export function albumLeafSourceWindow(traces, width, height) {
+  const [first, second] = traces.map(line => filmSourceWindow(line, width, height));
+  if (!first || !second) return null;
+  const ticks = [...first.ticks, ...second.ticks];
+  const points = ticks.flat();
+  const xs = points.map(([x]) => x), ys = points.map(([, y]) => y);
+  const left = Math.min(...xs), right = Math.max(...xs), top = Math.min(...ys), bottom = Math.max(...ys);
+  const boxWidth = Math.min(width, Math.max(first.view[2], (right - left) * 1.4, (bottom - top) * 2.1));
+  const boxHeight = Math.min(height, boxWidth * 2 / 3);
+  return { view: [Math.min(width - boxWidth, Math.max(0, (left + right - boxWidth) / 2)),
+    Math.min(height - boxHeight, Math.max(0, (top + bottom - boxHeight) / 2)), boxWidth, boxHeight], ticks };
+}
+
 function cropModes(photo) {
   return photo.crop_modes || photo.enhancement_applied?.correction?.crop_modes;
 }
@@ -42,7 +55,7 @@ function bothModesHeld(modes) {
 }
 
 export function getFilmGridSeam(mask) {
-  return filmReviewLine(mask?.film_grid_review_seam);
+  return sourceReviewLine(mask?.film_grid_review_seam);
 }
 
 export function getFilmGridReviewSeams(photos) {
@@ -53,7 +66,7 @@ export function getFilmGridReviewSeams(photos) {
     const line = getFilmGridSeam(photo.segmentation_mask);
     if (!id || photo.reviewed_non_print || confidence == null || !line) continue;
     const key = JSON.stringify(line.map(({ x, y }) => [x, y]));
-    const rim = filmReviewLine(photo.segmentation_mask?.film_grid_review_rim);
+    const rim = sourceReviewLine(photo.segmentation_mask?.film_grid_review_rim);
     if (!groups.has(key)) groups.set(key, { key, line, rim, photoIds: new Set() });
     const group = groups.get(key);
     if (JSON.stringify(group.rim) !== JSON.stringify(rim)) group.rim = null;
@@ -108,6 +121,29 @@ export function getCrossingFallbackReviewGroups(photos) {
         || !traces.every(line => Array.isArray(line) && line.length === 2 && line.every(isNormalizedPoint))
         || !bothModesHeld(cropModes(photo))) return [];
     return [{ kind: "crossing", key: JSON.stringify(["crossing", id, traces]), traces, photoIds: new Set([id]) }];
+  });
+}
+
+export function getAlbumLeafReviewGroups(photos) {
+  const active = photos.filter(photo => {
+    const { segmentation_confidence: confidence = photo.confidence } = photo;
+    return !photo.reviewed_non_print && (photo.photo_id ?? photo.id) && confidence != null;
+  });
+  return active.flatMap(photo => {
+    const id = photo.photo_id ?? photo.id;
+    const { album_leaf_review_traces: traces, album_leaf_review_child: child } = photo.segmentation_mask || {};
+    if (!Array.isArray(traces) || traces.length !== 2 || !traces.every(sourceReviewLine)
+        || !Array.isArray(child) || child.length < 4 || !child.every(isNormalizedPoint)
+        || !bothModesHeld(cropModes(photo))) return [];
+    const matches = new Set(active.filter(other => {
+      const polygon = other.segmentation_mask?.polygon;
+      return (other.photo_id ?? other.id) !== id && polygon?.length === child.length
+        && child.every(({ x, y }, index) => polygon[index]?.x === x && polygon[index]?.y === y);
+    }).map(other => other.photo_id ?? other.id));
+    if (matches.size !== 1) return [];
+    const [childId] = matches;
+    return [{ kind: "album_leaf", key: JSON.stringify(["album_leaf", id, childId, traces, child]),
+      traces, child, childId, photoIds: new Set([id]) }];
   });
 }
 

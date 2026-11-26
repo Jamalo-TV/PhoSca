@@ -418,6 +418,21 @@ mit den noch offenen Nachbarmasken neu berechnet werden. Bei einem
 eigenen Abzug oder bei Unsicherheit kannst du den Dialog abbrechen.
 [Beispiel mit zwei querlaufenden Bildmotiven](data/evaluation/README.md#review-a-diagonal-fallback-contour-on-the-original)
 
+Unter **Mögliche Albumseite** zeigt die Anzahlprüfung einen grossen
+klassischen Vorschlag, wenn zwei Falzlinien im Original zu ihm passen
+und genau ein plausibler kleinerer Fotoabzug darin liegt. Türkis
+markiert den Falz und Violett den kleineren Vorschlag. Die vergrösserte
+Originalansicht zeigt die Materialübergänge am Falz. Weitere
+konkurrierende Vorschläge im grossen Umriss verhindern den Hinweis.
+
+Die Anzahl ändert sich erst nach **Grossen Vorschlag aus der
+Abzugsliste nehmen**. Wähle diese Aktion, wenn der grosse Umriss das
+Albumblatt erfasst. Prüfe den kleineren Vorschlag getrennt. Die API
+gleicht die angezeigte Anzahlrevision, den grossen Vorschlag und die
+ursprüngliche Kontur des kleineren Vorschlags ab. Beide
+Zuschnittmodi benötigen weiterhin ihre eigene Geometrieprüfung.
+[Beispiel Rudge mit drei Vorschlägen für zwei Abzüge](data/evaluation/README.md#review-a-book-gutter-and-the-contained-print)
+
 Wenn ein klassisch erkannter Umriss eine Ecke diagonal abschneidet,
 kann **Ganzer Abzug** eine zweite Vorschau anbieten. PhoSca verlängert
 die beiden betroffenen Seiten in einem begrenzten Suchbereich und

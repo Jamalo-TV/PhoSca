@@ -490,6 +490,15 @@ release. The source and replay receipts stay local under
 `runs/crop-quality/rudge-red12-occlusion/`.
 [Mounted and individual files](https://github.com/rudged/home/tree/9422452820380ca089db3e0baf0cfaf3dc6c7cdc)
 
+The Roy Burn collection documents 43 matte 150 × 100 mm prints
+on five magnetic album leaves. The digitization report records
+whole-leaf scans before removal and separate TIFF exposures of the
+prints in physical order. The public PDF paths returned 403 during
+intake. Two individually identified records list CC BY-NC-ND 4.0.
+The native scan hashes, verified motif boundaries and permission for
+commercial reuse remain open. [Digitization report](https://www.aveburyhouse.co.nz/uploads/4/7/2/0/47203855/richmond_village-roy_burn_photos-metadata.pdf) ·
+[Catalogue record](https://www.canterburystories.nz/collections/community/richmond-history-group/roy-burn-collection/ccl-cs-84777)
+
 ÉBAF documents digitization of 302 paper prints from the Notre-Dame-
 de-France albums in the Assumptionist archive. Project records
 describe scans after physical removal and subsequent thematic
@@ -5479,6 +5488,73 @@ and calibration. The replay files are in
 `runs/crop-quality/rudge-visible-strip-review/`.
 [Paired photographs](https://github.com/rudged/home/tree/9422452820380ca089db3e0baf0cfaf3dc6c7cdc) ·
 [Detector and pixel checks](../../backend/app/pipeline/source_strip_review.py)
+
+### Review a book gutter and the contained print
+
+The Rudge 12 left false proposal is a single classical `edge_contour`
+covering 35.60% of the original. Its confidence is 0.829. The model
+supports a smaller print entirely within it with confidence 0.583
+and overlap IoU 0.354 against the leaf. The general window detector
+finds 12.07% pale preview coverage against a 21% minimum. Broader
+colour limits still leave the largest pale component below its
+area and rectangularity requirements. A second detection is present
+on the right with a partly covered subject.
+
+The count cue first limits classical candidates to single-source
+four-sided outlines between 18% and 48% of the original area. It
+requires one automatic inner model proposal with at least 0.50
+confidence, 0.58 boundary score, 0.66 border contrast, 97% containment
+and IoU between 0.28 and 0.66 with the large outline. A competing
+active or deferred proposal with at least 8% containment vetoes the
+cue. The small proposal remains an independent active row.
+
+The source check tracks two opposite Lab-lightness transitions along
+128 stations per side. Search offsets and fit tolerances scale with
+the side length relative to 1,200 pixels. Both lines need at least
+77% fit support. The dark centre and matching pale shoulders need
+82% combined support overall and 64% in each quarter. Both ends
+need coordinated pale-to-dark caps supported inside the raster, and
+at least one cap needs a chroma difference of 6.5 relative to the dark
+outer apron. A unique qualifying side produces two visible rails in
+original coordinates. The native Rudge witness measures 91% and 98%
+rail support and 128/128 joint stations. Offset-scaled reproductions
+with a fixed source guide work from half-size through 4× scale.
+Over 30 warm one-thread runs on the native source, the gutter check
+took 20.1 ms median and 25.0 ms p95 process CPU.
+
+Printed facsimiles and independent prints joined by a similar strip
+can produce this optical pattern. All four individually registered
+prints on adjacent Rudge 13 abstain, although the broad page outlines
+also have gutter evidence. These cases require current instance
+evidence and a human decision. Native Rudge 12 and the 75% lossless
+view qualify for the count cue. Compressed, rotated or smaller views
+can instead have competing or insufficient inner proposals, or an
+outer guide that stops before the visible cap.
+
+Opening the count cue on Desktop or Mobile shows the measured fold
+in the original and the retained violet inner proposal. The reviewer
+explicitly rejects the large row. A matching current count revision,
+one active marked automatic outer row, both its crop modes held and
+one active automatic inner row with the exact original polygon are
+required. The API treats a completed count, stale revision, shifted
+child, manual replacement or nonunique child as stale. An identical
+API retry returns the same event without another decision.
+
+The ordinary native upload still has three proposals. In both clients
+the explicit review reduces the active count to two. Their stored
+crop modes, masks and review JPEGs match before and after the decision.
+Both named downloads and the trimmed alias still return 404, and the
+right-hand lower-strip cue remains in review. Reprocessing both
+survivors preserves the same modes, geometry, JPEG hashes and count
+revision. All eight regression runs retain their prior metrics and
+add no other leaf hints, including 18/18 detections and 23/23 seeded
+crops on the frozen synthetic controls. The native case's two mask
+IoUs still miss the 0.85 development threshold. This count correction
+adds no independent release group. The native receipts and controls are under
+`runs/crop-quality/rudge-album-leaf-count/`.
+[Paired photographs](https://github.com/rudged/home/tree/9422452820380ca089db3e0baf0cfaf3dc6c7cdc) ·
+[Native gutter check](../../backend/app/pipeline/album_leaf_review.py) ·
+[Count action regression](../../backend/tests/test_api/test_album_leaf_count_review.py)
 
 ### Explain a held whole print in mobile geometry review
 
