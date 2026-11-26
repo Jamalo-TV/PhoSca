@@ -17,7 +17,8 @@ from app.pipeline.album_leaf_review import (
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves
 from app.pipeline.capture_fabric_review import CAPTURE_FABRIC_PROPOSAL, capture_fabric_traces
 from app.pipeline.crossing_prints import (
-    CROSSING_PRINT_REVIEW, crossing_print_outlines, near_leaf_edge_traces, staggered_print_source_traces,
+    CONTESTED_TILE_OUTLINE, CROSSING_PRINT_REVIEW, crossing_print_outlines, near_leaf_edge_traces, staggered_print_source_traces,
+    tile_crosses_unsupported_frame_claim,
 )
 from app.pipeline.crossing_fallback_review import (
     CROSSING_FALLBACK_COUNT_REVIEW, CROSSING_FALLBACK_TRACES, crossing_fallback_review_traces,
@@ -4494,26 +4495,76 @@ def segment_album_page(
     return result
 
 
+def _contested_tile_outlines(
+    source: np.ndarray, detections: list[SegmentationDetection], active: list[dict],
+    pending: list[dict], blocked: list[list[dict]],
+) -> list[SegmentationDetection]:
+    """Attach an exclusive outline choice to an unsupported classical proposal."""
+    height, width = source.shape[:2]
+    alternatives: dict[int, list[list[dict]]] = {}
+    for outline in blocked:
+        if tiled_outline_conflicts(outline, pending, width, height):
+            continue
+        owners = [i for i, claim in enumerate(active) if tiled_outline_conflicts(outline, [claim], width, height)]
+        if len(owners) != 1:
+            continue
+        index, = owners
+        item = detections[index]
+        fusion = item.mask.get("fusion") or {}
+        if (not item.geometry_valid or item.review_reasons or item.mask.get("warp_quad")
+                or item.mask.get("source") != "classical_min_area_rect"
+                or item.mask.get("detector_source") != "contrast_region"
+                or fusion.get("proposal_count") != 1 or fusion.get("proposal_families") != ["classical"]):
+            continue
+        points = _detection_polygon(item)
+        tile = np.float32([(point["x"], point["y"]) for point in outline])
+        overlap = normalized_polygon_overlap(tile, points, raster_size=512)
+        if len(points) != 4 or not .05 <= overlap.first_containment <= .30 or not .02 <= overlap.second_containment <= .30:
+            continue
+        try:
+            claim = order_quad_cyclic(normalized_vertices_to_pixels(points, width, height))
+            target = order_quad_cyclic(normalized_vertices_to_pixels(tile, width, height))
+            if tile_crosses_unsupported_frame_claim(source, target, claim):
+                alternatives.setdefault(index, []).append(outline)
+        except (cv2.error, ValueError, np.linalg.LinAlgError):
+            continue
+    if not alternatives:
+        return detections
+    updated = detections.copy()
+    for index, outlines in alternatives.items():
+        if len(outlines) == 1:
+            item = detections[index]
+            updated[index] = replace(item, mask={
+                **item.mask, "crossing_print_suggestion": outlines[0], "crossing_print_suggestion_source": CONTESTED_TILE_OUTLINE,
+            }, review_reasons=[CROSSING_PRINT_REVIEW])
+    return updated
+
+
 def _offer_unclaimed_tiled_prints(
     source: np.ndarray, result: SegmentationResult, offers: list[list[dict]],
 ) -> SegmentationResult:
     height, width = source.shape[:2]
     fusion = result.metadata.get("fusion") or {}
     pending = list(fusion.get("deferred_print_proposals") or [])
-    claims = [
+    active = [
         {**item.mask, "polygon": item.mask.get("polygon") or _normalized_polygon(_detection_polygon(item), 1, 1)}
         for item in result.detections
-    ] + pending
+    ]
     next_id = max((item["id"] for item in pending), default=-1) + 1
     accepted = []
+    blocked = []
     for outline in offers:
-        if not tiled_outline_conflicts(outline, claims, width, height):
+        if tiled_outline_conflicts(outline, [*active, *pending, *accepted], width, height):
+            blocked.append(outline)
+        else:
             offer = {"id": next_id + len(accepted), "reason": TILED_PRINT_PROPOSAL, "polygon": outline}
             accepted.append(offer)
-            claims.append(offer)
+    detections = result.detections
+    if blocked and result.metadata.get("fallback_used"):
+        detections = _contested_tile_outlines(source, detections, active, [*pending, *accepted], blocked)
     if not accepted:
-        return result
-    return SegmentationResult(result.detections, {
+        return result if detections is result.detections else SegmentationResult(detections, result.metadata)
+    return SegmentationResult(detections, {
         **result.metadata, "fusion": {**fusion, "deferred_print_proposals": [*pending, *accepted]},
     })
 

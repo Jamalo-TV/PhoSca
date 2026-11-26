@@ -90,6 +90,19 @@ Original bestätigst. Danach prüfst du seine Ecken und beide Zuschnitte.
 [Kachelprüfung](data/evaluation/README.md#missing-prints-in-count-review) ·
 [Zweite Kachelansicht](data/evaluation/README.md#confirm-a-weak-tile-mask-from-a-centered-view)
 
+Blockiert eine einzelne, am Aufnahmerand abgestützte Kontrastkontur
+einen gemessenen Kachelumriss, prüft PhoSca beide am Original. Ist
+der Papierverlauf des Kachelfunds belegt und führt eine Seite der
+alten Kontur ohne belegte Papierkante quer durch sein Bild, kann
+der Editor den Kachelfund als gestrichelte Alternative zeigen.
+Unter **Ganzer Abzug** prüfst du die Alternative, lädst sie in
+denselben Eintrag und korrigierst bei Bedarf die Ecken. PhoSca prüft
+vor dem Speichern erneut, ob der Umriss andere Vorschläge schneidet.
+Die Alternative entsteht bei der Abzugserkennung auf der Albumseite.
+Eine Neuberechnung des einzelnen Zuschnitts nutzt die gespeicherte
+Kontur dieses Eintrags.
+[Vergleich auf der Spiralalbumseite](data/evaluation/README.md#review-a-tile-outline-blocked-by-a-capture-frame-contour)
+
 Bei sehr schmalen Modellkonturen am Aufnahmerand vergleicht PhoSca
 Farbe und Oberflächenstruktur mit der Umgebung ausserhalb der
 Albumseite. Sichtbare Papierkanten schützen angeschnittene Abzüge.

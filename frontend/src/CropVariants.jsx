@@ -69,6 +69,7 @@ export const standalonePrintReviewErrors = {
   standalone_print_matches_detected_print: "Dieser Abzug ist bereits erfasst. Setze die Ecken an das Papier des weiteren Abzugs.",
   tiled_print_claim_conflict: "Der Vorschlag überschneidet sich mit einem erfassten Abzug. Prüfe die aktuelle Anzahl am Original.",
   capture_fabric_claim_conflict: "Die gewählten Ecken überschneiden sich mit einem erfassten oder weiteren vorgeschlagenen Abzug.",
+  contested_tile_correction_required: "Öffne den bestehenden Vorschlag in der Zuschnittprüfung und prüfe dort die gestrichelte Kontur.",
 };
 const deferredPrintReviewHints = {
   [nestedFallbackProposal]: {
@@ -193,6 +194,7 @@ export const cropProtectionErrors = {
   protected_region_cut: "Der Ausschnitt schneidet einen geschützten Bildbereich ab. Prüfe die sichtbaren Bereiche im Original.",
   protected_region_removed: "Der neue Zuschnitt würde markierten Bildinhalt abschneiden. Verschiebe die Ecken, bis die Markierungen im Ausschnitt liegen.",
   shared_rim_correction_required: "Setze die beiden Ecken an dieser Markierung an den sichtbaren Papierrand. Bleibt die Zuordnung unklar, fotografiere die Abzüge getrennt.",
+  contested_tile_claim_conflict: "Der gewählte Umriss überschneidet sich mit einem anderen Vorschlag. Prüfe beide Papierkanten am Original.",
 };
 export const captureOutlineReviewReason = "PRINT_CAPTURE_OUTLINE_REVIEW";
 const captureAtEdgeReason = "PRINT_AT_CAPTURE_EDGE";

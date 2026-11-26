@@ -1817,6 +1817,53 @@ async def test_adjacent_save_consumes_only_the_saved_suggestion_and_keeps_exact_
         assert (await client.get(corrected.json()["crop_download_urls"][mode])).status_code == 200
 
 
+@pytest.mark.parametrize("neighbor_claim", [False, True])
+async def test_contested_tile_cannot_be_added_separately_or_saved_over_a_new_claim(client, neighbor_claim) -> None:
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.crossing_prints import CONTESTED_TILE_OUTLINE
+
+    album, page, photo_id = await _seed_review_data()
+
+    def rectangle(x1, y1, x2, y2):
+        return [{"x": x, "y": y} for x, y in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))]
+
+    alternative = rectangle(.2, .25, .5, .65)
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {**photo.segmentation_mask, "crossing_print_suggestion": alternative,
+                                   "crossing_print_suggestion_source": CONTESTED_TILE_OUTLINE}
+        await session.commit()
+    photo_url = f"/api/v1/photos/{photo_id}"
+    add = f"/api/v1/pages/{page}/manual-photos"
+    nearby = rectangle(.205, .25, .505, .65)
+    duplicate = await client.post(add, json={"request_id": str(uuid4()), "warp_quad": nearby})
+    assert duplicate.status_code == 409, duplicate.text
+    assert duplicate.json()["detail"] == "contested_tile_correction_required"
+    assert len((await client.get(f"/api/v1/albums/{album}/photos")).json()) == 1
+
+    if neighbor_claim:
+        late = await client.post(add, json={"request_id": str(uuid4()), "warp_quad": rectangle(.43, .5, .65, .8)})
+        assert late.status_code == 201, late.text
+    save = await client.patch(f"{photo_url}/bounding-box", json={
+        "bounding_box": {"x1": .2, "y1": .25, "x2": .5, "y2": .65},
+        "segmentation_mask": {"source": "manual_quad", "warp_quad": alternative, "polygon": alternative},
+    })
+    if neighbor_claim:
+        assert save.status_code == 409, save.text
+        assert save.json()["detail"] == "contested_tile_claim_conflict"
+        state = (await client.get(photo_url)).json()["segmentation_mask"]
+        assert state["crossing_print_suggestion"] == alternative
+    else:
+        assert save.status_code == 200, save.text
+        assert save.json()["id"] == str(photo_id)
+        assert "crossing_print_suggestion" not in save.json()["segmentation_mask"]
+        duplicate = await client.post(add, json={"request_id": str(uuid4()), "warp_quad": nearby})
+        assert duplicate.status_code == 409, duplicate.text
+        assert duplicate.json()["detail"] == "contested_tile_correction_required"
+        assert len((await client.get(f"/api/v1/albums/{album}/photos")).json()) == 1
+
+
 async def test_crossing_outline_requires_outer_correction_before_a_motif_edit(client, monkeypatch) -> None:
     from app.config import get_settings
     from app.database import get_session_factory

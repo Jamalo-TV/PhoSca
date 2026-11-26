@@ -1,16 +1,64 @@
 from dataclasses import replace
 from pathlib import Path
 
+import cv2
 import numpy as np
+import pytest
 
 from app.config import Settings
 from app.pipeline import segmentation
 from app.pipeline.crop_validation import automatic_crop_review_reasons
-from app.pipeline.crossing_prints import CROSSING_PRINT_REVIEW, near_leaf_edge_traces
+from app.pipeline.crossing_prints import CONTESTED_TILE_OUTLINE, CROSSING_PRINT_REVIEW, near_leaf_edge_traces
 from app.pipeline.enhancement import prepare_for_cutout
 from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels
 from app.pipeline.image_ops import load_image
 from app.pipeline.perspective import correct_photo_crop
+
+
+@pytest.mark.parametrize("case", ["supported_tile", "covered_tile", "interior_frame", "second_owner", "two_choices", "pending"])
+def test_tile_outline_is_an_exclusive_alternative_to_unsupported_frame_claim(case):
+    image = np.full((1001, 1441, 3), (120, 68, 41), np.uint8)
+    image[385:651, 95:326] = (207, 230, 232)
+    image[400:637, 110:313] = (69, 60, 101)
+    frame = np.float32([[0, 245], [435, 0], [605, 97], [57, 525]])
+    tile = np.float32([[95, 385], [325, 385], [325, 650], [95, 650]])
+    if case == "covered_tile":
+        cv2.fillConvexPoly(image, frame.astype(np.int32), (185, 200, 200))
+    if case == "interior_frame":
+        frame += 5
+
+    def polygon(points):
+        return [{"x": float(x / 1440), "y": float(y / 1000)} for x, y in points]
+
+    mask = {"source": "classical_min_area_rect", "detector_source": "contrast_region", "polygon": polygon(frame),
+            "fusion": {"proposal_count": 1, "proposal_families": ["classical"]}}
+    candidate = segmentation.SegmentationDetection(
+        bounding_box={"x1": 0, "y1": 0, "x2": .43, "y2": .54}, mask=mask,
+        confidence=.81, aspect_ratio=2.4, geometry_valid=True, review_reasons=[],
+    )
+    offers = [polygon(tile)]
+    detections = [candidate]
+    metadata = {"fallback_used": True}
+    if case == "second_owner":
+        detections.append(replace(candidate, mask={**mask, "polygon": polygon(tile + 10)}))
+    if case == "two_choices":
+        offers.append(polygon(tile + 1))
+    if case == "pending":
+        metadata["fusion"] = {"deferred_print_proposals": [{"id": 0, "polygon": polygon(tile + 10)}]}
+    original = segmentation.SegmentationResult(detections, metadata)
+
+    result = segmentation._offer_unclaimed_tiled_prints(image, original, offers)
+    assert result.metadata == original.metadata
+    if case == "supported_tile":
+        edited, = result.detections
+        assert edited == replace(candidate, mask={
+            **mask, "crossing_print_suggestion": offers[0], "crossing_print_suggestion_source": CONTESTED_TILE_OUTLINE,
+        }, review_reasons=[CROSSING_PRINT_REVIEW])
+        crop = correct_photo_crop(image, edited.bounding_box, edited.mask, dual_mode=True, auto_orient=False,
+                                  protect_regions=False)
+        assert all(mode["status"] == "review_needed" for mode in crop.metadata["crop_modes"].values())
+    else:
+        assert result.detections == original.detections
 
 
 def test_crossing_proposal_suggests_native_outline_without_claiming_a_print(tmp_path, monkeypatch):

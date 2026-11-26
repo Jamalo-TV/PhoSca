@@ -15,9 +15,44 @@ from app.pipeline.geometry import (
 from app.pipeline.print_edges import _edge_band, _side_line, refine_print_boundary
 
 
-CROSSING_PRINT_REVISION = 3
+CROSSING_PRINT_REVISION = 4
 CROSSING_PRINT_REVIEW = "CROSSING_PRINT_OUTLINE_REVIEW"
 REVIEWED_CROSSING_OUTLINE = "reviewed_crossing_outline"
+CONTESTED_TILE_OUTLINE = "contested_tile"
+
+
+def tile_crosses_unsupported_frame_claim(image: np.ndarray, tile: np.ndarray, claim: np.ndarray) -> bool:
+    """Check for a measured print across an unsupported outline borrowing the capture frame."""
+    height, width = image.shape[:2]
+    frame = np.column_stack((claim, [width - 1, height - 1] - claim))
+    touches = frame <= 1.5
+    if (not touches[:, ::2].any() or not touches[:, 1::2].any()
+            or np.count_nonzero(touches.any(axis=1)) < 2):
+        return False
+    _, sides, reasons = refine_print_boundary(image, claim)
+    if reasons != ["PRINT_BOUNDARY_UNSUPPORTED"] or len(sides) != 4 or any(
+        side["support"] > .40 or side["ambiguous"] for side in sides.values()
+    ):
+        return False
+    fitted, sides, reasons = refine_print_boundary(image, tile, search_radius=4)
+    if (fitted is None or reasons or len(sides) != 4
+            or any(side["support"] < .90 or side["ambiguous"] for side in sides.values())
+            or np.max(np.linalg.norm(order_quad_cyclic(fitted) - tile, axis=1)) > 4):
+        return False
+
+    tile_shortest = np.linalg.norm(np.roll(tile, -1, axis=0) - tile, axis=1).min()
+    # Inspect the supposed edge with room to sample the same photo on both sides.
+    crossings = []
+    for start, stop in zip(claim, np.roll(claim, -1, axis=0), strict=True):
+        stations = np.linspace(start, stop, 160, dtype=np.float32)
+        interior = [station for station in stations if cv2.pointPolygonTest(tile, tuple(station), True) >= 13]
+        if len(interior) >= 2 and np.linalg.norm(interior[-1] - interior[0]) >= max(96, .45 * tile_shortest):
+            crossings.append((interior[0], interior[-1]))
+    if len(crossings) != 1:
+        return False
+    (start, stop), = crossings
+    line, evidence = _side_line(image, start, stop, 8)
+    return line is None and not evidence["ambiguous"] and evidence["support"] <= .40
 
 
 def _pale_leaf_foreground(image: np.ndarray, *, near_leaf_edge: bool = False) -> tuple[np.ndarray, np.ndarray] | None:

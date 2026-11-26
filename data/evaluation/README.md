@@ -2252,6 +2252,49 @@ both modes. These measurements use the registered development
 checkpoint and draft annotations.
 Local receipts are under `runs/crop-quality/centered-tile-review/`.
 
+#### Review a tile outline blocked by a capture frame contour
+
+Crossing outline revision 4 compares a previously verified tile
+with a single active classical contrast claim after fusion. The
+classical outline must come from one minimum-area rectangle
+proposal and reach two axes of the capture frame with two
+vertices. An overlapping pending claim, multiple active owners
+or multiple eligible alternatives to the same claim leave the
+comparison closed.
+
+The four classical sides must have native support at most 0.40
+without a competing local edge. The tile is checked within four
+native pixels of its measured outline. Each side must have support
+at least 0.90 and the corner positions must stay within four
+pixels. One old side must run through the tile at least 13 pixels
+inside it over at least 96 pixels and 45% of the tile's shorter
+side. The old side must still lack a supported paper transition
+in that span.
+
+On the original U039 capture the classical overlap is about
+7,622 native square pixels. The old four side supports range from
+0.228 to 0.361. Its diagonal runs through the measured print for
+about 149 native pixels at the required interior distance. The
+alternative reaches 0.97875 IoU against the draft paper outline
+on the 1024-cell comparison raster.
+It appears on the existing reviewed row while the separate offer
+below it is still available in count review. The U040 overlay
+comparison has three supported classical sides and does not enter
+this review path. A near-flush overlay can still require a
+separate source interpretation. The native check took 57 ms
+median and 66 ms at p95 over 12 warm one-thread samples on U039.
+
+The upload replay replaces the U039 outline on the same ID. A
+generic approval and an unchanged geometry save both return
+409. Current neighboring and pending contours veto overlapping
+corrections. The add route rejects a duplicate of the proposed
+or corrected contour at IoU 0.90 or higher. A repeat page analysis
+keeps the corrected ID and the same active count. Photo reprocessing
+keeps the whole-print and motif downloads in review. The frozen
+and development comparisons keep their previous crop and detection
+metrics in both modes. The annotated source and local receipts are
+under `runs/crop-quality/contested-tile-review/`.
+
 #### Review fabric along the capture frame
 
 Fusion ownership revision 7 measures otherwise unresolved, aspect-invalid

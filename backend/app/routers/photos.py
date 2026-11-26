@@ -23,7 +23,7 @@ from app.pipeline.adjacent_stock_review import ADJACENT_STOCK_REVIEW_SOURCE
 from app.pipeline.bowed_edge_review import MEASURED_PRINT_PREVIEW_SOURCES
 from app.pipeline.capture_fabric_review import CAPTURE_FABRIC_PROPOSAL
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
-from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE, reviewed_outline_covers_traces
+from app.pipeline.crossing_prints import CONTESTED_TILE_OUTLINE, REVIEWED_CROSSING_OUTLINE, reviewed_outline_covers_traces
 from app.pipeline.dark_album_review import DARK_ALBUM_PROPOSAL
 from app.pipeline.decisions import (
     MANUAL_NEIGHBOR_OVERLAP, MOTIF_MARGIN_MARKS_REVIEW, is_reviewed_non_print, photo_is_reviewed_non_print,
@@ -118,6 +118,40 @@ async def _locked_review_photo(
 
 def _photo_urls(photo: ExtractedPhoto | PhotoRead) -> dict[str, str | None]:
     return variant_urls(photo)
+
+
+def _current_paper_claims(photos: list[ExtractedPhoto]) -> list[dict]:
+    claims = []
+    for photo in photos:
+        mask = photo.segmentation_mask or {}
+        claims.append(mask)
+        correction = (photo.enhancement_applied or {}).get("correction") or {}
+        full = (correction.get("crop_modes") or {}).get("full_print") or {}
+        if full.get("warp_quad"):
+            claims.append({"warp_quad": full["warp_quad"]})
+        if not any(mask.get(key) for key in ("polygon", "visible_polygon", "warp_quad")):
+            box = photo.bounding_box
+            claims.append({"polygon": [{"x": box[x], "y": box[y]} for x, y in (
+                ("x1", "y1"), ("x2", "y1"), ("x2", "y2"), ("x1", "y2"),
+            )]})
+    return claims
+
+
+def _matches_contested_tile(photo: ExtractedPhoto, outline: list[dict]) -> bool:
+    mask = photo.segmentation_mask or {}
+    if mask.get("crossing_print_suggestion_source") == CONTESTED_TILE_OUTLINE:
+        claimed = mask.get("crossing_print_suggestion")
+    elif (mask.get(REVIEWED_CROSSING_OUTLINE) is True
+          and (original_prediction_mask(photo.enhancement_applied or {}) or {}).get("crossing_print_suggestion_source")
+          == CONTESTED_TILE_OUTLINE):
+        claimed = mask.get("warp_quad")
+    else:
+        return False
+    if not claimed:
+        return False
+    return normalized_polygon_overlap(
+        [(point["x"], point["y"]) for point in claimed], [(point["x"], point["y"]) for point in outline], raster_size=512,
+    ).iou >= .90
 
 
 def _source_size(page: Page) -> tuple[int, int]:
@@ -751,20 +785,12 @@ async def create_manual_photo(
             (photo.enhancement_applied or {}).get("review_rejected_detection"), photo.bounding_box, photo.segmentation_mask,
         )
     ]
+    if any(_matches_contested_tile(photo, quad) for photo in active):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="contested_tile_correction_required")
     if tiled_offer or fabric_offer:
         claims = [candidate for candidate in pending if candidate["id"] != deferred_id
                   and not (fabric_offer and candidate.get("reason") == CAPTURE_FABRIC_PROPOSAL)]
-        for photo in active:
-            claims.append(photo.segmentation_mask or {})
-            correction = (photo.enhancement_applied or {}).get("correction") or {}
-            full = (correction.get("crop_modes") or {}).get("full_print") or {}
-            if full.get("warp_quad"):
-                claims.append({"warp_quad": full["warp_quad"]})
-            if not any((photo.segmentation_mask or {}).get(key) for key in ("polygon", "visible_polygon", "warp_quad")):
-                box = photo.bounding_box
-                claims.append({"polygon": [{"x": box[x], "y": box[y]} for x, y in (
-                    ("x1", "y1"), ("x2", "y1"), ("x2", "y2"), ("x1", "y2"),
-                )]})
+        claims.extend(_current_paper_claims(active))
         outlines = (quad, deferred["polygon"]) if tiled_offer else (quad,)
         if any(tiled_outline_conflicts(outline, claims, width, height) for outline in outlines):
             detail = "capture_fabric_claim_conflict" if fabric_offer else "tiled_print_claim_conflict"
@@ -996,6 +1022,15 @@ async def update_photo_bounding_box(
             segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask["warp_quad"])
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    if original_mask.get("crossing_print_suggestion_source") == CONTESTED_TILE_OUTLINE:
+        neighbors = await session.scalars(
+            select(ExtractedPhoto).where(ExtractedPhoto.page_id == page.id, ExtractedPhoto.id != photo.id)
+            .with_for_update().execution_options(populate_existing=True)
+        )
+        claims = _current_paper_claims([neighbor for neighbor in neighbors if not photo_is_reviewed_non_print(neighbor)])
+        claims.extend(page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals") or [])
+        if tiled_outline_conflicts(segmentation_mask["warp_quad"], claims, width, height):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="contested_tile_claim_conflict")
     prediction_provenance = await _prediction_provenance(session, photo)
     after = {
         "bounding_box": deepcopy(box),
