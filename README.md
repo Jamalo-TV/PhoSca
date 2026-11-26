@@ -90,6 +90,22 @@ Ecken. Überlappende Vorschläge halten beide Zuschnitte in Prüfung, bis
 der Reviewer ihre Zuordnung geklärt hat.
 [Beispiel Kontaktabzug](data/evaluation/README.md#open-the-measured-contact-outline-from-count-review)
 
+**Zusammengehörigkeit prüfen** markiert den Gesamtvorschlag und seine
+Teilvorschläge auf derselben Originalseite. Prüfe an den gepunkteten
+Linien, ob dort eine eigene Papierkante, ein Spalt oder eine aufgelegte
+zweite Schicht zu sehen ist. Wenn alle markierten Bereiche zu einem
+Papierabzug gehören, lässt **Als einen Abzug zählen** den Gesamtvorschlag
+in der Liste und entfernt nur seine Teilvorschläge aus der aktiven
+Zählung. PhoSca speichert den Entscheid mit den vorherigen Konturen.
+Bei Abbrechen bleiben alle Vorschläge einzeln prüfbar.
+
+Nach der Bestätigung kannst du auf derselben Seite über **Aussenumriss
+prüfen** die vier gemessenen Ecken des verbleibenden Abzugs laden.
+Der Anzahlentscheid bestätigt die physische Zuordnung. Für **Ganzer
+Abzug** und **Nur Bildmotiv** prüfst und speicherst du die jeweilige
+Geometrie separat.
+[Gegenprobe mit einem zweiten Papier](data/evaluation/README.md#confirm-a-shared-paper-grid-in-count-review)
+
 Bei drei verknüpften Vorschlägen für eine mögliche Negativhülle öffnet
 **Negativhülle prüfen** eine Auswahl in der Anzahlprüfung. Desktop und
 Mobile markieren die drei Konturen türkis auf der Originalseite.

@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addManualPhoto,
   analyzeAlbumNow,
+  confirmSharedPaperGrid,
   createAlbum,
   deleteSegmentationTrainingImage,
   detectSegmentationTrainingLabels,
@@ -54,14 +55,15 @@ import {
   getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
-  paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
+  paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, scannerBackingHint, scannerBackingReason,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   darkBackingConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors, getDarkBackingEvidence,
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
-  getPaperGridReview, getPaperGridReviewGroups, getPaperJoinReviewGroups, getStoredMotifQuad,
+  getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
+  getPaperJoinReviewGroups, getStoredMotifQuad,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
@@ -1371,7 +1373,7 @@ const printAdditionErrors = {
   deferred_print_proposal_stale: "Dieser Vorschlag wurde bereits geprüft. Die Ansicht wurde aktualisiert.",
 };
 
-function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onConfirmCount, onExcludeCountGroup,
+function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onConfirmCount, onResolveCountGroup,
   selectedPhotoId, onSelectPhoto, reviewingCount }) {
   const canvasRef = useRef(null);
   const [measurementPage, setMeasurementPage] = useState(null);
@@ -1402,6 +1404,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const needsPrintAdditionConfirmation = darkBackingDraft ? !newPrint.confirmDarkBacking
     : newPrint?.deferredProposal?.reason === sourceFragmentProposal && !newPrint.replaceMountedFragments;
   const currentCountReview = countReview?.pageId === pageId ? countReview : null;
+  const paperGridConfirmed = reviewingCount && currentCountReview?.paperGridEventId != null
+    && currentCountReview.paperGridEventId === page?.processing_metadata?.photo_count_revision;
   const additionSize = newPrint && parsePrintSize(newPrint.printSizeFields);
   const canAddPhoto = pageImage?.pageId === pageId && ["completed", "review_needed"].includes(page?.status);
   const selected = photos.find((photo) => photo.id === selectedPhotoId);
@@ -1424,14 +1428,20 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     [reviewingCount, newPrint, editingImage, photos]);
   const paperJoinGroups = useMemo(() => reviewingCount && !newPrint && !editingImage ? getPaperJoinReviewGroups(photos) : [],
     [reviewingCount, newPrint, editingImage, photos]);
-  const countGroups = useMemo(() => actionableCountGroups(filmGridGroups, paperJoinGroups), [filmGridGroups, paperJoinGroups]);
+  const paperGridGroups = useMemo(() => reviewingCount && !newPrint && !editingImage ? getPaperGridReviewGroups(photos) : [],
+    [reviewingCount, newPrint, editingImage, photos]);
+  const paperGridOutlines = useMemo(() => reviewingCount && !newPrint && !editingImage ? getPaperGridOutlineParents(photos)
+    .flatMap(photo => {
+      const quad = cyclicQuad(sanitizePolygon((photo.crop_modes || getCropModes(photo))?.full_print?.suggested_warp_quad));
+      return quad ? [{ photo, quad }] : [];
+    }) : [], [reviewingCount, newPrint, editingImage, photos]);
+  const countGroups = useMemo(() => actionableCountGroups(filmGridGroups, paperJoinGroups,
+    getActionablePaperGridReviewGroups(paperGridGroups, photos)), [filmGridGroups, paperJoinGroups, paperGridGroups, photos]);
   const selectedCountGroup = groupSelection?.pageId === pageId
     ? countGroups.find(({ key }) => key === groupSelection?.key) : null;
   const paperGridMask = selected?.segmentation_confidence != null && !rejectedDetection
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(paperGridReason) ? selected.segmentation_mask : null;
   const paperGrid = useMemo(() => getPaperGridReview(paperGridMask), [paperGridMask]);
-  const paperGridGroups = useMemo(() => reviewingCount && !newPrint && !editingImage ? getPaperGridReviewGroups(photos) : [],
-    [reviewingCount, newPrint, editingImage, photos]);
   const captureSplitGroups = useMemo(() => reviewingCount && !newPrint && !editingImage ? getCaptureSplitReviewGroups(photos) : [],
     [reviewingCount, newPrint, editingImage, photos]);
   const captureSplitReview = selected?.segmentation_confidence != null && !rejectedDetection
@@ -1712,8 +1722,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       context.restore();
     }
     if (!newPrint && !editingImage && (paperGridGroups.length || paperGrid?.cut)) {
-      const groups = paperGridGroups.length ? paperGridGroups
-        : [{ outline: paperGrid.outline, cuts: new Map([[selectedPhotoId, paperGrid.cut]]) }];
+      const groups = selectedCountGroup?.kind === "paper-grid" ? [selectedCountGroup] : paperGridGroups.length
+        ? paperGridGroups : [{ outline: paperGrid.outline, cuts: new Map([[selectedPhotoId, paperGrid.cut]]) }];
       context.save();
       context.strokeStyle = "#1d4ed8";
       context.lineWidth = 3;
@@ -1994,11 +2004,12 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     }
   }
 
-  async function excludeCountGroup(group) {
+  async function resolveCountGroup(group) {
+    const sharedPaper = group.kind === "paper-grid";
     setCountReview({ pageId, saving: true });
     try {
-      await onExcludeCountGroup(page, group);
-      if (activePage.current === pageId) setCountReview(null);
+      const event = await onResolveCountGroup(page, group, groupSelection?.revision);
+      if (activePage.current === pageId) setCountReview(sharedPaper ? { pageId, paperGridEventId: event.id } : null);
     } catch (error) {
       if (activePage.current === pageId) {
         setCountReview({ pageId, error: error.message.endsWith("_review_group_stale") ? countGroupReviewError : error.message });
@@ -2089,36 +2100,39 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             </button>
           ))}
           <button className="text-button compact" type="button" onClick={confirmCount}
-            disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving}>
+            disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving || selectedCountGroup?.kind === "paper-grid"}>
             {currentCountReview?.saving ? "Anzahl wird gespeichert …" : "Anzahl bestätigen"}
           </button>
         </div>
       )}
       {currentCountReview?.error && <p role="alert">{currentCountReview.error}</p>}
+      {paperGridConfirmed && <p className="crop-editor-hint" role="status"
+        id="paper-grid-count-result">{paperGridCountSaved}</p>}
       {countOutlines.length > 0 && <p className="crop-editor-hint" id="fragment-count-review-hint">{fragmentCountHint}</p>}
       {captureSplitGroups.length > 0 && <p className="crop-editor-hint" id="capture-split-count-hint">{captureSplitReviewHint}</p>}
       {filmGridGroups.length > 0 && <p className="crop-editor-hint" id="film-grid-count-hint">{filmGridCountHint}</p>}
       {paperJoinGroups.length > 0 && <p className="crop-editor-hint" id="paper-join-count-hint">{paperJoinCountHint}</p>}
       <CountGroupReview groups={countGroups} selected={selectedCountGroup}
         busy={!canAddPhoto || Boolean(saveState?.saving || currentCountReview?.saving)}
-        onSelect={key => { setGroupSelection(key == null ? null : { pageId, key }); setCountReview(null); }}
-        onExclude={excludeCountGroup} />
-      {paperGridGroups.length > 0 && <>
-        <p className="crop-editor-hint" id="paper-grid-count-hint">{paperGridCountHint}</p>
+        onSelect={key => {
+          setGroupSelection(key == null ? null : { pageId, key, revision: page.processing_metadata?.photo_count_revision });
+          setCountReview(null);
+        }}
+        onConfirm={resolveCountGroup} />
+      {paperGridGroups.length > 0 && <p className="crop-editor-hint" id="paper-grid-count-hint">{paperGridCountHint}</p>}
+      {paperGridOutlines.length > 0 && (
         <div className="manual-print-actions">
-          {paperGridGroups.map(({ key, parents }, index) => {
-            const [parentId] = parents;
-            const parent = photos.find(photo => photo.id === parentId);
-            const proposed = (parent?.crop_modes || getCropModes(parent))?.full_print?.suggested_warp_quad;
-            const quad = cyclicQuad(sanitizePolygon(proposed));
-            if (!quad) return null;
-            return <button key={key} className="text-button compact" type="button" disabled={saveState?.saving}
-              aria-describedby="paper-grid-count-hint" onClick={() => loadPrintOutline(parent, quad)}>
-              {`Aussenumriss prüfen${paperGridGroups.length > 1 ? ` (${index + 1})` : ""}`}
-            </button>;
-          })}
+          {paperGridOutlines.map(({ photo, quad }, index) => (
+            <button key={photo.id} className="text-button compact" type="button"
+              disabled={saveState?.saving || currentCountReview?.saving || selectedCountGroup?.kind === "paper-grid"}
+              aria-describedby={paperGridGroups.length > 0 ? "paper-grid-count-hint"
+                : paperGridConfirmed ? "paper-grid-count-result" : undefined}
+              onClick={() => loadPrintOutline(photo, quad)}>
+              {`Aussenumriss prüfen${paperGridOutlines.length > 1 ? ` (${index + 1})` : ""}`}
+            </button>
+          ))}
         </div>
-      </>}
+      )}
       {!newPrint && !editingImage && !selected && pendingNested > 0 && (
         <p className="crop-editor-hint" role="status">
           {pendingNested === 1 ? "1 unklarer Vorschlag" : `${pendingNested} unklare Vorschläge`}. Wähle einen Abzug mit gestrichelter Innenkontur.
@@ -2371,9 +2385,12 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
     }
   }
 
-  async function excludeCountGroup(page, group) {
+  async function resolveCountGroup(page, group, displayedRevision) {
     try {
-      await excludeCountReviewGroup(page.id, page.processing_metadata?.photo_count_revision, group, "desktop");
+      if (group.kind === "paper-grid") {
+        return await confirmSharedPaperGrid(page.id, displayedRevision, group, "desktop");
+      }
+      return await excludeCountReviewGroup(page.id, page.processing_metadata?.photo_count_revision, group, "desktop");
     } finally {
       await refreshCorrections().catch(() => {});
     }
@@ -2411,7 +2428,7 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
           onAddPhoto={addPhoto}
           onRejectPhoto={rejectPhoto}
           onConfirmCount={confirmCount}
-          onExcludeCountGroup={excludeCountGroup}
+          onResolveCountGroup={resolveCountGroup}
           reviewingCount={reviewType === "segmentation"}
         />
       </section>

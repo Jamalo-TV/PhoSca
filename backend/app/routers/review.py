@@ -25,7 +25,7 @@ from app.models import (
 )
 from app.pipeline.decisions import is_reviewed_non_print, motif_geometry_requires_review
 from app.pipeline.manual_paper_boundary import PAPER_CLAIM_OVERLAP_CHECKS, paper_claims_need_overlap_check
-from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_JOIN_REVIEW
+from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
 from app.pipeline.protected_regions import album_mark_source_matches
 from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import PhotoRead, ReviewItem
@@ -48,9 +48,11 @@ GROUP_EXCLUSIONS = {
     "exclude_film_group": (3, "film_grid_review_seam", "film_group_photo_ids", FILM_GRID_REVIEW, "film"),
     "exclude_paper_group": (2, "paper_join_review_traces", "paper_group_photo_ids", PAPER_JOIN_REVIEW, "paper"),
 }
+CONFIRM_SHARED_PAPER_GRID = "confirm_shared_paper_grid"
+COUNT_GROUP_ACTIONS = {*GROUP_EXCLUSIONS, CONFIRM_SHARED_PAPER_GRID}
 
 ALLOWED_ANSWERS = {
-    "segmentation": {"correct", "missing_print", "too_many", "unsure", *GROUP_EXCLUSIONS},
+    "segmentation": {"correct", "missing_print", "too_many", "unsure", *COUNT_GROUP_ACTIONS},
     "geometry": {
         "correct",
         "too_tight",
@@ -333,6 +335,40 @@ def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[Extrac
     return selected
 
 
+def _confirmed_paper_grid_fragments(payload: MobileReviewAnswer, context: dict) -> list[ExtractedPhoto]:
+    if payload.reason_code != "same_physical_print":
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="paper_grid_confirmation_required")
+    parent_id = payload.metadata.get("paper_grid_parent_id")
+    fragment_ids = payload.metadata.get("paper_grid_fragment_ids")
+    if (not isinstance(parent_id, str) or not isinstance(fragment_ids, list) or not 1 <= len(fragment_ids) <= 2
+            or not all(isinstance(photo_id, str) for photo_id in fragment_ids)
+            or len(set(fragment_ids)) != len(fragment_ids) or parent_id in fragment_ids):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="paper_grid_group_selection_invalid")
+
+    active = {str(photo.id): photo for photo in context["photos"]}
+    claims = {photo_id: mask for photo_id, photo in active.items() if photo.segmentation_confidence is not None
+              and isinstance(mask := (photo.segmentation_mask or {}).get("paper_grid_review"), dict)}
+    parent_claim = claims.get(parent_id) or {}
+    outline = parent_claim.get("outline")
+    group = {photo_id: claim for photo_id, claim in claims.items() if claim.get("outline") == outline}
+    if (context["page"].status not in {PageStatus.completed, PageStatus.review_needed}
+            or not isinstance(outline, list) or len(outline) != 4 or parent_claim.get("cut") is not None
+            or set(group) != {parent_id, *fragment_ids}
+            or any(not isinstance(group[photo_id].get("cut"), list) or len(group[photo_id]["cut"]) != 2
+                   for photo_id in fragment_ids)):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="paper_grid_review_group_stale")
+
+    for photo_id in group:
+        photo = active[photo_id]
+        metadata = photo.enhancement_applied or {}
+        modes = (metadata.get("correction") or {}).get("crop_modes") or {}
+        if (PAPER_GRID_REVIEW not in (metadata.get("segmentation_review_reasons") or [])
+                or (photo_id == parent_id and len((modes.get("full_print") or {}).get("suggested_warp_quad") or []) != 4)
+                or any((modes.get(mode) or {}).get("status") != "review_needed" for mode in ("full_print", "image_only"))):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="paper_grid_review_group_stale")
+    return [active[photo_id] for photo_id in fragment_ids]
+
+
 def _record_rejected_detection(photo: ExtractedPhoto, metadata: dict) -> None:
     metadata["review_rejected_detection"] = {
         "bounding_box": deepcopy(photo.bounding_box), "segmentation_mask": deepcopy(photo.segmentation_mask),
@@ -379,7 +415,7 @@ def _apply_review_decision(event: ReviewEvent, payload: MobileReviewAnswer, cont
 
     if payload.task_type == "segmentation":
         page: Page = context["page"]
-        if payload.answer in GROUP_EXCLUSIONS:
+        if payload.answer in COUNT_GROUP_ACTIONS:
             decision = {**_decision_record(event.id, payload, state="rejected"), "answer": "wrong_object"}
             for photo in context["excluded_group"]:
                 metadata = _store_entity_decision(photo.enhancement_applied or {}, "geometry", decision)
@@ -470,7 +506,7 @@ async def add_review_event(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported answer for review task type."
         )
     context = await _task_context(
-        session, payload.task_type, payload.task_id, principal, lock_photos=payload.answer in GROUP_EXCLUSIONS,
+        session, payload.task_type, payload.task_id, principal, lock_photos=payload.answer in COUNT_GROUP_ACTIONS,
     )
     _validate_enhancement_decision(payload, context)
     existing = await session.scalar(select(ReviewEvent).where(ReviewEvent.idempotency_key == payload.idempotency_key))
@@ -495,6 +531,13 @@ async def add_review_event(
             )
         if payload.answer in GROUP_EXCLUSIONS:
             context["excluded_group"] = _group_for_review(payload, context)
+        elif payload.answer == CONFIRM_SHARED_PAPER_GRID:
+            count_confirmed = await session.scalar(select(_completed_review_exists("segmentation", Page.id)).where(
+                Page.id == payload.task_id,
+            ))
+            if count_confirmed:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="paper_grid_review_group_stale")
+            context["excluded_group"] = _confirmed_paper_grid_fragments(payload, context)
 
     if payload.task_type == "geometry" and payload.answer == "correct":
         photo = context["photo"]

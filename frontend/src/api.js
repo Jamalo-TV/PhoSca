@@ -129,6 +129,14 @@ export function excludeCountReviewGroup(pageId, revision, { kind, photoIds }, ui
   });
 }
 
+export function confirmSharedPaperGrid(pageId, revision, { parentId, fragmentIds }, ui) {
+  return submitReviewEvent({
+    task_type: "segmentation", task_id: pageId, answer: "confirm_shared_paper_grid",
+    reason_code: "same_physical_print", idempotency_key: crypto.randomUUID(),
+    metadata: { ui, photo_count_revision: revision ?? null, paper_grid_parent_id: parentId, paper_grid_fragment_ids: fragmentIds },
+  });
+}
+
 export async function getReviewProgress() {
   return parseResponse(await apiFetch("/api/v1/review/progress"));
 }

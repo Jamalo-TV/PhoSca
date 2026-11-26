@@ -20,6 +20,7 @@ export const paperJoinReason = "PAPER_JOIN_REVIEW";
 export const paperJoinHint = "Prüfe den ganzen Papierrand am Original. Gehören beide Vorschläge zu einem Fotoabzug, setze die Ecken eines Vorschlags an seinen Aussenrand und prüfe den anderen als möglichen Teilvorschlag.";
 export const paperGridReason = "PAPER_GRID_REVIEW";
 export const paperGridCountHint = "Die blau gestrichelte Kontur zeigt einen möglichen Aussenumriss. Prüfe am Original, ob die Ausschnitte an den gepunkteten Linien eigene Papierabzüge sind.";
+export const paperGridCountSaved = "Als ein Abzug gezählt. Die Papierkontur bleibt in Prüfung.";
 export const paperGridOuterHint = "Prüfe den möglichen Aussenumriss am Original. Lade ihn für einen ganzen Papierabzug in den Editor oder markiere den Vorschlag als «Falsches Objekt».";
 export const paperGridFragmentHint = "Prüfe am Original, ob die Markierung einen eigenen Papierabzug zeigt. Gehört der Ausschnitt zum grösseren Abzug, wähle «Falsches Objekt».";
 export const fragmentOutlineReason = "FRAGMENT_OUTLINE_UNCERTAIN";
@@ -142,31 +143,46 @@ const groupReviewLabels = {
     confirm: "Beide Vorschläge aus der Abzugsliste nehmen",
     prompt: "Entferne die beiden türkis markierten Vorschläge gemeinsam, wenn sie zur selben Zeichnung oder zu einem anderen Gegenstand ohne Fotoabzug gehören. Für die Einzelkorrektur eines Fotoabzugs wähle «Abbrechen».",
   },
+  "paper-grid": {
+    open: "Zusammengehörigkeit prüfen",
+    confirm: "Als einen Abzug zählen",
+    prompt: "Prüfe am Original, ob die markierten Teilvorschläge zum selben Papierabzug gehören. Sind es getrennte Abzüge oder bleibt es unklar, wähle «Abbrechen».",
+  },
 };
 
-export function CountGroupReview({ groups, selected, busy, onSelect, onExclude }) {
+export function CountGroupReview({ groups, selected, busy, onSelect, onConfirm }) {
   if (!groups.length) return null;
   const labels = selected && groupReviewLabels[selected.kind];
+  const exclusions = groups.filter(({ kind }) => kind !== "paper-grid");
+  const sharedPaper = groups.filter(({ kind }) => kind === "paper-grid");
   return <div className="count-group-review">
     {selected ? <>
       <p className="crop-editor-hint" role="status">{labels.prompt}</p>
       <button type="button" className="primary-button" disabled={busy}
-        onClick={() => onExclude(selected)}>
+        onClick={() => onConfirm(selected)}>
         {busy ? "Vorschläge werden geprüft …" : labels.confirm}
       </button>
       <button type="button" className="text-button" disabled={busy} onClick={() => onSelect(null)}>Abbrechen</button>
-    </> : groups.map(({ key, kind }, index) => (
-      <button key={key} type="button" className="text-button" disabled={busy} onClick={() => onSelect(key)}>
-        {`${groupReviewLabels[kind].open}${groups.length > 1 ? ` (${index + 1})` : ""}`}
-      </button>
-    ))}
+    </> : groups.map((group) => {
+      const { key, kind } = group;
+      const peers = kind === "paper-grid" ? sharedPaper : exclusions;
+      return <button key={key} type="button" className="text-button" disabled={busy} onClick={() => onSelect(key)}>
+        {`${groupReviewLabels[kind].open}${peers.length > 1 ? ` (${peers.indexOf(group) + 1})` : ""}`}
+      </button>;
+    })}
   </div>;
 }
 
-export function actionableCountGroups(filmGroups, paperGroups) {
+export function actionableCountGroups(filmGroups, paperGroups, paperGridGroups = []) {
   return [
     ...filmGroups.filter(({ photoIds }) => photoIds.size === 3).map(group => ({ ...group, kind: "film" })),
     ...paperGroups.map(group => ({ ...group, kind: "paper" })),
+    ...paperGridGroups.map(group => {
+      const [parentId] = group.parents;
+      const fragmentIds = [...group.cuts.keys()].sort();
+      return { ...group, kind: "paper-grid", key: JSON.stringify(["paper-grid", group.key, parentId, ...fragmentIds]),
+        parentId, fragmentIds, photoIds: new Set([parentId, ...fragmentIds]) };
+    }),
   ];
 }
 

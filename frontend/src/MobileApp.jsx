@@ -1,6 +1,6 @@
 import { Camera, Check, ChevronLeft, CircleHelp, CloudOff, Images, ListChecks, RefreshCw, Save, Upload, WandSparkles, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addManualPhoto, createAlbum, excludeCountReviewGroup, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
+import { addManualPhoto, confirmSharedPaperGrid, createAlbum, excludeCountReviewGroup, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
 import { projectedCropAspect, resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import {
@@ -13,7 +13,7 @@ import {
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
-  paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
+  paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview,
   scannerBackingHint, scannerBackingReason,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
@@ -21,7 +21,8 @@ import {
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
-  getPaperGridReview, getPaperGridReviewGroups, getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
+  getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
+  getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
@@ -397,7 +398,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   ));
   const shownPaperGrids = paperGrid?.cut
     ? [{ key: item.id, outline: paperGrid.outline, cuts: new Map([[item.id, paperGrid.cut]]) }]
-    : paperGridGroups;
+    : selectedCountGroup?.kind === "paper-grid" ? [selectedCountGroup] : paperGridGroups;
   const paperGridOverlay = shownPaperGrids.map(({ key, outline, cuts }) => (
     <g key={key} fill="none" stroke="#1d4ed8" strokeWidth="6" pointerEvents="none">
       <polygon aria-label="Möglicher Aussenumriss" strokeDasharray="18 10"
@@ -745,6 +746,7 @@ function CropReview({ albumId, goHome }) {
   const [answerError, setAnswerError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [groupSelection, setGroupSelection] = useState(null);
+  const [confirmedPaperGrid, setConfirmedPaperGrid] = useState(null);
   const [deferredDraft, setDeferredDraft] = useState(null);
   const [savedDeferredDraft, setSavedDeferredDraft] = useState(null);
   const returnCountId = useRef(null);
@@ -782,10 +784,16 @@ function CropReview({ albumId, goHome }) {
   const captureSplitGroups = type === "segmentation" ? getCaptureSplitReviewGroups(item?.payload?.detections || []) : [];
   const filmGridGroups = type === "segmentation" ? getFilmGridReviewSeams(item?.payload?.detections || []) : [];
   const paperJoinGroups = type === "segmentation" ? getPaperJoinReviewGroups(item?.payload?.detections || []) : [];
-  const countGroups = actionableCountGroups(filmGridGroups, paperJoinGroups);
+  const countDetections = type === "segmentation" ? item?.payload?.detections || [] : [];
+  const paperGridGroups = getPaperGridReviewGroups(countDetections);
+  const paperGridOutlineParents = getPaperGridOutlineParents(countDetections).filter(parent =>
+    cyclicReviewQuad(sanitizeReviewPolygon(parent.crop_modes?.full_print?.suggested_warp_quad)));
+  const countGroups = actionableCountGroups(filmGridGroups, paperJoinGroups,
+    getActionablePaperGridReviewGroups(paperGridGroups, countDetections));
   const selectedCountGroup = groupSelection?.pageId === item?.id
     ? countGroups.find(({ key }) => key === groupSelection?.key) : null;
-  const paperGridGroups = type === "segmentation" ? getPaperGridReviewGroups(item?.payload?.detections || []) : [];
+  const paperGridConfirmed = type === "segmentation" && confirmedPaperGrid?.pageId === item?.id
+    && confirmedPaperGrid?.eventId != null && confirmedPaperGrid.eventId === item?.payload?.photo_count_revision;
   useEffect(()=>{ goHomeRef.current=goHome; },[goHome]);
   useEffect(() => {
     if(!history.state?.phoscaCropGuard){
@@ -806,6 +814,7 @@ function CropReview({ albumId, goHome }) {
     setType(nextType);
     setBlockedCropTaskId(null);
     setGroupSelection(null);
+    setConfirmedPaperGrid(null);
     setSavedDeferredDraft(null);
     setAnswerError("");
     setMessage("");
@@ -865,14 +874,17 @@ function CropReview({ albumId, goHome }) {
       setSubmitting(false);
     }
   }
-  async function excludeCountGroup(group) {
+  async function resolveCountGroup(group) {
     if (!item || submitting) return;
+    const sharedPaper = group.kind === "paper-grid";
     setSubmitting(true);
     setAnswerError("");
     returnCountId.current = item.id;
     try {
-      await excludeCountReviewGroup(item.id, item.payload.photo_count_revision, group, "mobile-v2");
+      const event = sharedPaper ? await confirmSharedPaperGrid(item.id, groupSelection?.revision, group, "mobile-v2")
+        : await excludeCountReviewGroup(item.id, item.payload.photo_count_revision, group, "mobile-v2");
       await load();
+      if (sharedPaper) setConfirmedPaperGrid({ pageId: item.id, eventId: event.id });
     } catch (error) {
       setAnswerError(error.message.endsWith("_review_group_stale") ? countGroupReviewError : error.message);
       await load().catch(() => {});
@@ -893,6 +905,7 @@ function CropReview({ albumId, goHome }) {
   return <div className="mobile-shell crop-review-shell"><MobileHeader title="Cropping prüfen" onBack={leaveReview}/><main className="mobile-content"><div className="review-top"><div><span>Kurze Sitzung</span><strong>{Math.min(index + 1, items.length || 5)} / {Math.min(items.length, 5) || 5}</strong></div><div className="review-progress"><i style={{width:`${Math.min(100, index / Math.max(1, Math.min(items.length,5)) * 100)}%`}}/></div></div>
     <div className="task-switch"><button className={type === "segmentation" ? "active" : ""} onClick={() => switchTask("segmentation")} disabled={submitting || Boolean(activeDeferredDraft)}>Printanzahl</button><button className={type === "geometry" ? "active" : ""} onClick={() => switchTask("geometry")} disabled={submitting || Boolean(activeDeferredDraft)}>Crop-Qualität</button></div>
     {answerError && <p role="alert">{answerError}</p>}
+    {paperGridConfirmed && !activeDeferredDraft && <p role="status" id="mobile-paper-grid-count-result">{paperGridCountSaved}</p>}
     {savedDeferredDraft && savedDeferredDraft.pageId === item?.id && !activeDeferredDraft && <p role="status">
       {savedDeferredDraft.reason === darkBackingProposal ? "Abzug erfasst." : "Ein gemeinsamer Abzug gespeichert."}
       {" Die Papierkanten bleiben in Prüfung."}
@@ -919,17 +932,21 @@ function CropReview({ albumId, goHome }) {
         </button>;
       })}
       <CountGroupReview groups={countGroups} selected={selectedCountGroup} busy={submitting}
-        onSelect={key => { setGroupSelection(key == null ? null : { pageId: item.id, key }); setAnswerError(""); }}
-        onExclude={excludeCountGroup} />
-      {paperGridGroups.map(({ key, parents }, groupIndex) => {
-        const [parentId] = parents;
-        const parent = item.payload.detections.find(row => row.photo_id === parentId);
-        if (!cyclicReviewQuad(sanitizeReviewPolygon(parent?.crop_modes?.full_print?.suggested_warp_quad))) return null;
-        return <button key={key} className="magnifier-toggle" type="button" disabled={submitting}
-          aria-describedby="mobile-paper-grid-count-hint" onClick={() => switchTask("geometry", parentId)}>
-          {`Aussenumriss prüfen${paperGridGroups.length > 1 ? ` (${groupIndex + 1})` : ""}`}
-        </button>;
-      })}
+        onSelect={key => {
+          setGroupSelection(key == null ? null : { pageId: item.id, key, revision: item.payload.photo_count_revision });
+          setConfirmedPaperGrid(null);
+          setAnswerError("");
+        }}
+        onConfirm={resolveCountGroup} />
+      {paperGridOutlineParents.map(({ photo_id: parentId }, index) => (
+        <button key={parentId} className="magnifier-toggle" type="button"
+          disabled={submitting || selectedCountGroup?.kind === "paper-grid"}
+          aria-describedby={paperGridGroups.length > 0 ? "mobile-paper-grid-count-hint"
+            : paperGridConfirmed ? "mobile-paper-grid-count-result" : undefined}
+          onClick={() => switchTask("geometry", parentId)}>
+          {`Aussenumriss prüfen${paperGridOutlineParents.length > 1 ? ` (${index + 1})` : ""}`}
+        </button>
+      ))}
       <section className="answer-grid">
         {cropAnswers[type].map(([value,label]) => (
           <button key={value} className={value === "correct" ? "good" : ""}

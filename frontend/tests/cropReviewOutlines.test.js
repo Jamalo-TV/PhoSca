@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFragmentReviewOutlines, getPaperGridReviewGroups,
+  getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFragmentReviewOutlines,
+  getPaperGridOutlineParents, getPaperGridReviewGroups,
   getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
 } from "../src/cropReviewOutlines.js";
 
@@ -109,4 +110,26 @@ test("each paper-grid cut follows its own active proposal", () => {
   assert.deepEqual(getPaperGridReviewGroups([parent, { ...first, confidence: null }]), []);
   assert.deepEqual(getPaperGridReviewGroups([{ ...parent, reviewed_non_print: true }, first, second]), []);
   assert.deepEqual(getPaperGridReviewGroups([parent, { ...parent, id: "other-outer" }, first, second]), []);
+});
+
+test("an accepted paper-grid count leaves its held parent outline available", () => {
+  const held = { status: "review_needed" };
+  const parent = {
+    photo_id: "paper", confidence: .8, segmentation_mask: { paper_grid_review: { outline: quad } },
+    crop_modes: { full_print: { ...held, suggested_warp_quad: quad }, image_only: held },
+  };
+  const fragment = (id, y) => ({
+    photo_id: id, confidence: .6, segmentation_mask: { paper_grid_review: { outline: quad, cut: [{ x: .2, y }, { x: .6, y }] } },
+    crop_modes: { full_print: held, image_only: held },
+  });
+  const first = fragment("first", .4);
+  const second = fragment("second", .5);
+  const active = [parent, first, second];
+  const groups = getPaperGridReviewGroups(active);
+  assert.deepEqual(getActionablePaperGridReviewGroups(groups, active), groups);
+  const unheld = { ...first, crop_modes: { full_print: held, image_only: { status: "ready" } } };
+  assert.deepEqual(getActionablePaperGridReviewGroups(groups, [parent, unheld, second]), []);
+  const confirmed = [parent, { ...first, reviewed_non_print: true }, { ...second, reviewed_non_print: true }];
+  assert.deepEqual(getPaperGridReviewGroups(confirmed), []);
+  assert.deepEqual(getPaperGridOutlineParents(confirmed), [parent]);
 });

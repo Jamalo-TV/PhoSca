@@ -79,6 +79,30 @@ export function getPaperGridReviewGroups(photos) {
   return [...groups.values()].filter(({ parents, cuts }) => parents.size === 1 && cuts.size > 0);
 }
 
+export function getPaperGridOutlineParents(photos) {
+  return photos.filter((photo) => {
+    const id = photo.photo_id ?? photo.id;
+    const { segmentation_confidence: confidence = photo.confidence } = photo;
+    return id && !photo.reviewed_non_print && confidence != null
+      && getPaperGridReview(photo.segmentation_mask)?.cut === null;
+  });
+}
+
+export function getActionablePaperGridReviewGroups(groups, photos) {
+  const modesById = new Map(photos.map((photo) => [
+    photo.photo_id ?? photo.id, photo.crop_modes || photo.enhancement_applied?.correction?.crop_modes,
+  ]));
+  return groups.filter(({ parents, cuts }) => {
+    const [parentId] = parents;
+    const proposed = modesById.get(parentId)?.full_print?.suggested_warp_quad;
+    return cuts.size >= 1 && cuts.size <= 2 && Array.isArray(proposed) && proposed.length === 4 && proposed.every(isNormalizedPoint)
+      && [parentId, ...cuts.keys()].every((id) => {
+        const modes = modesById.get(id);
+        return modes?.full_print?.status === "review_needed" && modes?.image_only?.status === "review_needed";
+      });
+  });
+}
+
 export function getFragmentReviewOutlines(photos) {
   const groups = new Map();
   for (const photo of photos) {

@@ -4574,6 +4574,107 @@ its thresholds remain as documented above. Targeted task lookup averaged
 per source. The saved render metrics are identical before and after
 rejecting the linked fragments.
 
+### Confirm a shared paper grid in count review
+
+On the pinned 1,346 × 1,014 Stevekm camera derivative at JPEG75,
+the registered 512-pixel mixed legacy model and classical fallback
+produce three sleeve proposals and two overlapping proposals on the
+35-frame paper print. The input SHA-256 is
+`a3c019249af7ce646813de4e5ec6555699cc1785730b5016994d13206d70988e`.
+The registered model SHA-256 is
+`1e95a1a90ff897df7099ff80675186ec1d8145f7bb07559fe918b3dd3a6db748`,
+with proposal threshold 0.25 and acceptance 0.70. The counted parent mask reaches 0.832222 native
+IoU against the paper draft. Of the 473,946 draft pixel centres, it
+omits 78,152. The already measured review outline reaches 0.988729
+native IoU, with 4,619 draft centres omitted and 731 outside. Before
+review, both modes on all five proposals require inspection. These
+counts and metrics describe one development source. This source has
+no independent mode or album-scale release reference.
+
+Sending the unprepared full frame to the same model lowers the best
+final mask IoU to 0.82211 at comparison grid size 1,024 and loses
+the paper grouping. Sending the right-hand region to the unchanged
+model with 12% padding returns no proposal. With 24% padding the best
+source-registered IoU is 0.0714. In a separate shadow replay, reusing
+the looser perforation witness for deferral reaches 0.98847 mask IoU
+and puts the right fragment in count review. That shadow also takes
+a separate claim out of the active count on three of four fixed-claim
+controls that simulate separate pieces of paper. The aliases are
+the 0.65- and 1.25-pixel backing slits and a flush same-stock overlay.
+The 2.25-pixel slit keeps both proposals. JPEG55 retains its already
+deferred fragment. The lossless derivative still has six active
+proposals because its stricter pair geometry fails before the rail
+check. The two input trials and the phase relaxation remain development
+experiments.
+
+Desktop and Mobile offer **Zusammengehörigkeit prüfen** on the existing
+paper grid and mark the parent and its active fragments. Examine the
+original for a second paper edge, gap or layer at each proposed cut.
+**Als einen Abzug zählen** confirms that all linked fragments belong to
+that physical print. The API checks the count revision, exact parent
+and fragment IDs, matching source outline and held status of both modes
+for every participant. It shares the page lock and idempotency checks
+with the other count decisions. An already completed count at that
+revision prevents an older open group decision from changing it. The
+event captures the pre-decision page and all active photo records. It
+marks the one or two confirmed fragments as having no separate print,
+retaining their prior masks and
+source preview for a later correction. The parent keeps its ID, mask,
+mode records and preview, and the count remains open on the same page.
+Restoring a fragment with new corners refreshes the page revision. If
+its new footprint overlaps an already corrected parent, both parent
+exports return to review.
+
+**Aussenumriss prüfen** remains available for the retained parent.
+Opening the measured outline loads an editable draft. The normal paper,
+motif, overlap and sampling checks still govern the two exports. The
+count decision leaves both named downloads and the legacy trimmed alias
+held until their respective geometry is accepted. The production
+detector, checkpoints and automatic release profile remain the ones
+used in the preceding comparison.
+
+An independently replayed native upload removes one right-hand fragment
+on JPEG75 (5 → 4 active) and both on the lossless capture (6 → 4).
+The retained paper row and the three sleeve rows have identical
+correction records and byte-identical previews before and after the
+count decision. Selecting the wrong parent, a sleeve row, stale
+metadata or only half the lossless group leaves the page intact.
+An identical retry returns the same event. Both named exports return
+404 after the count decision and the untrimmed preview returns 200.
+Local Chromium measured 83 ms to the response and 165 ms to the updated
+count on Desktop. Mobile took 69 ms and 121 ms on JPEG75 and 77 ms and
+131 ms on the lossless upload. These are individual local interaction
+measurements. The count decision involves no new crop rendering.
+
+After a separate sleeve decision, saving the measured paper corners
+with diagnostic dimensions of 203 × 264 mm opens only the whole-print
+download. Saving the reviewed motif opens the second download. The
+whole-print bytes stay equal through the motif edit, and reprocessing
+reproduces both exports. Each manually corrected motif retains all 35
+panels and 315 sampled landmarks. The JPEG75 replay retains 1,938 of
+1,938 sampled header pixels and the lossless replay retains 1,940 of
+1,940. The source reconstruction reports fully owned motif samples.
+
+The whole-print exports both render at 609 × 792. The table compares
+the delivered transform to the same-source paper draft and uses the
+entered diagnostic size for the aspect comparison. The draft is still
+too approximate to establish a verified paper boundary or foreign-pixel
+count for automatic release.
+
+| Whole-print check against the draft | JPEG75 | Lossless |
+| --- | ---: | ---: |
+| Source footprint IoU | 0.98873 | 0.98963 |
+| Maximum corner difference | 5.71 px | 5.71 px |
+| Draft paper area omitted | 0.975% | 0.898% |
+| Foreign interpolation contribution | 0.208% | 0.188% |
+| Output pixels with foreign taps beyond one source pixel | 272 | 307 |
+| Relative aspect difference | 0.038% | 0.038% |
+
+The locked detector, seeded geometry and mixed Golden metrics match
+the preceding comparison for both modes. The comparison reports, native
+API replays and visual receipts are local in
+`runs/crop-quality/shared-paper-grid-count/`.
+
 ### Keep manual exports held while paper proposals overlap
 
 Saving a measured outer rectangle now checks the other active members of
