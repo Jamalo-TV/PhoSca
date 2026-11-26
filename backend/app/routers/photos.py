@@ -25,9 +25,9 @@ from app.pipeline.decisions import is_reviewed_non_print, photo_is_reviewed_non_
 from app.pipeline.edge_trace import measure_edge_trace
 from app.pipeline.image_ops import load_image, normalized_box_to_pixels
 from app.pipeline.manual_paper_boundary import (
-    PAPER_GRID_OVERLAP_REVIEW, capture_outline_review_required, hold_overlapping_paper_grid_modes,
+    PAPER_GRID_OVERLAP_REVIEW, capture_outline_review_required, hold_overlapping_paper_claim_modes,
     original_prediction_mask, paper_curve_from_review_traces, paper_curve_review_reference,
-    paper_grid_claims_overlap, paper_grid_record,
+    overlapping_paper_claims, paper_claim_groups,
 )
 from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.perspective import manual_print_intersects, validate_review_quads
@@ -224,8 +224,8 @@ async def _review_overlapping_crops(
 ) -> None:
     mask = photo.segmentation_mask or {}
     quad = mask.get("warp_quad")
-    group = paper_grid_record(mask, original_prediction_mask(photo.enhancement_applied or {}))
-    if quad is None and not group:
+    groups = paper_claim_groups(mask, original_prediction_mask(photo.enhancement_applied or {}))
+    if quad is None and not groups:
         return
     neighbors = await session.scalars(
         select(ExtractedPhoto)
@@ -252,16 +252,19 @@ async def _review_overlapping_crops(
                 entity_type="photo", entity_id=neighbor.id, action="overlapping_crop_preview_invalidated",
                 details={"overlapping_photo_id": str(photo.id)},
             ))
-        if group and neighbor.segmentation_confidence is None and any(mode.get("status") == "ready" for mode in modes.values()):
+        if groups and any(mode.get("status") == "ready" for mode in modes.values()):
             neighbor_mask = neighbor.segmentation_mask or {}
-            neighbor_group = paper_grid_record(neighbor_mask, original_prediction_mask(metadata))
-            if paper_grid_claims_overlap(mask, group, neighbor_mask, neighbor_group, width, height):
-                hold_overlapping_paper_grid_modes(modes)
-                reasons = list(dict.fromkeys([PAPER_GRID_OVERLAP_REVIEW, *(metadata.get("review_reasons") or [])]))
+            neighbor_groups = paper_claim_groups(neighbor_mask, original_prediction_mask(metadata))
+            conflicts = overlapping_paper_claims(mask, groups, neighbor_mask, neighbor_groups, width, height)
+            if neighbor.segmentation_confidence is not None:
+                conflicts.discard(PAPER_GRID_OVERLAP_REVIEW)
+            if conflicts:
+                hold_overlapping_paper_claim_modes(modes, conflicts)
+                reasons = list(dict.fromkeys([*sorted(conflicts), *(metadata.get("review_reasons") or [])]))
                 neighbor.enhancement_applied = {**metadata, "review_reasons": reasons}
                 neighbor.status = PhotoStatus.review_needed
                 session.add(AuditLog(entity_type="photo", entity_id=neighbor.id, action="crop_review_reopened",
-                                     details={"reason": PAPER_GRID_OVERLAP_REVIEW, "overlapping_photo_id": str(photo.id)}))
+                                     details={"reason": min(conflicts), "overlapping_photo_id": str(photo.id)}))
                 continue
         if quad is None or (mask.get("manual_added") is not True and mask.get(REVIEWED_CROSSING_OUTLINE) is not True
                 and (neighbor.segmentation_mask or {}).get(REVIEWED_CROSSING_OUTLINE) is not True):
@@ -731,7 +734,7 @@ async def update_photo_bounding_box(
     prior_crop_modes = (metadata.get("correction") or {}).get("crop_modes") or {}
     prior_outer = prior_mask.get("warp_quad") or (prior_crop_modes.get("full_print") or {}).get("warp_quad")
     outer = segmentation_mask.get("warp_quad")
-    if (segmentation_mask.get("manual_added") is True or paper_grid_record(segmentation_mask, original_prediction_mask(metadata))
+    if (segmentation_mask.get("manual_added") is True or paper_claim_groups(segmentation_mask, original_prediction_mask(metadata))
             or (outer and not _same_visible_outline(prior_outer, outer))):
         await _review_overlapping_crops(session, photo, width, height)
     return await _render_photo_edit(session, photo.id, settings)

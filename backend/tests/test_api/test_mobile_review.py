@@ -1440,11 +1440,13 @@ async def test_new_overlapping_print_reopens_existing_downloads_for_review(clien
     assert reprocessed.status_code == 200 and not reprocessed.json()["crop_download_urls"]["full_print"]
 
 
-async def test_measured_grid_crop_stays_held_while_a_linked_proposal_overlaps(client, monkeypatch) -> None:
+@pytest.mark.parametrize("claim", ["paper_grid", "scalloped"])
+async def test_measured_crop_stays_held_while_a_linked_proposal_overlaps(client, monkeypatch, claim) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, PhotoStatus
     from app.pipeline.manual_paper_boundary import PAPER_GRID_OVERLAP_REVIEW
+    from app.pipeline.scalloped_prints import SCALLOPED_PRINT_CONFLICT
 
     monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
     monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
@@ -1464,15 +1466,23 @@ async def test_measured_grid_crop_stays_held_while_a_linked_proposal_overlaps(cl
     outer = vertices([(25, 20), (165, 20), (165, 159), (25, 159)])
     child_quad = vertices([(37, 84), (153, 84), (153, 147), (37, 147)])
     child_polygon = vertices([(37, 84), (96, 84), (153, 84), (153, 147), (96, 147), (37, 147)])
+    if claim == "scalloped":
+        parent_group = child_group = {"scalloped_ownership_group": outer}
+        reason = SCALLOPED_PRINT_CONFLICT
+        overlap_revision = "scalloped_ownership_overlap_revision"
+    else:
+        parent_group = {"paper_grid_review": {"outline": outer}}
+        child_group = {"paper_grid_review": {"outline": outer, "cut": child_quad[:2]}}
+        reason = PAPER_GRID_OVERLAP_REVIEW
+        overlap_revision = "paper_grid_overlap_revision"
     async with get_session_factory()() as session:
         parent = await session.get(ExtractedPhoto, parent_id)
-        parent.segmentation_mask = {"source": "classical_border_quad", "polygon": outer, "paper_grid_review": {"outline": outer}}
+        parent.segmentation_mask = {"source": "classical_border_quad", "polygon": outer, **parent_group}
         parent.bounding_box = bounds(outer)
         child = ExtractedPhoto(
             page_id=page_id, album_id=album_id, storage_path=parent.storage_path,
             original_storage_path=parent.original_storage_path, bounding_box=bounds(child_polygon),
-            segmentation_mask={"source": "yolo_seg_mask", "polygon": child_polygon,
-                               "paper_grid_review": {"outline": outer, "cut": child_quad[:2]}},
+            segmentation_mask={"source": "yolo_seg_mask", "polygon": child_polygon, **child_group},
             segmentation_confidence=.66, geometry_valid=True, status=PhotoStatus.review_needed,
         )
         session.add(child)
@@ -1495,7 +1505,7 @@ async def test_measured_grid_crop_stays_held_while_a_linked_proposal_overlaps(cl
     result = await save(parent_url, outer, motif=outer)
     assert result.status_code == 200, result.text
     modes = result.json()["enhancement_applied"]["correction"]["crop_modes"]
-    assert all(mode["status"] == "review_needed" and PAPER_GRID_OVERLAP_REVIEW in mode["reason_codes"] for mode in modes.values())
+    assert all(mode["status"] == "review_needed" and reason in mode["reason_codes"] for mode in modes.values())
     await held_downloads()
     count_item, = (await client.get("/api/v1/review/queue", params={"type": "segmentation", "album_id": str(album_id)})).json()
     confirmed = await client.post("/api/v1/review/events", json={
@@ -1517,7 +1527,7 @@ async def test_measured_grid_crop_stays_held_while_a_linked_proposal_overlaps(cl
         parent = await session.get(ExtractedPhoto, parent_id)
         metadata = dict(parent.enhancement_applied)
         correction = dict(metadata["correction"])
-        correction.pop("paper_grid_overlap_revision")
+        correction.pop(overlap_revision)
         parent.enhancement_applied = {**metadata, "correction": correction}
         await session.commit()
     await held_downloads()

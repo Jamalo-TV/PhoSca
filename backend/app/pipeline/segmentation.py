@@ -3015,16 +3015,45 @@ def _recover_scalloped_prints(image: np.ndarray, result: SegmentationResult, *, 
         alternatives[winner] = (detections[alternate].mask["polygon"], alternate == inner)
         removed.add(alternate)
 
+    claims = {}
+    pairs = []
+    for index, outline in outlines.items():
+        if index in removed:
+            continue
+        claimants = {}
+        for other, polygon in enumerate(polygons):
+            if other == index or other in removed:
+                continue
+            overlap = normalized_polygon_overlap(outline, polygon)
+            if overlap.second_containment >= .08:
+                claimants[other] = overlap
+        claims[index] = bool(claimants)
+        if len(claimants) == 1:
+            other, overlap = next(iter(claimants.items()))
+            # A measured perimeter can guide review of a partial claimant
+            # without deciding whether there is a separate sheet on top.
+            if other not in measures and overlap.second_containment >= .96 and overlap.first_containment <= .70:
+                pairs.append((index, other))
+    degree = Counter(index for pair in pairs for index in pair)
+    groups = {}
+    hints = {}
+    for index, other in pairs:
+        if degree[index] == degree[other] == 1:
+            groups[index] = groups[other] = _normalized_polygon(measures[index].quad, width, height)
+            hints[index] = _normalized_polygon(measures[index].outline, width, height)
+
     updated = []
     for index, item in enumerate(detections):
         if index in removed:
             continue
+        if index in groups:
+            mask = {**item.mask, "scalloped_ownership_group": groups[index]}
+            if index in hints:
+                mask["scalloped_ownership_outline"] = hints[index]
+            item = replace(item, mask=mask)
         measured = measures.get(index)
         if measured is not None:
-            claimed = any(j != index and j not in removed
-                          and normalized_polygon_overlap(outlines[index], polygon).second_containment >= .08
-                          for j, polygon in enumerate(polygons))
-            if claimed:
+            if claims[index]:
                 updated.append(replace(item, review_reasons=[SCALLOPED_PRINT_CONFLICT, *item.review_reasons]))
                 continue
             mask = {**item.mask, "scalloped_print": True,
@@ -3040,7 +3069,8 @@ def _recover_scalloped_prints(image: np.ndarray, result: SegmentationResult, *, 
         updated.append(item)
     return SegmentationResult(updated, {**result.metadata, "scalloped_print_outlines": sum(
         item.mask.get("scalloped_print") is True for item in updated),
-                                        "scalloped_print_alternates": len(removed)})
+                                        "scalloped_print_alternates": len(removed),
+                                        "scalloped_ownership_hints": len(hints)})
 
 
 def _suggest_adjacent_album_edge_print(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:

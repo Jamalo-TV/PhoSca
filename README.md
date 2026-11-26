@@ -121,6 +121,18 @@ auflösbar. Aussagen zur Kamerakalibrierung sind an den SHA-256 der
 Aufnahme gebunden. Solche Ergebnisse einer automatischen Erkennung
 benötigen weiterhin Prüfung.
 
+Bei einem gezackten Abzug kann PhoSca eine gemessene Aussenkontur
+und vier zugehörige Ecken im Editor anzeigen. Ein überlappender
+Teilvorschlag bleibt als eigener Prüfpunkt erhalten. Solange
+beide Vorschläge dieselbe Fläche beanspruchen, bleiben beide
+benannten Exporte gesperrt. Die Sperre gilt auch nach dem Speichern
+der Ecken. Nach Klärung der Überlagerung kann PhoSca den ganzen Abzug
+entlang seiner gemessenen Kontur mit Transparenz zur Prüfung
+darstellen. Ein bewusst gewähltes Motiv im Innern kann separat
+exportiert werden, sofern sein Rand innerhalb des gemessenen Papiers
+und mit Abstand zu anderen Abzügen liegt.
+[Überlappung und gezackte Papierkante](data/evaluation/README.md#show-scalloped-paper-in-ownership-review)
+
 Für **Nur Bildmotiv** untersucht PhoSca zusätzlich die Übergänge
 zwischen Papier und Bild. Der Renderer berechnet beide Ausgaben
 direkt aus der Quellseite. Beim präzisen Sampling gehen in die
@@ -440,12 +452,10 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
 2. **Den Besitzkonflikt auf ScanCropper auflösen.** Ein zusätzlicher
    Modellvorschlag umfasst einen Teil des oberen Abzugs. In der
    Ablation ohne genau diesen Vorschlag stieg die Masken-IoU von
-   0,85386 auf 0,99795. Der Fusionssieger blieb derselbe. Der nächste
-   Test muss prüfen, ob die sichtbaren Papierbogen und die Kanten
-   am Original eine reversible Zählentscheidung stützen. Ein sehr
-   dünner, unabhängiger Abzug dient als Gegenprobe. Eine allgemeine
-   Eins-zu-eins-Fusion bleibt ungeeignet. Sie führt in gezielten
-   Einzelabzugskontrollen zu Fehlvorschlägen.
+   0,85386 auf 0,99795. Der Fusionssieger blieb derselbe. Der Editor
+   zeigt die gemessene Kontur inzwischen beim aktiven Konflikt.
+   Sehr dünne aufgelegte Abzüge mit derselben Vorlage können
+   dieselben Übergänge zeigen. Ihre Anzahl bleibt eine Prüfentscheidung.
    [Fusionsprüfung und ScanCropper-Ablation](data/evaluation/README.md#audit-cross-source-fusion-and-scalloped-stock-conflicts)
 3. **Restfehler bei blasser und offener Schrift prüfen.** Die neue
    Formprüfung hat ihren Schwerpunkt auf deutlichen Markierungen mit

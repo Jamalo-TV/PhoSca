@@ -8,57 +8,90 @@ from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertice
 from app.pipeline.print_edges import (
     _backing_color, _edge_band, _side_line, _stock_ring, bowed_print_sides, refine_print_boundary,
 )
+from app.pipeline.scalloped_prints import SCALLOPED_PRINT_CONFLICT
 
 
 MANUAL_PAPER_BOUNDARY_REVISION = 2
 MANUAL_PAPER_BOUNDARY_REVIEW = "PRINT_CURVED_OUTLINE_REVIEW"
 MANUAL_CAPTURE_OUTLINE_REVIEW = "PRINT_CAPTURE_OUTLINE_REVIEW"
 PAPER_GRID_OVERLAP_REVIEW = "PAPER_GRID_OVERLAP_REVIEW"
-PAPER_GRID_OVERLAP_REVISION = 1
+PAPER_CLAIM_OVERLAP_CHECKS = {
+    PAPER_GRID_OVERLAP_REVIEW: ("paper_grid_overlap_revision", 1),
+    SCALLOPED_PRINT_CONFLICT: ("scalloped_ownership_overlap_revision", 1),
+}
 
 
-def paper_grid_record(mask: dict | None, original_mask: dict | None = None) -> dict:
-    return (mask or {}).get("paper_grid_review") or (original_mask or {}).get("paper_grid_review") or {}
+def paper_claim_groups(mask: dict | None, original_mask: dict | None = None) -> dict:
+    current, original = mask or {}, original_mask or {}
+    groups = {}
+    if grid := current.get("paper_grid_review") or original.get("paper_grid_review"):
+        groups[PAPER_GRID_OVERLAP_REVIEW] = grid.get("outline")
+    if scalloped := current.get("scalloped_ownership_group") or original.get("scalloped_ownership_group"):
+        groups[SCALLOPED_PRINT_CONFLICT] = scalloped
+    return groups
 
 
 def original_prediction_mask(metadata: dict) -> dict | None:
     return ((metadata.get("review_provenance") or {}).get("original_prediction") or {}).get("segmentation_mask")
 
 
-def paper_grid_needs_overlap_check(mask: dict, metadata: dict) -> bool:
-    return (bool(paper_grid_record(mask, original_prediction_mask(metadata)))
-            and (metadata.get("correction") or {}).get("paper_grid_overlap_revision") != PAPER_GRID_OVERLAP_REVISION)
+def paper_claim_overlap_checks(groups: dict) -> dict:
+    return dict(PAPER_CLAIM_OVERLAP_CHECKS[reason] for reason in groups)
 
 
-def paper_grid_claims_overlap(
-    mask: dict, group: dict, neighbor: dict, neighbor_group: dict, width: int, height: int,
-) -> bool:
-    if not group.get("outline") or group["outline"] != neighbor_group.get("outline"):
-        return False
+def paper_claims_need_overlap_check(mask: dict, metadata: dict, *, automatic: bool = False) -> bool:
+    groups = paper_claim_groups(mask, None if automatic else original_prediction_mask(metadata))
+    if automatic:
+        groups.pop(PAPER_GRID_OVERLAP_REVIEW, None)
+    checks = paper_claim_overlap_checks(groups)
+    correction = metadata.get("correction") or {}
+    return any(correction.get(key) != revision for key, revision in checks.items())
+
+
+def overlapping_paper_claims(
+    mask: dict, groups: dict, neighbor: dict, neighbor_groups: dict, width: int, height: int,
+) -> set[str]:
+    shared_groups = {reason for reason, outline in groups.items() if outline and outline == neighbor_groups.get(reason)}
+    if not shared_groups:
+        return set()
     polygons = []
     for candidate in (mask, neighbor):
         vertices = candidate.get("warp_quad") or candidate.get("visible_polygon") or candidate.get("polygon") or []
         if len(vertices) < 3:
-            return True
+            return shared_groups
         try:
             points = np.float32([(point["x"], point["y"]) for point in vertices])
             if not np.isfinite(points).all() or ((points < 0) | (points > 1)).any():
-                return True
+                return shared_groups
             polygons.append(cv2.convexHull(normalized_vertices_to_pixels(points, width, height)))
         except (KeyError, TypeError, ValueError, cv2.error):
-            return True
+            return shared_groups
     first, second = polygons
     shared, _ = cv2.intersectConvexConvex(first, second)
-    return shared >= max(6.0, .002 * min(cv2.contourArea(first), cv2.contourArea(second)))
+    return shared_groups if shared >= max(6.0, .002 * min(cv2.contourArea(first), cv2.contourArea(second))) else set()
 
 
-def hold_overlapping_paper_grid_modes(modes: dict) -> None:
+def hold_overlapping_paper_claim_modes(modes: dict, reasons: set[str]) -> None:
     for mode in modes.values():
         if mode.get("status") == "ready":
             mode["geometry_status"] = "ready"
         mode["status"] = "review_needed"
-        reasons = mode.get("reason_codes") or []
-        mode["reason_codes"] = list(dict.fromkeys([PAPER_GRID_OVERLAP_REVIEW, *reasons]))
+        mode["reason_codes"] = list(dict.fromkeys([*sorted(reasons), *(mode.get("reason_codes") or [])]))
+
+
+def manual_scalloped_outline(metadata: dict, crop_quad: list[dict] | None) -> list[dict] | None:
+    mask = original_prediction_mask(metadata) or {}
+    if mask.get("scalloped_print") is True:
+        outline, seed = mask.get("visible_polygon"), mask.get("warp_quad")
+    else:
+        outline, seed = mask.get("scalloped_ownership_outline"), mask.get("scalloped_ownership_group")
+    if not outline or len(seed or []) != 4 or len(crop_quad or []) != 4:
+        return None
+    first, second = (np.float32([(p["x"], p["y"]) for p in quad]) for quad in (seed, crop_quad))
+    overlap = normalized_polygon_overlap(first, second)
+    if overlap.iou >= .82 or max(overlap.first_containment, overlap.second_containment) >= .90:
+        return outline
+    return None
 
 
 def capture_outline_review_required(print_mode: dict) -> bool:

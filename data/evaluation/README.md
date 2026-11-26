@@ -2913,6 +2913,55 @@ continuity in several counterfactual controls. That signal alone
 cannot establish the count. The existing two disputed proposals and
 the count review remain in place.
 
+### Show scalloped paper in ownership review
+
+Revision 2 retains the measured silhouette as review evidence when a
+verified outer perimeter has a single, substantially contained partial
+claimant. The partial claimant must lack its own verified scalloped
+outline. Both rows stay active. They share the source quadrilateral of
+the measured perimeter as a same-page claim group. The original
+detector masks, symmetric conflict checks and output warps remain in
+use. Desktop and mobile read the measured contour via
+`suggested_edge_traces` and the editable corner proposal via
+`suggested_warp_quad`.
+
+The pinned ScanCropper multipart upload with `c31317f…` still yields
+two matched drafts and one disputed proposal. It now exposes a
+1,959-vertex contour on the upper print and four editable corners.
+The automatic source-corrected JPEG is byte-identical. The outline
+gives the reviewer the measured paper evidence without replacing
+the active detector footprint. The independently run controls
+include a genuine second photo and nearly registered layers of the
+same art. Very thin layers preserve crossing texture and can be
+visually indistinguishable from an internal image contour.
+
+In the previous API replay, manually saving the four corners made
+`full_print` return 200 while the overlapping proposal was active.
+Both modes and the legacy trimmed alias now return 404 across the save
+and reprocess. The same-page claim survives manual edits via the
+original prediction snapshot. Restoring a rejected, overlapping row
+reopens the sibling's crop review. The regression covers the existing
+paper-grid flow and the new claim type, including stale read metadata.
+
+Once the competing row is explicitly rejected, the physical paper
+boundary still matters. Rendering the four-corner JPEG as a named
+whole-print crop would cut some scallops and sample backing in other
+places. The reprocessed review returns an RGBA preview of the
+measured polygon. Changing 1,497,334 outside-paper pixels in a
+controlled source replay left the entire preview byte-identical.
+A deliberately selected motif is eligible for manual export only if
+it passes the normal crop checks and clears the paper and neighbours
+by at least two native pixels at the sampled side stations. The
+test includes a 0.5 px² overlap at a motif corner and a quad which
+reaches the paper cuts. Neither qualifies. Stale motif files require
+the current sampling receipt. The scalloped whole-print JPEG remains
+in review.
+
+Paired runs reproduce the previous detection and crop summaries for
+the frozen detection and seeded geometry benchmarks, Golden,
+NerdScan, Domoritz, the JPEG55 contact sheet and the stock challenge.
+The native ScanCropper views are development evidence.
+
 ### Verify that catalogued pairs represent independent acquisitions
 
 A leave-one-out affine fit of the 15 saved American Colony draft landmarks
@@ -2944,6 +2993,21 @@ native pixels have not been checked for acquisition independence.
 [Mounted page](https://digital.denverlibrary.org/nodes/view/1105398) ·
 [Individual print](https://digital.denverlibrary.org/nodes/view/1105300) ·
 [Reproduction terms](https://history.denverlibrary.org/about/conditions-and-image-permissions)
+
+The Missouri State Archives finding aid for `MS506` identifies the
+Phelps album and 68 physical photographic cards. It records mounted
+page scans before removal and separate scans of both sides of the
+original cards after removal. Box 278 folders 68, 73 and 74 map to
+album pages 1, 5B and 5C. The finding aid lists no access or publication
+restrictions. The scans are held in the vault and on a reference DVD.
+The native pixels remain unavailable through the public catalogue.
+[Missouri finding aid](https://www.sos.mo.gov/CMSImages/Archives/manuscripts/RG998_MS506.pdf)
+
+Malta's National Archives documents pre-removal overhead captures for
+the Rodgers album `PDE_0075` and 600 dpi TIFFs of removed items. Item
+`PDE_0075-059_R` has a public record. Its public image request returned
+HTTP 403. The exact mounted leaf and reuse rights remain unverified.
+[Malta archive report](https://embed-rech-01.dialog.cm/nationalarchivesmalta/docs/nam_official_annual_report_2024)
 
 The Bancroft Red Album study documents a mounted, measured print on
 page 8 and a 1999 State Library of Queensland copy negative showing the

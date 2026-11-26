@@ -11,7 +11,7 @@ from app.pipeline.print_edges import _backing_color, _edge_band, _is_pale_stock,
 
 SCALLOPED_PRINT_REVIEW = "PRINT_SCALLOPED_OUTLINE_REVIEW"
 SCALLOPED_PRINT_CONFLICT = "PRINT_SCALLOPED_OWNERSHIP_UNCERTAIN"
-SCALLOPED_PRINT_REVISION = 1
+SCALLOPED_PRINT_REVISION = 2
 
 
 @dataclass(frozen=True)

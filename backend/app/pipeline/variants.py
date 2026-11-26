@@ -13,7 +13,10 @@ from app.pipeline.camera_calibration import capture_calibration
 from app.pipeline.crop_validation import crop_validation_evidence
 from app.pipeline.decisions import photo_is_reviewed_non_print
 from app.pipeline.image_ops import calculate_blur_score
-from app.pipeline.manual_paper_boundary import manual_paper_download_needs_review, paper_grid_needs_overlap_check
+from app.pipeline.manual_paper_boundary import (
+    manual_paper_download_needs_review, manual_scalloped_outline, paper_claims_need_overlap_check,
+)
+from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
 from app.pipeline.quality_critic import evaluate_candidate
 from app.pipeline.release import select_released_variant
 
@@ -243,9 +246,17 @@ def variant_path_from_photo(photo: Any, variant: str) -> str | None:
     if variant in {"full_print", "image_only", "source_corrected_trimmed"}:
         if mask.get("capture_edge_clipped") is True:
             return None
-        if not automatic and (paper_grid_needs_overlap_check(mask, metadata)
-                              or manual_paper_download_needs_review(metadata, mask.get("warp_quad") or mask.get("polygon"))):
+        if paper_claims_need_overlap_check(mask, metadata, automatic=automatic):
             return None
+        if not automatic:
+            quad = mask.get("warp_quad") or mask.get("polygon")
+            if manual_paper_download_needs_review(metadata, quad):
+                return None
+            if manual_scalloped_outline(metadata, quad) is not None and (
+                mode != "image_only"
+                or (modes.get(mode) or {}).get("scalloped_motif_ownership_revision") != SCALLOPED_PRINT_REVISION
+            ):
+                return None
     if mode in {"full_print", "image_only"} or mode in CROP_REVIEW_PREVIEWS:
         if mode in CROP_REVIEW_PREVIEWS:
             path = correction.get(f"{mode}_path")

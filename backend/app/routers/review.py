@@ -24,7 +24,7 @@ from app.models import (
     StageRun,
 )
 from app.pipeline.decisions import is_reviewed_non_print, motif_geometry_requires_review
-from app.pipeline.manual_paper_boundary import PAPER_GRID_OVERLAP_REVIEW, paper_grid_needs_overlap_check
+from app.pipeline.manual_paper_boundary import PAPER_CLAIM_OVERLAP_CHECKS, paper_claims_need_overlap_check
 from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import ReviewItem
 from app.services.pipeline import page_fusion_evidence
@@ -530,9 +530,10 @@ async def _geometry_review_is_current(session: AsyncSession, photo: ExtractedPho
     metadata = photo.enhancement_applied or {}
     correction = metadata.get("correction") or {}
     full_mode = (correction.get("crop_modes") or {}).get("full_print") or {}
-    if PAPER_GRID_OVERLAP_REVIEW in (full_mode.get("reason_codes") or []) or motif_geometry_requires_review(correction):
+    if (any(reason in PAPER_CLAIM_OVERLAP_CHECKS for reason in (full_mode.get("reason_codes") or []))
+            or motif_geometry_requires_review(correction)):
         return False
-    if photo.segmentation_confidence is None and paper_grid_needs_overlap_check(photo.segmentation_mask or {}, metadata):
+    if paper_claims_need_overlap_check(photo.segmentation_mask or {}, metadata, automatic=photo.segmentation_confidence is not None):
         return False
     event = await session.scalar(
         select(ReviewEvent)

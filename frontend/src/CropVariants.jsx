@@ -23,6 +23,8 @@ export const fragmentOutlineHint = "Prüfe am Original, ob die Ausschnitte zu ei
 export const fragmentCountHint = "Prüfe, ob die markierten Ausschnitte innerhalb der blauen Kontur zu einem Abzug gehören. Achte besonders auf die gepunktete Seite.";
 export const scallopedOutlineReviewReason = "PRINT_SCALLOPED_OUTLINE_REVIEW";
 export const scallopedOutlineReviewHint = "Die Vorschau folgt der gewellten Papierkante. Prüfe am Original, ob der ganze Abzug sichtbar ist.";
+const scallopedOwnershipReason = "PRINT_SCALLOPED_OWNERSHIP_UNCERTAIN";
+const scallopedOwnershipHint = "Prüfe am Original, ob im markierten Bereich ein zweiter Abzug aufliegt. Bei getrennten Abzügen korrigiere beide Konturen. Gehört der Teil zum selben Papier, markiere den Teilvorschlag als «Falsches Objekt».";
 export const adjacentPrintHint = "Prüfe am Original, ob der gestrichelte Bereich ein eigener Abzug ist und ob der helle Streifen zu seinem Papier gehört.";
 export const nestedPrintHint = "Prüfe am Original, ob der gestrichelte Bereich zum selben Papierabzug gehört. Bei einem Abzug bleiben alle Bilder im Motiv. Ergänze den Bereich, wenn dort ein eigener Abzug aufliegt.";
 export const deferredPrintHint = "Prüfe die violett gestrichelten Konturen am Original. Bestätige die Anzahl, wenn alle Abzüge bereits erfasst sind.";
@@ -60,6 +62,9 @@ export function getDeferredPrintProposals(proposals) {
 }
 
 export function getPrintEdgeReviewHint(fullPrint) {
+  if (fullPrint?.reason_codes?.includes(scallopedOwnershipReason)) {
+    return scallopedOwnershipHint;
+  }
   if (fullPrint?.suggested_warp_quad?.length === 4) {
     return "Vergleiche den vorgeschlagenen Aussenumriss mit dem Original. Setze die Ecken an die sichtbare Papierkante.";
   }
@@ -129,7 +134,7 @@ const reviewMessages = {
   PRINT_AT_CAPTURE_EDGE: "Der Abzug reicht bis an den Aufnahmerand. Prüfe, ob er vollständig zu sehen ist.",
   PRINT_POSSIBLY_OCCLUDED: "Ein Teil des Abzugs könnte verdeckt sein.",
   [scallopedOutlineReviewReason]: scallopedOutlineReviewHint,
-  PRINT_SCALLOPED_OWNERSHIP_UNCERTAIN: "Prüfe am Original, ob ein zweiter Abzug auf dem gezackten Papier aufliegt. Passe bei getrennten Abzügen beide Zuschnitte einzeln an.",
+  [scallopedOwnershipReason]: scallopedOwnershipHint,
   PRINT_BOUNDARY_BLURRED: "Die Abzugskante ist unscharf. Prüfe den Zuschnitt am Original.",
   ...printEdgeReviewHints,
   ALBUM_WINDOW_OCCLUDED: "Der Abzug steckt in einem Albumfenster. Prüfe, welche Teile sichtbar sind.",
