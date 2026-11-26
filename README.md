@@ -202,6 +202,24 @@ Die Markierung lässt sich auch bei eingeblendeter aktueller
 Zuschnittlinie prüfen. Beide Zuschnittmodi bleiben in Prüfung.
 [Beispiel Golden-Seite 26](data/evaluation/README.md#show-an-inward-source-transition-below-an-album-edge)
 
+Bei einer leicht gebogenen Kante kann die gerade Zuschnittlinie
+ein Stück sichtbares Foto abschneiden. PhoSca vergleicht dafür
+gerade und gekrümmte Verläufe mit dichten Messungen im Original.
+Es prüft das Material ausserhalb der sichtbaren Kante über mehrere
+Pixel hinweg und berücksichtigt Nachbarabzüge. Ist ein Abschnitt
+gut belegt, erscheint unter **Ganzer Abzug** eine zweite, transparente
+Prüfvorschau. Sie ergänzt den beobachteten Abschnitt innerhalb einer
+kleinen Sicherheitszone an der Kante. Der Vergleich zeigt dieselbe
+Perspektive. Der vollständige Papierrand und das Seitenverhältnis
+bleiben in Prüfung.
+
+Eine neue überlappende Markierung blendet die zweite Vorschau aus.
+Der gemessene Kantenverlauf bleibt für die Prüfung gespeichert.
+Eine Bestätigung der bisherigen vier Ecken oder eine minimale
+Verschiebung löst die Prüfung einer gebogenen Kante nicht auf.
+Bei sichtbarer Wölbung hilft eine flache Neuaufnahme.
+[Gemessener gebogener Rand auf Golden-Seite 26](data/evaluation/README.md#recover-an-observed-bowed-edge-in-a-transparent-review-preview)
+
 Bei hellen Papierrändern direkt nebeneinander kann der Zuschnitt an
 der inneren Bildkante enden. PhoSca prüft zusätzlich, ob sich der
 helle Streifen ausserhalb der Schnittkante bis zum benachbarten
@@ -888,6 +906,10 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
   Er erscheint mit einer gemessenen Linie zur separaten Prüfung.
   [Innenkonturen](data/evaluation/README.md#review-two-fallback-contours-inside-a-detected-print) ·
   [Vorschlag am Aufnahmerand](data/evaluation/README.md#review-a-fallback-outline-crossing-the-album-edge)
+- **Der rechte Rand des oberen linken Abzugs.** Auf derselben
+  gedrehten Aufnahme zeigt eine transparente Prüfvorschau 791
+  zusätzliche native Quellpixel. An der gebogenen Kante bleiben
+  Abschnitte und Ecken offen. [Randvergleich und Prüfablauf](data/evaluation/README.md#recover-an-observed-bowed-edge-in-a-transparent-review-preview)
 - **Echter Abzug am Aufnahmebildrand.** Beim NerdScan-Entwicklungsbild
   traf die getestete Konfiguration drei erwartete Abzüge und lieferte
   zwei zusätzliche Vorschläge. Beide Modi blieben in Prüfung.

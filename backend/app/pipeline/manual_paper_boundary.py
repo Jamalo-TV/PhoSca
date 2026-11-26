@@ -3,6 +3,7 @@
 import cv2
 import numpy as np
 
+from app.pipeline.bowed_edge_review import POSSIBLE_BOWED_PRINT_EDGE
 from app.pipeline.edge_prints import CAPTURE_EDGE_HOLD
 from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels, order_quad_cyclic
 from app.pipeline.print_edges import (
@@ -102,7 +103,14 @@ def capture_outline_review_required(print_mode: dict) -> bool:
 
 def paper_curve_review_reference(correction: dict) -> dict | None:
     full = (correction.get("crop_modes") or {}).get("full_print") or {}
-    if "PRINT_BOUNDARY_CURVED" not in (full.get("reason_codes") or []) or len(full.get("warp_quad") or []) != 4:
+    if len(full.get("warp_quad") or []) != 4:
+        return None
+    previews = full.get("outline_preview") or {}
+    if (previews.get("source") == POSSIBLE_BOWED_PRINT_EDGE and previews.get("source_side") in range(4)
+            and full.get("suggested_edge_traces")):
+        return {"warp_quad": full["warp_quad"], "sides": [previews["source_side"]],
+                "traces": full["suggested_edge_traces"]}
+    if "PRINT_BOUNDARY_CURVED" not in (full.get("reason_codes") or []):
         return None
     sides = bowed_print_sides(correction.get("boundary_refinement") or {})
     return {"warp_quad": full["warp_quad"], "sides": sides or list(range(4)),

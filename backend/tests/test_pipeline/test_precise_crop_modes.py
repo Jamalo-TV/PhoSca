@@ -66,6 +66,53 @@ def test_original_album_ridge_reveals_only_the_inward_transition_for_review(monk
     assert not suggest_inward_print_edge(taped, quad, after.metadata["boundary_refinement"], [])
 
 
+def test_rotated_album_adds_a_bowed_strip_only_to_the_held_preview(monkeypatch):
+    from app.pipeline import perspective
+    from app.pipeline.bowed_edge_review import POSSIBLE_BOWED_PRINT_EDGE, suggest_bowed_print_preview
+    from app.pipeline.crop_sampling import _outline_mask
+    from app.pipeline.manual_paper_boundary import check_manual_paper_boundary, paper_curve_review_reference
+
+    path = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_26.jpg"
+    rotated = cv2.rotate(cv2.imread(str(path)), cv2.ROTATE_180)
+    encoded, jpeg = cv2.imencode(".jpg", rotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    assert encoded
+    image = cv2.imdecode(jpeg, cv2.IMREAD_COLOR)
+    seed = _vertices([(1618, 819), (2255, 810), (2256, 1744), (1631, 1767)], image)
+    mask = {"polygon": seed, "source": "classical_border_quad", "detector_source": "edge_contour"}
+    with monkeypatch.context() as baseline:
+        baseline.setattr(perspective, "suggest_bowed_print_preview", lambda *_: None)
+        before = _crop(image, {}, mask, dual_mode=True, enable_classical_retry=True)
+    after = _crop(image, {}, mask, dual_mode=True, enable_classical_retry=True)
+
+    old, new = before.metadata["crop_modes"], after.metadata["crop_modes"]
+    full = new["full_print"].copy()
+    assert full.pop("suggested_edge_source") == POSSIBLE_BOWED_PRINT_EDGE
+    assert len(full.pop("suggested_edge_traces")) == 1
+    preview = full.pop("outline_preview")
+    assert preview["source"] == POSSIBLE_BOWED_PRINT_EDGE and preview["source_side"] == 3
+    assert full == old["full_print"] and new["image_only"] == old["image_only"]
+    assert all(mode["status"] == "review_needed" for mode in new.values())
+    assert "suggested_warp_quad" not in full and after.image_only is None
+    np.testing.assert_array_equal(after.image, before.image)
+    np.testing.assert_array_equal(after.rectified_untrimmed, before.rectified_untrimmed)
+    assert before.full_print_preview is None
+    alpha = after.full_print_preview[:, :, 3]
+    assert np.any(alpha == 0) and np.any(alpha == 255)
+
+    height, width = image.shape[:2]
+    quad = normalized_vertices_to_pixels([(p["x"], p["y"]) for p in full["warp_quad"]], width, height)
+    outline = normalized_vertices_to_pixels([(p["x"], p["y"]) for p in preview["source_outline"]], width, height)
+    original_source = _outline_mask(quad, image.shape[:2])
+    preview_source = _outline_mask(outline, image.shape[:2])
+    assert np.all(preview_source >= original_source)
+    assert 700 <= np.count_nonzero(preview_source > original_source) <= 900
+    assert suggest_bowed_print_preview(image, quad, after.metadata["boundary_refinement"], [_rect(1609, 870, 1622, 956)]) is None
+
+    reference = paper_curve_review_reference(after.metadata)
+    assert reference["sides"] == [3]
+    assert check_manual_paper_boundary(image, quad, {"outline": [], "curve": reference}) == (True, reference["traces"])
+
+
 def test_overlapping_print_shows_only_exposed_paper_without_changing_either_crop(monkeypatch):
     from app.evaluation.crop_fixtures import synthetic_crop_pages
     from app.pipeline import perspective

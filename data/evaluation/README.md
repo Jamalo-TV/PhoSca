@@ -364,10 +364,24 @@ rights still need verification before inclusion in the final split.
 The public batch documentation maps item and resource JSON to declared
 scan files. The exact pair IDs above can be matched through the MARC
 mounted-page links before obtaining and hashing the intact TIFFs.
+The complete 2,610-row Free to Use bulk manifest omits both print
+LCCNs and both corresponding volume LCCNs.
 [Digitization notes](https://www.loc.gov/pictures/collection/prok/digitizing.html) ·
 [LOT 10333 no. 128](https://www.loc.gov/pictures/item/2018679139/) ·
 [LOT 10334 no. 54](https://www.loc.gov/pictures/collection/prok/item/2018679194/) ·
-[Public image batch workflow](https://libraryofcongress.github.io/data-exploration/loc.gov%20JSON%20API/Accessing%20images%20for%20analysis.html)
+[Public image batch workflow](https://libraryofcongress.github.io/data-exploration/loc.gov%20JSON%20API/Accessing%20images%20for%20analysis.html) ·
+[Free to Use bulk manifest](https://data.labs.loc.gov/free-to-use/manifest.html)
+
+Princeton album `2016-546` has two public-domain catalogued leaf
+rasters for accession `2016-546.3 a-b`. Its catalogue distinguishes
+leaf, paper and image dimensions. The per-print measurements are
+approximate. Native download requests returned 403 in the workspace.
+The separate Smithsonian album `2020.10.3` is also catalogued with
+public-domain media. A separately acquired raster of the same paper
+print and a native page file remain to be matched. These entries
+remain source leads beside the paired-geometry preflight.
+[Princeton record](https://artmuseum.princeton.edu/art/collections/objects/129854) ·
+[Smithsonian record](https://collections.si.edu/search/detail/edanmdm:nmaahc_2020.10.3?print=yes)
 
 The source-only preflight at `eccc049` rechecked seven tracked drafts.
 On this workspace it reported 26 missing pinned page rasters and 12
@@ -5503,6 +5517,92 @@ time and 79.54 ms p95 over 20 single-thread calls.
 The `fusion_ownership` profile moves to revision 4. Native evidence,
 API and browser checks, benchmarks and experimental negative controls
 are local under `runs/crop-quality/frame-backing-contour/`.
+
+### Recover an observed bowed edge in a transparent review preview
+
+On the same Golden 26 JPEG75 upload, the original upper-left print
+is cluster 2. Its stored projective warp clips a wedge of content near
+the upright right edge. A strict development-mask measurement counts
+2,378 of 2,924 omitted source centres on that side. The reference
+includes some pale pixels beyond the visible transition. Independent
+local Lab comparisons of the original, JPEG75 and JPEG55 locate the
+edge without assuming that the development quadrilateral is exact.
+On 686 agreeing source stations, contiguous-block holdout gives
+p95 residual of 3.57 px for a line and 1.20 px for a quadratic fit.
+The confidently classified photo- and album-side centres admit no
+single straight side with zero errors. The upper crossing is visible.
+The lower crossing remains weak. A larger straight quad recovers
+visible image and admits measured backing in the same test.
+
+The optional preview runs on a held classical contour with an
+unsupported boundary, no competing outline and at least two strongly
+supported sides. Each eligible side is sampled at 228 stations. The
+source gradient and a pale, neutral exterior strip nominate the
+transition. The fit uses local Lab steps, eight distributed anchor
+bands and three robust selection passes. The curve needs at least
+87% supported stations, 65% in each eighth and p95 residual at most
+1.35 native px. It must improve p95 over the corresponding straight
+fit by at least 0.55 px, with chord bow between 2 and 8 px. At least
+23% of supported observations must lie more than 1.75 px beyond the
+current cut. The entire exterior strip is checked for another layer.
+A known neighboring outline intersecting the search corridor vetoes
+the preview. Two eligible sides leave selection to the reviewer.
+
+The source overlay shows an open 76-point trace with a 897.21 px
+chord. The partial extension uses the nearer of the measured and
+fitted depths, inset by 1.25 native px and limited by adjacent
+supported stations. Where coverage stops, the preview returns to the
+original cut. The extended source mask and premultiplied colors are
+sampled with the existing homography. The PNG canvas translates by
+6 output px and grows from 637 × 945 to 644 × 945. Physical aspect
+and landmark correspondences remain unverified.
+
+| Measured against the development annotation | Stored crop | Transparent review preview |
+| --- | ---: | ---: |
+| Source footprint IoU | 0.99070 | 0.99203 |
+| Omitted source area | 0.9183% | 0.7853% |
+| Omitted source pixel centres beyond the one-pixel band | 2,924 | 2,133 |
+| Output pixels with foreign contributions beyond the band | 68 | 0 |
+| Foreign interpolation weight over visible output | 0.0416% | 0.0149% |
+
+The preview adds 791 source centres and preserves all previously
+sampled source centres. In the stricter independent photo-side subset
+it recovers 698 of 887 formerly omitted centres on that side. The
+other local photometric classifier identifies 749 of the 791 additions
+as clear photo content. Neither classified subset measures a new
+addition of clear album backing. Their uncertain regions remain
+part of the review. A same-art overlapping print without its own
+proposal contributes 69 peer centres in one optical alias control.
+All 24 tests with a supplied independent neighbor mask veto the cue.
+The helper emits a preview in all 28 fixed-proposal rotation,
+encoding and blur treatments. These derivatives share one exposure.
+Measured warm helper time is about 34 ms on one CPU thread.
+
+In the normal multipart path only cluster 2 gains the optional PNG
+and trace. The four instances, masks, stored transforms, both mode
+statuses and prior JPEG bytes match `110a29a`. Reprocessing retains
+the original and optional previews. Both named crop downloads and
+the legacy cropped download remain held. A manually marked area
+intersecting the search band invalidates the PNG and trace display.
+The curve reference is recorded when the original preview is created.
+It survives that invalidation and later reprocessing. Tests cover a
+same-corner edit, an edit of 0.35 native px and entering a print size.
+The curved-edge review persists for both modes. Desktop and mobile
+offer both previews for comparison in the review.
+
+Paired evaluation preserves detection, named-crop metrics and review
+counts in all seven runs. The frozen synthetic set detects 18/18
+prints and the seeded recovery control passes 11/11 full prints and
+12/12 motifs. The original Golden set matches 29/29 prints. Across
+12 fresh encodings of Golden 26 the evaluator matches 48 prints,
+with zero extra active proposals and both modes held. The film
+contact-page run retains one matched print and three extra proposals,
+all held for crop review. Only the known JPEG75 case gains the
+optional source trace and preview metadata.
+
+The `print_outline_suggestion` profile moves to revision 4. The paired
+native masks, PNG, browser receipts and evaluator comparisons are
+local under `runs/crop-quality/bowed-edge-preview/`.
 
 ### Measure seed displacement and competing print edges
 

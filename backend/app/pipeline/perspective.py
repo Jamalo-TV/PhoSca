@@ -9,6 +9,7 @@ from app.pipeline.album_windows import (
     ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves,
 )
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
+from app.pipeline.bowed_edge_review import POSSIBLE_BOWED_PRINT_EDGE, suggest_bowed_print_preview
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
 from app.pipeline.dark_album_review import DARK_BACKING_OUTLINE_REVIEW
 from app.pipeline.decisions import (
@@ -149,6 +150,7 @@ def validate_review_quads(mask: dict, width: int, height: int, *, require_cyclic
 
 def manual_print_intersects(
     crop_quad: list[dict] | None, marked_quad: list[dict], width: int, height: int,
+    *, minimum_overlap_px: float | None = None,
 ) -> bool:
     """Treat a material intersection with an unverified mark as ambiguous ownership."""
     try:
@@ -158,6 +160,8 @@ def manual_print_intersects(
         return False
     if crop is None or mark is None:
         return False
+    if minimum_overlap_px is not None:
+        return cv2.intersectConvexConvex(crop, mark)[0] > minimum_overlap_px
     return _material_print_intersection(crop, mark)
 
 
@@ -2019,6 +2023,30 @@ def correct_photo_crop(
             if spans:
                 full_mode["suggested_edge_traces"] = [_vertices_on_page(span, width, height) for span in spans]
                 full_mode["suggested_edge_source"] = POSSIBLE_INWARD_PRINT_EDGE
+        if (enable_classical_retry and not manual and protection["passed"]
+                and mask.get("source") == "classical_border_quad" and mask.get("detector_source") == "edge_contour"
+                and "PRINT_BOUNDARY_UNSUPPORTED" in full_reasons
+                and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
+                and all(mode["status"] == "review_needed" for mode in modes.values())
+                and not any(full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview"))
+                and not any(mask.get(key) for key in ("warp_quad", *_STOCK_REVIEW_CONFLICTS))):
+            try:
+                observed = suggest_bowed_print_preview(page_image, src_points, boundary_refinement, neighbor_polygons)
+                if observed is not None:
+                    preview, evidence = _render_outline_preview(
+                        page_image, observed.outline, np.asarray(full_mode["page_to_output"]),
+                    )
+                    full_mode["outline_preview"] = {
+                        **evidence, "source": POSSIBLE_BOWED_PRINT_EDGE, "source_side": observed.side,
+                        "source_search_band": _vertices_on_page(observed.search_band, width, height),
+                    }
+                    full_mode["suggested_edge_traces"] = [
+                        _vertices_on_page(path, width, height) for path in observed.traces
+                    ]
+                    full_mode["suggested_edge_source"] = POSSIBLE_BOWED_PRINT_EDGE
+                    result = replace(result, full_print_preview=preview)
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                pass  # Keep the original held preview when local recovery cannot be rendered.
         if (cuts := full_mode.get("shared_rim_cut_traces")) and not any(
             full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview")
         ):

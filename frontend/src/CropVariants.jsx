@@ -105,6 +105,8 @@ const possibleBackedPaperEdge = "possible_backed_paper_edge";
 export const possibleOverextendedPrintEdge = "possible_overextended_print_edge";
 const possibleInwardPrintEdge = "possible_inward_print_edge";
 const possibleInwardPrintCorner = "possible_inward_print_corner";
+const possibleBowedPrintEdge = "possible_bowed_print_edge";
+const curvedPrintOutlineReviewReason = "PRINT_CURVED_OUTLINE_REVIEW";
 const captureAtEdgeHint = "Der Abzug reicht über den Aufnahmerand hinaus. Für einen vollständigen Zuschnitt brauchst du eine neue Aufnahme.";
 export const captureSplitReviewHint = "Die gestrichelten Linien zeigen einen möglichen gemeinsamen Papierrand. Prüfe am Original, wie viele Abzüge dort liegen.";
 export const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
@@ -126,7 +128,7 @@ const printEdgeReviewHints = {
   PRINT_EXTENDED_OUTLINE_REVIEW: "Prüfe die erweiterte Kontur am Original. Setze die Ecken an den Papierrand, damit der ganze Abzug erhalten bleibt.",
   PRINT_BOUNDARY_UNSUPPORTED: "Prüfe den sichtbaren Papierrand am Original. Korrigiere die markierten Ecken, soweit die Kante erkennbar ist.",
   PRINT_BOUNDARY_CURVED: "Die Abzugskante ist gekrümmt. Prüfe am Original, ob der Abzug für eine neue Aufnahme flach aufgelegt werden kann.",
-  PRINT_CURVED_OUTLINE_REVIEW: "Die Papierkante braucht eine weitere Prüfung. Setze die Ecken an die sichtbare Aussenkante. Bei einer Wölbung hilft eine neue Aufnahme mit flach liegendem Abzug.",
+  [curvedPrintOutlineReviewReason]: "Die Papierkante braucht eine weitere Prüfung. Setze die Ecken an die sichtbare Aussenkante. Bei einer Wölbung hilft eine neue Aufnahme mit flach liegendem Abzug.",
   [captureOutlineReviewReason]: "Die vollständige Papierkante ist noch unklar. Vergleiche die Ecken mit der Aussenkante im Original. Bei einer verdeckten oder gewölbten Kante hilft eine neue Aufnahme mit sichtbarem Rand rundum.",
   [captureAtEdgeReason]: captureAtEdgeHint,
   PAPER_GRID_OVERLAP_REVIEW: "Zwei Vorschläge überdecken dieselbe Stelle. Kläre zuerst die überlappenden Vorschläge am Original und berechne den Zuschnitt danach erneut.",
@@ -261,13 +263,19 @@ export function captureRequiresReview(fullPrint) {
   return fullPrint?.reason_codes?.some(reason => reason === captureAtEdgeReason || reason === captureOutlineReviewReason);
 }
 
+function hasBowedPrintReview(fullPrint) {
+  return fullPrint?.suggested_edge_source === possibleBowedPrintEdge || fullPrint?.outline_preview?.source === possibleBowedPrintEdge;
+}
+
 export function paperOutlineRequiresReview(fullPrint) {
   return fullPrint?.status === "review_needed" && (fullPrint.suggested_warp_quad?.length === 4
     || fullPrint.suggested_edge_source === competingPrintEdges
     || fullPrint.suggested_edge_source === possibleBackedPaperEdge
     || fullPrint.suggested_edge_source === possibleOverextendedPrintEdge
     || fullPrint.suggested_edge_source === possibleInwardPrintEdge
+    || hasBowedPrintReview(fullPrint)
     || fullPrint.reason_codes?.some(reason => reason === "PRINT_EDGE_CONFIRMATION_REQUIRED"
+      || reason === curvedPrintOutlineReviewReason
       || reason === "PAPER_GRID_OVERLAP_REVIEW" || reason === manualNeighborOverlap
       || reason === sourceFragmentGroupReason || reason === sharedPrintRimReason
       || reason === manualNeighborContentLoss) || paperOutlineNeedsConfirmation(fullPrint));
@@ -300,8 +308,11 @@ export function getPrintEdgeReviewHint(fullPrint) {
   if (fullPrint?.suggested_warp_quad?.length === 4) {
     return "Vergleiche den vorgeschlagenen Aussenumriss mit dem Original. Setze die Ecken an die sichtbare Papierkante.";
   }
-  if (fullPrint?.reason_codes?.includes("PRINT_CURVED_OUTLINE_REVIEW")) {
-    return printEdgeReviewHints.PRINT_CURVED_OUTLINE_REVIEW;
+  if (hasBowedPrintReview(fullPrint)) {
+    return "Prüfe am Original, ob sich die Papierkante wölbt, und verfolge den Papierrand rundum. Bleibt er unklar, fotografiere den Abzug flach aufgelegt.";
+  }
+  if (fullPrint?.reason_codes?.includes(curvedPrintOutlineReviewReason)) {
+    return printEdgeReviewHints[curvedPrintOutlineReviewReason];
   }
   if (getSourceEdgeTraces(fullPrint?.exposed_overlap_edge_traces).length) {
     return "Türkis zeigt einen möglichen Papierrand ausserhalb des Zuschnitts. Prüfe am Original, wo das Fotopapier endet und welcher Abzug oben liegt.";
@@ -349,6 +360,9 @@ export function getMotifMarginMarks(motif) {
 
 export function getPrintOutlinePreviewHint(fullPrint) {
   const preview = fullPrint?.outline_preview;
+  if (preview?.source === possibleBowedPrintEdge) {
+    return "Die Prüfvorschau ergänzt nur den am Original gemessenen sichtbaren Streifen. Der vollständige Papierrand ist noch unklar.";
+  }
   if (preview?.source === possibleInwardPrintCorner) {
     const aspect = preview.reason_codes?.includes("PRINT_ASPECT_UNCERTAIN") ? " Das Seitenverhältnis ist geschätzt." : "";
     return `Die Vorschau ergänzt die am Original gemessene Ecke.${aspect}`;
@@ -365,7 +379,7 @@ export function getPrintOutlinePreviewHint(fullPrint) {
 }
 
 export function showsPaperEdgeComparison(fullPrint) {
-  return [possibleOverextendedPrintEdge, possibleInwardPrintCorner].includes(fullPrint?.outline_preview?.source);
+  return [possibleOverextendedPrintEdge, possibleInwardPrintCorner, possibleBowedPrintEdge].includes(fullPrint?.outline_preview?.source);
 }
 
 export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint }) {

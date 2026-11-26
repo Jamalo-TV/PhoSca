@@ -814,6 +814,76 @@ async def test_measured_aspect_does_not_clear_curved_paper_review_on_golden_page
     assert replay.json()["enhancement_applied"]["correction"]["manual_paper_boundary"]["requires_review"]
 
 
+async def test_bowed_source_review_survives_preview_invalidation_and_small_manual_edit(client, monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, Page
+    from app.pipeline.bowed_edge_review import POSSIBLE_BOWED_PRINT_EDGE
+    from app.pipeline.manual_paper_boundary import MANUAL_PAPER_BOUNDARY_REVIEW
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_CLASSICAL_SEGMENTATION_FALLBACK", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    get_settings.cache_clear()
+    path = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_26.jpg"
+    image = cv2.rotate(cv2.imread(str(path)), cv2.ROTATE_180)
+    source = tmp_path / "golden26-180.jpeg"
+    assert cv2.imwrite(str(source), image, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    _, page_id, photo_id = await _seed_review_data()
+    height, width = image.shape[:2]
+
+    def points(vertices):
+        return [{"x": x / (width - 1), "y": y / (height - 1)} for x, y in vertices]
+
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        page.storage_path = str(source)
+        page.file_hash_sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.bounding_box = {"x1": 1618 / width, "y1": 810 / height, "x2": 2256 / width, "y2": 1767 / height}
+        photo.segmentation_mask = {"source": "classical_border_quad", "detector_source": "edge_contour",
+                                   "polygon": points([(1618, 819), (2255, 810), (2256, 1744), (1631, 1767)])}
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    rendered = await client.post(f"{url}/reprocess")
+    assert rendered.status_code == 200, rendered.text
+    original = (await client.get(url)).json()
+    metadata = original["enhancement_applied"]
+    full = metadata["correction"]["crop_modes"]["full_print"]
+    assert full["outline_preview"]["source"] == POSSIBLE_BOWED_PRINT_EDGE
+    reference = metadata["review_provenance"]["paper_curve_review"]
+    assert reference["traces"] == full["suggested_edge_traces"]
+    preview_url = original["urls"]["full_print_preview"]
+    assert (await client.get(preview_url)).status_code == 200
+
+    # A separate review claim intersects the strip's source search band only.
+    other = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": points([(1595, 965), (1611, 965), (1611, 1072), (1595, 1072)]),
+    })
+    assert other.status_code == 201, other.text
+    assert (await client.get(preview_url)).status_code == 404
+    regenerated = await client.post(f"{url}/reprocess")
+    assert regenerated.status_code == 200, regenerated.text
+    evidence = regenerated.json()["enhancement_applied"]
+    assert evidence["review_provenance"]["paper_curve_review"] == reference
+    assert "outline_preview" not in evidence["correction"]["crop_modes"]["full_print"]
+
+    edited = [dict(point) for point in full["warp_quad"]]
+    edited[0]["x"] += .35 / (width - 1)
+    saved = await client.patch(f"{url}/bounding-box", json={
+        "bounding_box": original["bounding_box"],
+        "segmentation_mask": {"source": "manual_quad", "polygon": edited, "warp_quad": edited,
+                              "print_size_mm": {"width": 70, "height": 100}},
+    })
+    assert saved.status_code == 200, saved.text
+    modes = saved.json()["enhancement_applied"]["correction"]["crop_modes"]
+    assert all(MANUAL_PAPER_BOUNDARY_REVIEW in mode["reason_codes"] for mode in modes.values())
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
+
+
 async def test_legacy_photo_serves_trim_and_keeps_untrimmed_variant(client, monkeypatch) -> None:
     from app.config import get_settings
 

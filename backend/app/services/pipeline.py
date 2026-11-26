@@ -33,6 +33,7 @@ from app.models import (
     PhotoStatus,
     RunStatus,
 )
+from app.pipeline.bowed_edge_review import POSSIBLE_BOWED_PRINT_EDGE
 from app.pipeline.camera_calibration import CAMERA_ASPECT_REVIEW, CameraCalibration, load_crop_source
 from app.pipeline.confidence import calibrate_confidence
 from app.pipeline.crop_validation import (
@@ -64,6 +65,7 @@ from app.pipeline.manual_paper_boundary import (
     MANUAL_PAPER_BOUNDARY_REVISION, PAPER_GRID_OVERLAP_REVIEW, hold_overlapping_paper_claim_modes,
     manual_paper_download_needs_review, manual_paper_reference, manual_scalloped_outline, original_prediction_mask,
     overlapping_paper_claims, paper_claim_groups, paper_claim_overlap_checks, paper_claims_need_overlap_check,
+    paper_curve_review_reference,
     shared_rim_cut_reference,
 )
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
@@ -853,6 +855,12 @@ async def perspective_correction_task_logic(
     metadata["variants"] = variants
     metadata["selected_variant"] = "source_corrected"
     metadata["correction"] = correction_metadata
+    if automatic_detection and full_mode and (full_mode.get("outline_preview") or {}).get("source") == POSSIBLE_BOWED_PRINT_EDGE:
+        curve = paper_curve_review_reference(correction_metadata)
+        if curve is not None:
+            provenance = dict(metadata.get("review_provenance") or {})
+            provenance.setdefault("paper_curve_review", deepcopy(curve))
+            metadata["review_provenance"] = provenance
     if full_mode and not automatic_detection:
         if (previous_manual_crop and previous_manual_crop.get("ready_before_edit")
                 and MANUAL_NEIGHBOR_OVERLAP in full_mode.get("reason_codes", ())):
