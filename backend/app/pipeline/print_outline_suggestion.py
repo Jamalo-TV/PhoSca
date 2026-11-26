@@ -7,7 +7,7 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic
 from app.pipeline.print_edges import _PRINT_SIDES, _edge_band, _line_endpoints, _replace_quad_side, _sample_lab, _side_line
 
 
-PRINT_OUTLINE_SUGGESTION_REVISION = 9
+PRINT_OUTLINE_SUGGESTION_REVISION = 10
 POSSIBLE_OVEREXTENDED_PRINT_EDGE = "possible_overextended_print_edge"
 POSSIBLE_INWARD_PRINT_EDGE = "possible_inward_print_edge"
 

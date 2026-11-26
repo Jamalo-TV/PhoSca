@@ -398,6 +398,22 @@ Zuschnitten. Ein ergänzter Abzug braucht die eigene Papierprüfung
 und die Freigabe beider Zuschnittmodi.
 [Scan 67 und Gegenproben](data/evaluation/README.md#review-continuous-embossing-across-an-album-pocket)
 
+Wenn der Abzug selbst in einer geprägten Albumhülle liegt, kann ein
+zu weit gefasster Zuschnitt sichtbare Folie enthalten. Bei deutlich
+verschobenen Kanten sucht PhoSca im Original nach einer möglichen
+Papierkontur. Es prüft an mehreren Seiten, ob sich die gemessene
+Prägung unmittelbar ausserhalb der Kante wiederholt und auf der
+Innenseite abbricht. Nur die Abschnitte mit nachgewiesenem Übergang
+erscheinen in der Zuschnittprüfung.
+
+Auch Folie über einem blassen Bildrand kann an so einem Übergang
+enden. Prüfe am Original, wo das Papier endet und ob es bis unter die
+Folie reicht. Setze die Ecken an den sichtbaren Papierrand. Bei
+unklaren oder verdeckten Ecken hilft eine Aufnahme des frei liegenden
+Abzugs. PhoSca zeigt die offenen Messabschnitte neben der bestehenden
+Kontur. Für beide Zuschnittmodi gilt weiterhin die eigene Prüfung.
+[Messung der Papierkante unter Albumfolie](data/evaluation/README.md#trace-paper-under-an-embossed-carrier)
+
 Berührt ein klassischer Kontrastvorschlag nur eine Aufnahmeecke,
 kann auch ein schwach erkannter Nachbar den Ausgangspunkt für die
 **Anzahlprüfung** liefern. Dazu müssen im Original mindestens drei

@@ -6694,6 +6694,88 @@ The local source, benchmark and product receipts are under
 python -m pytest -q backend/tests/test_api/test_embossed_album_pocket.py
 ```
 
+### Trace paper under an embossed carrier
+
+The lower print in scan 67 illustrates a different issue from the
+empty pocket. In the original product replay its stored crop includes
+embossed foil and misses some picture-side pixels. Only the top side
+has a supported standard line fit. A wider search on the original
+proposes all four sides. At approximately 132 native pixels search
+reach, source support was 83–98%. Two sides moved about 110–137
+pixels at one end compared with the stored corners.
+
+The product uses this cue for held model crops with an unsupported
+paper boundary, at least one well-supported current side and at least
+two weak current sides. It fits four source lines within 7% of the
+shortest side, capped at 180 native pixels. Each proposal needs a
+well-supported fit and a plausible convex intersection. On two
+opposing sides, separate exterior patches have to agree on both
+directions of the repeating embossing. At 49 stations on each
+candidate side, pairs of narrow original-pixel bands are matched
+along the edge. A station needs exterior correlation at least .70,
+interior correlation at most .45 and a local Lab transition at least
+10. Each fitted side needs at least 72% supported stations and at least
+50% in every quarter. PhoSca displays consecutive supported intervals
+on the previously weak sides. The end intervals and breaks remain
+open in the editor.
+
+At native size the lower scan 67 row gains eight open segments on
+three sides. The half-size raster gains nine segments on the two
+sides whose standard fit remains weak. Direct controls with a plain
+carrier or with repeating material still visible on both sides of
+the edge produce no traces. A separately tested pale image margin
+can lie beneath the same embossing. In that control a strictly linear
+hypothesis sits 20–37 pixels inside genuinely owned image content.
+The measured phase break is valid as an optical transition. The
+editor prompts for paper ownership and uses the saved crop geometry
+and the existing exports policy.
+
+The registered native turns and JPEG75/JPEG55 copies show eight
+intervals per input. The registered half-size turns and JPEG55 copy
+also show intervals. The half-size JPEG75 derivative abstains. These
+are transformations of the same development capture. The direct
+check took 85–265 ms of CPU time per view on one OpenCV thread.
+
+An independent native audit estimated coverage on three sides with
+a two-pixel uncertainty margin. The four-line development draft
+reduces estimated omitted photo-side centres from 12,527 to 137 and
+backing-side centres from 285,136 to 344. For the same three sides the
+estimated output pixels affected by backing fall from 305,701 in
+the existing preview to 514 in the trial owned-bilinear warp. The
+upper dark seam is excluded from these measurements. Its broad and
+chromatic transitions disagree by more than 2.5 pixels at 778 of 2,192
+usable source stations. Another active outline covers nearly the
+whole lower print. Exact paper and motif ownership and the treatment
+of that overlapping proposal remain open.
+
+Ordinary multipart uploads at both sizes recover the same proposals
+and keep the open pocket offer. The lower row gets only the source
+trace and its source type. The other rows, both mode records apart
+from that annotation, and the ordinary preview JPEG hashes match the
+prior build. The desktop and mobile editors show the same native
+intervals. Service reprocessing keeps the traces and keeps both
+named downloads and the legacy trimmed download held. All eight
+paired benchmark reports match round for round in detection, geometry,
+and both crop modes. The validation profile advances the
+`print_outline_suggestion` revision to 10. Local receipts are under
+`runs/crop-quality/embossed-carrier-edges/exact/`.
+
+```bash
+python -m pytest -q backend/tests/test_pipeline/test_embossed_carrier_paper.py
+```
+
+The separate scan 66 replay showed no overlap with the 112-pixel
+historical scanner-bed proposal at either size. With the registered
+mixed detector and classical fallback, both views found the two
+coarsely labelled exposed prints. They also kept two additional
+candidates spanning stacked pockets and partially exposed prints.
+On the upper print, a signed source transition with median
+Lab contrast 76.46 lies about 900–1,100 native pixels inside the
+current left contour. The lower beach print has competing left
+transitions and shares its coarse outline with parts of other prints.
+The historical scanner strip and these unresolved ownership issues
+have different causes. [Pinned scan 66 PDF](https://github.com/ndipatri/photoScanner/blob/1000a550af25257e53af921ba61b72b65fe54657/tests/reference/scan-66.pdf)
+
 ### Review a fallback outline crossing the album edge
 
 The same Golden 26 180° JPEG75 development raster has a third false

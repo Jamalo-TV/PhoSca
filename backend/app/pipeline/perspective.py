@@ -23,6 +23,7 @@ from app.pipeline.decisions import (
 from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CAPTURE_SPLIT_REVIEW_SOURCE, capture_edge_requires_review,
 )
+from app.pipeline.embossed_album_pockets import POSSIBLE_EMBOSSED_ALBUM_PAPER_EDGES, embossed_carrier_paper_traces
 from app.pipeline.crossing_prints import CROSSING_PRINT_REVIEW, REVIEWED_CROSSING_OUTLINE
 from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW, SOURCE_FRAGMENT_GROUP_REVIEW,
@@ -2304,6 +2305,22 @@ def correct_photo_crop(
         ):
             full_mode["suggested_edge_traces"] = cuts
             full_mode["suggested_edge_source"] = SHARED_PRINT_RIM_SOURCE
+        if (enable_classical_retry and not manual and protection["passed"]
+                and mask.get("source") == "yolo_seg_mask" and mask.get("detector_source") == "yolo_onnx"
+                and (mask.get("boundary_evidence") or {}).get("score", 0.) >= .65
+                and "PRINT_BOUNDARY_UNSUPPORTED" in uncertain_edges
+                and uncertain_edges <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_POSSIBLY_OCCLUDED",
+                                        "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
+                and all(mode["status"] == "review_needed" for mode in modes.values())
+                and not any(mask.get(key) for key in ("warp_quad", *_STOCK_REVIEW_CONFLICTS))
+                and not any(full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview"))):
+            try:
+                spans = embossed_carrier_paper_traces(page_image, src_points, boundary_refinement)
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                spans = []
+            if spans:
+                full_mode["suggested_edge_traces"] = [_vertices_on_page(span, width, height) for span in spans]
+                full_mode["suggested_edge_source"] = POSSIBLE_EMBOSSED_ALBUM_PAPER_EDGES
         if (not manual and visible is not None and protection.get("review_untrimmed")
                 and set(full_reasons) <= {"PRINT_BOUNDARY_AMBIGUOUS", "POSSIBLE_CONTENT_CUTOFF", "PRINT_ASPECT_UNCERTAIN"}
                 and not full_mode.get("outline_preview") and not any(mask.get(key) for key in _STOCK_REVIEW_CONFLICTS)):
