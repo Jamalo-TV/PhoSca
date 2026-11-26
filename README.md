@@ -151,9 +151,13 @@ Strichpixel müssen dort den erforderlichen Kontrast zum Papier
 erreichen.
 
 Für schwache Schrift prüft PhoSca ausserdem schmale Striche mit
-lokalem Helligkeits- oder Farbkontrast auf beiden Seiten. Die
-Referenzpixel müssen auf demselben Papier und ausserhalb des Motivs
-liegen. Ein bestätigter Fund setzt für **Nur Bildmotiv** den
+lokalem Helligkeits- oder Farbkontrast auf beiden Seiten. Bei
+verbundenen blassen Zeichen zieht der Detektor den lokalen
+Papiermedian ab und sucht ausgerichtete Strichblöcke mit gemeinsamer
+Schriftlinie. Auch offene Zeichen können zu diesem Signal beitragen.
+Die bestätigenden Originalpixel müssen auf demselben Papier und
+ausserhalb des Motivs liegen. Ein bestätigter Fund setzt für
+**Nur Bildmotiv** den
 Prüfgrund `IMAGE_MARGIN_MARKS_REVIEW` und speichert eine
 Fundstelle in Koordinaten der Quelle. Der Hinweis fordert dazu auf,
 den gesamten Rand zu prüfen. Die Prüfung verändert die Geometrie und
@@ -459,13 +463,13 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
    Sehr dünne aufgelegte Abzüge mit derselben Vorlage können
    dieselben Übergänge zeigen. Ihre Anzahl bleibt eine Prüfentscheidung.
    [Fusionsprüfung und ScanCropper-Ablation](data/evaluation/README.md#audit-cross-source-fusion-and-scalloped-stock-conflicts)
-3. **Restfehler bei blasser und offener Schrift prüfen.** Ein Prototyp
-   gruppiert die verbundenen Striche des blassen Datums im
-   Papierstreifen und gibt einen Prüfhinweis. Der Abzug des lokalen
-   Papiermedians schnitt in den bisherigen Gegenproben besser ab
-   als eine vollständige Normierung nach Papierrauschen. Die
-   Entwicklungsmessung braucht noch eine Gegenprüfung auf weiteren
-   Originalen und ganzen Zuschnitten.
+3. **Restfehler bei blasser und offener Schrift prüfen.** Der lokal
+   geschätzte Papiermedian und die Gruppierung verbundener
+   Striche bringen das blasse Beispieldatum in Prüfung. In der
+   gepaarten Serie bleiben 22 von 54 früher verlustreichen
+   Motivzuschnitten offen. Besonders schwacher Kontrast,
+   Einzelzeichen und isolierte Striche brauchen weitere
+   Gegenproben auf ganzen Originalen.
    [Vergleich der Schrifterkennung](data/evaluation/README.md#compare-local-paper-centering-and-noise-scaling-for-faint-dates)
 4. **Zwei echte Albumgruppen als unabhängigen Endtest sichern.** Die
    Quellenaufarbeitung soll nutzbare Originale mit belegtem Papier-
@@ -478,7 +482,7 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
 
 ## Beispiele und offene Fälle
 
-![Drei generierte Fälle mit Eingabe und Ergebnissen. Eine Schrägaufnahme gelingt in beiden Modi. Bei einer verdeckten Papierecke bleibt der ganze Abzug in Prüfung. Ein blasser Datumsaufdruck wird vom Motivzuschnitt abgeschnitten.](docs/images/crop-examples.png)
+![Drei generierte Fälle mit Eingabe und Ergebnissen. Eine Schrägaufnahme gelingt in beiden Modi. Bei einer verdeckten Papierecke bleibt der ganze Abzug in Prüfung. Bei einem blassen Datumsaufdruck liegt das Motiv in Prüfung.](docs/images/crop-examples.png)
 
 - **Schrägaufnahme.** Beide Zuschnitte gelingen. PhoSca entzerrt den ganzen
   Abzug und entfernt im Motivmodus den hellen Papierrand. Die synthetische
@@ -487,11 +491,11 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
 - **Fotoecke auf Papier.** Für den ganzen Abzug erscheint eine
   Prüfvorschau. Das vollständig sichtbare Motiv lässt sich in dieser
   synthetischen Probe separat entzerren.
-- **Blasser Datumsaufdruck.** Der Motivzuschnitt erhält in dieser Probe
-  keinen der 727 vermessenen Schriftpunkte auf dem Rand. Blasse Schrift,
-  einzelne Zeichen und durchgehende Schriftzüge
-  erkennt die Randprüfung noch nicht zuverlässig. Der automatische
-  Produktdownload bleibt gesperrt.
+- **Blasser Datumsaufdruck.** Der frühere Motivzuschnitt verlor in
+  dieser Probe alle 727 vermessenen Schriftpunkte. Jetzt markiert
+  PhoSca den verdächtigen Randbereich im Original und hält den
+  Motivexport für die gezielte Korrektur zurück. Nach der bewussten
+  Korrektur enthielt der exportierte Zuschnitt alle 727 Messpunkte.
 - **Echter Kontaktabzug.** PhoSca markierte einen Teil der Beschriftung
   am Original. Nach der manuellen Korrektur mit Test-Papiermassen
   enthielten beide Galerie-Downloads alle 35 Bildfelder. Im Motiv

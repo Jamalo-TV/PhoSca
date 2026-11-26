@@ -10,7 +10,7 @@ from app.pipeline.faint_margin import faint_margin_region
 from app.pipeline.margin_stroke_shapes import isolated_margin_strokes
 
 
-MOTIF_MARGIN_REVIEW_REVISION = 3
+MOTIF_MARGIN_REVIEW_REVISION = 4
 
 
 def _mark_clusters(lightness: np.ndarray, owned: np.ndarray) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:

@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from app.evaluation.crop_fixtures import geometry_seed, synthetic_crop_pages
+from app.pipeline.geometry import normalized_vertices_to_pixels
 from app.pipeline.perspective import correct_photo_crop
 
 
@@ -18,7 +19,7 @@ def crop(page, box, mask):
     )
 
 
-def faint_caption():
+def faint_caption(*, include_review_overlay=False):
     scale = 2
     page = np.full((230 * scale, 340 * scale, 3), 236, np.uint8)
     page[80:384, 90:570] = 249
@@ -31,15 +32,23 @@ def faint_caption():
     mask = {"polygon": [{"x": x / 679, "y": y / 459} for x, y in points]}
     result = crop(page, {}, mask)
     state = result.metadata["crop_modes"]["image_only"]
+    detail = page[79:104, 137:282]
     if result.image_only is None:
-        return page, page[79:104, 137:282], None, "Motiv in Prüfung"
+        review = None
+        if include_review_overlay:
+            marked = page.copy()
+            for region in state.get("margin_mark_regions", []):
+                points = normalized_vertices_to_pixels([(p["x"], p["y"]) for p in region], *page.shape[1::-1])
+                cv2.polylines(marked, [np.rint(points).astype(np.int32)], True, (40, 108, 181), 1, cv2.LINE_AA)
+            review = cv2.resize(marked[79:104, 137:282], None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
+        return page, detail, review, "Motiv in Prüfung"
 
     rows, columns = np.nonzero(ink >= 90)
     pixels = np.column_stack((columns, rows)).astype(np.float32)
     mapped = cv2.perspectiveTransform(pixels[None], np.asarray(state["page_to_output"]))[0]
     height, width = result.image_only.shape[:2]
     kept = np.count_nonzero(((mapped >= 0) & (mapped <= [width - 1, height - 1])).all(axis=1))
-    return page, page[79:104, 137:282], result.image_only, f"{kept}/{len(pixels)} Schriftpunkte erhalten"
+    return page, detail, result.image_only, f"{kept}/{len(pixels)} Schriftpunkte erhalten"
 
 
 def place_image(canvas, raster, left, top):
@@ -59,7 +68,7 @@ def main(output: Path, regular: str, bold: str):
     holder = crop(mounted.image, *geometry_seed(mounted.prints[0], mounted.image.shape))
     assert all(mode["status"] == "ready" for mode in straight.metadata["crop_modes"].values())
     assert holder.metadata["crop_modes"]["full_print"]["status"] == "review_needed" and holder.image_only is not None
-    page, detail, motif, result = faint_caption()
+    page, detail, motif, result = faint_caption(include_review_overlay=True)
     rows = (
         ("Schräg fotografiert", (
             ("Albumausschnitt", tilted.image), ("Ganzer Abzug", straight.image), ("Nur Bildmotiv", straight.image_only),

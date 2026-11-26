@@ -2860,7 +2860,7 @@ Domoritz, the JPEG55 contact sheet and the stock challenge reproduce
 all previous detection, mask, render and mode availability metrics.
 The frozen synthetic detections and the separate 11/11 full-print and
 12/12 motif seeded geometry results also reproduce. The very pale date
-in the README example remains an open loss case.
+in the README example was still lost at this revision.
 
 In 36 paired warm samples on one OpenCV thread, the unmarked
 `1920 × 1160` fixture took 82.53 ms before and 82.35 ms after at the
@@ -3064,10 +3064,32 @@ paired MAD trial adds four reviews for known full lettering loss and
 preserves the whole-print bytes. The paired locally centred variant
 also adds four reviews for known full lettering loss and adds a
 location hint to two already-held variants. All 162 whole-print
-outputs remain byte-identical. Trials on additional original material
-are pending.
-These are development experiments. The checked-in faint-date example
-still reproduces the original loss.
+outputs remain byte-identical. The existing controls and real
+development replays keep their previous review availability.
+
+Revision 4 uses the locally centred variant after the existing
+neutral and blue-ink passes. A mark must exceed the local paper
+residual median by at least 14.2 Lab lightness levels. The run
+needs three similar-height components with a shared baseline and
+two wider components with structure in both directions. A final
+native matched-paper flank check uses the original contrast.
+The generated README example now routes the very pale date to
+review. The prior crop retained 0 of 727 sampled stroke centres.
+In the normal upload flow the example produces one proposal.
+After confirming the whole-print corners, the whole print returns
+200 while the motif and the legacy trimmed alias return 404.
+A generic geometry approval returns 409. An explicit motif edit
+then keeps all 727 sampled stroke centres in the export, with
+the same whole-print JPEG bytes before and after the motif edit.
+
+Paired final runs reproduce both modes' summaries for the frozen
+benchmarks, Golden, NerdScan, Domoritz, both contact-sheet JPEGs
+and the stock challenge. The exact strip matrix gains one additional
+faint-date detection (52/216 to 53/216) and adds no hold among
+660 controls. The complete isolated margin check for the README
+date takes 6.05 to 9.08 ms median and 7.33 to 11.82 ms at p95 over
+40 warm paired one-thread samples. With the same paper cleared, the
+median changes from 5.70 to 5.80 ms.
 
 ### Verify that catalogued pairs represent independent acquisitions
 

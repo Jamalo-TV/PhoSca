@@ -22,6 +22,21 @@ def _margin_regions(page: np.ndarray) -> list[np.ndarray]:
     return motif_margin_marks(page, page[40:192, 45:285], motif, inverse)
 
 
+def test_joined_faint_date_in_the_readme_is_held_with_source_coordinates() -> None:
+    from scripts.render_crop_examples import faint_caption
+
+    page, _, image, state = faint_caption()
+    assert image is None and state == "Motiv in Prüfung"
+    seed = [(84, 76), (574, 74), (572, 388), (86, 386)]
+    mask = {"polygon": [{"x": x / 679, "y": y / 459} for x, y in seed]}
+    crop = correct_photo_crop(page, {}, mask, dual_mode=True, auto_orient=False, enable_classical_retry=True)
+    full, motif = (crop.metadata["crop_modes"][mode] for mode in ("full_print", "image_only"))
+    assert full["status"] == "ready" and motif["reason_codes"] == [MOTIF_MARGIN_MARKS_REVIEW]
+    region, = motif["margin_mark_regions"]
+    points = [(vertex["x"] * 679, vertex["y"] * 459) for vertex in region]
+    assert np.allclose(points, [[162, 86], [243, 86], [243, 99], [162, 99]], atol=1.)
+
+
 @pytest.mark.parametrize("contrast", [(38, 38, 38), (7, 54, 42)], ids=["graphite", "blue"])
 def test_faint_date_is_held_and_located_on_the_original(contrast) -> None:
     page = _white_print()
