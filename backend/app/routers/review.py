@@ -315,8 +315,9 @@ def _validate_enhancement_decision(payload: MobileReviewAnswer, context: dict) -
 
 def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[ExtractedPhoto]:
     size, trace_count, mask_key, request_key, review_reason, name = GROUP_EXCLUSIONS[payload.answer]
-    if name == "crossing" and payload.reason_code != "non_photo_object":
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="crossing_confirmation_required")
+    required_reason = {"film": "film_carrier", "crossing": "non_photo_object"}.get(name)
+    if required_reason and payload.reason_code != required_reason:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{name}_confirmation_required")
     submitted = payload.metadata.get(request_key)
     if not isinstance(submitted, list) or len(submitted) != size or not all(isinstance(photo_id, str) for photo_id in submitted):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{name}_group_selection_invalid")
@@ -336,11 +337,13 @@ def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[Extrac
                 for photo in selected
             )):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{name}_review_group_stale")
-    if name == "crossing":
-        modes = ((selected[0].enhancement_applied or {}).get("correction") or {}).get("crop_modes") or {}
-        if (any(not isinstance(trace, list) or len(trace) != 2 for trace in evidence)
-                or any((modes.get(mode) or {}).get("status") != "review_needed" for mode in ("full_print", "image_only"))):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="crossing_review_group_stale")
+    if name == "crossing" and any(not isinstance(trace, list) or len(trace) != 2 for trace in evidence):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="crossing_review_group_stale")
+    if name in ("film", "crossing"):
+        for photo in selected:
+            modes = ((photo.enhancement_applied or {}).get("correction") or {}).get("crop_modes") or {}
+            if any((modes.get(mode) or {}).get("status") != "review_needed" for mode in ("full_print", "image_only")):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{name}_review_group_stale")
     return selected
 
 
@@ -538,14 +541,16 @@ async def add_review_event(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Prüfe die gestrichelten Konturen, bevor du die Anzahl bestätigst.",
             )
-        if payload.answer in GROUP_EXCLUSIONS:
-            context["excluded_group"] = _group_for_review(payload, context)
-        elif payload.answer == CONFIRM_SHARED_PAPER_GRID:
+        if payload.answer in ("exclude_film_group", CONFIRM_SHARED_PAPER_GRID):
             count_confirmed = await session.scalar(select(_completed_review_exists("segmentation", Page.id)).where(
                 Page.id == payload.task_id,
             ))
             if count_confirmed:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="paper_grid_review_group_stale")
+                kind = "film" if payload.answer == "exclude_film_group" else "paper_grid"
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{kind}_review_group_stale")
+        if payload.answer in GROUP_EXCLUSIONS:
+            context["excluded_group"] = _group_for_review(payload, context)
+        elif payload.answer == CONFIRM_SHARED_PAPER_GRID:
             context["excluded_group"] = _confirmed_paper_grid_fragments(payload, context)
 
     if payload.task_type == "geometry" and payload.answer == "correct":

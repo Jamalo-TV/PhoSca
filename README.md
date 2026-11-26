@@ -139,14 +139,21 @@ Messstreifen oder sichtbarer Untergrund zwischen den beiden Rasterteilen
 verhindert diesen zusätzlichen Hinweis. Die gepunktete Linie markiert
 den möglichen Saum. Eine gemeinsame Schutzfolie kann ebenso echte
 Papierabzüge bedecken. Prüfe daher alle drei markierten Vorschläge am
-Original und brich bei Unsicherheit ab.
+Original und brich bei Unsicherheit ab. Beim Öffnen der Gruppenprüfung
+zeigt PhoSca einen vergrösserten Originalausschnitt an der Rasterteilung.
+Bei einem gemeinsam gemessenen Saum kommt ein zweiter Ausschnitt hinzu.
+Kurze türkisfarbene Striche zeigen die Stelle der Messung.
 Bestätigt der Reviewer, dass alle drei zur Hülle gehören, speichert
 PhoSca einen gemeinsamen Entscheid und entfernt die drei Vorschläge
-aus der aktiven Abzugsliste. Die vorherigen Masken und Quellvorschauen
+aus der aktiven Abzugsliste. Der Server verlangt die ausdrückliche
+Bestätigung, die aktuelle Anzahlrevision und beide Zuschnittmodi aller
+drei Vorschläge im Prüfstatus. Hat jemand die Anzahl auf dieser Revision
+bereits bestätigt, muss die Anzahlprüfung zuerst wieder geöffnet werden.
+Die vorherigen Masken und Quellvorschauen
 bleiben in der Geometrieprüfung nachvollziehbar. Die Anzahlprüfung
 bleibt auf derselben Seite offen. Für einen daneben liegenden
 Papierabzug gelten weiterhin seine eigenen Konturen und Zuschnittregeln.
-[Beispiel auf der Aufnahme in Originalauflösung](data/evaluation/README.md#review-a-clear-sleeve-rim-on-the-native-contact-page)
+[Originalausschnitte und Gegenproben](data/evaluation/README.md#inspect-the-original-before-excluding-a-negative-sleeve)
 
 Bei zwei strittigen Vorschlägen kann PhoSca kurze, am Original
 gemessene Randabschnitte beidseits der vermuteten Teilung einzeichnen.

@@ -65,7 +65,7 @@ import {
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
-  getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
+  getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getPaperJoinReviewGroups, getStoredMotifQuad,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -1439,7 +1439,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       const quad = cyclicQuad(sanitizePolygon((photo.crop_modes || getCropModes(photo))?.full_print?.suggested_warp_quad));
       return quad ? [{ photo, quad }] : [];
     }) : [], [reviewingCount, newPrint, editingImage, photos]);
-  const countGroups = useMemo(() => actionableCountGroups(filmGridGroups, paperJoinGroups,
+  const countGroups = useMemo(() => actionableCountGroups(getActionableFilmGridReviewGroups(filmGridGroups, photos), paperJoinGroups,
     getActionablePaperGridReviewGroups(paperGridGroups, photos),
     reviewingCount && !newPrint && !editingImage ? getCrossingFallbackReviewGroups(photos) : []),
   [filmGridGroups, paperJoinGroups, paperGridGroups, photos, reviewingCount, newPrint, editingImage]);
@@ -2152,6 +2152,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       </p>}
       {paperJoinGroups.length > 0 && <p className="crop-editor-hint" id="paper-join-count-hint">{paperJoinCountHint}</p>}
       <CountGroupReview groups={countGroups} selected={selectedCountGroup}
+        sourceUrl={pageImage?.pageId === pageId ? pageImage.image.src : null}
         busy={!canAddPhoto || Boolean(saveState?.saving || currentCountReview?.saving)}
         onSelect={key => {
           setGroupSelection(key == null ? null : { pageId, key, revision: page.processing_metadata?.photo_count_revision });

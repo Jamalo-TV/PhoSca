@@ -758,9 +758,11 @@ async def test_shared_rim_requires_a_paper_edit_before_manual_export(client, mon
 
 @pytest.mark.parametrize("kind", ["film", "paper", "crossing"])
 async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kind):
+    from copy import deepcopy
+
     from app.config import get_settings
     from app.database import get_session_factory
-    from app.models import ReviewEvent
+    from app.models import ExtractedPhoto, ReviewEvent
     from app.pipeline.crossing_fallback_review import CROSSING_FALLBACK_COUNT_REVIEW, CROSSING_FALLBACK_TRACES
     from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
     from app.pipeline.segmentation import SegmentationDetection, SegmentationResult
@@ -836,9 +838,35 @@ async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kin
     for selection in wrong_selections:
         wrong = await client.post(event_url, json={**answer, "metadata": {**metadata, ids_key: selection}})
         assert wrong.status_code == 409 and wrong.json()["detail"] == f"{kind}_review_group_stale"
-    if kind == "crossing":
-        unconfirmed = await client.post(event_url, json={**answer, "reason_code": None})
-        assert unconfirmed.status_code == 422 and unconfirmed.json()["detail"] == "crossing_confirmation_required"
+    if kind in {"crossing", "film"}:
+        for reason_code in (None, "other"):
+            unconfirmed = await client.post(event_url, json={**answer, "reason_code": reason_code})
+            assert unconfirmed.status_code == 422 and unconfirmed.json()["detail"] == f"{kind}_confirmation_required"
+
+    if kind == "film":
+        # A row can have geometry marked ready while release policy withholds its
+        # download. This is no longer the held automatic group in the dialog.
+        async with get_session_factory()() as session:
+            changes = await session.get(ExtractedPhoto, UUID(group_ids[1]))
+            original = deepcopy(changes.enhancement_applied)
+            updated = deepcopy(original)
+            updated["correction"]["crop_modes"]["image_only"]["status"] = "ready"
+            changes.enhancement_applied = updated
+            await session.commit()
+        stale_mode = await client.post(event_url, json=answer)
+        assert stale_mode.status_code == 409 and stale_mode.json()["detail"] == "film_review_group_stale"
+        async with get_session_factory()() as session:
+            changes = await session.get(ExtractedPhoto, UUID(group_ids[1]))
+            changes.enhancement_applied = original
+            await session.commit()
+
+        reviewed = {**answer, "answer": "correct", "idempotency_key": uuid4().hex}
+        assert (await client.post(event_url, json=reviewed)).status_code == 201
+        assert (await client.get(queue_url)).json() == []
+        stale_dialog = await client.post(event_url, json=answer)
+        assert stale_dialog.status_code == 409 and stale_dialog.json()["detail"] == "film_review_group_stale"
+        reopened = {**reviewed, "answer": "unsure", "idempotency_key": uuid4().hex}
+        assert (await client.post(event_url, json=reopened)).status_code == 201
     assert (await client.get(queue_url)).json() == [task]
 
     confirmed = await client.post(event_url, json=answer)

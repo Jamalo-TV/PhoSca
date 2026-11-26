@@ -16,6 +16,31 @@ function filmReviewLine(line) {
   return Array.isArray(line) && line.length === 2 && line.every(isNormalizedPoint) ? line : null;
 }
 
+export function filmSourceWindow(line, width, height) {
+  if (!filmReviewLine(line) || !Number.isFinite(width) || !Number.isFinite(height) || width < 2 || height < 2) return null;
+  const boxWidth = Math.min(width, Math.max(48, .13 * Math.min(width, height)));
+  const boxHeight = Math.min(height, boxWidth * 2 / 3);
+  const [a, b] = line.map(({ x, y }) => [x * (width - 1) + .5, y * (height - 1) + .5]);
+  const x = (a[0] + b[0]) / 2, y = (a[1] + b[1]) / 2;
+  const delta = [b[0] - a[0], b[1] - a[1]];
+  const length = Math.hypot(...delta);
+  if (length <= 1) return null;
+  const reach = Math.min(.5, .46 * Math.min(boxWidth, boxHeight) / length);
+  const ticks = [[-1, -.82], [.82, 1]].map(pair => pair.map(fraction => [
+    x + delta[0] * reach * fraction, y + delta[1] * reach * fraction,
+  ]));
+  return { view: [Math.min(width - boxWidth, Math.max(0, x - boxWidth / 2)),
+    Math.min(height - boxHeight, Math.max(0, y - boxHeight / 2)), boxWidth, boxHeight], ticks };
+}
+
+function cropModes(photo) {
+  return photo.crop_modes || photo.enhancement_applied?.correction?.crop_modes;
+}
+
+function bothModesHeld(modes) {
+  return modes?.full_print?.status === "review_needed" && modes?.image_only?.status === "review_needed";
+}
+
 export function getFilmGridSeam(mask) {
   return filmReviewLine(mask?.film_grid_review_seam);
 }
@@ -35,6 +60,11 @@ export function getFilmGridReviewSeams(photos) {
     group.photoIds.add(id);
   }
   return [...groups.values()].filter(({ photoIds }) => photoIds.size > 1);
+}
+
+export function getActionableFilmGridReviewGroups(groups, photos) {
+  const held = new Set(photos.filter(photo => bothModesHeld(cropModes(photo))).map(photo => photo.photo_id ?? photo.id));
+  return groups.filter(({ photoIds }) => photoIds.size === 3 && [...photoIds].every(id => held.has(id)));
 }
 
 export function getPaperGridReview(mask) {
@@ -73,11 +103,10 @@ export function getCrossingFallbackReviewGroups(photos) {
     const id = photo.photo_id ?? photo.id;
     const { segmentation_confidence: confidence = photo.confidence } = photo;
     const traces = photo.segmentation_mask?.crossing_fallback_review_traces;
-    const modes = photo.crop_modes || photo.enhancement_applied?.correction?.crop_modes;
     if (!id || photo.reviewed_non_print || confidence == null
         || !Array.isArray(traces) || traces.length !== 4
         || !traces.every(line => Array.isArray(line) && line.length === 2 && line.every(isNormalizedPoint))
-        || ![modes?.full_print, modes?.image_only].every(mode => mode?.status === "review_needed")) return [];
+        || !bothModesHeld(cropModes(photo))) return [];
     return [{ kind: "crossing", key: JSON.stringify(["crossing", id, traces]), traces, photoIds: new Set([id]) }];
   });
 }
@@ -110,16 +139,13 @@ export function getPaperGridOutlineParents(photos) {
 
 export function getActionablePaperGridReviewGroups(groups, photos) {
   const modesById = new Map(photos.map((photo) => [
-    photo.photo_id ?? photo.id, photo.crop_modes || photo.enhancement_applied?.correction?.crop_modes,
+    photo.photo_id ?? photo.id, cropModes(photo),
   ]));
   return groups.filter(({ parents, cuts }) => {
     const [parentId] = parents;
     const proposed = modesById.get(parentId)?.full_print?.suggested_warp_quad;
     return cuts.size >= 1 && cuts.size <= 2 && Array.isArray(proposed) && proposed.length === 4 && proposed.every(isNormalizedPoint)
-      && [parentId, ...cuts.keys()].every((id) => {
-        const modes = modesById.get(id);
-        return modes?.full_print?.status === "review_needed" && modes?.image_only?.status === "review_needed";
-      });
+      && [parentId, ...cuts.keys()].every(id => bothModesHeld(modesById.get(id)));
   });
 }
 

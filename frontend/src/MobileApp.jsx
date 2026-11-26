@@ -25,7 +25,7 @@ import {
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
-  getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
+  getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -876,7 +876,7 @@ function CropReview({ albumId, goHome }) {
   const paperGridGroups = getPaperGridReviewGroups(countDetections);
   const paperGridOutlineParents = getPaperGridOutlineParents(countDetections).filter(parent =>
     cyclicReviewQuad(sanitizeReviewPolygon(parent.crop_modes?.full_print?.suggested_warp_quad)));
-  const countGroups = actionableCountGroups(filmGridGroups, paperJoinGroups,
+  const countGroups = actionableCountGroups(getActionableFilmGridReviewGroups(filmGridGroups, countDetections), paperJoinGroups,
     getActionablePaperGridReviewGroups(paperGridGroups, countDetections), getCrossingFallbackReviewGroups(countDetections));
   const selectedCountGroup = groupSelection?.pageId === item?.id
     ? countGroups.find(({ key }) => key === groupSelection?.key) : null;
@@ -1029,7 +1029,7 @@ function CropReview({ albumId, goHome }) {
                 : "Möglichen gemeinsamen Abzug prüfen"}
         </button>;
       })}
-      <CountGroupReview groups={countGroups} selected={selectedCountGroup} busy={submitting}
+      <CountGroupReview groups={countGroups} selected={selectedCountGroup} busy={submitting} sourceUrl={item.preview_url}
         onSelect={key => {
           setGroupSelection(key == null ? null : { pageId: item.id, key, revision: item.payload.photo_count_revision });
           setConfirmedPaperGrid(null);

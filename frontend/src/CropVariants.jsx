@@ -1,6 +1,6 @@
 import { Download } from "lucide-react";
-import { useState } from "react";
-import { getPaperGridReview } from "./cropReviewOutlines.js";
+import { useEffect, useState } from "react";
+import { filmSourceWindow, getPaperGridReview } from "./cropReviewOutlines.js";
 
 export const cropModeLabels = {
   full_print: "Ganzer Abzug",
@@ -239,7 +239,39 @@ const groupReviewLabels = {
   },
 };
 
-export function CountGroupReview({ groups, selected, busy, onSelect, onConfirm }) {
+function FilmGroupSourceDetails({ sourceUrl, line, rim }) {
+  const [source, setSource] = useState(null);
+  useEffect(() => {
+    if (!sourceUrl) return;
+    const image = new Image();
+    image.onload = () => setSource({ url: sourceUrl, width: image.naturalWidth, height: image.naturalHeight });
+    image.src = sourceUrl;
+    return () => { image.onload = null; };
+  }, [sourceUrl]);
+  if (source?.url !== sourceUrl) return null;
+  const { width, height } = source;
+  const details = [
+    ["Zwischenraum im Raster", filmSourceWindow(line, width, height)],
+    ["Möglicher durchsichtiger Saum", filmSourceWindow(rim, width, height)],
+  ].filter(([, detail]) => detail);
+  if (!details.length) return null;
+  return <section className="film-source-details" aria-label="Vergrösserte Originalausschnitte">
+    {details.map(([label, { view, ticks }]) => <figure key={label}>
+      <svg viewBox={view.join(" ")} role="img" aria-label={label}>
+        <image href={sourceUrl} width={width} height={height} />
+        <g aria-hidden="true">
+          {ticks.map(([[x1, y1], [x2, y2]]) => <g key={`${x1},${y1}`}>
+            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#134e4a" strokeWidth="4" vectorEffect="non-scaling-stroke" />
+            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#99f6e4" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+          </g>)}
+        </g>
+      </svg>
+      <figcaption>{label}</figcaption>
+    </figure>)}
+  </section>;
+}
+
+export function CountGroupReview({ groups, selected, busy, sourceUrl, onSelect, onConfirm }) {
   if (!groups.length) return null;
   const labels = selected && groupReviewLabels[selected.kind];
   const exclusions = groups.filter(({ kind }) => kind !== "paper-grid");
@@ -247,6 +279,7 @@ export function CountGroupReview({ groups, selected, busy, onSelect, onConfirm }
   return <div className="count-group-review">
     {selected ? <>
       <p className="crop-editor-hint" role="status">{labels.prompt}</p>
+      {selected.kind === "film" && sourceUrl && <FilmGroupSourceDetails sourceUrl={sourceUrl} line={selected.line} rim={selected.rim} />}
       <button type="button" className="primary-button" disabled={busy}
         onClick={() => onConfirm(selected)}>
         {busy ? "Vorschläge werden geprüft …" : labels.confirm}
@@ -264,7 +297,7 @@ export function CountGroupReview({ groups, selected, busy, onSelect, onConfirm }
 
 export function actionableCountGroups(filmGroups, paperGroups, paperGridGroups = [], crossingGroups = []) {
   return [
-    ...filmGroups.filter(({ photoIds }) => photoIds.size === 3).map(group => ({ ...group, kind: "film" })),
+    ...filmGroups.map(group => ({ ...group, kind: "film" })),
     ...paperGroups.map(group => ({ ...group, kind: "paper" })),
     ...paperGridGroups.map(group => {
       const [parentId] = group.parents;

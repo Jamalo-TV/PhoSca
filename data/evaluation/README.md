@@ -4674,6 +4674,47 @@ strong carrier and two disjoint model claims qualify.
 Paired source, benchmark and review receipts are local under
 `runs/crop-quality/native-film-sleeve/`.
 
+### Inspect the original before excluding a negative sleeve
+
+Interior-only feature comparisons on the pinned SteveKM development
+capture matched 53 native features with opposite brightness polarity.
+The 33% JPEG55, JPEG75 and PNG variants matched 39, 55 and 67 with
+separately measured grid locations. All four equal-polarity runs had
+zero inliers. Matching with the production quads gives 55 opposite
+inliers on the native capture and zero on the reduced JPEG75 and PNG.
+The reduced variants need independent grid registration. An opaque
+negative-tone print under a transparent protector also preserves the
+rim witness and can produce even more opposite-polarity matches. A
+separate control matched 35/35 frames from opaque negative-tone paper.
+On the real sleeve, 551 punched openings are much closer to the pale
+insert (median ΔLab 9.0) than exposed wood (47.94), so their colour
+does not establish transmission of the exterior tabletop. Matching
+artwork and apertures leave the physical material ambiguous.
+
+When a reviewer opens **Negativhülle prüfen**, Desktop and Mobile show
+an enlarged source window at the midpoint of the measured divider.
+If all three proposals share a measured rim, the editor shows a second
+window at its midpoint. The source is the same authenticated original
+used in the page view. The windows follow the native pixel-centre
+convention. The width is 13% of the shorter source side with a minimum
+of 48 pixels when available. The 3:2 windows shift at the page boundary
+and retain the original aspect. Only the corresponding source area is
+shown in each detail. Both details fit in one row when there is room.
+Two short ticks locate the measured line in each detail and keep its
+middle available for reading the source pixels.
+
+The API requires `film_carrier`, all three currently linked automatic
+rows, both named crop modes held for every row, and the current count
+revision. An already completed count at that revision rejects an open
+group dialog. Missing or mismatched confirmation returns 422. Changed
+geometry or a count already confirmed returns 409. Opening or
+cancelling the details leaves the active rows and revision intact.
+Explicitly confirming the native case changes 4 active rows to 1.
+The JPEG75 case changes 5 to 2. Both named exports and the trimmed
+alias stay held for the survivors. The existing source preview
+bytes, masks, transforms and deferred proposals reproduce their
+previous values. The paired captures describe this development case.
+
 ### Compare the whole contact print with its counted fragments
 
 Multipanel revision 9 keeps the right paper outline, the original crop

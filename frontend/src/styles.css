@@ -673,6 +673,33 @@ select {
   flex-basis: 100%;
 }
 
+.film-source-details {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+}
+
+.film-source-details figure {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid #8baca4;
+  border-radius: 8px;
+}
+
+.film-source-details svg {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+}
+
+.film-source-details figcaption {
+  padding: 6px 10px;
+  font-size: .875rem;
+  background: #f4f9f7;
+  color: #173a33;
+}
+
 .dark-backing-evidence {
   flex-basis: 100%;
   width: 100%;

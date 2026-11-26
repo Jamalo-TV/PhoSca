@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
+  filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
   getFilmGridReviewSeams, getFragmentReviewOutlines,
   getPaperGridOutlineParents, getPaperGridReviewGroups,
   getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
@@ -97,6 +97,34 @@ test("only a rim shared by all of the active film proposals is displayed", () =>
   const [disputed] = getFilmGridReviewSeams(rows);
   assert.equal(disputed.rim, null);
   assert.deepEqual(disputed.photoIds, agreed.photoIds);
+});
+
+test("a film exclusion is offered only when all three proposals have both crop modes held", () => {
+  const seam = [{ x: .25, y: .48 }, { x: .75, y: .49 }];
+  const mode = { status: "review_needed" };
+  const cropModes = { full_print: mode, image_only: mode };
+  const rows = ["carrier", "top", "bottom"].map(photo_id => ({ photo_id, confidence: .77,
+    segmentation_mask: { film_grid_review_seam: seam }, crop_modes: cropModes }));
+  const groups = getFilmGridReviewSeams(rows);
+  assert.deepEqual(getActionableFilmGridReviewGroups(groups, rows), groups);
+  assert.deepEqual(getActionableFilmGridReviewGroups(groups, rows.slice(0, 2)), []);
+  const desktop = { id: rows[1].photo_id, enhancement_applied: { correction: { crop_modes: cropModes } } };
+  assert.deepEqual(getActionableFilmGridReviewGroups(groups, [rows[0], desktop, rows[2]]), groups);
+  const ready = { ...rows[2], crop_modes: { ...cropModes, image_only: { status: "ready" } } };
+  assert.deepEqual(getActionableFilmGridReviewGroups(groups, [rows[0], rows[1], ready]), []);
+});
+
+test("film detail uses native pixel centers and keeps a near-edge window in the source", () => {
+  const seam = [{ x: .25, y: .48 }, { x: .75, y: .52 }];
+  const { view: [left, top, width, height], ticks } = filmSourceWindow(seam, 4000, 3000);
+  assert.deepEqual([left + width / 2, top + height / 2, width, height], [2000, 1500, 390, 260]);
+  assert.ok(ticks[0].every(([x, y]) => x < 1930 && y < 1500));
+  assert.ok(ticks[1].every(([x, y]) => x > 2070 && y > 1500));
+  const nearEdge = [{ x: .01, y: .26 }, { x: .01, y: .71 }];
+  assert.equal(filmSourceWindow(nearEdge, 1346, 1014).view[0], 0);
+  assert.equal(filmSourceWindow([nearEdge[0], nearEdge[0]], 1346, 1014), null);
+  assert.equal(filmSourceWindow(null, 1346, 1014), null);
+  assert.equal(filmSourceWindow(seam, 0, 1014), null);
 });
 
 test("a shared capture corner shows only its measured sides while proposals are unresolved", () => {
