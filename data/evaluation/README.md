@@ -4946,6 +4946,54 @@ fragments explicitly rejected. Its 538 × 783 export preserved
 315 anchors. Both tests use development paper dimensions and existing
 source pixel anchors. They provide manual workflow receipts.
 
+### Explain a held whole print in mobile geometry review
+
+In revision `9b78009`, Mobile can offer **Korrekt & vollständig**
+on the Golden 04 270° JPEG75 neighbor with an uncertain corner,
+possible occlusion and unverified aspect. The server rejects the
+event. The earlier client checks cover specific source-outline
+and motif states and leave this combination enabled.
+
+The geometry queue serializes `variant_urls.full_print` from the
+same variant-path check used by the geometry event. When a
+nonempty whole-print mode has an explicit null URL, Mobile holds
+the action and associates it with a source correction hint. After a
+successful edit, it reads the updated modes, review reasons and
+`crop_download_urls` from the saved photo. The rendered whole
+print appears through its named URL when available. A held state
+keeps the local editor preview and the associated guidance.
+
+The hint prioritizes complete visibility and recapture for possible
+occlusion. For unverified aspect it asks for measured paper width
+and height together with the actual corners. Existing measured
+outline and motif hints keep their roles. Legacy rows with no
+whole-print mode and rows with a downloadable whole print and only
+an optional unavailable motif stay eligible for ordinary geometry
+confirmation. A separate required motif review can still block it.
+
+On the Golden 04 normal upload the held geometry task connects the
+button to its recapture instruction through `aria-describedby`.
+Pointer and keyboard attempts send no approval request. Saving
+unchanged corners without physical dimensions returns HTTP 200 and
+updates the hint to the newly measured neighbor overlap. Both named
+crop downloads and the trimmed alias return HTTP 404. The preview
+remains accessible, and count review retains four active proposals
+and one pending proposal. In a separate normal legacy upload, a
+mode-less geometry task stays enabled and keyboard confirmation
+returns HTTP 201.
+
+A separate locked synthetic upload with a measured 165.5 by
+113.5 mm print tests the available whole-print path. Saving its
+corners renders the named whole-print JPEG and enables geometry
+confirmation with the optional motif unavailable. Adding an
+overlapping manual outline to the same page causes the old JPEG
+URL to return HTTP 404. Attempting to confirm from the stale queue
+returns HTTP 409. On reload the same photo shows the overlap hint
+and live editor preview, with the saved JPEG retired and the
+confirmation disabled. The API review suite has 65 passing tests,
+and the frontend build and 16 tests pass. Browser and source
+receipts are local under `runs/crop-quality/mobile-geometry-approval/`.
+
 ### Review visible markings outside the proposed motif
 
 A straight join between light stock and image pixels can be real even
@@ -5981,6 +6029,14 @@ These errors still need correction. All three motifs remain held
 without a rendered motif transform. Physical aspect measurements
 and independent landmark pairs remain unavailable for this page.
 
+An independent native edge audit of the left print reproduces
+1,730 of the 4,126 draft omissions against both the unrotated
+and rotated optical boundaries. Of those, 1,271 dark image centres
+lie more than two px inside both fits. The strongest local
+displacement is in the lower quarter of the left side. The pale
+strip along the opposite edge is still disputed. Its visible
+material affects the reported foreign-pixel count.
+
 The other extra crosses two true scenes on diagonal lines and
 borrows a real print side and a continuing album edge. If its
 neighbor mask is omitted, both crop modes lose an occlusion
@@ -5990,15 +6046,26 @@ the existing independent-content veto. This proposal and its
 neighbor claim therefore remain active while the two source
 scenes and album continuation are investigated.
 
+The subsequent source probe finds 783 and 1,119 native pixels of
+exclusive model interior across the two diagonals. At the stricter
+Canny thresholds these contain 9 and 17 connected details crossing
+both sides of the candidate line. Four- and nine-row partially
+hidden paper controls retain these votes and both observed rails.
+The same evidence persists in a single paper reproduction of the
+album scene. A separately textured sheet with a physically occluded rear
+edge also yields a high vote. This supports an advisory overlay;
+the source test alone does not settle the physical print count.
+
 The `fusion_ownership` calibration profile moves to revision 5.
 The seven paired control reports retain their detection, scoring
 and crop records. The frozen detector remains at 18/18 detections,
 and the seeded geometry keeps all 11 whole-print and 12 motif
 passes. On the exact case, the gated helper takes 111 ms median
 and 123 ms p95 process CPU time across 31 warm single-thread runs.
-Mobile still shows an enabled geometry confirmation on the
-uncertain neighboring print. Its server verification rejects the
-confirmation, and both download routes stay held.
+At profile revision 5 the mobile geometry button on the uncertain
+neighbor could be pressed and the server rejected its event.
+The [mobile hold explanation](#explain-a-held-whole-print-in-mobile-geometry-review)
+uses the same availability state as that verification.
 Native, benchmark and browser receipts are local under
 `runs/crop-quality/borrowed-fallback-edge/`.
 The local reference check covers seven manifests, including Golden,

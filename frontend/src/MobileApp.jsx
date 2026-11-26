@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addManualPhoto, confirmSharedPaperGrid, createAlbum, excludeCountReviewGroup, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
 import { projectedCropAspect, resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
+import { heldPrintCorrectionHint, wholePrintApprovalHeld } from "./cropReviewApproval.js";
 import {
   actionableCountGroups, adjacentPrintHint, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
   captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, cropProtectionErrors, CropVariants,
@@ -161,7 +162,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     && !reviewedNonPrint
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.crossing_print_suggestion));
   const fullPrintMode = reviewedNonPrint ? null : item.payload?.crop_modes?.full_print;
-  const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
+  const fullPrintHeld = !reviewedNonPrint && wholePrintApprovalHeld(item.payload?.crop_modes, item.payload?.variant_urls);
+  const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode)
+    || (fullPrintHeld && heldPrintCorrectionHint(fullPrintMode));
   const motifMode = item.payload?.crop_modes?.image_only;
   const motifReviewPending = !reviewedNonPrint && item.payload?.motif_review_pending;
   const motifBoundaryReviewHint = getMotifBoundaryReviewHint(motifMode);
@@ -209,6 +212,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const [orientation, setOrientation] = useState(storedOrientation);
   const [savedOrientation, setSavedOrientation] = useState(storedOrientation);
   const [savedCropUrl, setSavedCropUrl] = useState(""); const [saveError, setSaveError] = useState("");
+  const visibleSavedCropUrl = (editingMotif ? item.payload?.variant_urls?.image_only === null : fullPrintHeld)
+    ? "" : savedCropUrl;
   const [blockedCrop, setBlockedCrop] = useState(null);
   const [magnifierEnabled, setMagnifierEnabled] = useState(true);
   const [magnifier, setMagnifier] = useState({ visible: false, x: 0, y: 0 });
@@ -305,10 +310,12 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       setSavedOrientation(savedDegrees);
       const cropModes = getCropModes(saved);
       setMotifQuad(cyclicReviewQuad(sanitizeReviewPolygon(getStoredMotifQuad(saved, cropModes?.image_only))));
-      const held = captureRequiresReview(cropModes?.full_print) || paperOutlineRequiresReview(cropModes?.full_print)
-        || heldDeferredParentCropHints(cropModes?.full_print, item.payload?.review_reasons).length > 0;
+      const held = wholePrintApprovalHeld(cropModes, saved.crop_download_urls)
+        || captureRequiresReview(cropModes?.full_print) || paperOutlineRequiresReview(cropModes?.full_print)
+        || heldDeferredParentCropHints(cropModes?.full_print, saved.enhancement_applied?.review_reasons).length > 0;
       const cropUrl = editingMotif ? saved.crop_download_urls?.image_only
-        : !held && `/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`;
+        : !held && (saved.crop_download_urls?.full_print
+          || `/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`);
       setSavedCropUrl(cropUrl || "");
       onSaved?.(saved);
     } catch (error) {
@@ -629,10 +636,10 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       {deferredDraft && <button type="button" className="magnifier-toggle" disabled={saving}
         onClick={() => onDeferredDraftClose(false)}>Zurück zur Printanzahl</button>}
       {saveError && <p className="crop-save-error" role="alert">{saveError}</p>}
-      {displayedQuad && !motifOutside && (comparePaperEdge && !editingPreview && !savedCropUrl
+      {displayedQuad && !motifOutside && (comparePaperEdge && !editingPreview && !visibleSavedCropUrl
         ? <PaperEdgePreviewComparison currentUrl={item.payload.untrimmed_url} possibleUrl={comparePaperEdge}
             hint={outlinePreviewHint} />
-        : <LiveCropPreview src={item.preview_url} quad={displayedQuad} savedCropUrl={savedCropUrl}
+        : <LiveCropPreview src={item.preview_url} quad={displayedQuad} savedCropUrl={visibleSavedCropUrl}
             outlinePreviewUrl={editingPreview ? null : item.payload?.variant_urls?.[editingMotif ? "image_only_preview" : "full_print_preview"]}
             outlinePreviewHint={editingMotif ? motifBoundaryReviewHint : outlinePreviewHint}
             measuredAspect={!editingMotif && size ? size.width / size.height : null}
@@ -791,13 +798,14 @@ function CropReview({ albumId, goHome }) {
   const items = loading ? [] : queue.rows;
   const item = items[index];
   const fullPrint = item?.payload?.crop_modes?.full_print;
+  const fullPrintHeld = type === "geometry" && wholePrintApprovalHeld(item?.payload?.crop_modes, item?.payload?.variant_urls);
   const captureReviewPending = type === "geometry" && captureRequiresReview(fullPrint);
   const paperOutlinePending = type === "geometry" && paperOutlineRequiresReview(fullPrint);
   const deferredParentHints = type === "geometry" ? heldDeferredParentCropHints(fullPrint, item?.payload?.review_reasons) : [];
   const deferredParentReviewPending = deferredParentHints.length > 0;
   const motifReviewPending = type === "geometry" && item?.payload?.motif_review_pending;
   const rejectedDraftPending = type === "geometry" && item?.id === blockedCropTaskId;
-  const approvalHint = captureReviewPending || paperOutlinePending ? "mobile-print-edge-review-hint"
+  const approvalHint = fullPrintHeld || captureReviewPending || paperOutlinePending ? "mobile-print-edge-review-hint"
     : deferredParentReviewPending ? deferredParentHints.map(({ id }) => `mobile-${id}`).join(" ")
       : motifReviewPending ? "mobile-motif-review-hint" : undefined;
   const deferredProposals = getDeferredPrintProposals(item?.payload?.deferred_print_proposals);
@@ -814,6 +822,8 @@ function CropReview({ albumId, goHome }) {
     getActionablePaperGridReviewGroups(paperGridGroups, countDetections));
   const selectedCountGroup = groupSelection?.pageId === item?.id
     ? countGroups.find(({ key }) => key === groupSelection?.key) : null;
+  const approvalBlocked = fullPrintHeld || captureReviewPending || paperOutlinePending || deferredParentReviewPending
+    || motifReviewPending || rejectedDraftPending || selectedCountGroup;
   const paperGridConfirmed = type === "segmentation" && confirmedPaperGrid?.pageId === item?.id
     && confirmedPaperGrid?.eventId != null && confirmedPaperGrid.eventId === item?.payload?.photo_count_revision;
   useEffect(()=>{ goHomeRef.current=goHome; },[goHome]);
@@ -858,17 +868,19 @@ function CropReview({ albumId, goHome }) {
           warp_quad: cropModes.full_print?.warp_quad || mask?.warp_quad,
           image_quad: mask?.image_quad, print_size_mm: mask?.print_size_mm,
           orientation: saved.enhancement_applied?.correction?.orientation,
+          review_reasons: saved.enhancement_applied?.review_reasons,
           motif_review_pending: saved.motif_review_pending, variant_urls: variantUrls } };
       }) } : current);
     }
-    setMessage(captureRequiresReview(cropModes?.full_print) || paperOutlineRequiresReview(cropModes?.full_print)
-      || heldDeferredParentCropHints(cropModes?.full_print, item.payload?.review_reasons).length > 0
-      ? "Vier Ecken gespeichert. Die Papierkante bleibt in Prüfung."
+    setMessage(wholePrintApprovalHeld(cropModes, saved.crop_download_urls) || captureRequiresReview(cropModes?.full_print)
+      || paperOutlineRequiresReview(cropModes?.full_print)
+      || heldDeferredParentCropHints(cropModes?.full_print, saved.enhancement_applied?.review_reasons).length > 0
+      ? "Vier Ecken gespeichert. Der ganze Abzug bleibt in Prüfung."
       : saved.motif_review_pending ? "Vier Ecken gespeichert. Der Motivzuschnitt bleibt in Prüfung."
         : "Vier Ecken gespeichert und Perspektive korrigiert");
   }
   async function record(value) {
-    if (!item || submitting || (value === "correct" && (rejectedDraftPending || deferredParentReviewPending))) return;
+    if (!item || submitting || (value === "correct" && approvalBlocked)) return;
     setSubmitting(true);
     setAnswerError("");
     const metadata = { page_id: item.page_id, ui: "mobile-v2" };
@@ -891,7 +903,9 @@ function CropReview({ albumId, goHome }) {
       }
     } catch (error) {
       const motifHint = canEditMobileMotif(item.payload, item.payload?.crop_modes) ? motifReviewHint : motifDesktopReviewHint;
-      setAnswerError(error.message === "motif_geometry_review_required" ? motifHint : error.message);
+      const recalculate = error.message === "Adjust the print corners or recapture the page before approving this crop.";
+      setAnswerError(recalculate ? heldPrintCorrectionHint(fullPrint)
+        : error.message === "motif_geometry_review_required" ? motifHint : cropProtectionErrors[error.message] || error.message);
       await load().catch(() => {});
     } finally {
       setSubmitting(false);
@@ -976,9 +990,7 @@ function CropReview({ albumId, goHome }) {
       <section className="answer-grid">
         {cropAnswers[type].map(([value,label]) => (
           <button key={value} className={value === "correct" ? "good" : ""}
-            disabled={submitting || (value === "correct"
-              && (captureReviewPending || paperOutlinePending || deferredParentReviewPending || motifReviewPending
-                || rejectedDraftPending || selectedCountGroup))}
+            disabled={submitting || (value === "correct" && approvalBlocked)}
             aria-describedby={value === "correct" ? approvalHint : undefined}
             onClick={() => record(value)}>
             {value === "correct" && (deferredProposals.length || item.payload?.missing_print_edge_traces?.length

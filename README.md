@@ -636,6 +636,18 @@ Motivecken an die bestehende Editor-API. Die Freigabe des Motivs setzt
 eine gültige Geometrie und die bestehende Prüfung voraus.
 [Motivkorrektur am Kontaktabzug](data/evaluation/README.md#review-and-correct-the-motif-on-mobile)
 
+Unter **Crop-Qualität** zeigt Mobile den Grund für eine gesperrte
+Bestätigung. Für einen berechneten Ganzabzug richtet sich der Knopf
+**Korrekt & vollständig** nach der vom Server bereitgestellten
+Download-URL. Oben im Editor steht, ob du die vier Papierecken
+prüfen, die Masse des Abzugs eintragen oder eine Aufnahme mit
+sichtbarem Rand rundum machen kannst. Die App übernimmt nach jeder
+Speicherung den aktuellen Prüfstand des Servers. Ist der
+Ganzabzug verfügbar, zeigt sie den tatsächlich berechneten
+Zuschnitt. Eine ausdrücklich geforderte Motivprüfung hat weiterhin
+ihre eigene Bestätigung.
+[Beispiel für eine nicht bestätigbare Geometrie](data/evaluation/README.md#explain-a-held-whole-print-in-mobile-geometry-review)
+
 Nach einer Änderung rendert die API die Varianten erneut vom
 Albumoriginal. Ein Modus kann eine Vorschau mit Korrekturhinweisen
 zeigen, während sein Download gesperrt bleibt. Die Galerie lädt die
