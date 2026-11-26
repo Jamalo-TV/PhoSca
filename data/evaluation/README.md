@@ -354,6 +354,27 @@ rights still need verification before inclusion in the final split.
 [LOT 10333 no. 128](https://www.loc.gov/pictures/item/2018679139/) ·
 [LOT 10334 no. 54](https://www.loc.gov/pictures/collection/prok/item/2018679194/)
 
+The source-only preflight at `eccc049` rechecked seven tracked drafts.
+On this workspace it reported 26 missing pinned page rasters and 12
+missing independent scan assets. The drafts account for 15 final-split
+print candidates and 53 calibration candidates, with zero verified crops
+per mode and zero shared verified physical groups. Renewed requests for
+the LoC print and mounted-page paths and the pinned Getty image returned
+HTTP 403 from the workspace proxy. The source labels and existing draft
+measurements remain available for inspection.
+
+The calibration export also requires at least two verified physical
+album groups. Those groups must be disjoint from training and the
+release groups. The three reserved calibration sources in the tracked
+draft remain candidates. Each deployed detector source needs at least
+20 scored predictions and both positive and negative cases for the
+matching configuration. The exploratory transfer ONNX and PT assets
+and all seven legacy Git originals match their inventory hashes. The
+inherited COCO checkpoint also matches its hash. Its album-level
+disjointness and the additional samples behind the historical registered
+ONNX remain unverified. The preflight performs no inference on the
+release drafts.
+
 ## Precise crop validation
 
 The frozen end-to-end test passes the rendered pixel, corner and aspect
@@ -2644,6 +2665,81 @@ paper have similar lightness and distinct chroma. Keep the candidates in
 Review while that ownership is unresolved. Sleeve proposals merit a
 separate negative example experiment because the paired training barely
 affected them.
+
+#### Check whether a chroma line identifies a physical gutter
+
+The native-resolution prototype samples both paper flanks and the colour
+of the local backing. It registers the path endpoints at observed paper
+edges and checks the entire path across the source image. The frozen
+prototype has SHA-256
+`0bb3efe0c0e78947a34f7a328d10ec59fc1c7d91fa2c115c2d9d47d3d003fe0d`.
+
+On the 70 controlled JPEG75-contact-sheet variants, the native rerendering
+of gaps from 0.75 to 4 pixels finds all 70. A further JPEG70 recompression
+reduces this to 40, including 11 of 28 horizontal gaps. Fourteen untouched
+and overlaid-paper negatives give zero marks. On a separate clipped-scan
+control set the existing dark-gutter test finds all 16 complete physical
+gaps and gives zero marks in 20 non-through controls. The chroma
+prototype gives zero marks in that set.
+
+An independently authored blind set freezes 35 source layouts and 280
+variants before the prototype runs. Localized hits need at most 4 native
+pixels of p90 cross-track error and 13 native pixels of endpoint error.
+The fixture manifest has SHA-256
+`bc4900107c84c887ee3596dd952a9ed02256660df18aa369a84934a7663233fd`.
+
+| Blind development case | Localized marks |
+| --- | ---: |
+| Visible physical gaps | 65/136 |
+| Printed lines on continuous paper | 68/96 |
+| Printed lines after excluding raster-identical pairs | 56/80 |
+| Overlap or subpixel ambiguity | 6/40 |
+| Untouched continuous print | 0/8 |
+
+The marked lines track real raster structures. Some printed controls
+have the exact pixels of a physical gap, and the prototype marks both
+identically. Distinct-artwork neighbors get 0/16 localized marks and
+stepped ends get 2/24. The blind median is 169 ms and p95 is 257 ms on
+one CPU thread. The results support rejecting colour-only evidence as
+a physical-gutter classifier or a new user-visible review signal.
+
+The four native gaps on the pinned Domoritz flatbed are a separate
+development stratum. The original and draft-edge hashes match the
+manifest. Their median widths are 18.5–24.1 pixels. Sampling the gap
+centre and both print flanks shows median minimum chroma differences of
+3.2–7.2 encoded Lab levels and lightness differences of 70–173 levels.
+These prints have dark or coloured image content along their edges.
+The controlled contact sheet supplies a different material signal.
+Independent side evidence or a continuous, observable backing texture
+is necessary to strengthen the ownership claim.
+
+#### Compare paper-edge previews beside a neighboring proposal
+
+A separate scratch trial holds the detector fixed. It uses locally
+consistent paper along each of the four sides, including material
+transitions before and beyond the fitted corners. This lets the backing
+colour differ between sides. The adjacent proposal must be nearby and
+the candidate warp must avoid its polygon. Count and both Review statuses
+stay the same. On the frozen `touching` pair the new preview produces the
+following measurements against the known native reference.
+
+| Whole-print review preview | First print | Second print |
+| --- | ---: | ---: |
+| Maximum corner error, px | 5.47 → 0.62 | 3.68 → 0.52 |
+| Footprint IoU | 0.9766 → 0.9984 | 0.9795 → 1.0000 |
+| Omitted pixels beyond one native pixel | 1,320 → 0 | 674 → 0 |
+| Landmark p95, px | 4.51 → 0.52 | 2.84 → 0.52 |
+
+Independent controls show why this is insufficient for the review warp.
+A full-bleed printed colour field yields its own tidily terminated
+rectangle. With a true neighbor on the opposite side, the trial moves the
+preview edge from x579 to x574 while the physical sheet extends to x603.
+Visible loss increases from 6.43% to 7.77%. The same false choice also
+occurs in 12 of 16 inputs with an actual overlapping rear print on the
+*same* disputed side, across the native, rotated and skewed replays.
+The production renderer keeps the existing preview. A subsequent trial
+must preserve every previously visible sample and test foreign samples
+at the expanded edge independently of the nearby proposal.
 
 ### Measure an open edge at an overextended corner
 
