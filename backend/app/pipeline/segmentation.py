@@ -46,7 +46,7 @@ from app.pipeline.print_edges import (
     PRINT_EDGE_CONFIRMATION, _backing_color, _is_pale_stock, line_fit_omits_print_stock, refine_print_boundary,
 )
 from app.pipeline.print_outline_suggestion import suggest_outer_print_outline
-from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL, projective_print_outline
+from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL, projective_print_review
 from app.pipeline.quality import evaluate_segmentation_geometry
 from app.pipeline.scalloped_prints import (
     SCALLOPED_PRINT_CONFLICT, SCALLOPED_PRINT_REVIEW, measure_scalloped_print, possible_layer_edge, suggest_scalloped_motif,
@@ -3581,15 +3581,17 @@ def _offer_projective_print_review(image: np.ndarray, result: SegmentationResult
     rejections = metadata.get("rejected_candidates") or {}
     if (result.detections or not metadata.get("fallback_used") or fusion.get("model_proposals")
             or fusion.get("classical_proposals") or fusion.get("deferred_print_proposals")
+            or metadata.get("missing_print_edge_traces")
             or not {"aspect_ratio_too_tall", "aspect_ratio_too_wide", "frame_touching_container_candidate"} & rejections.keys()):
         return result
     try:
-        outline = projective_print_outline(image)
-        traces = staggered_print_source_traces(image, outline) if outline is not None else []
+        outline, traces = projective_print_review(image)
     except (cv2.error, ValueError, np.linalg.LinAlgError):
         return result
     if not traces:
         return result
+    if outline is None:
+        return SegmentationResult(result.detections, {**metadata, "missing_print_edge_traces": traces})
     # A common support can depict two separate items. Keep both sources of
     # evidence in count review until the user decides what is physically visible.
     proposal = {"id": 0, "reason": PROJECTIVE_PRINT_PROPOSAL,

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from app.config import Settings
-from app.pipeline import segmentation
+from app.pipeline import projective_prints, segmentation
 from app.pipeline.adjacent_prints import ADJACENT_PRINT_REVIEW, adjacent_album_edge_outlines
 from app.pipeline.crop_validation import automatic_crop_review_reasons
 from app.pipeline.crossing_prints import staggered_print_source_traces
@@ -245,6 +245,22 @@ def test_independently_encoded_quarter_turns_recover_neighbor_traces(turn, expec
     assert np.count_nonzero((x > 2278) & (y > 1000) & (y < 1500)) >= 10
     assert np.count_nonzero(y < 785) >= 20
     assert np.count_nonzero(y > 1825) >= 20
+
+
+@pytest.mark.parametrize("budget_veto", [True, False])
+def test_projective_trace_retry_requires_a_completed_empty_primary_bank(monkeypatch, budget_veto):
+    searches = []
+
+    def seeds(image, working_side):
+        searches.append(working_side)
+        return None if budget_veto else [np.zeros((4, 2), np.float32)]
+
+    monkeypatch.setattr(projective_prints, "_projective_seed_bank", seeds)
+    monkeypatch.setattr(projective_prints, "_verified_projective_outline", lambda *_: None)
+    page = np.zeros((1920, 2560, 3), np.uint8)
+
+    assert projective_prints.projective_print_review(page) == (None, [])
+    assert searches == [1280]
 
 
 @pytest.mark.parametrize(("join", "drift"), [("none", 0), ("touching", 53), ("gutter", 97), ("overlap", 97)])

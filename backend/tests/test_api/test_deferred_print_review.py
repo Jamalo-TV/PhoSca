@@ -72,6 +72,66 @@ async def test_recompressed_page_recovers_an_unconfirmed_print_draft_and_neighbo
         assert (await client.get(f"{url}/image?variant=source_corrected_untrimmed")).status_code == 200
 
 
+async def test_compressed_quarter_turn_only_offers_the_measured_neighbor_edges(client, monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.pipeline.crossing_prints import _quarter_turn
+    from app.pipeline.geometry import order_quad_cyclic
+    from app.pipeline.image_ops import load_image
+    from app.services import pipeline
+
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
+    monkeypatch.setenv("MAX_UPLOAD_SIZE", "2000000")
+    monkeypatch.setenv("MAX_REQUEST_SIZE", "2100000")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_CLASSICAL_SEGMENTATION_FALLBACK", "true")
+    monkeypatch.setenv("YOLO_MODEL_PATH", str(tmp_path / "absent.onnx"))
+    monkeypatch.setenv("CROP_VALIDATION_REPORT_PATH", str(tmp_path / "validation-unavailable.json"))
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    get_settings.cache_clear()
+
+    album_id = (await client.post("/api/v1/albums", json={"name": "Measured neighbor without a draft"})).json()["id"]
+    album = f"/api/v1/albums/{album_id}"
+    path = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_11.jpg"
+    ok, jpeg = cv2.imencode(".jpg", np.rot90(load_image(path)), [cv2.IMWRITE_JPEG_QUALITY, 55])
+    assert ok
+    source = jpeg.tobytes()
+    uploaded = await client.post(f"{album}/pages/upload", files={"files": ("quarter-turn.jpg", source, "image/jpeg")})
+    assert uploaded.status_code == 201, uploaded.text
+    assert (await client.get(f"{album}/photos")).json() == []
+    review_url = f"/api/v1/review/queue?album_id={album_id}&type=segmentation"
+    task, = (await client.get(review_url)).json()
+    initial = task["payload"]
+    traces = initial["missing_print_edge_traces"]
+    assert task["reason"] == "No photos detected; manual review required."
+    assert initial["detection_count"] == 0 and initial["deferred_print_proposals"] == []
+    assert initial["photo_count_revision"] is None
+    assert len(traces) >= 3
+    assert all(.38 < point["x"] <= .975 and .09 < point["y"] < .41 for run in traces for point in run)
+
+    page_url = f"/api/v1/pages/{task['page_id']}"
+    original = await client.get(f"{page_url}/image")
+    assert original.status_code == 200 and original.content == source
+    right = np.float32([[1539, 765], [2311, 749], [2271, 1835], [1552, 1859]])
+    rotated = order_quad_cyclic(_quarter_turn(right, 1, 2560, 1920))
+    manual = await client.post(f"{page_url}/manual-photos", json={
+        "request_id": str(uuid4()),
+        "warp_quad": [{"x": float(x / 1919), "y": float(y / 2559)} for x, y in rotated],
+        "print_size_mm": {"width": 100, "height": 70},
+    })
+    assert manual.status_code == 201, manual.text
+    stored = manual.json()
+    after = (await client.get(review_url)).json()[0]["payload"]
+    assert after["detection_count"] == 1 and after["deferred_print_proposals"] == []
+    assert after["missing_print_edge_traces"] == []
+    assert stored["enhancement_applied"]["review_provenance"]["paper_trace_review"]["sides"]
+    url = f"/api/v1/photos/{stored['id']}"
+    assert (await client.post(f"{url}/reprocess")).status_code == 200
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
+    assert (await client.get(f"{url}/image?variant=source_corrected_untrimmed")).status_code == 200
+
+
 @pytest.mark.parametrize("kind", ["film", "paper"])
 async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kind):
     from app.config import get_settings

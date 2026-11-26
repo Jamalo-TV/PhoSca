@@ -1,18 +1,17 @@
 """Find a provisional print outline after the normal detector finds no print."""
 
-from collections.abc import Iterator
-from itertools import combinations, islice, product
+from itertools import combinations, product
 
 import cv2
 import numpy as np
 
 from app.pipeline.adjacent_prints import _joined_segments
-from app.pipeline.crossing_prints import _local_side_support, _native_line
+from app.pipeline.crossing_prints import _local_side_support, _native_line, staggered_print_source_traces
 from app.pipeline.edge_prints import _photo_texture
 from app.pipeline.print_edges import _edge_band, refine_print_boundary
 
 
-PROJECTIVE_PRINT_REVISION = 1
+PROJECTIVE_PRINT_REVISION = 2
 PROJECTIVE_PRINT_PROPOSAL = "possible_projective_print"
 PROJECTIVE_PRINT_OUTLINE_REVIEW = "PROJECTIVE_PRINT_OUTLINE_REVIEW"
 
@@ -23,20 +22,23 @@ def _span_coverage(start: np.ndarray, end: np.ndarray, segment: np.ndarray) -> f
     return max(0., min(length, float(positions[1])) - max(0., float(positions[0]))) / length
 
 
-def _projective_seeds(image: np.ndarray) -> Iterator[np.ndarray]:
+def _projective_seed_bank(image: np.ndarray, working_side: int) -> list[np.ndarray] | None:
     height, width = image.shape[:2]
-    scale = min(1., 1280 / max(height, width))
+    scale = min(1., working_side / max(height, width))
     if min(height, width) < 640:
-        return
+        return None
     reduced = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1 else image
     segments = _joined_segments(reduced, min(reduced.shape[:2]))
     if len(segments) > 40:
-        return
+        return None
     pairs = []
     for axis in (0, 1):
         endpoints = [segment.ends / scale for segment in segments if segment.axis == axis]
+        if len(endpoints) < 2:
+            return None
         endpoints.sort(key=lambda end: float(end[:, 1 - axis].mean()))
         pairs.append(combinations(((end, _native_line(end)) for end in endpoints), 2))
+    seeds = []
     for ((top, north), (bottom, south)), ((left, west), (right, east)) in product(*pairs):
         sides = np.float32([north, east, south, west])
         intersections = np.cross(np.roll(sides, 1, axis=0), sides)
@@ -53,7 +55,10 @@ def _projective_seeds(image: np.ndarray) -> Iterator[np.ndarray]:
         coverage = [_span_coverage(start, end, segment)
                     for start, end, segment in zip(quad, ends, (top, right, bottom, left), strict=True)]
         if min(coverage) >= .50 and max(coverage) >= .85 and np.median(coverage) >= .74:
-            yield quad
+            seeds.append(quad)
+            if len(seeds) > 16:
+                return None
+    return seeds
 
 
 def _paper_contacts(image: np.ndarray, quad: np.ndarray) -> bool:
@@ -86,11 +91,7 @@ def _terminal_arm(image: np.ndarray, first: np.ndarray, last: np.ndarray, *, at_
     return bool(np.count_nonzero(inside >= 13) >= 4 and np.median(inside) >= 18 and np.median(beyond) < 12)
 
 
-def projective_print_outline(image: np.ndarray) -> np.ndarray | None:
-    """Find one editable outline supported by native source lines and paper ends."""
-    seeds = list(islice(_projective_seeds(image), 17))
-    if len(seeds) > 16:
-        return None
+def _verified_projective_outline(image: np.ndarray, seeds: list[np.ndarray]) -> np.ndarray | None:
     outlines = []
     for seed in seeds:
         if not _paper_contacts(image, seed) or not _photo_texture(image, seed):
@@ -118,3 +119,21 @@ def projective_print_outline(image: np.ndarray) -> np.ndarray | None:
             continue
         outlines.append(quad)
     return outlines[0] if len(outlines) == 1 else None
+
+
+def projective_print_review(image: np.ndarray) -> tuple[np.ndarray | None, list]:
+    """Offer supported source evidence when the regular detectors find no print."""
+    seeds = _projective_seed_bank(image, 1280)
+    if seeds is None:
+        return None, []
+    if seeds:
+        outline = _verified_projective_outline(image, seeds)
+        return outline, staggered_print_source_traces(image, outline) if outline is not None else []
+    if max(image.shape[:2]) <= 1280:
+        return None, []
+    # A viable first line bank completed enumeration without any seed.
+    # The alternate fit provides context for trace measurement only.
+    working_side = 1024
+    alternate = _projective_seed_bank(image, working_side)
+    context = _verified_projective_outline(image, alternate) if alternate else None
+    return None, staggered_print_source_traces(image, context, working_side=working_side) if context is not None else []

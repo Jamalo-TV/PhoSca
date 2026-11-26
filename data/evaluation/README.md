@@ -2201,10 +2201,9 @@ overlay shows only measured spans on the three free sides.
 
 In a subsequent before-and-after replay, JPEG95 gains the draft
 and right traces at 90°, 180° and 270°. JPEG55 gains them at
-180° and keeps the existing hints at 0° and 270°. At JPEG55
-and 90° the left projective search itself still produces no
-outline, so the neighbour search has no anchor. All eight
-replays preserve the original active detections.
+180° and keeps the existing hints at 0° and 270°. In that
+comparison the JPEG55 90° case also had no left projective
+outline. All eight replays preserve the original active detections.
 
 The left outline in the 90° and 270° rotated runs has approximately
 0.9937 and 0.9935 native mask IoU against the Golden development
@@ -2251,6 +2250,46 @@ The Golden runs retain 29/29 mixed-model matches and 14/29 classical
 matches with 15 extra classical proposals. The frozen classical run
 retains 13/18 matches and six extras. Detection, rendered crop and
 mode availability metrics match the preceding runs.
+
+#### Show only the measured neighbour edges at JPEG55
+
+For the remaining JPEG55 90° variant, the 1280-pixel working
+raster has 13 viable joined lines. The shared rail spans about
+47.5% of the relevant side, below the half-side coarse minimum.
+The first bank completes enumeration with zero geometric seeds.
+A 1024-pixel bank joins the observed rails differently and gives
+one fit under the existing native paper, side and terminal checks.
+A budget veto, a rejected native fit, a competing hypothesis or
+existing detection keeps its original decision.
+
+The 1024-pixel fit supplies temporary context for another
+original-pixel edge search. Only the four supported open spans
+of the right print go to review. Against separately fitted native
+curves, their p95 distances are 0.59–1.05 px. The long right span
+ends near y1687 while the lower corner lies near y1834 in the
+upright original. A 1–2 px near-registered layer on the left can
+produce the same contextual fit. It leaves the right trace
+locations on visible source transitions, so only those locations
+are shown. The original source review still decides physical
+ownership. The 19 paired development checks preserve the active
+rows and fusion evidence. Covered or removed right prints and
+fabricated holders gain zero traces. The alternate source search
+takes about 0.62 s median in five warm one-thread samples.
+
+The model-free JPEG55 upload shows the blue spans with zero
+active rows and zero deferred outlines. Desktop and mobile show
+the same points on the uploaded page. Opening or closing the
+traces leaves the review record untouched. Manually marking the
+right print increases the count to one, consumes the displayed
+spans and stores the curve verification in the photo record. After
+reprocessing, the two named exports and the legacy trimmed alias
+return 404. The untrimmed review JPEG returns 200. The two
+visible prints on this page come from one development capture.
+The full matrix of JPEG55, JPEG75 and JPEG95 across four quarter
+turns now shows measured neighbour edges in 12/12 runs. The other
+11 retain their previous active counts, deferred outlines and
+trace lengths. The five frozen and Golden replays preserve
+detection and both crop-mode metrics.
 
 ### Confirming a suggested print exactly once
 

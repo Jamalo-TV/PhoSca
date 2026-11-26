@@ -145,6 +145,16 @@ zurückgerechnet. Über die Abzugsliste und die Zuschnittfreigabe
 entscheiden weiterhin die jeweiligen Prüfungen.
 [Gedrehte JPEG75-Beispiele](data/evaluation/README.md#recover-source-traces-on-rotated-jpeg-uploads)
 
+Bleibt eine ausreichend belegte Liniensuche ohne Umrisskandidaten,
+kann eine zweite Verkleinerung andere zusammenhängende Linien
+sichtbar machen. Ein dort gefundener, im Original geprüfter Umriss
+dient nur als Bezug für die Kantensuche am Nachbarabzug. In der
+Anzahlprüfung erscheinen die dort beobachteten offenen
+Kantenabschnitte. Der Bezugsumriss bleibt intern. Das manuelle
+Erfassen des Nachbarabzugs erzeugt einen Datensatz und behält eine
+gemessene Papierwölbung als Prüfgrund bei.
+[Beispiel JPEG55 bei 90°](data/evaluation/README.md#show-only-the-measured-neighbour-edges-at-jpeg55)
+
 Wenn der Zuschnitt an einer Papierkante in Prüfung bleibt und zwei
 Linien im Original ausreichend gestützt sind, zeichnet **Ganzer Abzug**
 beide als gestrichelte Kanten ein. Die Linien folgen dem beobachteten

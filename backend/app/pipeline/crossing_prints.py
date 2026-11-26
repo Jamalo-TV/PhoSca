@@ -341,10 +341,10 @@ def _quarter_turn(points: np.ndarray, turn: int, width: int, height: int) -> np.
     return np.column_stack(positions[turn]).astype(np.float32)
 
 
-def staggered_print_source_traces(image: np.ndarray, anchor: np.ndarray) -> list:
+def staggered_print_source_traces(image: np.ndarray, anchor: np.ndarray, *, working_side: int = 1280) -> list:
     """Observe three free sides of a possible print next to a line-pair detection."""
     height, width = image.shape[:2]
-    scale = min(1., 1280 / max(height, width))
+    scale = min(1., working_side / max(height, width))
     working = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1 else image
     segments = _joined_segments(working, min(working.shape[:2]))
     if not segments or len(segments) > 48:
