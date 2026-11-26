@@ -61,7 +61,7 @@ import {
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, scannerBackingHint, scannerBackingReason,
-  isNestedFallbackProposal, nestedEdgeProposal, standalonePrintReviewErrors,
+  isNestedFallbackProposal, requiresStandalonePrintFlag, standalonePrintReviewErrors,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
   embossedAlbumAction, embossedPocketReviewErrors,
@@ -2114,7 +2114,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           replaceMountedFragments: newPrint.replaceMountedFragments,
           confirmDarkBacking: darkBackingDraft && newPrint.confirmStandalonePrint,
           confirmAlbumPocketPrint: Boolean(embossedAlbumAction(newPrint.deferredProposal?.reason)) && newPrint.confirmStandalonePrint,
-          confirmStandalonePrint: newPrint.deferredProposal?.reason === nestedEdgeProposal && newPrint.confirmStandalonePrint,
+          confirmStandalonePrint: requiresStandalonePrintFlag(newPrint.deferredProposal?.reason) && newPrint.confirmStandalonePrint,
         });
       if (activePage.current !== pageId) return;
       setAddition(null);

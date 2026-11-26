@@ -18,7 +18,7 @@ import {
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview,
-  isNestedFallbackProposal, nestedEdgeProposal, projectivePrintProposal, standalonePrintReviewErrors,
+  isNestedFallbackProposal, requiresStandalonePrintFlag, projectivePrintProposal, standalonePrintReviewErrors,
   scannerBackingHint, scannerBackingReason,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
@@ -356,7 +356,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         await addManualPhoto(item.page_id, deferredDraft.requestId, quad, size, null, deferredDraft, {
           replaceMountedFragments: sourceFragmentDraft, confirmDarkBacking: darkBackingDraft,
           confirmAlbumPocketPrint: Boolean(embossedAlbumAction(deferredDraft.reason)),
-          confirmStandalonePrint: deferredDraft.reason === nestedEdgeProposal,
+          confirmStandalonePrint: requiresStandalonePrintFlag(deferredDraft.reason),
         });
         onDeferredDraftClose(true);
         return;

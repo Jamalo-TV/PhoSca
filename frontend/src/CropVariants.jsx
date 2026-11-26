@@ -43,6 +43,10 @@ export const frameBackingProposal = "possible_frame_backing";
 export const borrowedFallbackProposal = "possible_borrowed_print_edge";
 export const darkBackingProposal = "possible_dark_album_backing";
 export const projectivePrintProposal = "possible_projective_print";
+export const tiledPrintProposal = "possible_tiled_print";
+export function requiresStandalonePrintFlag(reason) {
+  return reason === nestedEdgeProposal || reason === tiledPrintProposal;
+}
 const embossedPocketProposal = "possible_embossed_album_pocket";
 const embossedCarrierProposal = "possible_embossed_album_carrier";
 export function embossedAlbumAction(reason) {
@@ -62,6 +66,7 @@ export const standalonePrintReviewErrors = {
   standalone_print_confirmation_stale: "Dieser Vorschlag hat sich geändert. Prüfe die aktualisierte Albumseite.",
   standalone_print_outline_outside_proposal: "Setze die vier Ecken an den sichtbaren Papierrand des kleinen Vorschlags.",
   standalone_print_matches_detected_print: "Dieser Abzug ist bereits erfasst. Setze die Ecken an das Papier des weiteren Abzugs.",
+  tiled_print_claim_conflict: "Der Vorschlag überschneidet sich mit einem erfassten Abzug. Prüfe die aktuelle Anzahl am Original.",
 };
 const deferredPrintReviewHints = {
   [nestedFallbackProposal]: {
@@ -93,6 +98,11 @@ const deferredPrintReviewHints = {
     count: "Prüfe am Original, ob in der gestrichelten Kontur ein weiterer Papierabzug liegt.",
     draft: "Setze die Ecken an den sichtbaren Papierrand. Bei verdeckten Ecken hilft eine Aufnahme mit frei sichtbarem Papier.",
     evidence: "Türkis markiert sichtbare Papierkanten zwischen den Fotoecken.",
+  },
+  [tiledPrintProposal]: {
+    countId: "tiled-print-count-hint",
+    count: "Prüfe am Original, ob die gestrichelte Kontur einen weiteren Papierabzug zeigt.",
+    draft: "Setze die vier Ecken an den sichtbaren Papierrand. Prüfe auch, ob der Rand Teil eines grösseren Abzugs ist.",
   },
   [embossedPocketProposal]: {
     countId: "embossed-pocket-count-hint",
@@ -242,7 +252,8 @@ export function getDeferredPrintEvidence(proposal) {
 
 export function standalonePrintNeedsConfirmation(reason) {
   return reason === darkBackingProposal || isNestedFallbackProposal(reason) || reason === frameBackingProposal
-    || reason === borrowedFallbackProposal || reason === projectivePrintProposal || Boolean(embossedAlbumAction(reason));
+    || reason === borrowedFallbackProposal || reason === projectivePrintProposal || reason === tiledPrintProposal
+    || Boolean(embossedAlbumAction(reason));
 }
 
 export function deferredPrintCountHintId(reason, mobile = false) {

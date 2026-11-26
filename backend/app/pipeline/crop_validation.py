@@ -155,7 +155,7 @@ def crop_validation_profile(settings: Settings) -> dict:
             if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "dense_tile_inference": (
-            2 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+            3 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "deskew_inference": 1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None,
         "border_analysis": settings.enable_border_trim,
@@ -197,7 +197,8 @@ def segmentation_matches_crop_profile(settings: Settings, segmentation: dict) ->
 
 def _inference_failed(segmentation: dict) -> bool:
     return bool(segmentation.get("onnx_error") or any(
-        (segmentation.get(stage) or {}).get("error") for stage in ("dense_tile_inference", "deskew_inference")
+        (segmentation.get(stage) or {}).get("error")
+        for stage in ("dense_tile_inference", "deskew_inference", "tiled_print_review")
     ))
 
 

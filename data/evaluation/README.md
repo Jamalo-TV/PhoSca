@@ -2126,6 +2126,34 @@ synthetic detector subset and removes one extra proposal in the overlap
 case. The original miss on that overlap remains. The synthetic count
 check does not cover the ambiguity exposed by the reproduction.
 
+#### Missing prints in count review
+
+A risky full-page pass with three to eight moderately sized masks can run
+the existing four overlapping inference tiles for additional suggestions.
+The detector keeps the full-page pass and its normal fusion. Tile candidates
+need support on all four sides in the original pixels, including three
+strong unambiguous sides. Any intersection with another paper claim above
+one native square pixel rules out the suggestion. The check includes the
+initial masks, final detections and open count-review evidence.
+
+On the first spiral spread the extra pass took 0.54 s and found one
+previously missing print with 0.98181 IoU against the draft outline.
+The other two spreads and cover added no count suggestions. Existing
+active detections and crop results remained unchanged. A reviewer can
+confirm the new proposal as a separate paper print. The server checks
+the current count revision, the offered outline, the edited corners and
+the current full-print claims before accepting it. The real upload replay
+retained three active detections until confirmation. After confirmation and
+photo reprocessing, the untrimmed preview was available and both crop
+exports remained in review.
+
+The eight frozen and development comparisons preserve the prior detection
+and crop metrics in both modes. The frozen detector matches 18/18 prints.
+The seeded geometry set passes 11/11 whole prints and 12/12 motifs.
+The detector profile binds the new tile review to revision 3. The spiral
+results use the development checkpoint and draft geometry. Local receipts
+are under `runs/crop-quality/tiled-print-review/`.
+
 ### Scalloped paper on white scanner backing
 
 The ScanCropper development fixture pins two original rasters with five loose

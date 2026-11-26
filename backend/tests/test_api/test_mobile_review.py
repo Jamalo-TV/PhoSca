@@ -149,6 +149,63 @@ async def test_nested_edge_count_decision_keeps_evidence_and_retires_only_its_pa
         assert "deferred_print_proposals" not in page.processing_metadata["steps"]["segmentation"]["fusion"]
 
 
+async def test_tiled_print_requires_own_paper_confirmation_and_keeps_crops_held(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, Page
+    from app.pipeline.tile_print_review import TILED_PRINT_PROPOSAL
+
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    album_id, page_id, photo_id = await _seed_review_data()
+    def rect(x1, y1, x2, y2):
+        return [{"x": x, "y": y} for x, y in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))]
+    own = rect(.12, .20, .40, .62)
+    outline = rect(.58, .23, .89, .65)
+    offer = {"id": 1, "reason": TILED_PRINT_PROPOSAL, "polygon": outline}
+    revision = str(uuid4())
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        page.processing_metadata = {"photo_count_revision": revision, "steps": {
+            "segmentation": {"fusion": {"deferred_print_proposals": [offer]}},
+        }}
+        parent = await session.get(ExtractedPhoto, photo_id)
+        parent.segmentation_mask = {"polygon": own}
+        parent.enhancement_applied = {**parent.enhancement_applied, "correction": {
+            "crop_modes": {"full_print": {"warp_quad": rect(.12, .20, .72, .62)}},
+        }}
+        await session.commit()
+
+    url = f"/api/v1/pages/{page_id}/manual-photos"
+    base = {"request_id": str(uuid4()), "warp_quad": outline}
+    linked = {**base, "deferred_proposal_id": offer["id"], "photo_count_revision": revision}
+    for request in (base, linked):
+        missing = await client.post(url, json=request)
+        assert (missing.status_code, missing.json()["detail"]) == (409, "standalone_print_confirmation_required")
+    confirmed = {**linked, "confirm_standalone_print": True}
+    overlapping = await client.post(url, json=confirmed)
+    assert (overlapping.status_code, overlapping.json()["detail"]) == (409, "tiled_print_claim_conflict")
+
+    async with get_session_factory()() as session:
+        parent = await session.get(ExtractedPhoto, photo_id)
+        parent.enhancement_applied = {**parent.enhancement_applied, "correction": {}}
+        await session.commit()
+    saved = await client.post(url, json=confirmed)
+    assert saved.status_code == 201, saved.text
+    added = saved.json()
+    assert added["crop_download_urls"] == {"full_print": None, "image_only": None}
+    photo = f"/api/v1/photos/{added['id']}/image"
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(photo, params={"variant": variant})).status_code == 404
+    assert (await client.get(photo, params={"variant": "source_corrected_untrimmed"})).status_code == 200
+    replay = await client.post(url, json=confirmed)
+    assert replay.status_code == 200 and replay.json()["id"] == added["id"]
+    assert len((await client.get(f"/api/v1/albums/{album_id}/photos")).json()) == 2
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        assert page.processing_metadata["steps"]["segmentation"]["fusion"]["deferred_print_proposals"] == []
+
+
 async def test_edge_trace_reads_the_exif_oriented_source_without_editing_review(client, monkeypatch):
     from PIL import Image
     from sqlalchemy import func, select

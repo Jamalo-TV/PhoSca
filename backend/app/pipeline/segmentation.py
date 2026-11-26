@@ -77,6 +77,7 @@ from app.pipeline.segmentation_filter import (
     paper_around_nested_print,
 )
 from app.pipeline.source_fragment_review import source_fragment_role, suggest_source_fragment_group
+from app.pipeline.tile_print_review import TILED_PRINT_PROPOSAL, tile_print_outline, tiled_outline_conflicts
 
 _CLASSICAL_MIN_AREA_RATIO = 0.02
 _CLASSICAL_DUPLICATE_CHECK_LIMIT = 12
@@ -4348,7 +4349,8 @@ def segment_album_page(
 ) -> SegmentationResult:
     source = source_image if source_image is not None and source_image.shape == image.shape else None
     evidence_source = source if source is not None else image
-    result = _segment_album_page(image, settings, source)
+    tile_offers = []
+    result = _segment_album_page(image, settings, source, tile_offers)
     if settings.enable_classical_segmentation_fallback:
         if settings.enable_precise_photo_crops and (
             result.metadata.get("fallback_used") or (result.metadata.get("model_set_risk") or {}).get("risky")
@@ -4387,6 +4389,8 @@ def segment_album_page(
                 result = _flag_crossing_fallback_contours(source, result)
                 result = _flag_album_leaf_count_review(source, result)
                 result = _offer_dark_mounted_print(source, result)
+        if tile_offers:
+            result = _offer_unclaimed_tiled_prints(evidence_source, result, tile_offers)
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
@@ -4436,7 +4440,60 @@ def segment_album_page(
     return result
 
 
-def _segment_album_page(image: np.ndarray, settings: Settings, source: np.ndarray | None = None) -> SegmentationResult:
+def _offer_unclaimed_tiled_prints(
+    source: np.ndarray, result: SegmentationResult, offers: list[list[dict]],
+) -> SegmentationResult:
+    height, width = source.shape[:2]
+    fusion = result.metadata.get("fusion") or {}
+    pending = list(fusion.get("deferred_print_proposals") or [])
+    claims = [
+        {**item.mask, "polygon": item.mask.get("polygon") or _normalized_polygon(_detection_polygon(item), 1, 1)}
+        for item in result.detections
+    ] + pending
+    next_id = max((item["id"] for item in pending), default=-1) + 1
+    accepted = []
+    for outline in offers:
+        if not tiled_outline_conflicts(outline, claims, width, height):
+            offer = {"id": next_id + len(accepted), "reason": TILED_PRINT_PROPOSAL, "polygon": outline}
+            accepted.append(offer)
+            claims.append(offer)
+    if not accepted:
+        return result
+    return SegmentationResult(result.detections, {
+        **result.metadata, "fusion": {**fusion, "deferred_print_proposals": [*pending, *accepted]},
+    })
+
+
+def _collect_tiled_print_offers(
+    source: np.ndarray, image: np.ndarray, detections: list[SegmentationDetection],
+    model_evidence: dict[int, dict[str, float]], infer: Callable[[np.ndarray], list[SegmentationDetection]],
+    inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
+) -> list[list[dict]]:
+    candidates, evidence, _ = _recover_dense_prints(image, detections, model_evidence, infer, inputs)
+    height, width = source.shape[:2]
+    claims = [item.mask for item in detections]
+    offers = []
+    for index, candidate in enumerate(candidates):
+        if (candidate.mask.get("detector_source") != "yolo_onnx_tiled"
+                or candidate.confidence < .80 or evidence[index]["score"] < .80):
+            continue
+        if tiled_outline_conflicts(candidate.mask["polygon"], claims, width, height):
+            continue
+        try:
+            outline = tile_print_outline(source, _detection_polygon(candidate))
+        except (cv2.error, ValueError, np.linalg.LinAlgError):
+            continue
+        if outline is not None:
+            normalized = _normalized_polygon(outline, width, height)
+            if not tiled_outline_conflicts(normalized, claims, width, height):
+                offers.append(normalized)
+    return offers
+
+
+def _segment_album_page(
+    image: np.ndarray, settings: Settings, source: np.ndarray | None = None,
+    tile_offers: list[list[dict]] | None = None,
+) -> SegmentationResult:
     model_path = Path(settings.yolo_model_path)
     line_budget = min(3 * image.shape[0] * image.shape[1], 12_000_000) if settings.enable_precise_photo_crops else None
     multipanel_source = (source if source is not None else image) if settings.enable_precise_photo_crops else None
@@ -4558,6 +4615,22 @@ def _segment_album_page(image: np.ndarray, settings: Settings, source: np.ndarra
                             detections, model_evidence = recovered, recovered_evidence
                     metadata["dense_tile_inference"] = tile_metadata | {
                         "runtime_ms": round((perf_counter() - tile_started) * 1000, 2),
+                    }
+                if (source is not None and tile_offers is not None and deskew_enabled and risk_reasons
+                        and settings.visible_mask_model_path is None and 3 <= len(detections) <= 8
+                        and all(.02 <= _score_value(item, "area_ratio") <= .16 for item in detections)
+                        and sum(item.confidence < settings.yolo_confidence_threshold for item in detections) >= 2):
+                    review_started = perf_counter()
+                    tile_review = {}
+                    try:
+                        tile_offers.extend(_collect_tiled_print_offers(
+                            source, image, detections, model_evidence, lambda frame: infer(frame)[0], inputs,
+                        ))
+                    except (cv2.error, ValueError, RuntimeError) as exc:
+                        tile_review["error"] = str(exc)
+                    metadata["tiled_print_review"] = {
+                        **tile_review, "candidates": len(tile_offers),
+                        "runtime_ms": round((perf_counter() - review_started) * 1000, 2),
                     }
                 del inputs
                 if detections and settings.enable_classical_segmentation_fallback and risk_reasons and not dense_small_prints:
