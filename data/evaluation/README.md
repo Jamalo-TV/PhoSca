@@ -2199,6 +2199,13 @@ overlay shows only measured spans on the three free sides.
 | 180° | 1 | 0 → 0 | 0 → 4 |
 | 270° | 0 | 0 → 1 | 0 → 4 |
 
+In a subsequent before-and-after replay, JPEG95 gains the draft
+and right traces at 90°, 180° and 270°. JPEG55 gains them at
+180° and keeps the existing hints at 0° and 270°. At JPEG55
+and 90° the left projective search itself still produces no
+outline, so the neighbour search has no anchor. All eight
+replays preserve the original active detections.
+
 The left outline in the 90° and 270° rotated runs has approximately
 0.9937 and 0.9935 native mask IoU against the Golden development
 annotation. The three recovered trace sets enter count review and
