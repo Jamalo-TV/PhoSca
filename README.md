@@ -112,6 +112,15 @@ Entscheid beide aus der aktiven Liste. Ein Foto lässt sich nach
 Abbrechen im gewöhnlichen Editor korrigieren.
 [Beispiel Willett 109](data/evaluation/README.md#review-a-disputed-paper-join)
 
+Wenn der klassische Ersatzpfad einen Abzug aus Linienpaaren findet,
+kann PhoSca am Original nach sichtbaren Kanten eines versetzten
+Nachbarabzugs suchen. **Möglichen weiteren Abzug prüfen** blendet
+die gestützten Abschnitte ein. Die Abzugsliste wächst erst, wenn
+der Reviewer im Desktop-Editor einen eigenen Abzug speichert.
+Eine beobachtete gewölbte Papierkante bleibt auch nach der Eingabe
+von Breite und Höhe in der Geometrieprüfung.
+[Beispiel Golden 11](data/evaluation/README.md#trace-the-visible-edges-of-a-missing-neighbour)
+
 Wenn der Zuschnitt an einer Papierkante in Prüfung bleibt und zwei
 Linien im Original ausreichend gestützt sind, zeichnet **Ganzer Abzug**
 beide als gestrichelte Kanten ein. Die Linien folgen dem beobachteten

@@ -463,7 +463,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           onClick={() => setMeasuredEdge(null)}>Messspur ausblenden</button>}
       </div>
     )}
-    {showMissingEdges && missingTraces.length > 0 && <p className="quad-hint">{missingPrintEdgeHint}</p>}
+    {showMissingEdges && missingTraces.length > 0 && (
+      <p className="quad-hint">{missingPrintEdgeHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>
+    )}
     {countOutlines.length > 0 && <p className="quad-hint" id="mobile-fragment-count-review-hint">{fragmentCountHint}</p>}
     {captureSplitGroups.length > 0 && <p className="quad-hint" id="mobile-capture-split-count-hint">{captureSplitReviewHint}</p>}
     {filmGridGroups.length > 0 && <p className="quad-hint" id="mobile-film-grid-count-hint">{filmGridCountHint}</p>}
@@ -839,8 +841,8 @@ function CropReview({ albumId, goHome }) {
               && (captureReviewPending || paperOutlinePending || motifReviewPending || rejectedDraftPending || selectedCountGroup))}
             aria-describedby={value === "correct" ? approvalHint : undefined}
             onClick={() => record(value)}>
-            {value === "correct" && (deferredProposals.length || countOutlines.length || captureSplitGroups.length || filmGridGroups.length
-              || paperGridGroups.length || paperJoinGroups.length)
+            {value === "correct" && (deferredProposals.length || item.payload?.missing_print_edge_traces?.length
+              || countOutlines.length || captureSplitGroups.length || filmGridGroups.length || paperGridGroups.length || paperJoinGroups.length)
               ? "Anzahl bestätigen" : label}
           </button>
         ))}

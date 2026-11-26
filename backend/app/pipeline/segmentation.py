@@ -12,7 +12,9 @@ import numpy as np
 from app.config import Settings
 from app.pipeline.adjacent_prints import ADJACENT_PRINT_REVIEW, adjacent_album_edge_outlines
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves
-from app.pipeline.crossing_prints import CROSSING_PRINT_REVIEW, crossing_print_outlines, near_leaf_edge_traces
+from app.pipeline.crossing_prints import (
+    CROSSING_PRINT_REVIEW, crossing_print_outlines, near_leaf_edge_traces, staggered_print_source_traces,
+)
 from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
     clipped_fragment_needs_review, clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
@@ -3205,7 +3207,13 @@ def _suggest_adjacent_album_edge_print(image: np.ndarray, result: SegmentationRe
     neighbor = order_quad_cyclic(normalized_vertices_to_pixels(outline, width, height))
     try:
         alternatives = adjacent_album_edge_outlines(image, neighbor)
-    except (cv2.error, ValueError):
+        if not alternatives and anchor.mask.get("detector_source") == "line_pairs":
+            traces = staggered_print_source_traces(image, neighbor)
+            if traces:
+                return SegmentationResult(
+                    result.detections, {**result.metadata, "missing_print_edge_traces": traces},
+                )
+    except (cv2.error, ValueError, np.linalg.LinAlgError):
         return result
     if not alternatives:
         return result

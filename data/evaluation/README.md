@@ -2040,6 +2040,61 @@ and blurred Domoritz checks keep their prior instance and crop metrics.
 The new search took 176 ms median on page 37 and 137 ms on page 11 over
 six warmed repetitions with two OpenCV threads.
 
+#### Trace the visible edges of a missing neighbour
+
+On the 2560 × 1920 Golden 11 original, the mixed path finds both prints.
+The classical fallback keeps one line-pair proposal at 0.9114 mask IoU
+and misses the right print. The fallback's observed outline sits roughly
+42–54 native pixels from the strong shared transition. JPEG recompression
+can shorten the detected lines without removing the material edges from
+the source. A separate transition from the album sheet to the floor
+runs near the right print. The distance between those two transitions
+is about 12.5 native pixels at the median and drops to roughly 2.5 pixels
+at the lower end. An independent optical fit measures up to 7.23 pixels
+of bow on the right paper edge.
+
+Crossing-print revision 2 looks for a staggered neighbour when the
+fallback holds a single line-pair detection and finds no adjacent
+outline. A shorter survey line from the reduced image can seed a
+longer native search. Four consecutive source fits on the bottom edge
+and four along the far edge must have high support and meet within
+two pixels at their joins. The top and shared scene transition also
+need distributed native support. Three open, signed traces then
+mark the visible transitions towards the album. The internal scene
+transition supplies no display trace. The stage persists no estimated
+quad, and leaves active count, automatic masks and crop rendering
+unchanged.
+
+On the original, both count views expose the same three traces with
+65, 72 and 76 measured vertices. The reviewer can use them while
+marking a separate print in the desktop editor. Saving an explicitly
+marked second print consumes the pending trace and preserves the
+curved right edge as review evidence. Entering diagnostic paper
+dimensions of 70 × 100 mm and reprocessing still holds the whole-print,
+motif and legacy trimmed downloads. The untrimmed inspection JPEG
+remains available.
+
+Holding the original left seed fixed, JPEG95, JPEG75 and JPEG55
+all produce three observed sides. The source stage also finds the
+three sides after each quarter turn, with some sides shown as
+separate measured segments. Erasing the right print while retaining
+the album edge produces no traces in the four quarter-turn checks.
+The complete classical detector
+on those unrotated recompressions can lose the left seed in its
+own line-pair search, before the new stage runs. The original
+reference is a development draft, and the physical ownership of
+any potential overlap at the shared border stays in review.
+
+The native trace search took 336 ms median and 467 ms p95 of CPU
+time on the original over ten warm calls at one OpenCV thread.
+The browser replay uses the actual upload, detector, geometry
+and variant routes with OCR and automatic orientation disabled.
+The paired controls reproduce 18/18 frozen detections, 11/11
+whole-print and 12/12 motif passes with supplied seeds, and
+29/29 Golden mixed matches. The full model-free Golden replay
+retains 14/29 matches with 15 extra proposals. Detection and
+crop-mode summaries match the disabled-trace arm.
+
 ### Confirming a suggested print exactly once
 
 Before confirmation was bound to the displayed suggestion, a second editor
@@ -4581,6 +4636,17 @@ verified calibration or release groups.
 [INHA reuse terms](https://www.inha.fr/bibliotheque/collections/la-bibliotheque-numerique-de-linha/) ·
 [Pinned catalogue index](https://github.com/moarthist/dieulafoy/tree/e8d67dc03a096d569feb380004fbb2101841e1f8) ·
 [Published derivative](https://ac.nau.edu/omeka-s/s/pioneering-women-archaeologists/item/4181)
+
+The Barcelona maritime museum documents separate captures of the
+17 prints in Antonio Calvo album `102638F` after removal. The
+archive also photographs the same pieces after fixing them to new
+leaves. New mounts overlap the white print rims, so recoverability
+must be assessed separately for the whole print and motif. The
+catalogue identifies print `102638F-10` at 110 × 180 mm. The
+catalogue JPEG returned HTTP 403 and the native album leaves and
+their image reuse terms remain unverified. The publication licence
+covers the article. [Conservation report](https://doi.org/10.55437/unicum.324) ·
+[Print record](https://www.mmb.cat/catalegs/moll-de-carrega-del-port-de-valencia-i-vapor-santo-domingo/)
 
 The Getty Bayard album was disbound in the 1980s. The published page
 viewer reconstructs the volume digitally. Catalogued dimensions and

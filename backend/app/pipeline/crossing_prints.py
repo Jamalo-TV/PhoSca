@@ -1,18 +1,21 @@
 """Find review outlines where a classical proposal crosses visible paper edges."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from itertools import combinations
 
 import cv2
 import numpy as np
 
-from app.pipeline.adjacent_prints import _near_staggered_neighbor
+from app.pipeline.adjacent_prints import _joined_segments, _near_staggered_neighbor
 from app.pipeline.edge_trace import measure_edge_trace
 from app.pipeline.edge_prints import _photo_texture
-from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic, pixel_vertices_to_normalized
-from app.pipeline.print_edges import _edge_band, refine_print_boundary
+from app.pipeline.geometry import (
+    normalized_polygon_overlap, normalized_vertices_to_pixels, order_quad_cyclic, pixel_vertices_to_normalized,
+)
+from app.pipeline.print_edges import _edge_band, _side_line, refine_print_boundary
 
 
-CROSSING_PRINT_REVISION = 1
+CROSSING_PRINT_REVISION = 2
 CROSSING_PRINT_REVIEW = "CROSSING_PRINT_OUTLINE_REVIEW"
 REVIEWED_CROSSING_OUTLINE = "reviewed_crossing_outline"
 
@@ -175,6 +178,142 @@ def _source_side_trace(image: np.ndarray, first: np.ndarray, last: np.ndarray) -
         return measure_edge_trace(image, points)
     except ValueError:
         return []
+
+
+def _native_line(points: np.ndarray) -> np.ndarray:
+    line = np.cross(*np.column_stack((points, np.ones(2))))
+    return line / np.linalg.norm(line[:2])
+
+
+def _at_height(line: np.ndarray, height: float) -> np.ndarray:
+    return np.float32([-(line[1] * height + line[2]) / line[0], height])
+
+
+def _local_side_support(image: np.ndarray, start: np.ndarray, end: np.ndarray, radius: int) -> bool:
+    points = start + np.linspace(0, 1, 5, dtype=np.float32)[:, None] * (end - start)
+    offsets = []
+    for first, last in zip(points[:-1], points[1:], strict=True):
+        line, evidence = _side_line(image, first, last, radius)
+        if line is None or evidence["support"] < .90 or (evidence["corner_support"] or 0) < .60:
+            return False
+        offsets.append(np.column_stack((np.float32([first, last]), np.ones(2))) @ line)
+    return all(abs(before[1] - after[0]) <= 2 for before, after in zip(offsets[:-1], offsets[1:], strict=True))
+
+
+def _staggered_search_seeds(
+    segments: list[tuple[int, np.ndarray]], anchor: np.ndarray,
+) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray, float, float]]:
+    left, top = anchor.min(axis=0)
+    right, bottom = anchor.max(axis=0)
+    width, height = right - left, bottom - top
+    if min(width, height) < 220:
+        return
+    arms = []
+    for axis, ends in segments:
+        if axis != 1 or np.linalg.norm(ends[1] - ends[0]) < .48 * height:
+            continue
+        line = _native_line(ends)
+        position = _at_height(line, (top + bottom) / 2)[0]
+        if right - .06 * width <= position <= right + 1.40 * width:
+            arms.append((position, ends, line))
+    if len(arms) > 8:
+        return
+    for (near, first, left_line), (far, second, right_line) in combinations(sorted(arms, key=lambda arm: arm[0]), 2):
+        if abs(near - right) > .12 * width or not .72 * width <= far - near <= 1.28 * width:
+            continue
+        for axis, crossbar in segments:
+            if axis != 0 or np.linalg.norm(crossbar[1] - crossbar[0]) < .72 * (far - near):
+                continue
+            line = _native_line(crossbar)
+            corners = np.cross(line, [left_line, right_line])
+            if np.min(np.abs(corners[:, 2])) < .2:
+                continue
+            bottom_corners = np.float32(corners[:, :2] / corners[:, 2, None])
+            if (not .98 <= (bottom_corners[0, 1] - top) / height <= 1.18
+                    or np.linalg.norm(bottom_corners - crossbar, axis=1).max() > .12 * width):
+                continue
+            extension = bottom_corners[:, 1] - [first[1, 1], second[1, 1]]
+            if np.any(extension < -.06 * height) or np.any(extension > np.float32([.14, .29]) * height):
+                continue
+            yield left_line, right_line, bottom_corners, top, height
+
+
+def _staggered_native_quads(
+    image: np.ndarray, seeds: list[tuple[np.ndarray, np.ndarray, np.ndarray, float, float]], anchor: np.ndarray,
+) -> list[np.ndarray]:
+    result = []
+    for left_line, right_line, (bottom_left, bottom_right), top, height in seeds:
+        if not _local_side_support(image, bottom_right, bottom_left, 8):
+            continue
+        slope = bottom_right[1] - bottom_left[1]
+        for y in np.arange(top + .045 * height, top + .205 * height, 16):
+            start, end = _at_height(left_line, y), _at_height(right_line, y + slope)
+            top_line, evidence = _side_line(image, start, end, 14)
+            if top_line is None or evidence["support"] < .88 or (evidence["corner_support"] or 0) < .65:
+                continue
+            corners = np.cross(top_line, [left_line, right_line])
+            if np.min(np.abs(corners[:, 2])) < .2:
+                continue
+            top_left, top_right = np.float32(corners[:, :2] / corners[:, 2, None])
+            quad = np.float32([top_left, top_right, bottom_right, bottom_left])
+            if (not cv2.isContourConvex(quad) or np.any(quad < 4)
+                    or np.any(quad > np.asarray(image.shape[1::-1]) - 5)):
+                continue
+            overlap, _ = cv2.intersectConvexConvex(quad, anchor)
+            if overlap > .02 * min(cv2.contourArea(quad), cv2.contourArea(anchor)):
+                continue
+            _, near = _side_line(image, bottom_left, top_left, 10)
+            if (near["ambiguous"] or near["support"] < .90 or (near["corner_support"] or 0) < .70
+                    or not _local_side_support(image, top_right, bottom_right, 11)
+                    or not _photo_texture(image, quad)):
+                continue
+            if not any(np.max(np.linalg.norm(quad - previous, axis=1)) <= 5 for previous in result):
+                result.append(quad)
+    return result
+
+
+def _quarter_turn(points: np.ndarray, turn: int, width: int, height: int) -> np.ndarray:
+    x, y = points.T
+    positions = ((x, y), (y, width - 1 - x), (width - 1 - x, height - 1 - y), (height - 1 - y, x))
+    return np.column_stack(positions[turn]).astype(np.float32)
+
+
+def staggered_print_source_traces(image: np.ndarray, anchor: np.ndarray) -> list:
+    """Observe three free sides of a possible print next to a line-pair detection."""
+    height, width = image.shape[:2]
+    scale = min(1., 1280 / max(height, width))
+    working = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1 else image
+    segments = _joined_segments(working, min(working.shape[:2]))
+    if not segments or len(segments) > 48:
+        return []
+    candidates = []
+    for turn in range(4):
+        nearby = []
+        for rail in segments:
+            axis = (rail.axis + turn) % 2
+            ends = _quarter_turn(rail.ends / scale, turn, width, height)
+            nearby.append((axis, ends[ends[:, axis].argsort()]))
+        outline = _quarter_turn(anchor, turn, width, height)
+        seeds = list(_staggered_search_seeds(nearby, outline))
+        if not 1 <= len(seeds) <= 4:
+            continue
+        turned = np.ascontiguousarray(np.rot90(image, turn))
+        for quad in _staggered_native_quads(turned, seeds, outline):
+            # These three sides face the album, while the near side runs
+            # against another proposed print. Persist only signed source traces.
+            sides = [_source_side_trace(turned, a, b) for a, b in zip(quad[:3], quad[1:], strict=True)]
+            if not all(sides):
+                continue
+            native_height, native_width = turned.shape[:2]
+            traces = []
+            for trace in [run for side in sides for run in side]:
+                points = normalized_vertices_to_pixels([(point["x"], point["y"]) for point in trace],
+                                                       native_width, native_height)
+                source = _quarter_turn(points, (-turn) % 4, native_width, native_height)
+                traces.append([{"x": float(x), "y": float(y)}
+                               for x, y in pixel_vertices_to_normalized(source, width, height)])
+            candidates.append(traces)
+    return candidates[0] if len(candidates) == 1 else []
 
 
 def near_leaf_edge_traces(

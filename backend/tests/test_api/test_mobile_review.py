@@ -651,6 +651,53 @@ async def test_capture_outline_hold_survives_manual_edit_and_legacy_exports(clie
     assert not count_review["payload"]["missing_print_edge_traces"]
 
 
+async def test_missing_neighbor_traces_preserve_a_curved_paper_edge_after_manual_addition(client, monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.services import pipeline
+
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("MAX_UPLOAD_SIZE", "2000000")
+    monkeypatch.setenv("MAX_REQUEST_SIZE", "2100000")
+    monkeypatch.setenv("YOLO_MODEL_PATH", str(tmp_path / "absent.onnx"))
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    get_settings.cache_clear()
+    source = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_11.jpg"
+    album_id = (await client.post("/api/v1/albums", json={"name": "Missing neighbor traces"})).json()["id"]
+    album = f"/api/v1/albums/{album_id}"
+    upload = await client.post(f"{album}/pages/upload", files={"files": (source.name, source.read_bytes(), "image/jpeg")})
+    assert upload.status_code == 201, upload.text
+    count_url = f"/api/v1/review/queue?album_id={album_id}&type=segmentation"
+    task, = (await client.get(count_url)).json()
+    assert task["payload"]["detection_count"] == 1
+    existing, = task["payload"]["detections"]
+    assert existing["segmentation_mask"]["detector_source"] == "line_pairs"
+    top, outer, bottom = task["payload"]["missing_print_edge_traces"]
+    assert all(len(trace) >= 8 and all(point["x"] > .60 for point in trace) for trace in (top, outer, bottom))
+    assert min(point["x"] for point in outer) > .87
+    assert max(point["y"] for point in top) < .41
+    assert min(point["y"] for point in bottom) > .94
+
+    corners = [{"x": x / 2559, "y": y / 1919} for x, y in [(1539, 765), (2311, 749), (2271, 1835), (1552, 1859)]]
+    added = await client.post(f"/api/v1/pages/{task['page_id']}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": corners, "print_size_mm": {"width": 70, "height": 100},
+    })
+    assert added.status_code == 201, added.text
+    photo = added.json()
+    correction = photo["enhancement_applied"]["correction"]
+    curve = photo["enhancement_applied"]["review_provenance"]["paper_trace_review"]
+    assert curve["sides"] == [1] and curve["traces"] == [outer]
+    assert correction["manual_paper_boundary"]["requires_review"] is True
+    current, = (await client.get(count_url)).json()
+    assert current["payload"]["detection_count"] == 2
+    assert current["payload"]["missing_print_edge_traces"] == []
+    photo_url = f"/api/v1/photos/{photo['id']}"
+    assert (await client.post(f"{photo_url}/reprocess")).status_code == 200
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{photo_url}/image?variant={variant}")).status_code == 404
+    assert (await client.get(f"{photo_url}/image?variant=source_corrected_untrimmed")).status_code == 200
+
+
 async def test_verified_recovery_of_inset_straight_print_exports_both_modes(client, monkeypatch):
     from app.config import get_settings
     from app.database import get_session_factory

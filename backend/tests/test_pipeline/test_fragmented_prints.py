@@ -9,6 +9,7 @@ from app.config import Settings
 from app.pipeline import segmentation
 from app.pipeline.adjacent_prints import ADJACENT_PRINT_REVIEW, adjacent_album_edge_outlines
 from app.pipeline.crop_validation import automatic_crop_review_reasons
+from app.pipeline.crossing_prints import staggered_print_source_traces
 from app.pipeline.enhancement import prepare_for_cutout
 from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW, measure_extended_print_outline,
@@ -202,6 +203,19 @@ def test_blank_album_leaf_at_a_dark_edge_has_no_adjacent_print_outline():
     cv2.fillConvexPoly(image, neighbor.astype(np.int32), (57, 109, 95))
 
     assert adjacent_album_edge_outlines(image, neighbor) == []
+
+
+def test_missing_neighbor_traces_require_source_sides_beyond_the_album_edge():
+    source = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_11.jpg"
+    image = load_image(source)
+    anchor = np.float32([[784, 633], [1496, 633], [1496, 1740], [784, 1740]])
+    assert staggered_print_source_traces(image, anchor)
+
+    neighbor = np.float32([[1537, 764], [2312, 748], [2272, 1835], [1551, 1860]])
+    cover = neighbor + (neighbor - neighbor.mean(axis=0)) * .048
+    stock = np.median(image[420:590, 1590:2100], axis=(0, 1)).tolist()
+    cv2.fillConvexPoly(image, np.rint(cover).astype(np.int32), stock)
+    assert staggered_print_source_traces(image, anchor) == []
 
 
 @pytest.mark.parametrize(("join", "drift"), [("none", 0), ("touching", 53), ("gutter", 97), ("overlap", 97)])
