@@ -18,6 +18,7 @@ import numpy as np
 
 
 PROTECTED_REGION_REVISION = 2
+OFF_PRINT_ADVISORY = "off_print_advisory"
 PAGE_FACE_SUGGESTIONS = {
     "opencv_haarcascade_frontalface_default": "face",
     "opencv_haarcascade_profileface": "head",
@@ -53,7 +54,9 @@ def album_mark_source_matches(review: dict, page_sha256: str, page_metadata: dic
     protection = ((page_metadata or {}).get("steps") or {}).get("protected_regions") or {}
     regions = protection.get("regions")
     return (review.get("page_sha256") == page_sha256 and protection.get("enabled", True)
-            and isinstance(regions, list) and review.get("protected_regions_sha256") == protected_region_digest(regions))
+            and isinstance(regions, list) and review.get("protected_regions_sha256") == protected_region_digest(regions)
+            and (review.get("source") != OFF_PRINT_ADVISORY
+                 or review.get("photo_count_revision") == (page_metadata or {}).get("photo_count_revision")))
 
 
 def region_box_in_pixels(region: dict[str, Any], width: int, height: int) -> tuple[float, float, float, float] | None:

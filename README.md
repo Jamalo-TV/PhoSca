@@ -492,6 +492,25 @@ aus der Prüfung genommen. Weitere geschützte Stellen bleiben geprüft.
 Freigabe erneut geprüft. Das Seitenverhältnis wird separat bestimmt.
 [Beispiel Schutzmarkierung](data/evaluation/README.md#review-one-album-page-mark-during-a-corner-edit)
 
+Liegt das Zentrum einer automatischen Schutzmarkierung bereits jenseits
+einer messbaren Papierkante, kann der Editor bis zu vier solcher Stellen
+getrennt am Original vergrössern. Jede Markierung muss überwiegend
+ausserhalb des Papiers liegen. PhoSca verlangt einen durchgehend
+messbaren Übergang am selben Rand. Sobald ein anderer aktiver oder
+noch nicht geklärter Abzug die Stelle oder ihren Schutzabstand
+beansprucht, bleibt der Schutz bestehen. Nach der Anzahlprüfung lässt
+sich der Abzug auf Desktop oder Mobil neu berechnen.
+
+Der Reviewer beurteilt jede Stelle einzeln. Erst wenn alle sichtbaren
+Stellen ausdrücklich dem Hintergrund zugeordnet sind, kann PhoSca die
+zugehörigen automatischen Markierungen beim Speichern für diesen einen
+Abzug ausnehmen. Die vier Ecken bleiben auf der gemessenen Kontur.
+Die Bestätigung gilt für diese Aufnahme, die gespeicherten Ecken und
+die aktuelle Schutz- und Anzahlprüfung. Ein neuer überlappender
+Anspruch hält die betroffenen Downloads erneut zurück. Ein ungeklärtes
+Papierformat und eine strittige Motivgrenze bleiben eigene Prüfungen.
+[Beispiel mit zwei Markierungen](data/evaluation/README.md#review-multiple-advisory-marks-at-a-measured-paper-edge)
+
 Vor dem Speichern einer Korrektur prüft PhoSca geschützte Stellen
 in den Originalkoordinaten. Für **Ganzer Abzug** zählt der sichtbare
 Teil der bisherigen Abzugsfläche. Für einen ausdrücklich gesetzten
@@ -1052,9 +1071,11 @@ fehlen damit konkrete Artefakte und eine dazu passende Kalibrierung.
 - **Derselbe Kontaktabzug in Originalauflösung.** PhoSca markiert einen
   Teil der Beschriftung «NYC, Brooklyn» bereits bei **Ganzer Abzug**.
   Ein Versuch entlang des Filmrasters hätte die ganze Kopfzeile
-  abgeschnitten. Zwei fälschlich im Holz erkannte Gesichter blockieren
-  hier weiterhin die Bestätigung des Papierrands.
-  [Messwerte, Prüfpfad und offene Kante](data/evaluation/README.md#locate-native-contact-print-lettering-while-the-paper-is-held)
+  abgeschnitten. Zwei Schutzmarkierungen im Holz lassen sich am
+  Original einzeln prüfen. Die Grösse des Papiers und die Motivgrenze
+  werden danach separat geprüft.
+  [Beschriftung und Messwerte](data/evaluation/README.md#locate-native-contact-print-lettering-while-the-paper-is-held) ·
+  [Prüfung der Schutzmarkierungen](data/evaluation/README.md#review-multiple-advisory-marks-at-a-measured-paper-edge)
 - **Zwei Abzüge auf Golden-Seite 26.** Unten rechts stimmt die
   Fläche von **Ganzer Abzug** nahezu mit der Entwicklungsreferenz
   überein (IoU 0,996). Oben links folgt der Zuschnitt der hellen

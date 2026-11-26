@@ -5221,12 +5221,12 @@ unavailable through the review flow. The untrimmed preview remains
 available. The marker does not supply a motif warp.
 
 A separate native draft retaining the heading and the lowest film
-rail was visually inspected. Under the normal protection guard the
-paper edit still returns `protected_region_cut`. Two advisory face
+rail was visually inspected. At this revision the guarded paper edit
+returns `protected_region_cut`. Two advisory face
 boxes straddle the left paper edge near `(2023, 2695)` and `(2014,
 788)`. Their centres are in the exposed tabletop, and native close-ups
 show wood and paper edges. Existing review can resolve a single
-qualifying page mark. These two boxes remain an open paper-review case.
+qualifying page mark. Review of the two boxes is covered below.
 Over 15 warm calls with one OpenCV thread, the new conditional
 diagnostic took a median of 517 ms and p95 of 634 ms of process CPU on
 the native source. The four-source replay report and rendered surfaces
@@ -5238,6 +5238,80 @@ crop metrics, review counts and gate results match the previous run
 across all eight regression comparisons.
 [Development source](contact-sheet-camera-development.json) ·
 [Marker implementation](../../backend/app/pipeline/motif_margin.py)
+
+### Review multiple advisory marks at a measured paper edge
+
+On the native contact print, the centres of the two advisory Haar
+boxes are 22.83 and 18.76 native pixels outside the stored paper
+outline. Their box cores overlap the paper by 8.50% and 15.20% and
+the padded boxes by 19.25% and 24.41%. Source close-ups show a wooden
+table between the real print and the adjoining sleeve. The active
+sleeve proposals initially overlap both padded boxes. The normal
+4-to-1 count review retires those claims only after an explicit
+sleeve exclusion. Reprocessing the remaining photo then offers
+both native source views in geometry review.
+
+The new offer only examines held paper outlines with the advisory
+cutoff reason, with optional paper-boundary and aspect uncertainty.
+It can expose one to four advisory page-detector regions. A trusted
+or pinned region, active or deferred competing claim, or uncertain
+paper edge vetoes the offer. For each box, the centre must be at
+least twelve native pixels outside one side. Core overlap may be
+at most 20% and padded overlap at most 28%. The local edge fit must
+have at least 90% support, with both endpoints within two native
+pixels of the current side. The median inner-to-outer Lab lightness
+step must be at least 20. At least 90% of the samples must show a
+pale, near-neutral inner band. These measurements locate a place for
+human review. An independent trial produced 13 pale portrait cases
+out of 24 in which a similar optical witness still passed.
+
+The editor opens at the current measured paper corners and shows a
+native zoom for each field. Each field needs its own checkbox.
+The usual crop edit records the ordered set of explicitly chosen
+regions. A partial set or changed offer is rejected. The server
+matches the source SHA-256, region digest, count revision and
+corner geometry, with a one-native-pixel corner tolerance. It repeats
+the pixel and claim checks before applying the choices. Only the
+selected suggestions for this photo are excepted. All other protected
+regions and both output modes run through the usual geometry checks.
+A different protected region digest or count revision holds the
+downloads. A new claim touching even the marked padding also
+withdraws the offer or returns the saved crop to review.
+
+On the normal native upload, an unconfirmed edit returns
+`protected_region_cut`. An incomplete selection returns
+`album_page_mark_choices_required`. Confirming both with the stored
+corners still holds both exports for `PRINT_ASPECT_UNCERTAIN`.
+The separate orange lettering mark stays visible during this step.
+Supplying 203 × 264 mm as diagnostic dimensions opens the manual
+whole-print export and keeps the curved motif and its lettering in
+review. The earlier independent motif outline was held as
+`IMAGE_RECTANGLE_INCONSISTENT`. Enclosing that outline in a rectangle
+in the saved paper plane and projecting it back onto the original
+allowed the deliberate motif edit to export. The 1,853 × 2,410
+whole-print and 1,645 × 2,386 motif downloads then stayed byte-identical
+through reprocessing. The motif edit kept the whole-print file exact.
+
+Both exports retain all 28,044 measured dark header centres, all
+2,730,535 dark grid centres, all 70,839 low-rail centres and 315 anchors
+in the 35 fields. The whole-print footprint IoU against the visual
+paper draft is 0.9949. The largest corner difference is 7.50 native
+pixels and 4,368 output samples read beyond the draft's one-pixel
+buffer. The motif has zero samples outside that same paper buffer.
+The JPEG luma mean absolute error against the owned replay is 0.77 for
+the whole print and 0.82 for the motif. These dimensions and sample
+areas are development inputs. The source still lacks an independent
+physical reference. The automatic release gate remains held.
+
+The narrow advisory check took 8.7 ms median and 24.3 ms p95 CPU
+over 30 warm one-thread calls on this source. All eight existing
+regression runs preserve detection, crop quality and review counts.
+The four-encoding comparison also preserves all 45 rendered surfaces
+byte for byte before a deliberate edit. The product receipts and
+exports are in `runs/crop-quality/native-protected-paper-review/`.
+[Development source](contact-sheet-camera-development.json) ·
+[Review geometry](../../backend/app/pipeline/off_print_advisory.py) ·
+[Upload and export regression](../../backend/tests/test_api/test_off_print_advisory_review.py)
 
 ### Explain a held whole print in mobile geometry review
 

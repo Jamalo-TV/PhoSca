@@ -75,7 +75,7 @@ from app.pipeline.presets import get_enhancement_config
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.protected_regions import (
-    album_mark_matches_quad, album_mark_source_matches, detect_protected_regions, is_advisory_page_face,
+    OFF_PRINT_ADVISORY, album_mark_matches_quad, album_mark_source_matches, detect_protected_regions, is_advisory_page_face,
     protected_region_digest, protected_region_key, region_box_in_pixels,
 )
 from app.pipeline.quality import segmentation_review_reasons
@@ -107,6 +107,12 @@ def _album_mark_review_offer(
     preview = full.get("outline_preview") or {}
     protection = correction.get("protected_regions") or {}
     violations = protection.get("violations") or []
+    if (marks := correction.get("off_print_advisory_regions")) and full.get("status") == "review_needed":
+        width, height = source.shape[1::-1]
+        return {"id": str(stage_id), "source": OFF_PRINT_ADVISORY, "page_sha256": page.file_hash_sha256,
+                "photo_count_revision": (page.processing_metadata or {}).get("photo_count_revision"),
+                "protected_regions_sha256": protected_region_digest(regions), "regions": marks,
+                "source_size": {"width": width, "height": height}}
     if (full.get("status") != "review_needed" or preview.get("source") != POSSIBLE_OVEREXTENDED_PRINT_EDGE
             or not correction.get(f"{FULL_PRINT_REVIEW_PREVIEW}_asset_id")
             or not protection.get("review_untrimmed") or len(violations) != 1):

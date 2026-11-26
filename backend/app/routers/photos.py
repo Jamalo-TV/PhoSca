@@ -44,7 +44,7 @@ from app.pipeline.perspective import manual_print_intersects, review_outline_int
 from app.pipeline.presets import available_presets
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
-from app.pipeline.protected_regions import ProtectedRegionRemoval, album_mark_matches_quad, album_mark_source_matches
+from app.pipeline.protected_regions import OFF_PRINT_ADVISORY, ProtectedRegionRemoval, album_mark_matches_quad, album_mark_source_matches
 from app.pipeline.variants import (
     CROP_REVIEW_PREVIEWS,
     FULL_PRINT_REVIEW_PREVIEW,
@@ -261,6 +261,24 @@ async def _review_overlapping_crops(
         full_mode = modes.get("full_print") or {}
         preview = full_mode.get("outline_preview") or {}
         preview_source = preview.get("source")
+        mark_offer = correction.get("album_page_mark_review") or {}
+        reviewed_mark = (metadata.get("review_provenance") or {}).get("reviewed_album_mark") or {}
+        for review in (mark_offer, reviewed_mark):
+            if review.get("source") != OFF_PRINT_ADVISORY or not any(
+                review_outline_intersects_claim(mark["claim_outline"], mask, width, height)
+                for mark in review["regions"]
+            ):
+                continue
+            if review is mark_offer:
+                correction.pop("album_page_mark_review", None)
+                correction.pop("off_print_advisory_regions", None)
+            else:
+                reason = "album_page_mark_review_stale"
+                route_ready_crop_modes_to_review(modes, [reason])
+                (correction.get("protected_regions") or {}).pop("reviewed_album_mark_id", None)
+                metadata["review_reasons"] = list(dict.fromkeys([reason, *(metadata.get("review_reasons") or [])]))
+                neighbor.status = PhotoStatus.review_needed
+            neighbor.enhancement_applied = metadata
         assisted_previews = (GRID_OUTLINE_REVIEW_SOURCE, POSSIBLE_OVEREXTENDED_PRINT_EDGE, INWARD_CORNER_REVIEW_SOURCE)
         measured_preview = preview_source in MEASURED_PRINT_PREVIEW_SOURCES
         fields = ("source_search_band", "source_inset_band") if measured_preview else ("source_outline",)
@@ -893,18 +911,27 @@ async def update_photo_bounding_box(
         review_provenance["shared_rim_cut_traces"] = deepcopy(shared_rim_traces)
     if payload.album_page_mark_review_id is not None:
         offer = correction.get("album_page_mark_review") or {}
+        off_print = offer.get("source") == OFF_PRINT_ADVISORY
         if (payload.segmentation_mask is None or payload.segmentation_mask.warp_quad is None
                 or str(payload.album_page_mark_review_id) != offer.get("id")
                 or not album_mark_source_matches(offer, page.file_hash_sha256, page.processing_metadata)
-                or (full_print.get("outline_preview") or {}).get("source") != POSSIBLE_OVEREXTENDED_PRINT_EDGE
+                or (not off_print and (full_print.get("outline_preview") or {}).get("source") != POSSIBLE_OVEREXTENDED_PRINT_EDGE)
                 or photo_is_reviewed_non_print(photo)):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_page_mark_review_stale")
+        if off_print and payload.album_page_mark_review_indices != list(range(len(offer["regions"]))):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_page_mark_choices_required")
+        if not off_print and payload.album_page_mark_review_indices is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_page_mark_review_stale")
         review_provenance["reviewed_album_mark"] = {
             **deepcopy(offer), "previous_quad": deepcopy(full_print["warp_quad"]),
             "warp_quad": deepcopy(segmentation_mask["warp_quad"]), "reviewed_at": datetime.now(timezone.utc).isoformat(),
         }
+        if off_print:
+            review_provenance["reviewed_album_mark"]["confirmed_indices"] = payload.album_page_mark_review_indices
         session.add(AuditLog(entity_type="photo", entity_id=photo.id, action="album_page_mark_reviewed",
                              details=deepcopy(review_provenance["reviewed_album_mark"])))
+    elif payload.album_page_mark_review_indices is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_page_mark_review_stale")
     elif (reviewed_mark := review_provenance.get("reviewed_album_mark")) and not album_mark_matches_quad(
         reviewed_mark, segmentation_mask.get("warp_quad"),
     ):

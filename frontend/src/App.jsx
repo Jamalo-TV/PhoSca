@@ -62,6 +62,7 @@ import {
   nestedFallbackProposal,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
+  offPrintAdvisorySource, useAlbumPageMarkReview,
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
@@ -760,6 +761,9 @@ function boundingBoxFromPolygon(polygon) {
 function draftShapeFromPhoto(photo) {
   const visiblePolygon = polygonFromPhoto(photo);
   const cropModes = photo.crop_modes || getCropModes(photo);
+  const correction = photo.correction || photo.enhancement_applied?.correction;
+  const protectedOutline = correction?.album_page_mark_review?.source === offPrintAdvisorySource
+    && sanitizePolygon(cropModes?.full_print?.warp_quad);
   const printSize = photo.segmentation_mask?.print_size_mm ?? photo.print_size_mm;
   const measuredQuad = printSize && sanitizePolygon(photo.segmentation_mask?.warp_quad);
   const manualQuad = photo.segmentation_confidence === null && sanitizePolygon(photo.segmentation_mask?.warp_quad);
@@ -768,7 +772,7 @@ function draftShapeFromPhoto(photo) {
     || sanitizePolygon(photo.correction?.warp_quad)
     || sanitizePolygon(photo.enhancement_applied?.correction?.warp_quad)
     || sanitizePolygon(photo.segmentation_mask?.warp_quad);
-  const warpQuad = measuredQuad?.length === 4 ? measuredQuad : (
+  const warpQuad = protectedOutline?.length === 4 ? protectedOutline : measuredQuad?.length === 4 ? measuredQuad : (
     cyclicQuad(serverQuad?.length === 4 ? serverQuad : [])
     || (visiblePolygon.length === 4 ? cyclicQuad(visiblePolygon) : minimumAreaQuad(visiblePolygon))
     || boxToPolygon(photo.bounding_box)
@@ -1387,7 +1391,6 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const [editMode, setEditMode] = useState("full_print");
   const [saveState, setSaveState] = useState(null);
   const [blockedCrop, setBlockedCrop] = useState(null);
-  const [albumMarkReviewId, setAlbumMarkReviewId] = useState(null);
   const [addition, setAddition] = useState(null);
   const [countReview, setCountReview] = useState(null);
   const [groupSelection, setGroupSelection] = useState(null);
@@ -1504,6 +1507,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const untrimmedPrint = selected?.untrimmed_url || selected?.variant_urls?.source_corrected_untrimmed;
   const comparePaperEdge = untrimmedPrint && showsPaperEdgeComparison(fullPrintMode);
   const albumMark = !newPrint && !editingImage && !rejectedDetection ? selected?.correction?.album_page_mark_review : null;
+  const albumMarkReview = useAlbumPageMarkReview(albumMark, selectedPhotoId);
+  const markBounds = albumMarkReview.bounds;
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const motifCorners = selectedShape?.imageQuad || savedShape?.warpQuad;
   const needsMotifSelection = editingImage && !selectedShape?.imageQuad;
@@ -1777,13 +1782,14 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       context.restore();
     }
-    if (albumMark) {
-      const { x1, y1, x2, y2 } = albumMark.bounds;
+    if (markBounds.length) {
       context.save();
       context.strokeStyle = "#facc15";
       context.lineWidth = 3;
       context.setLineDash([]);
-      context.strokeRect(x1 * canvas.width, y1 * canvas.height, (x2 - x1) * canvas.width, (y2 - y1) * canvas.height);
+      for (const { x1, y1, x2, y2 } of markBounds) {
+        context.strokeRect(x1 * canvas.width, y1 * canvas.height, (x2 - x1) * canvas.width, (y2 - y1) * canvas.height);
+      }
       context.restore();
     }
     if (blockedRegions?.length && !newPrint) {
@@ -1846,10 +1852,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       context.restore();
     }
-  }, [albumMark, alternateOutline, blockedRegions, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges,
+  }, [alternateOutline, blockedRegions, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
     printSuggestion,
-    missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, preliminaryMotifMarks, selectedCountGroup, selectedPhotoId, showMissingEdges]);
+    markBounds, missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, preliminaryMotifMarks, selectedCountGroup, selectedPhotoId, showMissingEdges]);
 
   useEffect(() => {
     draw();
@@ -1994,13 +2000,14 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     }
     setSaveState({ photoId: selected.id, mode: editMode, saving: true });
     try {
-      const markId = albumMark?.id === albumMarkReviewId ? albumMarkReviewId : null;
-      const result = await onSaveBox(selected.id, box, mask, confirmOuter && !editingImage, markId);
-      setAlbumMarkReviewId(null);
+      const mark = albumMarkReview.confirmation;
+      const result = await onSaveBox(selected.id, box, mask, confirmOuter && !editingImage, mark?.id, mark?.indices);
+      albumMarkReview.reset();
       setBlockedCrop(null);
       const url = result.urls?.[editMode] || (!getCropModes(result) && !editingImage ? result.urls?.original : null);
       setSaveState({ photoId: selected.id, mode: editMode, url });
     } catch (error) {
+      if (error.message === "album_page_mark_review_stale") albumMarkReview.reset();
       const message = error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message === "print_outline_review_required" ? printOutlineSaveHint : cropProtectionErrors[error.message] || error.message;
       setBlockedCrop(error.message === "protected_region_removed" ? { ...error.detail, photoId: selected.id } : null);
@@ -2201,9 +2208,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {!newPrint && !editingImage && printEdgeReviewHint && <p className="crop-editor-hint">{printEdgeReviewHint}</p>}
       {!newPrint && deferredParentHints.map(({ id, text }) => <p key={id} className="crop-editor-hint">{text}</p>)}
       {!newPrint && !editingImage && <NeighborContentReview fullPrint={fullPrintMode} sourceUrl={`/api/v1/pages/${pageId}/image`} />}
-      {albumMark && <AlbumPageMarkReview mark={albumMark} sourceUrl={`/api/v1/pages/${pageId}/image`}
-        checked={albumMarkReviewId === albumMark.id} disabled={saveState?.saving}
-        onChange={event => setAlbumMarkReviewId(event.target.checked ? albumMark.id : null)} />}
+      {markBounds.length > 0 && <AlbumPageMarkReview mark={albumMark} review={albumMarkReview}
+        sourceUrl={`/api/v1/pages/${pageId}/image`} disabled={saveState?.saving} />}
       {editingImage && crossingReview && <p className="crop-editor-hint">{crossingPrintSaveHint}</p>}
       {needsPrintReview && !crossingReview && <p className="crop-editor-hint">{printOutlineSaveHint}</p>}
       {preliminaryMotifMarks && <p className="crop-editor-hint" id="held-motif-margin-hint">{motifBoundaryReviewHint}</p>}
@@ -2393,8 +2399,9 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
     await refresh();
   }
 
-  async function saveBox(photoId, box, segmentationMask = null, confirmPrintOutline = false, albumMarkReviewId = null) {
-    await patchBoundingBox(photoId, box, segmentationMask, confirmPrintOutline, albumMarkReviewId);
+  async function saveBox(photoId, box, segmentationMask = null, confirmPrintOutline = false,
+    albumMarkReviewId = null, albumMarkReviewIndices = null) {
+    await patchBoundingBox(photoId, box, segmentationMask, confirmPrintOutline, albumMarkReviewId, albumMarkReviewIndices);
     const [detail] = await Promise.all([getPhoto(photoId), refreshCorrections()]);
     return detail;
   }

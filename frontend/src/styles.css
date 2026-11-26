@@ -824,6 +824,12 @@ select {
   accent-color: #805e0a;
 }
 
+.album-page-mark-spot + .album-page-mark-spot {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #cbd8d4;
+}
+
 .album-page-mark-detail {
   display: block;
   width: min(100%, 180px);

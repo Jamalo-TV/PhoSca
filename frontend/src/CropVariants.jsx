@@ -1,5 +1,5 @@
 import { Download } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { filmSourceWindow, getPaperGridReview } from "./cropReviewOutlines.js";
 
 export const cropModeLabels = {
@@ -104,6 +104,8 @@ export const crossingPrintSaveHint = "Korrigiere und speichere zuerst die vier E
 export const printOutlineSaveHint = "Prüfe und speichere zuerst die Papierkontur unter «Ganzer Abzug».";
 export const cropProtectionErrors = {
   album_page_mark_review_stale: "Die Schutzmarkierung hat sich geändert. Öffne die aktuelle Prüfung erneut.",
+  album_page_mark_choices_required: "Bestätige alle markierten Stellen nur, wenn jede davon ausserhalb des Abzugs auf dem Hintergrund liegt.",
+  album_page_mark_outline_changed: "Lass die gemessenen Abzugecken für diese Hintergrundprüfung unverändert.",
   album_page_mark_inside_crop: "Setze die Ecken so, dass die Mitte der markierten Stelle ausserhalb des Abzugs liegt.",
   protected_region_cut: "Der Ausschnitt schneidet einen geschützten Bildbereich ab. Prüfe die sichtbaren Bereiche im Original.",
   protected_region_removed: "Der neue Zuschnitt würde markierten Bildinhalt abschneiden. Verschiebe die Ecken, bis die Markierungen im Ausschnitt liegen.",
@@ -509,26 +511,74 @@ export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outl
   </div>;
 }
 
-export function AlbumPageMarkReview({ mark, sourceUrl, checked, onChange, disabled }) {
-  const { width = 1, height = 1 } = mark.source_size || {};
-  const { x1, y1, x2, y2 } = mark.bounds;
+export const offPrintAdvisorySource = "off_print_advisory";
+
+function albumPageMarkBounds(mark) {
+  if (!mark?.id) return [];
+  const bounds = mark.source === offPrintAdvisorySource
+    ? (Array.isArray(mark.regions) ? mark.regions.map(region => region?.bounds) : [])
+    : [mark.bounds];
+  return bounds.every(box => box && [box.x1, box.y1, box.x2, box.y2].every(Number.isFinite)
+    && box.x1 >= 0 && box.y1 >= 0 && box.x2 <= 1 && box.y2 <= 1
+    && box.x1 < box.x2 && box.y1 < box.y2) ? bounds : [];
+}
+
+export function useAlbumPageMarkReview(mark, photoId) {
+  const bounds = useMemo(() => albumPageMarkBounds(mark), [mark]);
+  const key = bounds.length ? JSON.stringify([photoId, mark.id, mark.source, mark.source_size, bounds]) : null;
+  const [selection, setSelection] = useState(null);
+  useEffect(() => { setSelection(null); }, [key]);
+  const checkedIndices = key && selection?.key === key ? selection.indices : [];
+  const allChecked = bounds.length > 0 && bounds.every((_, index) => checkedIndices.includes(index));
+  const confirmation = allChecked ? {
+    id: mark.id,
+    indices: mark.source === offPrintAdvisorySource ? bounds.map((_, index) => index) : null,
+  } : null;
+
+  function setChecked(index, checked) {
+    setSelection(current => {
+      const indices = new Set(current?.key === key ? current.indices : []);
+      if (checked) indices.add(index);
+      else indices.delete(index);
+      return { key, indices: [...indices] };
+    });
+  }
+
+  return { bounds, checkedIndices, setChecked, confirmation, reset: () => setSelection(null) };
+}
+
+function AlbumPageMarkDetail({ bounds, sourceSize, sourceUrl, label }) {
+  const { width, height } = sourceSize || {};
+  if (!(width > 1 && height > 1) || !sourceUrl) return null;
+  const { x1, y1, x2, y2 } = bounds;
   const left = x1 * (width - 1), right = x2 * (width - 1);
   const top = y1 * (height - 1), bottom = y2 * (height - 1);
   const pad = .65 * Math.max(right - left, bottom - top);
   const x = Math.max(0, left - pad), y = Math.max(0, top - pad);
   const view = [x, y, Math.min(width, right + pad) - x, Math.min(height, bottom + pad) - y];
+  return <svg className="album-page-mark-detail" role="img" aria-label={label} viewBox={view.join(" ")}>
+    <image href={sourceUrl} width={width} height={height} />
+    <rect x={left} y={top} width={right - left} height={bottom - top} fill="none" stroke="#facc15" strokeWidth="2" />
+  </svg>;
+}
+
+export function AlbumPageMarkReview({ mark, review, sourceUrl, disabled }) {
+  const multiple = mark.source === offPrintAdvisorySource;
   return <fieldset className="print-size-fields album-page-mark-review">
     <legend>Schutzmarkierung prüfen</legend>
-    <p>Vergleiche die gelb umrahmte Stelle mit dem Original. Prüfe danach die vier Ecken des Abzugs.</p>
-    {width > 1 && height > 1 && <svg className="album-page-mark-detail" role="img" aria-label="Vergrösserung der Schutzmarkierung im Original"
-      viewBox={view.join(" ")}>
-      <image href={sourceUrl} width={width} height={height} />
-      <rect x={left} y={top} width={right - left} height={bottom - top} fill="none" stroke="#facc15" strokeWidth="2" />
-    </svg>}
-    <label>
-      <input type="checkbox" checked={checked} onChange={onChange} disabled={disabled} />
-      Die markierte Stelle gehört zur Albumseite.
-    </label>
+    <p>{multiple
+      ? "Vergleiche jede gelb umrahmte Stelle mit dem Original. Bestätige sie nur, wenn sie ausserhalb dieses Papierabzugs auf dem Hintergrund liegt. Solange nicht alle Stellen bestätigt sind, bleiben sie beim Speichern geschützt. Lass die gemessenen Ecken für diese Prüfung unverändert."
+      : "Vergleiche die gelb umrahmte Stelle mit dem Original. Prüfe danach die vier Ecken des Abzugs."}</p>
+    {review.bounds.map((bounds, index) => <div className="album-page-mark-spot" key={index}>
+      <AlbumPageMarkDetail bounds={bounds} sourceSize={mark.source_size} sourceUrl={sourceUrl}
+        label={multiple ? `Vergrösserung von Stelle ${index + 1} im Original` : "Vergrösserung der Schutzmarkierung im Original"} />
+      <label>
+        <input type="checkbox" checked={review.checkedIndices.includes(index)}
+          onChange={event => review.setChecked(index, event.target.checked)} disabled={disabled} />
+        {multiple ? `Stelle ${index + 1} liegt auf dem Hintergrund ausserhalb dieses Abzugs.`
+          : "Die markierte Stelle gehört zur Albumseite."}
+      </label>
+    </div>)}
   </fieldset>;
 }
 

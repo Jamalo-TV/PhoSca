@@ -142,10 +142,13 @@ export async function getReviewProgress() {
 }
 
 export async function patchBoundingBox(photoId, boundingBox, segmentationMask = null, confirmPrintOutline = false,
-  albumPageMarkReviewId = null) {
+  albumPageMarkReviewId = null, albumPageMarkReviewIndices = null) {
   const body = segmentationMask ? { bounding_box: boundingBox, segmentation_mask: segmentationMask } : { bounding_box: boundingBox };
   if (confirmPrintOutline) body.confirm_print_outline = true;
-  if (albumPageMarkReviewId) body.album_page_mark_review_id = albumPageMarkReviewId;
+  if (albumPageMarkReviewId) {
+    body.album_page_mark_review_id = albumPageMarkReviewId;
+    if (albumPageMarkReviewIndices?.length) body.album_page_mark_review_indices = albumPageMarkReviewIndices;
+  }
   return parseResponse(
     await apiFetch(`/api/v1/photos/${photoId}/bounding-box`, {
       method: "PATCH",

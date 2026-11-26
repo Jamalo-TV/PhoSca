@@ -41,6 +41,7 @@ from app.pipeline.motif_boundary import close_motif_outline, motif_outline_corne
 from app.pipeline.motif_margin import (
     HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE, held_print_motif_margin_marks, motif_margin_marks,
 )
+from app.pipeline.off_print_advisory import off_print_advisory_regions
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.manual_paper_boundary import (
     MANUAL_CAPTURE_OUTLINE_REVIEW, MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION,
@@ -85,7 +86,7 @@ from app.pipeline.print_outline_suggestion import (
 from app.pipeline.print_stock import find_outer_stock_candidate
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_OUTLINE_REVIEW
 from app.pipeline.protected_regions import (
-    PAGE_FACE_SUGGESTIONS, ProtectedRegionRemoval, detect_protected_regions, is_advisory_page_face,
+    OFF_PRINT_ADVISORY, PAGE_FACE_SUGGESTIONS, ProtectedRegionRemoval, detect_protected_regions, is_advisory_page_face,
     merge_protected_regions, protected_region_key, region_box_in_pixels, removed_protected_regions,
     validate_protected_regions,
 )
@@ -1116,17 +1117,34 @@ def _keeps_protected_preview_content(
 
 
 def _regions_after_album_mark_review(
-    page: np.ndarray, quad: np.ndarray, regions: list[dict], review: dict,
+    page: np.ndarray, quad: np.ndarray, regions: list[dict], review: dict, neighbors: list[np.ndarray],
 ) -> list[dict]:
     width, height = page.shape[1::-1]
+    original = _explicit_quad({"warp_quad": review["previous_quad"]}, "warp_quad", width, height)
+    if original is None:
+        raise ValueError("album_page_mark_review_stale")
+    if review.get("source") == OFF_PRINT_ADVISORY:
+        corner_offsets = np.linalg.norm(original[:, None, :] - quad[None, :, :], axis=2)
+        if corner_offsets.min(axis=1).max() > 1.:
+            raise ValueError("album_page_mark_outline_changed")
+        protection = validate_protected_regions(quad, regions, width=width, height=height)
+        current = off_print_advisory_regions(page, quad, regions, protection["violations"], neighbors)
+        targets = [region["region"] for region in review.get("regions") or []]
+        if (not current or [region["region"] for region in current] != targets
+                or review.get("confirmed_indices") != list(range(len(targets)))):
+            raise ValueError("album_page_mark_review_stale")
+        remaining = [region for region in regions if protected_region_key(region) not in targets]
+        if not _keeps_protected_preview_content(page, original, quad, remaining, {}):
+            raise ValueError("protected_region_cut")
+        return remaining
+
     target = review["region"]
     region_indices = [index for index, region in enumerate(regions) if protected_region_key(region) == target]
     if len(region_indices) != 1 or not is_advisory_page_face(regions[region_indices[0]]):
         raise ValueError("album_page_mark_review_stale")
     index, = region_indices
-    original = _explicit_quad({"warp_quad": review["previous_quad"]}, "warp_quad", width, height)
     box = region_box_in_pixels(regions[index], width, height)
-    if box is None or original is None:
+    if box is None:
         raise ValueError("album_page_mark_review_stale")
     x1, y1, x2, y2 = box
     center = ((x1 + x2) / 2, (y1 + y2) / 2)
@@ -1728,10 +1746,15 @@ def correct_photo_crop(
     regions = [] if not protect_regions else (
         protected_regions if protected_regions is not None else detect_protected_regions(page_image)
     )
+    visible = _proposal_polygon(mask, width, height) if dual_mode else None
+    neighbor_polygons = [
+        points for neighbor in neighbor_masks or []
+        if (points := _proposal_polygon(neighbor, width, height)) is not None
+    ] if dual_mode else []
     if reviewed_album_mark is not None:
         if not manual or not protect_regions or not dual_mode:
             raise ValueError("album_page_mark_review_stale")
-        regions = _regions_after_album_mark_review(page_image, src_points, regions, reviewed_album_mark)
+        regions = _regions_after_album_mark_review(page_image, src_points, regions, reviewed_album_mark, neighbor_polygons)
     if manual and regions and previous_manual_crop is not None:
         try:
             previous = _points_from_mask(previous_manual_crop, width, height)
@@ -1750,11 +1773,6 @@ def correct_photo_crop(
             removed = removed_protected_regions(src_points, inner_edit, regions, width=width, height=height)
             if removed:
                 raise ProtectedRegionRemoval("image_only", removed)
-    visible = _proposal_polygon(mask, width, height) if dual_mode else None
-    neighbor_polygons = [
-        points for neighbor in neighbor_masks or []
-        if (points := _proposal_polygon(neighbor, width, height)) is not None
-    ] if dual_mode else []
     inspection = _inspect_print(
         page_image, src_points, mask, visible, neighbor_polygons, regions,
         dual_mode=dual_mode, manual=manual, allow_page_face_overlap=allow_page_face_overlap,
@@ -1968,8 +1986,12 @@ def correct_photo_crop(
             if print_outline is not None and trim_border else None,
         )
         modes = result.metadata["crop_modes"]
-        if (trim_border and not manual and visible is not None and protection.get("review_untrimmed")
-                and set(full_reasons) == {"PRINT_BOUNDARY_AMBIGUOUS", "POSSIBLE_CONTENT_CUTOFF", "PRINT_ASPECT_UNCERTAIN"}
+        aspect_pending_after_mark_review = (
+            (reviewed_album_mark or {}).get("source") == OFF_PRINT_ADVISORY and full_reasons == ["PRINT_ASPECT_UNCERTAIN"]
+        )
+        held_by_protection = (not manual and protection.get("review_untrimmed")
+                              and set(full_reasons) == {"PRINT_BOUNDARY_AMBIGUOUS", "POSSIBLE_CONTENT_CUTOFF", "PRINT_ASPECT_UNCERTAIN"})
+        if (trim_border and visible is not None and (held_by_protection or aspect_pending_after_mark_review)
                 and result.metadata["border_trim"]["method"] == "deferred_until_print_boundary_is_verified"):
             try:
                 claims = [*neighbor_polygons, *(
@@ -2194,6 +2216,15 @@ def correct_photo_crop(
         ):
             full_mode["suggested_edge_traces"] = cuts
             full_mode["suggested_edge_source"] = SHARED_PRINT_RIM_SOURCE
+        if (not manual and visible is not None and protection.get("review_untrimmed")
+                and set(full_reasons) <= {"PRINT_BOUNDARY_AMBIGUOUS", "POSSIBLE_CONTENT_CUTOFF", "PRINT_ASPECT_UNCERTAIN"}
+                and not full_mode.get("outline_preview") and not any(mask.get(key) for key in _STOCK_REVIEW_CONFLICTS)):
+            try:
+                marks = off_print_advisory_regions(page_image, src_points, regions, protection["violations"], neighbor_polygons)
+            except (ValueError, cv2.error):
+                marks = []
+            if marks:
+                result.metadata["off_print_advisory_regions"] = marks
         return result
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:

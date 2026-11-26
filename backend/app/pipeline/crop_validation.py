@@ -23,6 +23,7 @@ from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_REVISION
 from app.pipeline.fusion_ownership import FUSION_OWNERSHIP_REVISION
 from app.pipeline.model_registry import sha256
 from app.pipeline.motif_margin import MOTIF_MARGIN_REVIEW_REVISION
+from app.pipeline.off_print_advisory import OFF_PRINT_ADVISORY_REVISION
 from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVISION
 from app.pipeline.overlap_edge_review import OVERLAP_EDGE_REVIEW_REVISION
 from app.pipeline.print_edges import CLASSICAL_CONTOUR_REFINEMENT_REVISION, PRINT_BOUNDARY_REVISION
@@ -158,6 +159,9 @@ def crop_validation_profile(settings: Settings) -> dict:
         ),
         "protected_region_guard": settings.enable_protected_region_guard,
         "protected_region_identity": PROTECTED_REGION_REVISION if settings.enable_protected_region_guard else None,
+        "off_print_advisory_review": (
+            OFF_PRINT_ADVISORY_REVISION if settings.enable_precise_photo_crops and settings.enable_protected_region_guard else None
+        ),
         "orientation_enabled": settings.enable_photo_orientation_correction,
         "orientation_model_sha256": (
             _optional_hash(settings.photo_orientation_model_path) if settings.enable_photo_orientation_correction else None

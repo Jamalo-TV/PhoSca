@@ -1,6 +1,6 @@
 import { Camera, Check, ChevronLeft, CircleHelp, CloudOff, Images, ListChecks, RefreshCw, Save, Upload, WandSparkles, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addManualPhoto, confirmSharedPaperGrid, createAlbum, excludeCountReviewGroup, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
+import { addManualPhoto, confirmSharedPaperGrid, createAlbum, excludeCountReviewGroup, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, reprocessPhoto, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
 import { captureCameraImage } from "./cameraCapture.js";
 import { projectedCropAspect, resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
@@ -22,6 +22,7 @@ import {
   scannerBackingHint, scannerBackingReason,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
+  offPrintAdvisorySource, useAlbumPageMarkReview,
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
@@ -179,7 +180,7 @@ function heldDeferredParentCropHints(fullPrint, reviewReasons) {
 }
 
 function DetectionOverlay({ item, editable = false, openPaperOutline, countOutlines, captureSplitGroups, filmGridGroups,
-  selectedCountGroup, paperGridGroups, paperJoinGroups, onSaved, onProtectionBlocked, deferredDraft, onDeferredDraftClose }) {
+  selectedCountGroup, paperGridGroups, paperJoinGroups, onSaved, onReprocess, onProtectionBlocked, deferredDraft, onDeferredDraftClose }) {
   const sourceFragmentDraft = deferredDraft?.reason === sourceFragmentProposal;
   const darkBackingDraft = deferredDraft?.reason === darkBackingProposal;
   const standaloneDraft = standalonePrintNeedsConfirmation(deferredDraft?.reason);
@@ -239,22 +240,28 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.scalloped_alternate_polygon));
   const savedQuad = sanitizeReviewPolygon(item.payload?.segmentation_mask?.warp_quad);
   const measuredQuad = storedMeasurement && (savedQuad || sanitizeReviewPolygon(item.payload?.warp_quad));
+  const markOffer = item.payload?.correction?.album_page_mark_review;
+  const protectedOutline = markOffer?.source === offPrintAdvisorySource && sanitizeReviewPolygon(fullPrintMode?.warp_quad);
   const canEditMotif = editable && !reviewedNonPrint && isValidQuad(savedQuad)
     && canEditMobileMotif(item.payload, item.payload?.crop_modes);
   const storedMotif = cyclicReviewQuad(sanitizeReviewPolygon(getStoredMotifQuad(item.payload || {}, motifMode)));
   const suggestedMotif = cyclicReviewQuad(sanitizeReviewPolygon(motifMode?.suggested_warp_quad));
-  const initialOuter = () => initialPaperOutline || (isValidQuad(measuredQuad) ? measuredQuad : initialQuad(
+  const initialOuter = () => (isValidQuad(protectedOutline) && protectedOutline) || initialPaperOutline
+    || (isValidQuad(measuredQuad) ? measuredQuad : initialQuad(
     item.payload?.confidence === null && savedQuad ? savedQuad : item.payload?.warp_quad,
     visiblePolygon,
     sourceBox,
   ));
-  const [quad, setQuad] = useState(initialOuter); const [saving, setSaving] = useState(false);
+  const [quad, setQuad] = useState(initialOuter); const [geometrySaving, setSaving] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
+  const [draftTouched, setDraftTouched] = useState(false);
+  const saving = geometrySaving || reprocessing;
   const [confirmDeferredDraft, setConfirmDeferredDraft] = useState(false);
   const [editMode, setEditMode] = useState("full_print");
   const [motifQuad, setMotifQuad] = useState(storedMotif);
   const editingMotif = canEditMotif && editMode === "image_only";
-  const albumMark = editable && !editingMotif && !reviewedNonPrint ? item.payload?.correction?.album_page_mark_review : null;
-  const [albumMarkReviewId, setAlbumMarkReviewId] = useState(null);
+  const albumMark = editable && !editingMotif && !reviewedNonPrint ? markOffer : null;
+  const albumMarkReview = useAlbumPageMarkReview(albumMark, item.payload?.photo_id);
   const displayedQuad = editingMotif ? motifQuad || savedQuad : quad;
   const comparePaperEdge = !editingMotif && showsPaperEdgeComparison(fullPrintMode)
     && item.payload?.untrimmed_url && item.payload?.variant_urls?.full_print_preview;
@@ -281,6 +288,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     setSavedCropUrl("");
     setSaveError("");
     setBlockedCrop(null);
+    setDraftTouched(false);
   }, [item.id]);
   const box = quadToBox(quad);
   const validQuad = !editable || isValidQuad(displayedQuad);
@@ -290,6 +298,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     (point, index) => point.x === quad?.[index]?.x && point.y === quad?.[index]?.y,
   );
   const { size, error: sizeError } = parsePrintSize(measurementFields);
+  const canReprocess = onReprocess && !draftTouched && !editingMotif && !usingOutlineSuggestion
+    && !measurementPage && !measuredTraces?.length && fullPrintHeld && !markOffer
+    && fullPrintMode?.status === "review_needed"
+    && fullPrintMode.reason_codes?.includes("POSSIBLE_CONTENT_CUTOFF")
+    && fullPrintMode.reason_codes.includes("PRINT_ASPECT_UNCERTAIN");
   function moveCorner(event, cornerIndex) {
     if (!editable || !displayedQuad || saving) return;
     const pointerId = event.pointerId;
@@ -308,6 +321,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       const y = Math.max(0, Math.min(1, editingMotif ? initial.y + dy / rect.height : (e.clientY - rect.top) / rect.height));
       setMagnifier({ visible: magnifierEnabled, x, y });
       setEditingPreview(true);
+      setDraftTouched(true);
       setSavedCropUrl(""); setSaveError("");
       if (editingMotif) {
         setMotifQuad(current => {
@@ -352,10 +366,10 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         ...(orientation !== savedOrientation ? { orientation_degrees: orientation } : {}),
         source: "manual_mobile_quad",
       };
-      const markId = albumMark?.id === albumMarkReviewId ? albumMarkReviewId : null;
+      const mark = albumMarkReview.confirmation;
       const saved = await patchBoundingBox(item.payload.photo_id, editingMotif ? sourceBox : box, mask,
-        !editingMotif && (Boolean(printSuggestion) || paperOutlineNeedsConfirmation(fullPrintMode)), markId);
-      setAlbumMarkReviewId(null);
+        !editingMotif && (Boolean(printSuggestion) || paperOutlineNeedsConfirmation(fullPrintMode)), mark?.id, mark?.indices);
+      albumMarkReview.reset();
       setBlockedCrop(null);
       const savedDegrees = saved.segmentation_mask?.orientation_degrees ?? null;
       setOrientation(savedDegrees);
@@ -371,6 +385,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       setSavedCropUrl(cropUrl || "");
       onSaved?.(saved);
     } catch (error) {
+      if (error.message === "album_page_mark_review_stale") albumMarkReview.reset();
       setSaveError(error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message === "print_outline_review_required" ? printOutlineSaveHint
         : darkBackingReviewErrors[error.message] || sourceFragmentReviewErrors[error.message] || cropProtectionErrors[error.message]
@@ -381,6 +396,18 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       }
     }
     finally { setSaving(false); }
+  }
+  async function reprocess() {
+    if (!canReprocess || saving) return;
+    setReprocessing(true);
+    setSaveError("");
+    try {
+      await onReprocess(item.payload.photo_id);
+    } catch (error) {
+      setSaveError(error.message || "Abzug konnte nicht neu berechnet werden.");
+    } finally {
+      setReprocessing(false);
+    }
   }
   const shown = box ? [{ bounding_box: box, photo_id: item.payload?.photo_id }] : detections;
   const count = item.payload?.detection_count;
@@ -555,9 +582,10 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         </g>)}
         {nestedOverlay}{deferredOverlay}{deferredEvidenceOverlay}{fragmentCountOverlay}{captureSplitOverlay}{countGroupOverlay}
         {filmGridOverlay}{paperGridOverlay}{paperJoinOverlay}
-        {albumMark && <rect x={albumMark.bounds.x1 * 1000} y={albumMark.bounds.y1 * 1000}
-          width={(albumMark.bounds.x2 - albumMark.bounds.x1) * 1000} height={(albumMark.bounds.y2 - albumMark.bounds.y1) * 1000}
-          aria-label="Zu prüfende Schutzmarkierung" style={{ fill: "none", stroke: "#facc15", strokeWidth: 6, pointerEvents: "none" }} />}
+        {albumMarkReview.bounds.map(({ x1, y1, x2, y2 }, index) => <rect key={index} x={x1 * 1000} y={y1 * 1000}
+          width={(x2 - x1) * 1000} height={(y2 - y1) * 1000}
+          aria-label={albumMark.source === offPrintAdvisorySource ? `Zu prüfende Schutzmarkierung ${index + 1}` : "Zu prüfende Schutzmarkierung"}
+          style={{ fill: "none", stroke: "#facc15", strokeWidth: 6, pointerEvents: "none" }} />)}
         {blockedCrop?.mode === editMode && blockedCrop.regions.map(({ x1, y1, x2, y2 }, index) => (
           <rect key={index} aria-label="Geschützter Bildbereich" x={x1 * 1000} y={y1 * 1000}
             width={(x2 - x1) * 1000} height={(y2 - y1) * 1000}
@@ -630,9 +658,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       ))}
       {printEdgeReviewHint && <p className="quad-hint" id="mobile-print-edge-review-hint">{printEdgeReviewHint}</p>}
       {!editingMotif && <NeighborContentReview fullPrint={fullPrintMode} sourceUrl={item.preview_url} />}
-      {albumMark && <AlbumPageMarkReview mark={albumMark} sourceUrl={item.preview_url}
-        checked={albumMarkReviewId === albumMark.id} disabled={saving}
-        onChange={event => setAlbumMarkReviewId(event.target.checked ? albumMark.id : null)} />}
+      {albumMarkReview.bounds.length > 0 && <AlbumPageMarkReview mark={albumMark} review={albumMarkReview}
+        sourceUrl={item.preview_url} disabled={saving} />}
+      {canReprocess && <button className="magnifier-toggle" type="button" disabled={saving} onClick={reprocess}>
+        <RefreshCw size={18} />{reprocessing ? "Abzug wird neu berechnet …" : "Abzug neu berechnen"}
+      </button>}
       {motifReviewPending && <p className="quad-hint" id="mobile-motif-review-hint">
         {preliminaryMotifMarks ? motifBoundaryReviewHint : <>
           {motifBoundaryReviewHint && `${motifBoundaryReviewHint} `}{canEditMotif ? motifReviewHint : motifDesktopReviewHint}
@@ -651,6 +681,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           if (!suggestion) return;
           setQuad(suggestion);
           setUsingOutlineSuggestion(true);
+          setDraftTouched(true);
           if (suggestion !== printSuggestion || !outlinePreviewHint) setEditingPreview(true);
           setSavedCropUrl("");
           setSaveError("");
@@ -661,6 +692,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         <p className="quad-hint">Setze die Ecken an die Motivgrenze. Lass alle Bildfelder und zugehörigen Beschriftungen im Zuschnitt.</p>
         {(suggestedMotif || !storedMotif) && <button className="magnifier-toggle" type="button" disabled={saving} onClick={() => {
           setMotifQuad(suggestedMotif || savedQuad);
+          setDraftTouched(true);
           setEditingPreview(true);
           setSavedCropUrl("");
           setSaveError("");
@@ -671,6 +703,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         value={measurementFields}
         onChange={(fields) => {
           setMeasurementFields(fields);
+          setDraftTouched(true);
           setEditingPreview(true);
           setSavedCropUrl("");
           setSaveError("");
@@ -680,6 +713,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       />
       {!deferredDraft && <CropOrientationField value={orientation} disabled={saving} onChange={(value) => {
         setOrientation(value);
+        setDraftTouched(true);
         setEditingPreview(true);
         setSavedCropUrl("");
         setSaveError("");
@@ -692,7 +726,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       <button className="save-crop" onClick={save} disabled={saving
         || (deferredDraft && !confirmDeferredDraft)
         || (editingMotif ? !validMotif : (!validQuad || Boolean(sizeError) || crossingNeedsCorrection))}>
-        <Save size={18}/>{saving ? "Richtet das Bild …" : standaloneDraft ? "Als Abzug erfassen" : sourceFragmentDraft ? "Als einen Abzug speichern"
+        <Save size={18}/>{geometrySaving ? "Richtet das Bild …" : standaloneDraft ? "Als Abzug erfassen" : sourceFragmentDraft ? "Als einen Abzug speichern"
           : editingMotif ? "Motivzuschnitt speichern" : "Viereck speichern & geraderichten"}
       </button>
       {deferredDraft && <button type="button" className="magnifier-toggle" disabled={saving}
@@ -941,6 +975,25 @@ function CropReview({ albumId, goHome }) {
       : saved.motif_review_pending ? "Vier Ecken gespeichert. Der Motivzuschnitt bleibt in Prüfung."
         : "Vier Ecken gespeichert und Perspektive korrigiert");
   }
+  async function reprocessHeldPhoto(photoId) {
+    if (type !== "geometry" || !photoId || item?.payload.photo_id !== photoId || submitting) return;
+    setSubmitting(true);
+    setAnswerError("");
+    setMessage("");
+    try {
+      await reprocessPhoto(photoId);
+      const reviews = await getReviewQueue(albumId || undefined, "geometry", { includeRejected: false, photoId });
+      const currentReview = reviews.find(review => review.payload.photo_id === photoId);
+      const refreshed = currentReview && { ...currentReview, reprocessKey: crypto.randomUUID() };
+      setQueue(current => current?.key === queueKey ? { ...current, rows: current.rows.flatMap(review => (
+        review.id === item.id ? (refreshed ? [refreshed] : []) : [review]
+      )) } : current);
+      setBlockedCropTaskId(null);
+      setMessage("Abzug neu berechnet.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
   async function record(value) {
     if (!item || submitting || (value === "correct" && approvalBlocked)) return;
     setSubmitting(true);
@@ -1010,11 +1063,13 @@ function CropReview({ albumId, goHome }) {
       {" Die Papierkanten bleiben in Prüfung."}
     </p>}
     {item ? <>
-      <DetectionOverlay key={activeDeferredDraft?.requestId || "review"} item={item}
+      {item.reprocessKey && <p role="status">Abzug neu berechnet. Prüfe die aktualisierte Ansicht.</p>}
+      <DetectionOverlay key={activeDeferredDraft?.requestId || item.reprocessKey || "review"} item={item}
         editable={type === "geometry" || Boolean(activeDeferredDraft)} openPaperOutline={Boolean(focusedPhotoId)}
         countOutlines={countOutlines} captureSplitGroups={captureSplitGroups}
         filmGridGroups={filmGridGroups} selectedCountGroup={selectedCountGroup} paperGridGroups={paperGridGroups}
         paperJoinGroups={paperJoinGroups} onSaved={updateSavedCropModes}
+        onReprocess={type === "geometry" ? reprocessHeldPhoto : undefined}
         deferredDraft={activeDeferredDraft} onDeferredDraftClose={closeDeferredDraft}
         onProtectionBlocked={setBlockedCropTaskId} />
       {!activeDeferredDraft && <>
