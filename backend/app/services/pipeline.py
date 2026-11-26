@@ -64,6 +64,7 @@ from app.pipeline.manual_paper_boundary import (
     MANUAL_PAPER_BOUNDARY_REVISION, PAPER_GRID_OVERLAP_REVIEW, hold_overlapping_paper_claim_modes,
     manual_paper_download_needs_review, manual_paper_reference, manual_scalloped_outline, original_prediction_mask,
     overlapping_paper_claims, paper_claim_groups, paper_claim_overlap_checks, paper_claims_need_overlap_check,
+    shared_rim_cut_reference,
 )
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
 from app.pipeline.page_plane import MeasuredPrintReference, PrintPagePlane
@@ -508,6 +509,7 @@ async def perspective_correction_task_logic(
     scalloped_outline = None if automatic_detection else manual_scalloped_outline(metadata, current_quad)
     boundary_needs_review = manual_boundary is not None and manual_paper_download_needs_review(metadata, current_quad)
     previous = metadata.get("correction") or {}
+    shared_rim_reference = shared_rim_cut_reference(previous) if automatic_detection else []
     mark_recheck = reviewed_mark and (stale_mark or
         (previous.get("protected_regions") or {}).get("reviewed_album_mark_id") != reviewed_mark["id"])
     modes = previous.get("crop_modes") or {}
@@ -641,6 +643,7 @@ async def perspective_correction_task_logic(
             **({"reviewed_album_mark": reviewed_mark} if reviewed_mark else {}),
             **({"previous_manual_crop": previous_manual_crop} if previous_manual_crop is not None else {}),
             **({"manual_neighbor_reference": prior_neighbor} if prior_neighbor else {}),
+            **({"shared_rim_reference": shared_rim_reference} if shared_rim_reference else {}),
         )
         corrected = crop_result.image
         correction_metadata = crop_result.metadata

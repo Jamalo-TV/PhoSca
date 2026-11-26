@@ -62,10 +62,13 @@ export const cropProtectionErrors = {
   album_page_mark_inside_crop: "Setze die Ecken so, dass die Mitte der markierten Stelle ausserhalb des Abzugs liegt.",
   protected_region_cut: "Der Ausschnitt schneidet einen geschützten Bildbereich ab. Prüfe die sichtbaren Bereiche im Original.",
   protected_region_removed: "Der neue Zuschnitt würde markierten Bildinhalt abschneiden. Verschiebe die Ecken, bis die Markierungen im Ausschnitt liegen.",
+  shared_rim_correction_required: "Setze die beiden Ecken an dieser Markierung an den sichtbaren Papierrand. Bleibt die Zuordnung unklar, fotografiere die Abzüge getrennt.",
 };
 export const captureOutlineReviewReason = "PRINT_CAPTURE_OUTLINE_REVIEW";
 const captureAtEdgeReason = "PRINT_AT_CAPTURE_EDGE";
 const competingPrintEdges = "competing_print_edges";
+const sharedPrintRim = "shared_print_rim";
+const sharedPrintRimReason = "PRINT_SHARED_RIM_UNCERTAIN";
 const possibleBackedPaperEdge = "possible_backed_paper_edge";
 export const possibleOverextendedPrintEdge = "possible_overextended_print_edge";
 const possibleInwardPrintCorner = "possible_inward_print_corner";
@@ -85,7 +88,7 @@ const printEdgeReviewHints = {
   PRINT_EDGE_CONFIRMATION_REQUIRED: printOutlineSaveHint,
   PRINT_SHADOW_EDGE_REVIEW: "Prüfe die markierte Kante am Original. Achte darauf, wo der Schatten endet und der Abzug beginnt.",
   PRINT_FAINT_OUTER_RIM_REVIEW: "Prüfe am Original, ob der helle Rand zur markierten Papierkante des Abzugs gehört.",
-  PRINT_SHARED_RIM_UNCERTAIN: "Prüfe die Kante am benachbarten Abzug. Wenn der Papierrand unklar bleibt, hilft eine Aufnahme mit getrennten Abzügen.",
+  [sharedPrintRimReason]: "Prüfe die Kante am benachbarten Abzug. Wenn der Papierrand unklar bleibt, hilft eine Aufnahme mit getrennten Abzügen.",
   PRINT_OUTER_EDGE_CONFLICT_REVIEW: "Aussen sind mehrere Kanten sichtbar. Lege die Ecken im Editor an die tatsächliche Papierkante.",
   PRINT_EXTENDED_OUTLINE_REVIEW: "Prüfe die erweiterte Kontur am Original. Setze die Ecken an den Papierrand, damit der ganze Abzug erhalten bleibt.",
   PRINT_BOUNDARY_UNSUPPORTED: "Prüfe den sichtbaren Papierrand am Original. Korrigiere die markierten Ecken, soweit die Kante erkennbar ist.",
@@ -205,7 +208,7 @@ export function paperOutlineRequiresReview(fullPrint) {
     || fullPrint.suggested_edge_source === possibleOverextendedPrintEdge
     || fullPrint.reason_codes?.some(reason => reason === "PRINT_EDGE_CONFIRMATION_REQUIRED"
       || reason === "PAPER_GRID_OVERLAP_REVIEW" || reason === manualNeighborOverlap
-      || reason === sourceFragmentGroupReason
+      || reason === sourceFragmentGroupReason || reason === sharedPrintRimReason
       || reason === manualNeighborContentLoss) || paperOutlineNeedsConfirmation(fullPrint));
 }
 
@@ -243,6 +246,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
     return "Türkis zeigt einen möglichen Papierrand ausserhalb des Zuschnitts. Prüfe am Original, wo das Fotopapier endet und welcher Abzug oben liegt.";
   }
   if (getSourceEdgeTraces(fullPrint?.suggested_edge_traces).length) {
+    if (fullPrint.suggested_edge_source === sharedPrintRim) {
+      return "Die gestrichelte Markierung zeigt die fragliche Zuschnittkante. Vergleiche sie am Original mit dem Rand des benachbarten Abzugs. Bleibt die Zuordnung unklar, fotografiere die Abzüge getrennt.";
+    }
     if (fullPrint.suggested_edge_source === competingPrintEdges) {
       return "Die gestrichelten Linien zeigen mögliche Kanten im Original. Prüfe, welche das Fotopapier begrenzt.";
     }

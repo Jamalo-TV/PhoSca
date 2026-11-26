@@ -36,7 +36,7 @@ from app.pipeline.motif_margin import PAPER_STOCK_MOTIF_SOURCE, motif_margin_mar
 from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.manual_paper_boundary import (
     MANUAL_CAPTURE_OUTLINE_REVIEW, MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION,
-    check_manual_paper_boundary,
+    check_manual_paper_boundary, shared_rim_cut_segments,
 )
 from app.pipeline.orientation import correct_photo_orientation, rotate_image
 from app.pipeline.overlap_edge_review import suggest_exposed_overlap_edges
@@ -56,6 +56,7 @@ from app.pipeline.print_edges import (
     PRINT_FAINT_RIM_REVIEW,
     PRINT_SHADOW_EDGE_REVIEW,
     PRINT_SHARED_RIM_UNCERTAIN,
+    SHARED_PRINT_RIM_SOURCE,
     continuous_motif_rim,
     missing_corner_material,
     observed_rim_points,
@@ -1490,9 +1491,15 @@ def _inspect_print(
             # An observed outward strip may still lack an assignable paper edge.
             for index, evidence in enumerate(sides):
                 outward = evidence.get("outward_search", {})
-                if (outward.get("print_rim_supported") and outward.get("support", 0) >= .88
-                        and not evidence.get("observed_rim_depth_px") and index not in inferred
-                        and paper_rim_reaches_neighbor(page, quad, index, neighbors)):
+                if not outward.get("print_rim_supported") or evidence.get("observed_rim_depth_px") or index in inferred:
+                    continue
+                support = outward["support"]
+                first, last = sorted((outward["start_support"], outward["end_support"]))
+                # An outward line that ends at one corner can follow a neighbor's ink.
+                one_end_missing = support >= .84 and evidence["support"] >= .90 and first <= .20 and last >= .80
+                if (support >= .88 or one_end_missing) and paper_rim_reaches_neighbor(
+                    page, quad, index, neighbors, partial_outward=support < .88,
+                ):
                     evidence["shared_rim_unresolved"] = True
             if any(evidence.get("shared_rim_unresolved") for evidence in sides):
                 reasons.append(PRINT_SHARED_RIM_UNCERTAIN)
@@ -1595,6 +1602,7 @@ def correct_photo_crop(
     reviewed_album_mark: dict | None = None,
     previous_manual_crop: dict | None = None,
     manual_neighbor_reference: dict | None = None,
+    shared_rim_reference: list[list[dict]] | None = None,
 ) -> CropResult:
     height, width = page_image.shape[:2]
     mask = mask or {}
@@ -1657,6 +1665,8 @@ def correct_photo_crop(
         ],
     )
     src_points, quad_metrics = inspection.quad, inspection.metrics
+    if dual_mode and not manual and shared_rim_reference and PRINT_SHARED_RIM_UNCERTAIN not in inspection.reasons:
+        inspection.reasons.append(PRINT_SHARED_RIM_UNCERTAIN)
     boundary_refinement, full_reasons = inspection.boundary, inspection.reasons.copy()
     missing_paper = []
     backing_match_pixels = 0
@@ -1856,6 +1866,10 @@ def correct_photo_crop(
             if print_outline is not None and trim_border else None,
         )
         modes = result.metadata["crop_modes"]
+        if PRINT_SHARED_RIM_UNCERTAIN in full_reasons:
+            cuts = shared_rim_reference or shared_rim_cut_segments(_vertices_on_page(src_points, width, height), boundary_refinement)
+            if cuts:
+                modes["full_print"]["shared_rim_cut_traces"] = cuts
         if inspection.occluding_neighbor is not None:
             contour = _vertices_on_page(inspection.occluding_neighbor, width, height)
             modes["full_print"]["neighbor_overlap_outline"] = [*contour, contour[0]]
@@ -1994,6 +2008,11 @@ def correct_photo_crop(
                         and validate_protected_regions(candidate, regions, width=width, height=height)["passed"]):
                     full_mode["suggested_warp_quad"] = _vertices_on_page(candidate, width, height)
                     full_mode["suggested_outline_source"] = ADJACENT_STOCK_REVIEW_SOURCE
+        if (cuts := full_mode.get("shared_rim_cut_traces")) and not any(
+            full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview")
+        ):
+            full_mode["suggested_edge_traces"] = cuts
+            full_mode["suggested_edge_source"] = SHARED_PRINT_RIM_SOURCE
         return result
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:

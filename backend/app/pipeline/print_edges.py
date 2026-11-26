@@ -12,10 +12,11 @@ PRINT_SHADOW_EDGE_REVIEW = "PRINT_SHADOW_EDGE_REVIEW"
 PRINT_FAINT_RIM_REVIEW = "PRINT_FAINT_OUTER_RIM_REVIEW"
 PRINT_OUTER_EDGE_CONFLICT_REVIEW = "PRINT_OUTER_EDGE_CONFLICT_REVIEW"
 PRINT_SHARED_RIM_UNCERTAIN = "PRINT_SHARED_RIM_UNCERTAIN"
+SHARED_PRINT_RIM_SOURCE = "shared_print_rim"
 PRINT_EDGE_CONFIRMATION = "PRINT_EDGE_CONFIRMATION_REQUIRED"
 COMPETING_PRINT_EDGES = "competing_print_edges"
 POSSIBLE_BACKED_PAPER_EDGE = "possible_backed_paper_edge"
-PRINT_BOUNDARY_REVISION = 11
+PRINT_BOUNDARY_REVISION = 12
 CLASSICAL_CONTOUR_REFINEMENT_REVISION = 1
 _PRINT_SIDES = ("top", "right", "bottom", "left")
 
@@ -588,17 +589,20 @@ def line_fit_omits_print_stock(image: np.ndarray, contour: np.ndarray, fitted: n
 
 
 def paper_rim_reaches_neighbor(
-    image: np.ndarray, quad: np.ndarray, side: int, neighbors: list[np.ndarray],
+    image: np.ndarray, quad: np.ndarray, side: int, neighbors: list[np.ndarray], *, partial_outward: bool = False,
 ) -> bool:
     """Check whether the outside of a fitted line continues into neighboring stock."""
     sides = np.roll(quad, -1, axis=0) - quad
     lengths = np.linalg.norm(sides, axis=1)
     start, end = quad[side], quad[(side + 1) % 4]
-    reach = float(np.clip(.075 * lengths.min(), 6., 24.))
+    reach = float(np.clip((.10 if partial_outward else .075) * lengths.min(), 6., 24.))
+    # An original model polygon can begin on the neighbor's ink rather than its stock.
+    # Allow a one-pixel contact with that polygon, still requiring continuous native stock.
+    tolerance = 1. if partial_outward else 0.
     edge = sides[side] / lengths[side]
     outward = np.float32([edge[1], -edge[0]])
     extent = np.stack((start, end, start + reach * outward, end + reach * outward))
-    low, high = extent.min(axis=0), extent.max(axis=0)
+    low, high = extent.min(axis=0) - tolerance, extent.max(axis=0) + tolerance
     nearby = [polygon for polygon in neighbors
               if np.all(polygon.max(axis=0) >= low) and np.all(polygon.min(axis=0) <= high)]
     if not nearby:
@@ -633,7 +637,7 @@ def paper_rim_reaches_neighbor(
     positions = start + fractions[:, None] * sides[side]
     probes = positions[:, None, :] + offsets[None, :, None] * outward
     return any(sum(
-        any(cv2.pointPolygonTest(polygon, tuple(point), False) == 1 for point in row[continuous])
+        any(cv2.pointPolygonTest(polygon, tuple(point), True) > -tolerance for point in row[continuous])
         for row, continuous in zip(probes, unbroken, strict=True)
     ) >= 10 for polygon in nearby)
 

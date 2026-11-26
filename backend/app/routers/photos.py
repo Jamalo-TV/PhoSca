@@ -34,7 +34,7 @@ from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_SOURCE
 from app.pipeline.manual_paper_boundary import (
     PAPER_GRID_OVERLAP_REVIEW, backed_edge_review_reference, capture_outline_review_required, hold_overlapping_paper_claim_modes,
     original_prediction_mask, paper_curve_from_review_traces, paper_curve_review_reference,
-    overlapping_paper_claims, paper_claim_groups,
+    overlapping_paper_claims, paper_claim_groups, shared_rim_cut_is_inside, shared_rim_cut_reference,
 )
 from app.pipeline.motif_margin import PAPER_STOCK_MOTIF_SOURCE
 from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
@@ -761,6 +761,8 @@ async def update_photo_bounding_box(
         original_mask = photo.segmentation_mask or {}
         correction = (photo.enhancement_applied or {}).get("correction") or {}
         full_print = (correction.get("crop_modes") or {}).get("full_print") or {}
+        saved_review = (photo.enhancement_applied or {}).get("review_provenance") or {}
+        shared_rim_traces = saved_review.get("shared_rim_cut_traces") or shared_rim_cut_reference(correction)
         if full_print.get("suggested_warp_quad") and photo.segmentation_confidence is not None:
             explicit = payload.segmentation_mask is not None and payload.segmentation_mask.warp_quad is not None
             outer = segmentation_mask.get("warp_quad") or []
@@ -823,6 +825,11 @@ async def update_photo_bounding_box(
         if manual_addition and segmentation_mask.get("warp_quad") is None:
             raise ValueError("manual_print_requires_warp_quad")
         validate_review_quads(segmentation_mask, width, height, require_cyclic=manual_addition)
+        if shared_rim_traces and (
+            payload.segmentation_mask is None or payload.segmentation_mask.warp_quad is None
+            or not shared_rim_cut_is_inside(segmentation_mask["warp_quad"], shared_rim_traces, width, height)
+        ):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="shared_rim_correction_required")
         if manual_addition:
             segmentation_mask["polygon"] = deepcopy(segmentation_mask["warp_quad"])
             segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask["warp_quad"])
@@ -858,6 +865,8 @@ async def update_photo_bounding_box(
         ]
     metadata.pop("review_rejected_detection", None)
     review_provenance = deepcopy(metadata.get("review_provenance") or {})
+    if shared_rim_traces:
+        review_provenance["shared_rim_cut_traces"] = deepcopy(shared_rim_traces)
     if payload.album_page_mark_review_id is not None:
         offer = correction.get("album_page_mark_review") or {}
         if (payload.segmentation_mask is None or payload.segmentation_mask.warp_quad is None

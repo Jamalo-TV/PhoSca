@@ -190,6 +190,19 @@ dem Original und prüfe, welcher Abzug oben liegt. Beide Zuschnittmodi
 bleiben für diesen Fall in Prüfung.
 [Überlappung und sichtbarer Papierübergang](data/evaluation/README.md#show-only-the-exposed-edge-of-an-overlapping-print)
 
+Bei hellen Papierrändern direkt nebeneinander kann der Zuschnitt an
+der inneren Bildkante enden. PhoSca prüft zusätzlich, ob sich der
+helle Streifen ausserhalb der Schnittkante bis zum benachbarten
+Vorschlag fortsetzt. Eine weiter aussen gefundene Linie kann zum
+Nachbarabzug gehören, wenn sie nur an einem ihrer Enden gestützt ist.
+PhoSca zeichnet in diesem Fall die **fragliche Schnittkante** ins
+Original ein. Bei einer Neuberechnung bleibt die Stelle markiert.
+Setze die beiden Ecken an den sichtbaren Papierrand. Beim Speichern
+muss die Markierung innerhalb des korrigierten Abzugs liegen.
+Bei unklarer Zuordnung helfen getrennte Aufnahmen. Bis zur Korrektur
+bleiben beide Zuschnittmodi in Prüfung.
+[Gedrehter Abzug mit gleichfarbigem Nachbarpapier](data/evaluation/README.md#hold-the-inner-cut-when-pale-stock-continues-into-a-neighbor)
+
 Für einen schwachen Modellvorschlag auf dunklem Albumkarton prüft
 PhoSca die Pixel des Originals auf beiden Seiten der vorgeschlagenen
 Kontur. Dazu muss mindestens ein Nachbarabzug durch den klassischen

@@ -625,6 +625,95 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
         assert (await client.get(f"{parent_url}/image?variant={variant}")).status_code == 404
 
 
+async def test_shared_rim_requires_a_paper_edit_before_manual_export(client, monkeypatch):
+    from app.config import get_settings
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+    from app.pipeline.print_edges import PRINT_SHARED_RIM_UNCERTAIN, SHARED_PRINT_RIM_SOURCE
+    from app.pipeline.segmentation import SegmentationDetection, SegmentationResult
+    from app.services import pipeline
+
+    monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
+    monkeypatch.setenv("MAX_UPLOAD_SIZE", "1048576")
+    monkeypatch.setenv("MAX_REQUEST_SIZE", "2097152")
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    get_settings.cache_clear()
+    fixture = next(page for page in synthetic_crop_pages("locked") if page.name == "touching_same_color")
+    source = np.ascontiguousarray(np.rot90(fixture.image, 3))
+    height, width = source.shape[:2]
+
+    def vertices(points):
+        return [{"x": float((width - 1 - y) / (width - 1)), "y": float(x / (height - 1))} for x, y in points]
+
+    def bounds(quad):
+        return {f"{axis}{index}": limit(point[axis] for point in quad)
+                for axis in ("x", "y") for index, limit in ((1, min), (2, max))}
+
+    proposals = [vertices([(86, 198), (408, 198), (408, 425), (86, 425)]),
+                 vertices([(417, 233), (699, 233), (699, 429), (417, 429)])]
+    detections = [SegmentationDetection(bounds(quad), {"source": "yolo_seg_mask", "polygon": quad,
+                  "detector_source": "yolo_onnx"}, .81, 1., True, []) for quad in proposals]
+    monkeypatch.setattr(pipeline, "segment_album_page", lambda *_, **__: SegmentationResult(detections, {}))
+    ok, png = cv2.imencode(".png", source)
+    assert ok
+    album = (await client.post("/api/v1/albums", json={"name": "Rotated touching stock"})).json()["id"]
+    album_url = f"/api/v1/albums/{album}"
+    uploaded = await client.post(f"{album_url}/pages/upload", files={"files": ("page.png", png.tobytes(), "image/png")})
+    assert uploaded.status_code == 201, uploaded.text
+    photos = (await client.get(f"{album_url}/photos")).json()
+    assert len(photos) == 2
+    photo = min(photos, key=lambda row: row["bounding_box"]["y1"])
+    full = photo["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+    assert PRINT_SHARED_RIM_UNCERTAIN in full["reason_codes"]
+    assert full["suggested_edge_source"] == SHARED_PRINT_RIM_SOURCE
+    url = f"/api/v1/photos/{photo['id']}"
+    variants = ("full_print", "image_only", "source_corrected_trimmed")
+
+    async def save(quad, size, motif=None):
+        mask = {"polygon": quad, "warp_quad": quad, "print_size_mm": size, "source": "manual_quad"}
+        if motif is not None:
+            mask["image_quad"] = motif
+        return await client.patch(f"{url}/bounding-box", json={
+            "bounding_box": bounds(quad), "segmentation_mask": mask, "confirm_print_outline": True,
+        })
+
+    cut = full["warp_quad"]
+    # Changing the opposite edge does not move the disputed cut.
+    opposite_edge = [{**point, "y": point["y"] - 3 / (height - 1)} if index < 2 else point
+                     for index, point in enumerate(cut)]
+    size = {"width": 228, "height": 332}
+    for bad in (cut, opposite_edge):
+        response = await save(bad, size)
+        assert response.status_code == 409 and response.json()["detail"] == "shared_rim_correction_required"
+    for variant in variants:
+        assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
+
+    peer, = [row for row in photos if row["id"] != photo["id"]]
+    rejected = await client.post("/api/v1/review/events", json={
+        "task_type": "geometry", "task_id": peer["id"], "answer": "wrong_object", "idempotency_key": uuid4().hex,
+    })
+    assert rejected.status_code == 201
+    repeated = await client.post(f"{url}/reprocess")
+    assert repeated.status_code == 200, repeated.text
+    modes = repeated.json()["enhancement_applied"]["correction"]["crop_modes"]
+    assert all(PRINT_SHARED_RIM_UNCERTAIN in mode["reason_codes"] for mode in modes.values())
+    assert modes["full_print"]["shared_rim_cut_traces"] == full["suggested_edge_traces"]
+    unchanged = await save(cut, size)
+    assert unchanged.status_code == 409 and unchanged.json()["detail"] == "shared_rim_correction_required"
+
+    refs = fixture.prints[0].reference_modes
+    paper = vertices(np.roll(refs["full_print"].corners, -3, axis=0))
+    motif = vertices(np.roll(refs["image_only"].corners, -3, axis=0))
+    updated = await save(paper, size, motif)
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["enhancement_applied"]["review_provenance"]["shared_rim_cut_traces"] == full["suggested_edge_traces"]
+    reverted = await save(cut, size)
+    assert reverted.status_code == 409 and reverted.json()["detail"] == "shared_rim_correction_required"
+    for variant in variants:
+        assert (await client.get(f"{url}/image?variant={variant}")).status_code == 200
+
+
 @pytest.mark.parametrize("kind", ["film", "paper"])
 async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kind):
     from app.config import get_settings

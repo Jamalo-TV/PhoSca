@@ -903,7 +903,55 @@ def test_unresolved_outward_rim_at_neighbor_can_only_be_previewed(case, proposal
     np.testing.assert_array_equal(crop.image_only, without_neighbor.image_only)
 
 
-def test_visible_album_gap_breaks_a_neighbor_rim_connection() -> None:
+@pytest.mark.parametrize("quality, seed_end", [(None, 408), (75, 410), (55, 411), (None, None)])
+def test_rotated_shared_rim_with_one_missing_corner_holds_both_modes(quality, seed_end) -> None:
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+    from app.pipeline.print_edges import PRINT_SHARED_RIM_UNCERTAIN, SHARED_PRINT_RIM_SOURCE
+
+    fixture = next(page for page in synthetic_crop_pages("locked") if page.name == "touching_same_color")
+    source = np.ascontiguousarray(np.rot90(fixture.image, 3))
+    if quality is not None:
+        assert (encoded := cv2.imencode(".jpg", source, [cv2.IMWRITE_JPEG_QUALITY, quality]))[0]
+        source = cv2.imdecode(encoded[1], cv2.IMREAD_COLOR)
+
+    def rotated_seed(points):
+        points = np.asarray(points, dtype=np.float32)
+        return {"source": "yolo_seg_mask", "detector_source": "yolo_onnx",
+                "polygon": _vertices(np.column_stack((source.shape[1] - 1 - points[:, 1], points[:, 0])), source)}
+
+    if seed_end is None:
+        # The mixed detector starts the neighboring lossless proposal at its ink.
+        mask = rotated_seed([[81, 199], [86, 426], [411, 425], [411, 194], [92, 194]])
+        peer = rotated_seed([[424, 426], [698, 427], [700, 229], [505, 227], [424, 232]])
+    else:
+        # Native proposals from the registered synthetic-control model on each encoded view.
+        mask = rotated_seed(_rect(86, 198, seed_end, 425))
+        peer = rotated_seed(_rect(417, 233, 699, 429))
+    alone = _crop(source, {}, mask, dual_mode=True)
+    adjacent = _crop(source, {}, mask, dual_mode=True, neighbor_masks=[peer])
+    side = adjacent.metadata["boundary_refinement"]["bottom"]
+    assert .84 <= side["outward_search"]["support"] < .88
+    assert side["outward_search"]["start_support"] == 0 and side["outward_search"]["end_support"] == 1
+    assert side["shared_rim_unresolved"]
+
+    modes = adjacent.metadata["crop_modes"]
+    for name, mode in modes.items():
+        before = alone.metadata["crop_modes"][name]
+        assert before["status"] == "ready" and mode["status"] == "review_needed"
+        assert mode["reason_codes"] == [PRINT_SHARED_RIM_UNCERTAIN]
+        assert mode["warp_quad"] == before["warp_quad"]
+        assert mode["page_to_output"] == before["page_to_output"]
+    full = modes["full_print"]
+    trace, = full["suggested_edge_traces"]
+    assert full["suggested_edge_source"] == SHARED_PRINT_RIM_SOURCE
+    assert all(403 < point["y"] * (source.shape[0] - 1) < 405 for point in trace)
+    assert "suggested_warp_quad" not in full
+    np.testing.assert_array_equal(adjacent.image, alone.image)
+    np.testing.assert_array_equal(adjacent.image_only, alone.image_only)
+
+
+@pytest.mark.parametrize("gap_width", [1, 4])
+def test_visible_album_gap_breaks_a_neighbor_rim_connection(gap_width) -> None:
     from app.pipeline.print_edges import paper_rim_reaches_neighbor
 
     page = np.full((260, 370, 3), 130, np.uint8)
@@ -913,8 +961,9 @@ def test_visible_album_gap_breaks_a_neighbor_rim_connection() -> None:
     neighbor = [_rect(25, 45, 149, 224)]
     assert paper_rim_reaches_neighbor(page, fitted, 3, neighbor)
 
-    page[:, 148:152] = 130
+    page[:, 152 - gap_width:152] = 130
     assert not paper_rim_reaches_neighbor(page, fitted, 3, neighbor)
+    assert not paper_rim_reaches_neighbor(page, fitted, 3, neighbor, partial_outward=True)
 
 
 def test_only_the_fully_visible_print_can_be_recovered_from_an_overlap() -> None:

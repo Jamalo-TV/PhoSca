@@ -6,7 +6,8 @@ import numpy as np
 from app.pipeline.edge_prints import CAPTURE_EDGE_HOLD
 from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels, order_quad_cyclic
 from app.pipeline.print_edges import (
-    POSSIBLE_BACKED_PAPER_EDGE, _backing_color, _edge_band, _side_line, _stock_ring, bowed_print_sides,
+    POSSIBLE_BACKED_PAPER_EDGE, PRINT_SHARED_RIM_UNCERTAIN, SHARED_PRINT_RIM_SOURCE,
+    _backing_color, _edge_band, _side_line, _stock_ring, bowed_print_sides,
     refine_print_boundary,
 )
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_CONFLICT
@@ -115,6 +116,37 @@ def backed_edge_review_reference(print_mode: dict) -> dict | None:
     if len(quad) != 4 or not traces or any(len(trace) < 2 for trace in traces):
         return None
     return {"warp_quad": quad, "traces": traces}
+
+
+def shared_rim_cut_is_inside(quad: list[dict], traces: list[list[dict]], width: int, height: int) -> bool:
+    """A paper correction must preserve the previously disputed cut plus a native pixel."""
+    contour = order_quad_cyclic(normalized_vertices_to_pixels([(point["x"], point["y"]) for point in quad], width, height))
+    points = normalized_vertices_to_pixels(
+        [(point["x"], point["y"]) for trace in traces for point in trace], width, height,
+    )
+    return all(cv2.pointPolygonTest(contour, tuple(point), True) >= 1. for point in points)
+
+
+def shared_rim_cut_segments(quad: list[dict], boundary: dict) -> list[list[dict]]:
+    if len(quad) != 4:
+        return []
+    return [
+        [{axis: round(first[axis] + fraction * (last[axis] - first[axis]), 8) for axis in ("x", "y")}
+         for fraction in (.12, .88)]
+        for side, first, last in zip(("top", "right", "bottom", "left"), quad, [*quad[1:], quad[0]], strict=True)
+        if (boundary.get(side) or {}).get("shared_rim_unresolved")
+    ]
+
+
+def shared_rim_cut_reference(correction: dict) -> list[list[dict]]:
+    full_print = ((correction.get("crop_modes") or {}).get("full_print") or {})
+    if PRINT_SHARED_RIM_UNCERTAIN not in (full_print.get("reason_codes") or []):
+        return []
+    if traces := full_print.get("shared_rim_cut_traces"):
+        return traces
+    if full_print.get("suggested_edge_source") == SHARED_PRINT_RIM_SOURCE:
+        return full_print.get("suggested_edge_traces") or []
+    return shared_rim_cut_segments(full_print.get("warp_quad") or [], correction.get("boundary_refinement") or {})
 
 
 def manual_paper_reference(metadata: dict, crop_quad: list[dict] | None) -> dict | None:

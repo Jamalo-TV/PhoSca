@@ -5102,6 +5102,142 @@ the frozen detection and seeded geometry benchmarks, Golden,
 NerdScan, Domoritz, the JPEG55 contact sheet and the stock challenge.
 The native ScanCropper views are development evidence.
 
+### Hold the inner cut when pale stock continues into a neighbor
+
+The frozen `touching_same_color` page is 840 × 640 before a quarter turn.
+Rotating it 270° counterclockwise before saving as PNG, JPEG75 or JPEG55
+can make the original left print's inward ink edge look like its paper
+edge. On the source before rotation, the selected fitted edge lies at
+x403.62–403.75. The annotated visible paper continues through x416. The
+outward search follows a different ink boundary around x424.6, on the
+neighboring print. The outward observation has support 0.842–0.867 and
+one strongly supported terminal. Its other terminal is missing. The
+previous 0.88 support cutoff made the check skip these observations.
+
+The new review path retains the original 0.88 branch. A partial outward
+line can also initiate the check with at least 0.84 support, incoming
+line support at least 0.90, and end support at most 0.20 at one end and
+at least 0.80 at the other. The native check expects pale Lab stock
+(L ≥185 and a and b within 21 of neutral), with contrasting image
+inside the current cut and matching stock against backing on two
+other sides. At least 10 of 16 stations must continue to the same
+neighbor with every sampled point within 11 Lab units of that stock.
+For this partial case, sample outwards up to 10% of the
+shorter side, clamped to 6–24 native pixels. A continuous strip may
+approach within one native pixel of the original neighbor polygon.
+This covers the case where the original neighbor mask begins at its
+ink. A visible strip of album backing breaks the continuity. The
+neighbor geometry used by the decision comes from the original
+proposal. Reprocessing remains independent of which neighbor already
+has a derived outline.
+
+PhoSca assigns `PRINT_SHARED_RIM_UNCERTAIN` to both modes. The dashed
+overlay is the central 76% of the current fitted cut on that side. It
+shows where to verify the missing margin in the original. The farther
+observation supplies no new warp and does not claim a paper corner.
+The raw detector polygons, crop transforms and rendered buffers are
+preserved. For an affected row, the inward fit can no longer be stored
+as a confirmed visible paper boundary. The original proposal stays
+available as evidence.
+
+The saved cut evidence is independent of which overlay has priority. It
+survives reprocessing, including when a reviewer rejected the original
+neighbor candidate. Earlier records with the same review reason can
+reconstruct the trace from their saved quadrilateral and per-side
+evidence. The reviewer submits explicit paper corners. Each endpoint
+of the disputed cut must lie at least one native pixel inside that
+quadrilateral. Reusing the cut, changing only dimensions or moving an
+unrelated side returns a correction request with no writes. The
+validated edit retains the previous trace in its provenance, so a
+later edit cannot restore the same cut.
+
+This inward clearance measures whether the edit moved past the disputed
+cut. In an adversarial manual experiment, shifting the contested side
+by 1.02 native pixels clears that check while 2,508 reference paper
+centres still lie beyond the one-pixel cutoff tolerance. Accurate
+manual export still depends on the reviewer's paper boundary decision.
+A reviewer can use a separate capture to establish that boundary.
+In a positive native replay, submitting the known paper and motif
+corners of this fixture made both named exports available. Their
+source sampling had zero cutoff beyond one pixel and zero foreign
+interpolation contributions.
+
+The four independent API setups used archived `b7a8465` and the
+candidate, with each of the two registered checkpoint digests below.
+Each replays the three pinned derivatives through a multipart upload
+with source protection enabled. The model input is 512, the proposal
+threshold 0.25 and the acceptance threshold 0.70. Photo orientation is
+disabled and OCR is stubbed during the crop check.
+
+- Synthetic control `c31317f31356140346fe421ead102e2bce1fa06f85be409d12d5b3309ee54f60`
+- Mixed legacy `1e95a1a90ff897df7099ff80675186ec1d8145f7bb07559fe918b3dd3a6db748`
+
+On all six target uploads the internal geometry changes from ready to
+review in both modes. Detector counts are equal. Both named downloads
+and the trimmed alias return 404 while the untrimmed preview returns
+200 with identical JPEG bytes, including after reprocessing. A direct
+crop approval fails. Desktop and Mobile show the measured location of
+the current cut and retain the same active count. Mobile keeps the
+approval control disabled with the review reason. Native target uploads
+took 0.71–1.50 seconds in the local candidate runs. The independent
+comparisons retain their timing and exposure records.
+
+The values below measure the exact same affected transforms on either
+side of the change. The raw motif buffers are included in this check.
+These results explain the review decision and measure preservation of
+the previews.
+
+| Source-reprojection check across six target rows | Full print | Image only |
+| --- | ---: | ---: |
+| Footprint IoU | 0.95009–0.95802 | 0.99187 |
+| Max corner difference | 11.89–11.99 px | 0.11–0.16 px |
+| Relative aspect difference | 3.76% | 0% |
+| Landmark p95 | 9.92–10.03 px | 0.07–0.13 px |
+| Visible source area omitted | 4.20–4.99% | 0.81% |
+| Source centres omitted beyond one pixel | 2,712 | 0 |
+| Pixels receiving foreign interpolation contributions | 0 | 0 |
+
+The protected motifs in these controls happen to be intact beyond the
+one-pixel tolerance. The single source cannot resolve the physical stock
+ownership for either mode. An exact source-alias control reproduces a
+distinct-stock pair with one continuous printed substrate and the same
+pixel raster. Both possible physical interpretations retain the same hash
+through all quarter turns and tested encodings. A separate upload of the
+physical prints can resolve the ambiguity.
+
+The independent final comparison covers 166 page and checkpoint
+treatments with 360 rendered rows. It finds 10 additional rows routed
+to review across both modes, all for the original left equal-stock
+print. That includes the three original synthetic-control 270° replays
+and seven mixed-checkpoint variants at 90° or 270°. Every affected
+whole-print transform omits 2,712 source pixel centres beyond one
+pixel. There are zero foreign interpolation contributions. All
+rendered arrays and transforms match the archived code. The comparison
+adds no hold to the 59 previously ready modes across 48 known-gap
+treatments or the 32 previously ready modes on the original frozen
+inputs. The 22 runs on 11 real development views also keep their
+original states. All of those real modes were already in review.
+In 120 warm timed pairs, the active source stock test took 1.20 ms
+median and 1.51 ms p95, up from 0.07 ms and 0.18 ms on the original
+shorter search for the same proposal coordinates.
+
+The independent occlusion screening tested 106 additional rotated
+JPEG75 page and checkpoint combinations. The 55 geometrically ready
+modes were recoverable by reference and had zero foreign interpolation,
+out-of-source sampling or cutoff beyond one pixel. Those include nine
+independently recoverable motifs where the paper corners are covered.
+The frozen detection, seeded geometry, mixed Golden and both
+classical-only summaries match the baseline for recognition, masks
+and both modes. The locked model still detects 18/18, with 6/11
+whole-print and 7/12 motif geometry passes. The seeded modes pass
+11/11 and 12/12, respectively.
+
+The `print_boundary` profile is now revision 12. Use calibration for the
+deployed profile and independent physical release references for both
+modes before enabling automatic downloads. The paired API and browser
+receipts, native masks and reprojection metrics are local under
+`runs/crop-quality/shared-rim-rotation/`.
+
 ### Measure seed displacement and competing print edges
 
 The frozen synthetic-control detector `c31317f…` with fallback at
