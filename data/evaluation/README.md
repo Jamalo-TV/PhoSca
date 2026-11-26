@@ -3138,6 +3138,48 @@ both motif and legacy trimmed routes held until the intentional edit.
 After that edit both exports retain all 35 sampled fields and all of
 the reference header points on their respective source.
 
+### Complete a dashed handwritten note using the original pixels
+
+On the lossless contact sheet the ordinary glyph group stops before the
+last part of the handwritten number. The last two components have
+approximately the same baseline as the prefix. A separate horizontal
+dash sits in the gap. The JPEG75 group already spans the entire note.
+Increasing the ordinary grouping radius from 1.9 to 2.0 times glyph
+height also joins the PNG note in a probe. That adjustment would apply
+to every faint row, including an empty gap between neighboring marks.
+
+Margin review revision 6 keeps the ordinary grouping rule. When a
+strong mark has already held the motif, a confirmed group of separate
+glyphs can check for one nearby dash and a unique pair of similarly
+sized, structured components on the same baseline. The dash and each
+component must pass original-pixel validation separately, including
+matching paper on both sides of their strokes. If a component is absent
+from the source, the initial box stays in use. This extends a source
+annotation used in review.
+
+The lossless PNG mark extends from about source column 1123 to 1170
+and covers all 96 sampled dark centres in the handwritten suffix,
+up from zero. JPEG75 retains all 94 corresponding centres with the
+same box as before. Removing or turning the dash, widening the gap,
+moving the suffix off the baseline or erasing one component in the
+original produces no extra coverage. The 408 prior nuisance profiles
+and 384 additional neighboring printed-glyph controls keep their
+previous regions. The 120 injected-date views keep the same measured
+ink coverage, including cases whose genuine original annotation now
+covers the suffix.
+
+Desktop and Mobile show both source regions on both normal uploads.
+The whole-print render and JPEG match revision 5 byte for byte. The
+motif and legacy trimmed routes remain held until the deliberate edit.
+After the mobile save, both exports retain all 35 measured image fields
+and all 1,938 or 1,940 header samples. In 35 warm paired single-thread
+samples against revision 5, the isolated margin check added a median of
+0.39 ms on JPEG75 and 1.78 ms on PNG. The PNG p95 went from 27.13 to
+29.33 ms. The detector, both crop-mode aggregates and mode availability
+match revision 5 on all eleven frozen and development comparisons. The
+frozen control retains 18/18 detections and the seeded replay retains
+11/11 whole prints and 12/12 motifs.
+
 ### Hold motif trims for isolated strong strokes
 
 The new component check handles cases with fewer independent strokes

@@ -10,7 +10,7 @@ from app.pipeline.faint_margin import faint_margin_region
 from app.pipeline.margin_stroke_shapes import isolated_margin_strokes
 
 
-MOTIF_MARGIN_REVIEW_REVISION = 5
+MOTIF_MARGIN_REVIEW_REVISION = 6
 
 
 def _mark_clusters(lightness: np.ndarray, owned: np.ndarray) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
@@ -142,7 +142,8 @@ def motif_margin_marks(
                     owned[max(0, top - 4):bottom + 5, max(0, left - 4):right + 5] = False
                 if np.count_nonzero(owned & (background.astype(np.int16) - lab[:, :, 0] >= 9)) < 15:
                     continue
-            region = faint_margin_region(page, lab, owned, project, forward, (width, height), motif)
+            region = faint_margin_region(page, lab, owned, project, forward, (width, height), motif,
+                                         extend_dashed_note=already_marked)
             if region is not None:
                 _add_region(result, region)
     return result

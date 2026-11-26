@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from app.pipeline.decisions import MOTIF_MARGIN_MARKS_REVIEW
-from app.pipeline.faint_margin import _source_strokes_supported
+from app.pipeline.faint_margin import _source_strokes_supported, faint_margin_region
 from app.pipeline.motif_margin import motif_margin_marks
 from app.pipeline.perspective import correct_photo_crop
 
@@ -86,6 +86,38 @@ def test_visible_heading_does_not_hide_an_independent_faint_date(case) -> None:
     centers = [np.mean([[point["x"] * 339, point["y"] * 229] for point in region], axis=0)
                for region in motif["margin_mark_regions"]]
     np.testing.assert_allclose(centers, expected, atol=1.5)
+
+
+@pytest.mark.parametrize("missing", [None, "dash", "first_glyph", "second_glyph", "visible_gap"])
+def test_dashed_motif_note_requires_each_part_on_the_source_paper(missing) -> None:
+    height, width = 90, 250
+    page = np.full((height, width, 3), 245, np.uint8)
+    ink = (74, 74, 74)
+    for text, x in [("269617", 16), ("2", 122), ("8", 140)]:
+        cv2.putText(page, text, (x, 30), cv2.FONT_HERSHEY_SIMPLEX, .68, ink, 2, cv2.LINE_AA)
+    cv2.rectangle(page, (104, 23), (110, 25), ink, -1)
+
+    source = page.copy()
+    if missing in {"dash", "visible_gap"}:
+        source[22:27, 103:112] = 245
+    elif missing == "first_glyph":
+        source[12:34, 121:139] = 245
+    elif missing == "second_glyph":
+        source[12:34, 139:157] = 245
+    # Keep the proposal unchanged when dropping only the native witness.
+    proposal = source if missing == "visible_gap" else page
+    lab = cv2.cvtColor(proposal[:37], cv2.COLOR_BGR2LAB)
+    owned = np.ones(lab.shape[:2], dtype=bool)
+    motif = np.float32([[3, 40], [245, 40], [245, 80], [3, 80]])
+    args = (source, lab, owned, lambda points: points.astype(np.float32), np.eye(3), (width, height), motif)
+
+    prefix = faint_margin_region(*args)
+    assert prefix is not None and prefix[:, 0].max() < 100
+    extended = faint_margin_region(*args, extend_dashed_note=True)
+    if missing is None:
+        assert extended is not None and extended[:, 0].max() >= 154
+    else:
+        np.testing.assert_array_equal(extended, prefix)
 
 
 @pytest.mark.parametrize("control", ["separate_pips", "blue_ruling", "paper_tone_step"])

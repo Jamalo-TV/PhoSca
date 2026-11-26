@@ -158,9 +158,46 @@ def _source_strokes_supported(
     return (eligible & similar_paper & supported).any(axis=1).mean() >= (0.35 if blue_ink else 0.46)
 
 
+def _dashed_suffix(
+    labels: np.ndarray, top: int, right: int, bottom: int,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Find a single same-line dash followed by two shaped components."""
+    height = bottom - top + 1
+    if height < 8:
+        return []
+    margin = max(2, round(.35 * height))
+    y0, y1 = max(0, top - margin), min(labels.shape[0], bottom + margin + 1)
+    x0, x1 = right + 1, min(labels.shape[1], right + 4 * height + 2)
+    window = labels[y0:y1, x0:x1]
+    dashes, letters = [], []
+    for label in np.unique(window):
+        if label == 0:
+            continue
+        rows, columns = np.nonzero(window == label)
+        x, y, end_x, end_y = columns.min(), rows.min(), columns.max(), rows.max()
+        if x == 0 or y == 0 or end_x == window.shape[1] - 1 or end_y == window.shape[0] - 1:
+            continue
+        component = (rows + y0, columns + x0)
+        width, depth = end_x - x + 1, end_y - y + 1
+        center_y = y0 + (y + end_y) / 2
+        if (x <= .60 * height and 1.5 * depth <= width <= .85 * height
+                and depth <= .30 * height and abs(center_y - (top + bottom) / 2) <= .22 * height):
+            dashes.append((end_x, component))
+        elif (.65 * height <= depth <= 1.25 * height and .30 * height <= width <= 2.4 * height
+                and abs(y0 + end_y - bottom) <= .25 * height and len(columns) < .78 * width * depth):
+            glyph = window[y:end_y + 1, x:end_x + 1] == label
+            if all(np.count_nonzero(np.diff(glyph, axis=axis).sum(axis=axis) >= 2) >= 3 for axis in (0, 1)):
+                letters.append((x, end_x, component))
+    letters.sort(key=lambda item: item[0])
+    matches = [[dash, first, second] for dash_end, dash in dashes
+               for (start, stop, first), (next_start, _, second) in zip(letters, letters[1:])
+               if 0 < start - dash_end <= .75 * height and 0 < next_start - stop <= .50 * height]
+    return matches[0] if len(matches) == 1 else []
+
+
 def faint_margin_region(
     page: np.ndarray, lab: np.ndarray, owned: np.ndarray, project_to_source: Callable[[np.ndarray], np.ndarray],
-    forward: np.ndarray, full_size: tuple[int, int], motif: np.ndarray,
+    forward: np.ndarray, full_size: tuple[int, int], motif: np.ndarray, *, extend_dashed_note: bool = False,
 ) -> np.ndarray | None:
     if lab.shape[0] < 6 or np.count_nonzero(owned) < 150:
         return None
@@ -186,25 +223,35 @@ def faint_margin_region(
 
     def candidate_groups():
         for blue_ink, mask in zip((False, True), masks, strict=True):
-            yield blue_ink, 230, *_glyph_groups(mask, blue_ink)
+            yield blue_ink, True, 230, *_glyph_groups(mask, blue_ink)
         joined_strokes = (owned & (paper_lightness >= 196) & neutral_ink
                           & (local_lightness - lightness >= np.maximum(4, .58 * contrast)))
         # A nonnegative paper median can only lower the absolute contrast.
         minimum_contrast = 14.2
         if np.count_nonzero(joined_strokes & (contrast >= minimum_contrast)) >= 15:
             joined_strokes &= _local_paper_residual(contrast, owned) >= minimum_contrast
-            yield False, 240, *_joined_glyph_groups(joined_strokes)
+            yield False, False, 240, *_joined_glyph_groups(joined_strokes)
 
-    for blue_ink, samples, labels, groups in candidate_groups():
+    def supported(rows, columns, blue_ink, samples):
+        stride = max(1, len(rows) // samples)
+        source_rows, source_columns = rows[::stride], columns[::stride]
+        native = project_to_source(np.column_stack((source_columns, source_rows)))
+        return _source_strokes_supported(page, forward, full_size, motif, native,
+                                         contrast[source_rows, source_columns],
+                                         paper_lightness[source_rows, source_columns], blue_ink)
+
+    for blue_ink, separate_glyphs, samples, labels, groups in candidate_groups():
         for group in groups:
             rows, columns = np.nonzero(np.isin(labels, group))
-            stride = max(1, len(rows) // samples)
-            source_rows, source_columns = rows[::stride], columns[::stride]
-            native = project_to_source(np.column_stack((source_columns, source_rows)))
-            if _source_strokes_supported(page, forward, full_size, motif, native,
-                                         contrast[source_rows, source_columns],
-                                         paper_lightness[source_rows, source_columns], blue_ink):
-                left, right = columns.min(), columns.max()
-                top, bottom = rows.min(), rows.max()
-                return project_to_source(np.array([[left, top], [right, top], [right, bottom], [left, bottom]]))
+            if not supported(rows, columns, blue_ink, samples):
+                continue
+            left, right = columns.min(), columns.max()
+            top, bottom = rows.min(), rows.max()
+            if extend_dashed_note and separate_glyphs:
+                suffix = _dashed_suffix(labels, top, right, bottom)
+                if suffix and all(supported(y, x, blue_ink, samples) for y, x in suffix):
+                    right = max(right, *(x.max() for _, x in suffix))
+                    top = min(top, *(y.min() for y, _ in suffix))
+                    bottom = max(bottom, *(y.max() for y, _ in suffix))
+            return project_to_source(np.array([[left, top], [right, top], [right, bottom], [left, bottom]]))
     return None

@@ -186,7 +186,11 @@ ausserhalb des Motivs liegen. Nach einem deutlich bestätigten Fund
 sucht PhoSca auf hellen Papierstreifen weiter. Es spart die bereits
 gefundene Stelle samt vier Pixeln Abstand in der Papierebene aus. So
 kann eine blasse Beschriftung neben der Kopfzeile oder auf einer anderen
-Seite einen eigenen Hinweis erhalten. Ein bestätigter Fund setzt für
+Seite einen eigenen Hinweis erhalten. Bei einem bereits bestätigten
+Schriftzug lässt sich der Hinweis über einen Bindestrich verlängern.
+Der Strich und zwei weitere strukturierte Schriftteile müssen in
+derselben Zeile liegen und sich einzeln in den Originalpixeln
+bestätigen lassen. Ein bestätigter Fund setzt für
 **Nur Bildmotiv** den
 Prüfgrund `IMAGE_MARGIN_MARKS_REVIEW` und speichert die Fundstellen in
 Koordinaten der Quelle. Der Hinweis fordert dazu auf,
