@@ -10,6 +10,7 @@ from app.pipeline.album_windows import (
 )
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
+from app.pipeline.dark_album_review import DARK_BACKING_OUTLINE_REVIEW
 from app.pipeline.decisions import (
     MANUAL_NEIGHBOR_CONTENT_LOSS, MANUAL_NEIGHBOR_OVERLAP, MOTIF_MARGIN_MARKS_REVIEW, MOUNTED_PRINT_OUTLINE_REVIEW,
 )
@@ -1414,17 +1415,20 @@ def _inspect_print(
                 metrics = _validate_quad(quad, width, height)
     if dual_mode:
         manual_outline = mask.get("manual_added") is True or mask.get(REVIEWED_CROSSING_OUTLINE) is True
-        projective = mask.get("projective_outline_review") is True
-        if projective or mask.get("mounted_outline_review") is True:
+        outline_review = next(((kind, reason) for kind, reason in (
+            ("projective", PROJECTIVE_PRINT_OUTLINE_REVIEW), ("mounted", MOUNTED_PRINT_OUTLINE_REVIEW),
+            ("dark_backing", DARK_BACKING_OUTLINE_REVIEW),
+        ) if mask.get(f"{kind}_outline_review") is True), None)
+        if outline_review is not None:
+            kind, reason = outline_review
             confirmed = False
-            confirmation = "projective_outline_confirmed" if projective else "mounted_outline_confirmed"
-            if mask.get(confirmation) is True:
+            if mask.get(f"{kind}_outline_confirmed") is True:
                 fitted, sides, unresolved = refine_print_boundary(page, quad, search_radius=3)
                 confirmed = (fitted is not None and not unresolved and np.linalg.norm(fitted - quad, axis=1).max() <= 1.
                              and all(edge["support"] >= .90 and (edge["corner_support"] or 0) >= .80
                                      for edge in sides.values()))
             if not confirmed:
-                reasons.append(PROJECTIVE_PRINT_OUTLINE_REVIEW if projective else MOUNTED_PRINT_OUTLINE_REVIEW)
+                reasons.append(reason)
         if not manual and mask.get("paper_edge_confirmation") is True:
             reasons.append(PRINT_EDGE_CONFIRMATION)
         scalloped = not manual and mask.get("scalloped_print") is True and visible is not None

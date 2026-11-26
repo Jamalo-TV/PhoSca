@@ -15,6 +15,7 @@ from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURC
 from app.pipeline.crossing_prints import (
     CROSSING_PRINT_REVIEW, crossing_print_outlines, near_leaf_edge_traces, staggered_print_source_traces,
 )
+from app.pipeline.dark_album_review import DARK_ALBUM_PROPOSAL, inspect_dark_album_backing
 from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CLIPPED_PRINT_OVERLAP_REVIEW, SCANNER_BACKING_REVIEW,
     clipped_fragment_needs_review, clipped_print_outlines, clipped_print_overlap_uncertain, scanner_backing_evidence,
@@ -3684,6 +3685,63 @@ def _offer_source_fragment_group_review(
     return SegmentationResult(detections, {**metadata, "fusion": {**fusion, "deferred_print_proposals": pending}})
 
 
+def _defer_dark_album_claims(image: np.ndarray, result: SegmentationResult, acceptance: float) -> SegmentationResult:
+    fusion = result.metadata.get("fusion") or {}
+    if not result.metadata.get("fallback_used") or not fusion.get("model_proposals") or not fusion.get("classical_proposals"):
+        return result
+    if not 2 <= len(result.detections) <= 12:
+        return result
+    height, width = image.shape[:2]
+    peers = []
+    candidates = []
+    for index, item in enumerate(result.detections):
+        if not item.geometry_valid or item.review_reasons or item.mask.get("warp_quad"):
+            continue
+        source = item.mask.get("source")
+        provenance = item.mask.get("fusion") or {}
+        families = provenance.get("proposal_families")
+        polygon = _detection_polygon(item)
+        if source == "classical_border_quad" and families == ["classical", "model"] and item.confidence >= .70:
+            if len(polygon) == 4:
+                peers.append(normalized_vertices_to_pixels(polygon, width, height))
+        elif (source == "yolo_seg_mask" and families == ["model"] and provenance.get("proposal_count") == 1
+              and item.mask.get("detector_source") == "yolo_onnx" and .30 <= item.confidence < min(.70, acceptance)):
+            candidates.append((index, polygon))
+    if not peers or not 1 <= len(candidates) <= 6:
+        return result
+
+    pending = list(fusion.get("deferred_print_proposals") or [])
+    deferred = set()
+    next_id = max((proposal["id"] for proposal in pending), default=-1) + 1
+    for index, polygon in candidates:
+        try:
+            quad, _ = quad_from_polygon(normalized_vertices_to_pixels(polygon, width, height))
+            evidence = inspect_dark_album_backing(image, order_quad_cyclic(quad), peers)
+        except (ValueError, cv2.error):
+            continue
+        if evidence is None:
+            continue
+        item = result.detections[index]
+        pending.append({
+            "id": next_id, "reason": DARK_ALBUM_PROPOSAL, "polygon": _normalized_polygon(quad, width, height),
+            "visible_polygon": item.mask.get("visible_polygon") or item.mask["polygon"],
+            "dark_backing_traces": [_normalized_polygon(span, width, height) for span in evidence.backing_traces],
+            "borrowed_edge_traces": [_normalized_polygon(span, width, height) for span in evidence.borrowed_traces],
+            "source_mask": {key: item.mask[key] for key in ("source", "detector_source", "polygon", "visible_polygon",
+                            "visible_polygon_source", "proposal_visible_polygon") if key in item.mask},
+            "fusion_cluster_id": item.mask["fusion"]["cluster_id"],
+            "proposal_confidence": item.confidence,
+        })
+        next_id += 1
+        deferred.add(index)
+    if not deferred:
+        return result
+    kept = [item for index, item in enumerate(result.detections) if index not in deferred]
+    return SegmentationResult(kept, {**result.metadata, "fusion": {
+        **fusion, "deferred_print_proposals": pending, "dark_backing_review_count": len(deferred),
+    }})
+
+
 def segment_album_page(
     image: np.ndarray, settings: Settings, *, source_image: np.ndarray | None = None,
     protected_regions: list[dict] | None = None,
@@ -3715,7 +3773,10 @@ def segment_album_page(
     if not settings.enable_precise_photo_crops:
         return result
     if model_path is None:
-        return _refine_source_contours(source if source is not None else image, result, settings, protected_regions)
+        result = _refine_source_contours(source if source is not None else image, result, settings, protected_regions)
+        if source is not None and settings.enable_classical_segmentation_fallback:
+            result = _defer_dark_album_claims(source, result, settings.yolo_confidence_threshold)
+        return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
 

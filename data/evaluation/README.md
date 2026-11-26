@@ -5178,8 +5178,85 @@ three illumination levels and three border intensities. The ordinary
 detector replay on three Willett pages, ten Golden views and sixteen
 frozen pages supplies only three eligible weak model-only proposals.
 Of those, the same two Willett 99 proposals are marked. The ambiguity
-for near-matching paper requires a human count decision. The production
-count and export decisions are as measured above.
+for near-matching paper requires a human count decision.
+
+#### Review a dark album backing proposal
+
+PhoSca applies the count hint after precise source-contour refinement
+when normal inference used both the model and the classical fallback.
+The original pixels must be available. An eligible proposal is a
+single full-page model mask with confidence at least 0.30 and below
+both 0.70 and the configured acceptance threshold. At least one
+eligible neighboring print must have a classical border quadrilateral
+corroborated by a model proposal. The check is limited to pages with
+2–12 surviving detections and 1–6 eligible candidates. After checking
+the Lab distribution in the dark core, it samples both sides of each
+proposed edge. It requires at least three sides with dark continuation
+or reversed lightness into a corroborated neighbor. Both types must
+have visible spans. A strongly signed edge of the candidate or a
+narrow seam tracing a separate sheet rejects the hint.
+
+The two suspected areas on Willett 99 move from the active count to
+two pending proposals. Against the development outlines, active count
+precision moves from 2/4 to 2/2 while recall stays 2/2. The mean mask
+IoU of the two matches stays 0.97126. Both actual prints stay active. On the native
+upload, the actual prints keep identical mask, geometry and mode
+records and byte-identical review JPEGs. The original model mask of
+each open proposal stays in the neighbor coverage used for crop
+validation. As a result, placing a proposal in review does not give
+an adjacent crop permission to claim its pixels. The registered
+`mixed-legacy` model SHA-256 is
+`1e95a1a90ff897df7099ff80675186ec1d8145f7bb07559fe918b3dd3a6db748`,
+with a 512-pixel input, proposal threshold 0.25 and acceptance 0.70.
+
+The count editor shows two types of approximate spans along each
+candidate quadrilateral. Turquoise spans show dark material on both
+sides and orange spans show proximity to a brighter neighbor edge.
+In a signed original-pixel fit, one orange span differs from the fitted
+edge by up to 22.75 native pixels. The lines guide inspection of the
+original. The four editable corners still need a count decision. The
+separate near-matching textured stock test with darkened photo content
+marks 5 of 24 deliberately distinct paper controls with fixed proposals.
+Willett 9 and 95 and the NerdScan source and darker insert show no
+hint in the development replays. The printed-photo controls justify
+keeping the candidate available for review.
+
+An explicit count confirmation with the current revision and the list
+of reviewed pending proposals dismisses the dark candidates. Editing
+one candidate instead requires confirming that a separate paper print
+is visible. This adds that print while leaving the other candidate
+pending. Both modes require a second, explicit paper confirmation.
+The original-pixel fit must locate all four corners within one native
+pixel of the submitted outline. Each side needs at least 90% edge
+support and 80% corner support. The usual geometry, source-pixel,
+protected-content and aspect checks follow. On Willett 99, deliberately
+adding the two empty quadrants through Desktop and Mobile keeps both
+named exports and the legacy trimmed download unavailable. The inline
+untrimmed preview remains available. The same-corner paper correction
+and reprocess of an empty quadrant also retain the paper review reason.
+
+The five frozen and development comparison runs show equal aggregate
+detection and crop metrics, equal mode availability and no extra
+pending dark proposals. They include 18/18 detections in the locked
+synthetic replay, 23/23 recoverable cases in both seeded crop modes
+combined and 29/29 detections in the mixed Golden replay. The regular
+locked synthetic run still has 6/11 full-print and 7/12 motif crops
+ready. The native count workflow moves one development page into
+explicit review and adds two count offers, with no new crop hold for
+either genuine print. Ordinary synchronous upload for that page took
+40.89 and 44.35 seconds in two current native runs. The 56.42-second
+baseline upload overlapped other jobs, so these times do not establish
+a throughput change. The current evaluator measured 10.57 seconds for
+segmentation and 41.06 seconds from source decode through JPEG writes.
+Receipts and visual development checks are kept
+locally under `runs/crop-quality/willett-dark-backing-review/`.
+
+The `dark_album_review` validation profile revision applies to the
+precise classical route without a learned visible-mask refiner. Detector
+calibration must include that revision when this route is enabled. The
+Willett comparisons are development evidence from one physical album.
+Automatic release remains gated by the separate calibration and final
+physical album references. [Willett page 99](https://historycenter.mld.org/willett_album/items/col003_p99.html)
 
 ### Preview a motif with one disputed paper edge
 

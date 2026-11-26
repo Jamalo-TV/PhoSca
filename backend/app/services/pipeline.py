@@ -46,6 +46,7 @@ from app.pipeline.crop_validation import (
     segmentation_matches_crop_profile,
 )
 from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE
+from app.pipeline.dark_album_review import dark_album_neighbor_masks
 from app.pipeline.decisions import (
     MANUAL_NEIGHBOR_OVERLAP, ReviewReason, component_review_reasons, confidence_components, is_reviewed_non_print,
     remember_ready_print_for_neighbor_review,
@@ -598,6 +599,9 @@ async def perspective_correction_task_logic(
             reference = _measured_print_reference(other_id, other_mask, confidence, correction, width, height)
             if reference is not None:
                 measured_references.append(reference)
+        pending_neighbors = dark_album_neighbor_masks(page_steps.get("segmentation") or {})
+    else:
+        pending_neighbors = []
     try:
         if stale_mark:
             raise ValueError("album_page_mark_review_stale")
@@ -631,7 +635,7 @@ async def perspective_correction_task_logic(
             camera_matrix=page_camera.matrix if page_camera is not None else None,
             page_plane=page_plane,
             measured_page_references=measured_references,
-            neighbor_masks=neighbor_masks,
+            neighbor_masks=[*neighbor_masks, *pending_neighbors],
             manual_boundary_reference=manual_boundary,
             manual_scalloped_polygon=None if paper_claim_conflicts else scalloped_outline,
             **({"reviewed_album_mark": reviewed_mark} if reviewed_mark else {}),

@@ -32,6 +32,17 @@ const scallopedOwnershipHint = "Prüfe am Original, ob im markierten Bereich ein
 export const adjacentPrintHint = "Prüfe am Original, ob der gestrichelte Bereich ein eigener Abzug ist und ob der helle Streifen zu seinem Papier gehört.";
 export const nestedPrintHint = "Prüfe am Original, ob der gestrichelte Bereich zum selben Papierabzug gehört. Bei einem Abzug bleiben alle Bilder im Motiv. Ergänze den Bereich, wenn dort ein eigener Abzug aufliegt.";
 export const deferredPrintHint = "Prüfe die violett gestrichelten Konturen am Original. Bestätige die Anzahl, wenn alle Abzüge bereits erfasst sind.";
+export const darkBackingProposal = "possible_dark_album_backing";
+export const darkBackingConfirmation = "Hier liegt ein eigener Papierabzug.";
+export const darkBackingReviewErrors = {
+  dark_backing_confirmation_required: "Bestätige, dass hier ein eigener Papierabzug liegt.",
+  dark_backing_confirmation_stale: "Dieser Vorschlag hat sich geändert. Prüfe die aktualisierte Albumseite.",
+  dark_backing_outline_outside_proposal: "Setze die Ecken an die Papierkante des markierten Vorschlags.",
+};
+const darkBackingEvidence = [
+  { key: "dark_backing_traces", label: "Ähnlich dunkles Material beidseits", color: "#0891b2", dash: [9, 4] },
+  { key: "borrowed_edge_traces", label: "Bereich am hellen Rand eines Nachbarabzugs", color: "#c2410c", dash: [2, 4] },
+];
 export const sourceFragmentProposal = "possible_source_fragmented_print";
 const sourceFragmentGroupReason = "SOURCE_FRAGMENT_GROUP_REVIEW";
 export const sourceFragmentCountHint = "Prüfe am Original, ob die beiden Teilvorschläge zu einem Abzug gehören. Prüfe besonders die kurz gestrichelte Papierkante.";
@@ -68,6 +79,7 @@ const manualNeighborOverlap = "MANUAL_NEIGHBOR_OVERLAP";
 const manualNeighborContentLoss = "MANUAL_NEIGHBOR_CONTENT_LOSS";
 const mountedPrintOutlineReason = "MOUNTED_PRINT_OUTLINE_REVIEW";
 const projectivePrintOutlineReason = "PROJECTIVE_PRINT_OUTLINE_REVIEW";
+const darkBackingOutlineReason = "DARK_BACKING_OUTLINE_REVIEW";
 const printEdgeReviewHints = {
   PRINT_EDGE_CONFIRMATION_REQUIRED: printOutlineSaveHint,
   PRINT_SHADOW_EDGE_REVIEW: "Prüfe die markierte Kante am Original. Achte darauf, wo der Schatten endet und der Abzug beginnt.",
@@ -85,11 +97,38 @@ const printEdgeReviewHints = {
   [manualNeighborContentLoss]: "Die violetten Flächen zeigen sichtbare Teile, die im Zuschnitt fehlen könnten. Vergleiche sie mit dem Original und prüfe die Papierkante. Verdeckt ein Abzug den anderen, fotografiere sie getrennt.",
   [mountedPrintOutlineReason]: "Die Teilvorschläge sind als ein Abzug erfasst. Prüfe die vier Papierkanten am Original und speichere die Ecken. Bei verdecktem Papier hilft eine Aufnahme ohne Fotoecken.",
   [projectivePrintOutlineReason]: "Der Abzug ist erfasst. Prüfe die vier sichtbaren Papierkanten am Original und speichere die Ecken. Bei einer verdeckten Papierkante hilft eine neue Aufnahme.",
+  [darkBackingOutlineReason]: "Der Abzug ist erfasst. Prüfe die vier Papierkanten am Original und speichere die Ecken.",
 };
 
 export function getSourceEdgeTraces(traces) {
   return Array.isArray(traces) ? traces.filter((trace) => Array.isArray(trace) && trace.length >= 2
     && trace.every((point) => [point?.x, point?.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1))) : [];
+}
+
+export function getDarkBackingEvidence(proposal) {
+  if (proposal?.reason !== darkBackingProposal) return [];
+  return darkBackingEvidence.map((style) => ({
+    ...style, traces: getSourceEdgeTraces(proposal[style.key]).filter((trace) => trace.length === 2),
+  })).filter(({ traces }) => traces.length);
+}
+
+export function DarkBackingEvidenceLegend({ proposals, mobile = false }) {
+  const backing = proposals.filter(({ reason }) => reason === darkBackingProposal);
+  if (!backing.length) return null;
+  const evidence = darkBackingEvidence.filter(({ key }) => backing.some(
+    (proposal) => getDarkBackingEvidence(proposal).some((style) => style.key === key),
+  ));
+  return <div className={`dark-backing-evidence ${mobile ? "quad-hint" : "crop-editor-hint"}`}>
+    <p>Prüfe am Original, ob die dunkle Fläche zur Albumseite gehört oder ein eigener Papierabzug ist.</p>
+    {evidence.length > 0 && <ul>
+      {evidence.map(({ key, label, color, dash }) => <li key={key}>
+        <svg aria-hidden="true" width="32" height="12" viewBox="0 0 32 12">
+          <line x1="0" x2="32" y1="6" y2="6" stroke={color} strokeWidth="3" strokeDasharray={dash.join(" ")} />
+        </svg>
+        <span>{label}</span>
+      </li>)}
+    </ul>}
+  </div>;
 }
 
 const groupReviewLabels = {
@@ -155,10 +194,14 @@ export function paperOutlineRequiresReview(fullPrint) {
 }
 
 export function paperOutlineNeedsConfirmation(fullPrint) {
-  return Boolean(fullPrint?.reason_codes?.some(reason => reason === mountedPrintOutlineReason || reason === projectivePrintOutlineReason));
+  return Boolean(fullPrint?.reason_codes?.some(reason => reason === mountedPrintOutlineReason
+    || reason === projectivePrintOutlineReason || reason === darkBackingOutlineReason));
 }
 
 export function getPrintEdgeReviewHint(fullPrint) {
+  if (fullPrint?.reason_codes?.includes(darkBackingOutlineReason)) {
+    return printEdgeReviewHints[darkBackingOutlineReason];
+  }
   if (fullPrint?.reason_codes?.includes(manualNeighborContentLoss)) {
     return printEdgeReviewHints[manualNeighborContentLoss];
   }

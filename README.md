@@ -174,6 +174,31 @@ dem Original und prüfe, welcher Abzug oben liegt. Beide Zuschnittmodi
 bleiben für diesen Fall in Prüfung.
 [Überlappung und sichtbarer Papierübergang](data/evaluation/README.md#show-only-the-exposed-edge-of-an-overlapping-print)
 
+Für einen schwachen Modellvorschlag auf dunklem Albumkarton prüft
+PhoSca die Pixel des Originals auf beiden Seiten der vorgeschlagenen
+Kontur. Dazu muss mindestens ein Nachbarabzug durch den klassischen
+Kantenpfad und das Modell gestützt sein. PhoSca sucht nach ähnlich
+dunklem Material beidseits der Kontur und nach einem hellen Rand des
+Nachbarabzugs ausserhalb der vorgeschlagenen Fläche. Ein eigener,
+durchgehender Materialwechsel kann den Hinweis unterdrücken.
+
+In der **Anzahlprüfung** zählt PhoSca solche Flächen separat als offene
+Vorschläge. Die gestrichelten Markierungen zeigen ungefähre Bereiche
+entlang des Vorschlags. Türkis markiert ähnlich dunkles Material auf
+beiden Seiten, Orange die Nähe zum hellen Rand eines Nachbarabzugs.
+Im Hintergrund bleibt die ursprüngliche Maske bei der Prüfung der
+benachbarten Zuschnitte berücksichtigt, solange der Vorschlag offen ist.
+Ein dunkler Fotoabzug kann dieselben Messwerte liefern.
+
+Die Bestätigung der erkannten Anzahl schliesst die übrigen offenen
+Vorschläge, wenn der Reviewer deren Liste geprüft hat. Ist auf einer
+Fläche ein eigener Abzug sichtbar, kann der Reviewer ihn öffnen, die
+vier Ecken setzen und seine Existenz ausdrücklich bestätigen. Das
+zählt den Abzug. Für **Ganzer Abzug** und **Nur Bildmotiv** folgen eine
+separate Bestätigung und Messung der Papierkanten im Original sowie
+die üblichen Prüfungen von Geometrie, Bildinhalt und Pixelquellen.
+[Beispiel Willett 99 und Gegenproben](data/evaluation/README.md#review-a-dark-album-backing-proposal)
+
 Wenn ein klassisch erkannter Umriss eine Ecke diagonal abschneidet,
 kann **Ganzer Abzug** eine zweite Vorschau anbieten. PhoSca verlängert
 die beiden betroffenen Seiten in einem begrenzten Suchbereich und

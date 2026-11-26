@@ -246,9 +246,9 @@ def variant_path_from_photo(photo: Any, variant: str) -> str | None:
     automatic = getattr(photo, "segmentation_confidence", None) is not None
     mask = getattr(photo, "segmentation_mask", None) or {}
     if variant in {"full_print", "image_only", "source_corrected_trimmed"}:
-        if mask.get("projective_outline_review") is True and (
-            mask.get("projective_outline_confirmed") is not True or (modes.get("full_print") or {}).get("status") != "ready"
-        ):
+        if any(mask.get(f"{kind}_outline_review") is True and (
+            mask.get(f"{kind}_outline_confirmed") is not True or (modes.get("full_print") or {}).get("status") != "ready"
+        ) for kind in ("projective", "dark_backing")):
             return None
         if capture_edge_requires_review(mask):
             return None

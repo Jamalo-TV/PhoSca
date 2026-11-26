@@ -17,6 +17,7 @@ import {
   paperJoinReason, paperOutlineRequiresReview,
   scannerBackingHint, scannerBackingReason,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
+  darkBackingConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors, getDarkBackingEvidence,
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
@@ -119,7 +120,9 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome, uplo
 }
 
 function DetectionOverlay({ item, editable = false, openPaperOutline, countOutlines, captureSplitGroups, filmGridGroups,
-  selectedCountGroup, paperGridGroups, paperJoinGroups, onSaved, onProtectionBlocked, sourceGroupDraft, onSourceGroupClose }) {
+  selectedCountGroup, paperGridGroups, paperJoinGroups, onSaved, onProtectionBlocked, deferredDraft, onDeferredDraftClose }) {
+  const sourceFragmentDraft = deferredDraft?.reason === sourceFragmentProposal;
+  const darkBackingDraft = deferredDraft?.reason === darkBackingProposal;
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
   const [showMissingEdges, setShowMissingEdges] = useState(false);
@@ -161,7 +164,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const motifTraces = motifReviewPending ? getSourceEdgeTraces(motifMode?.suggested_seam_traces) : [];
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
-  const initialPaperOutline = sourceGroupDraft?.polygon || (openPaperOutline && paperGrid?.cut === null && printSuggestion);
+  const initialPaperOutline = deferredDraft?.polygon || (openPaperOutline && paperGrid?.cut === null && printSuggestion);
   const printEdgeTraces = getSourceEdgeTraces(fullPrintMode?.suggested_edge_traces);
   const adjacentOutline = item.payload?.confidence != null
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.adjacent_print_suggestion));
@@ -183,7 +186,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     sourceBox,
   ));
   const [quad, setQuad] = useState(initialOuter); const [saving, setSaving] = useState(false);
-  const [confirmSourceGroup, setConfirmSourceGroup] = useState(false);
+  const [confirmDeferredDraft, setConfirmDeferredDraft] = useState(false);
   const [editMode, setEditMode] = useState("full_print");
   const [motifQuad, setMotifQuad] = useState(storedMotif);
   const editingMotif = canEditMotif && editMode === "image_only";
@@ -261,12 +264,14 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   }
   async function save() {
     if (editingMotif ? !validMotif : (!validQuad || sizeError || crossingNeedsCorrection)) return;
-    if (sourceGroupDraft && !confirmSourceGroup) return;
+    if (deferredDraft && !confirmDeferredDraft) return;
     setSaving(true); setSaveError("");
     try {
-      if (sourceGroupDraft) {
-        await addManualPhoto(item.page_id, sourceGroupDraft.requestId, quad, size, null, sourceGroupDraft, true);
-        onSourceGroupClose(true);
+      if (deferredDraft) {
+        await addManualPhoto(item.page_id, deferredDraft.requestId, quad, size, null, deferredDraft, {
+          replaceMountedFragments: sourceFragmentDraft, confirmDarkBacking: darkBackingDraft,
+        });
+        onDeferredDraftClose(true);
         return;
       }
       const mask = editingMotif ? {
@@ -300,7 +305,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     } catch (error) {
       setSaveError(error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message === "print_outline_review_required" ? printOutlineSaveHint
-        : sourceFragmentReviewErrors[error.message] || cropProtectionErrors[error.message]
+        : darkBackingReviewErrors[error.message] || sourceFragmentReviewErrors[error.message] || cropProtectionErrors[error.message]
           || error.message || "Ausschnitt konnte nicht gespeichert werden.");
       if (error.message === "protected_region_removed") {
         setBlockedCrop(error.detail);
@@ -330,18 +335,31 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     <polygon key={index} points={outline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="6" strokeDasharray="16 9" pointerEvents="none" />
   ));
-  const deferredOverlay = sourceGroupDraft ? getSourceEdgeTraces(sourceGroupDraft.fragment_polygons).map((polygon, index) => (
+  const deferredOverlay = sourceFragmentDraft ? getSourceEdgeTraces(deferredDraft.fragment_polygons).map((polygon, index) => (
     <polygon key={index} aria-label="Teilvorschlag für den gemeinsamen Abzug"
       points={polygon.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="10 6" pointerEvents="none" />
-  )) : deferredProposals.map(({ id, visible_polygon: polygon, uncertain_edge: uncertainEdge }) => (
-    <g key={id} aria-label="Möglicher Abzug" stroke="#7e22ce" strokeWidth="6" pointerEvents="none">
+  )) : !deferredDraft && deferredProposals.map(({ id, visible_polygon: polygon, uncertain_edge: uncertainEdge, reason }, index) => (
+    <g key={id} aria-label={reason === darkBackingProposal ? `Dunkle Fläche ${index + 1}` : "Möglicher Abzug"}
+      stroke="#7e22ce" strokeWidth="6" pointerEvents="none">
       {polygon.map(({ x, y }, side) => {
         const next = polygon[(side + 1) % polygon.length];
         return <line key={side} x1={x * 1000} y1={y * 1000} x2={next.x * 1000} y2={next.y * 1000}
           strokeDasharray={side === uncertainEdge ? "4 10" : "18 10"} />;
       })}
+      {reason === darkBackingProposal && deferredProposals.length > 1 && (
+        <text className="dark-backing-proposal-label" x={Math.min(polygon[0].x * 1000 + 12, 945)}
+          y={Math.max(polygon[0].y * 1000 - 12, 35)}>{`?${index + 1}`}</text>
+      )}
     </g>
+  ));
+  const backingEvidenceOffers = deferredDraft ? [deferredDraft] : deferredProposals;
+  const backingOverlay = backingEvidenceOffers.flatMap((proposal) => getDarkBackingEvidence(proposal).flatMap(
+    ({ key, label, color, dash, traces }) => traces.map(([first, last], index) => (
+      <line key={`${proposal.id}-${key}-${index}`} aria-label={label}
+        x1={first.x * 1000} y1={first.y * 1000} x2={last.x * 1000} y2={last.y * 1000}
+        stroke={color} strokeWidth="8" strokeDasharray={dash.map((part) => part * 2).join(" ")} pointerEvents="none" />
+    )),
   ));
   const fragmentCountOverlay = countOutlines.map(({ key, supportedSides, weakEdge }) => (
     <g key={key} aria-label="Möglicher gemeinsamer Abzug" fill="none" stroke="#2563eb" strokeWidth="6" pointerEvents="none">
@@ -454,7 +472,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           )}
           <text x={box.x1 * 1000 + 12} y={box.y1 * 1000 + 38}>{index + 1}</text>
         </g>)}
-        {nestedOverlay}{deferredOverlay}{fragmentCountOverlay}{captureSplitOverlay}{countGroupOverlay}
+        {nestedOverlay}{deferredOverlay}{backingOverlay}{fragmentCountOverlay}{captureSplitOverlay}{countGroupOverlay}
         {filmGridOverlay}{paperGridOverlay}{paperJoinOverlay}
         {albumMark && <rect x={albumMark.bounds.x1 * 1000} y={albumMark.bounds.y1 * 1000}
           width={(albumMark.bounds.x2 - albumMark.bounds.x1) * 1000} height={(albumMark.bounds.y2 - albumMark.bounds.y1) * 1000}
@@ -503,10 +521,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       Die blau gestrichelten Linien zeigen gemessene Abschnitte einer möglichen Motivkante. Prüfe den Inhalt auch ausserhalb der Linien.
     </p>}
     {nestedOutlines.length > 0 && <p className="quad-hint">{nestedPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
-    {deferredProposals.length > 0 && <p className="quad-hint">
-      {deferredProposals.some(({ reason }) => reason === sourceFragmentProposal) ? sourceFragmentCountHint
-        : `${deferredPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.`}
-    </p>}
+    {!darkBackingDraft && deferredProposals.some(({ reason }) => reason === sourceFragmentProposal)
+      && <p className="quad-hint">{sourceFragmentCountHint}</p>}
+    {!deferredDraft && deferredProposals.some(({ reason }) => reason !== sourceFragmentProposal && reason !== darkBackingProposal)
+      && <p className="quad-hint">{deferredPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
+    <DarkBackingEvidenceLegend proposals={backingEvidenceOffers} mobile />
     {measurementPage && measurementPage === item.page_id && <EdgeMeasurement key={item.page_id} pageId={item.page_id}
       onClose={() => setMeasurementPage(null)} onMeasured={(traces) => setMeasuredEdge({ pageId: item.page_id, traces })} />}
     {editable && <>
@@ -570,25 +589,25 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         disabled={saving}
         error={sizeError}
       />
-      {!sourceGroupDraft && <CropOrientationField value={orientation} disabled={saving} onChange={(value) => {
+      {!deferredDraft && <CropOrientationField value={orientation} disabled={saving} onChange={(value) => {
         setOrientation(value);
         setEditingPreview(true);
         setSavedCropUrl("");
         setSaveError("");
       }} />}</>}
-      {sourceGroupDraft && <label className="mounted-print-fragment-review">
-        <input type="checkbox" checked={confirmSourceGroup} disabled={saving}
-          onChange={event => setConfirmSourceGroup(event.target.checked)} />
-        Beide violett markierten Teilvorschläge gehören zu diesem Abzug.
+      {deferredDraft && <label className="mounted-print-fragment-review">
+        <input type="checkbox" checked={confirmDeferredDraft} disabled={saving}
+          onChange={event => setConfirmDeferredDraft(event.target.checked)} />
+        {darkBackingDraft ? darkBackingConfirmation : "Beide violett markierten Teilvorschläge gehören zu diesem Abzug."}
       </label>}
       <button className="save-crop" onClick={save} disabled={saving
-        || (sourceGroupDraft && !confirmSourceGroup)
+        || (deferredDraft && !confirmDeferredDraft)
         || (editingMotif ? !validMotif : (!validQuad || Boolean(sizeError) || crossingNeedsCorrection))}>
-        <Save size={18}/>{saving ? "Richtet das Bild …" : sourceGroupDraft ? "Als einen Abzug speichern"
+        <Save size={18}/>{saving ? "Richtet das Bild …" : darkBackingDraft ? "Als Abzug erfassen" : sourceFragmentDraft ? "Als einen Abzug speichern"
           : editingMotif ? "Motivzuschnitt speichern" : "Viereck speichern & geraderichten"}
       </button>
-      {sourceGroupDraft && <button type="button" className="magnifier-toggle" disabled={saving}
-        onClick={() => onSourceGroupClose(false)}>Zurück zur Printanzahl</button>}
+      {deferredDraft && <button type="button" className="magnifier-toggle" disabled={saving}
+        onClick={() => onDeferredDraftClose(false)}>Zurück zur Printanzahl</button>}
       {saveError && <p className="crop-save-error" role="alert">{saveError}</p>}
       {displayedQuad && !motifOutside && (comparePaperEdge && !editingPreview && !savedCropUrl
         ? <PaperEdgePreviewComparison currentUrl={item.payload.untrimmed_url} possibleUrl={comparePaperEdge}
@@ -726,8 +745,8 @@ function CropReview({ albumId, goHome }) {
   const [answerError, setAnswerError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [groupSelection, setGroupSelection] = useState(null);
-  const [sourceGroupDraft, setSourceGroupDraft] = useState(null);
-  const [savedSourceGroupPage, setSavedSourceGroupPage] = useState(null);
+  const [deferredDraft, setDeferredDraft] = useState(null);
+  const [savedDeferredDraft, setSavedDeferredDraft] = useState(null);
   const returnCountId = useRef(null);
   const leavingRef=useRef(false); const goHomeRef=useRef(goHome);
   const queueKey = JSON.stringify([albumId, type, focusedPhotoId]);
@@ -758,8 +777,7 @@ function CropReview({ albumId, goHome }) {
   const approvalHint = captureReviewPending || paperOutlinePending ? "mobile-print-edge-review-hint"
     : motifReviewPending ? "mobile-motif-review-hint" : undefined;
   const deferredProposals = getDeferredPrintProposals(item?.payload?.deferred_print_proposals);
-  const sourceGroupOffers = deferredProposals.filter(({ reason }) => reason === sourceFragmentProposal);
-  const activeSourceGroup = sourceGroupDraft?.pageId === item?.id ? sourceGroupDraft : null;
+  const activeDeferredDraft = deferredDraft?.pageId === item?.id ? deferredDraft : null;
   const countOutlines = type === "segmentation" ? getFragmentReviewOutlines(item?.payload?.detections || []) : [];
   const captureSplitGroups = type === "segmentation" ? getCaptureSplitReviewGroups(item?.payload?.detections || []) : [];
   const filmGridGroups = type === "segmentation" ? getFilmGridReviewSeams(item?.payload?.detections || []) : [];
@@ -788,7 +806,7 @@ function CropReview({ albumId, goHome }) {
     setType(nextType);
     setBlockedCropTaskId(null);
     setGroupSelection(null);
-    setSavedSourceGroupPage(null);
+    setSavedDeferredDraft(null);
     setAnswerError("");
     setMessage("");
   }
@@ -863,33 +881,43 @@ function CropReview({ albumId, goHome }) {
       setSubmitting(false);
     }
   }
-  function closeSourceGroup(saved) {
-    setSourceGroupDraft(null);
+  function closeDeferredDraft(saved) {
+    setDeferredDraft(null);
     returnCountId.current = item.id;
-    if (saved) setSavedSourceGroupPage(item.id);
+    if (saved) {
+      setSavedDeferredDraft({ pageId: item.id, reason: activeDeferredDraft.reason });
+      setQueue(null);
+    }
     load().catch(error => setAnswerError(error.message));
   }
   return <div className="mobile-shell crop-review-shell"><MobileHeader title="Cropping prüfen" onBack={leaveReview}/><main className="mobile-content"><div className="review-top"><div><span>Kurze Sitzung</span><strong>{Math.min(index + 1, items.length || 5)} / {Math.min(items.length, 5) || 5}</strong></div><div className="review-progress"><i style={{width:`${Math.min(100, index / Math.max(1, Math.min(items.length,5)) * 100)}%`}}/></div></div>
-    <div className="task-switch"><button className={type === "segmentation" ? "active" : ""} onClick={() => switchTask("segmentation")} disabled={submitting || Boolean(activeSourceGroup)}>Printanzahl</button><button className={type === "geometry" ? "active" : ""} onClick={() => switchTask("geometry")} disabled={submitting || Boolean(activeSourceGroup)}>Crop-Qualität</button></div>
+    <div className="task-switch"><button className={type === "segmentation" ? "active" : ""} onClick={() => switchTask("segmentation")} disabled={submitting || Boolean(activeDeferredDraft)}>Printanzahl</button><button className={type === "geometry" ? "active" : ""} onClick={() => switchTask("geometry")} disabled={submitting || Boolean(activeDeferredDraft)}>Crop-Qualität</button></div>
     {answerError && <p role="alert">{answerError}</p>}
-    {item?.id === savedSourceGroupPage && !activeSourceGroup && <p role="status">
-      Ein gemeinsamer Abzug gespeichert. Die Papierkanten bleiben in Prüfung.
+    {savedDeferredDraft && savedDeferredDraft.pageId === item?.id && !activeDeferredDraft && <p role="status">
+      {savedDeferredDraft.reason === darkBackingProposal ? "Abzug erfasst." : "Ein gemeinsamer Abzug gespeichert."}
+      {" Die Papierkanten bleiben in Prüfung."}
     </p>}
     {item ? <>
-      <DetectionOverlay key={activeSourceGroup?.requestId || "review"} item={item}
-        editable={type === "geometry" || Boolean(activeSourceGroup)} openPaperOutline={Boolean(focusedPhotoId)}
+      <DetectionOverlay key={activeDeferredDraft?.requestId || "review"} item={item}
+        editable={type === "geometry" || Boolean(activeDeferredDraft)} openPaperOutline={Boolean(focusedPhotoId)}
         countOutlines={countOutlines} captureSplitGroups={captureSplitGroups}
         filmGridGroups={filmGridGroups} selectedCountGroup={selectedCountGroup} paperGridGroups={paperGridGroups}
         paperJoinGroups={paperJoinGroups} onSaved={updateSavedCropModes}
-        sourceGroupDraft={activeSourceGroup} onSourceGroupClose={closeSourceGroup}
+        deferredDraft={activeDeferredDraft} onDeferredDraftClose={closeDeferredDraft}
         onProtectionBlocked={setBlockedCropTaskId} />
-      {!activeSourceGroup && <>
-      {sourceGroupOffers.map(proposal => <button key={proposal.id} className="magnifier-toggle" type="button"
-        disabled={submitting} onClick={() => {
-          const polygon = cyclicReviewQuad(sanitizeReviewPolygon(proposal.polygon));
-          if (polygon) setSourceGroupDraft({ ...proposal, polygon, revision: item.payload.photo_count_revision,
-            pageId: item.id, requestId: crypto.randomUUID() });
-        }}>Möglichen gemeinsamen Abzug prüfen</button>)}
+      {!activeDeferredDraft && <>
+      {deferredProposals.map((proposal, index) => {
+        if (proposal.reason !== sourceFragmentProposal && proposal.reason !== darkBackingProposal) return null;
+        return <button key={proposal.id} className="magnifier-toggle" type="button"
+          disabled={submitting} onClick={() => {
+            const polygon = cyclicReviewQuad(sanitizeReviewPolygon(proposal.polygon));
+            if (polygon) setDeferredDraft({ ...proposal, polygon, revision: item.payload.photo_count_revision,
+              pageId: item.id, requestId: crypto.randomUUID() });
+          }}>
+          {proposal.reason === darkBackingProposal ? `Dunkle Fläche prüfen${deferredProposals.length > 1 ? ` (${index + 1})` : ""}`
+            : "Möglichen gemeinsamen Abzug prüfen"}
+        </button>;
+      })}
       <CountGroupReview groups={countGroups} selected={selectedCountGroup} busy={submitting}
         onSelect={key => { setGroupSelection(key == null ? null : { pageId: item.id, key }); setAnswerError(""); }}
         onExclude={excludeCountGroup} />
@@ -920,7 +948,7 @@ function CropReview({ albumId, goHome }) {
       : focusedPhotoId ? "Dieser Abzug ist nicht mehr in der Prüfung" : "Keine Aufgaben offen")}</h2>
       {focusedPhotoId ? <button onClick={() => switchTask("segmentation")}>Zurück zur Printanzahl</button>
         : <button onClick={() => load().catch(error => setMessage(error.message))}><RefreshCw/> Neu laden</button>}
-    </section>}{item && !activeSourceGroup && <button className="skip-task" disabled={submitting}
+    </section>}{item && !activeDeferredDraft && <button className="skip-task" disabled={submitting}
       onClick={() => focusedPhotoId ? switchTask("segmentation") : setIndex(i => i + 1)}>
       {focusedPhotoId ? "Zurück zur Printanzahl" : "Überspringen"}
     </button>}

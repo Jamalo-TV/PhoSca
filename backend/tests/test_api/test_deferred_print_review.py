@@ -382,6 +382,100 @@ async def test_overwriting_a_source_fragment_retires_the_shared_offer(client, mo
     assert stale.status_code == 409 and stale.json()["detail"] == "deferred_print_proposal_stale"
 
 
+async def test_dark_album_count_offer_needs_confirmation_and_then_a_separate_paper_check(client, monkeypatch):
+    from app.config import get_settings
+    from app.pipeline.dark_album_review import DARK_ALBUM_PROPOSAL, DARK_BACKING_OUTLINE_REVIEW
+    from app.pipeline.segmentation import SegmentationDetection, SegmentationResult, _defer_dark_album_claims
+    from app.services import pipeline
+
+    for name, value in {
+        "AUTO_ANALYZE_UPLOADS": "true", "ENABLE_PRECISE_PHOTO_CROPS": "true",
+        "ENABLE_PROTECTED_REGION_GUARD": "false", "ENABLE_PHOTO_ORIENTATION_CORRECTION": "false",
+        "MAX_UPLOAD_SIZE": "1048576", "MAX_REQUEST_SIZE": "2097152",
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    get_settings.cache_clear()
+    image = np.full((1000, 1200, 3), 25, np.uint8)
+    image[140:570, 110:445] = (213, 220, 234)
+    image[570:900, 445:980] = (180, 211, 228)
+
+    def detection(x1, y1, x2, y2, cluster_id, *, corroborated):
+        vertices = [{"x": x / 1199, "y": y / 999} for x, y in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))]
+        box = dict(x1=x1 / 1199, x2=x2 / 1199, y1=y1 / 999, y2=y2 / 999)
+        return SegmentationDetection(box, {
+            "source": "classical_border_quad" if corroborated else "yolo_seg_mask",
+            "detector_source": "edge_contour" if corroborated else "yolo_onnx", "polygon": vertices,
+            "fusion": {"proposal_families": ["classical", "model"] if corroborated else ["model"],
+                       "proposal_count": 2 if corroborated else 1, "cluster_id": cluster_id},
+        }, .83 if corroborated else .52, 1., True, [])
+
+    neighbors = [detection(110, 140, 445, 570, 0, corroborated=True),
+                 detection(445, 570, 980, 900, 1, corroborated=True)]
+    suspect = detection(445, 140, 980, 570, 2, corroborated=False)
+    source_result = SegmentationResult([*neighbors, suspect], {
+        "fallback_used": True, "fusion": {"model_proposals": 3, "classical_proposals": 2},
+    })
+    crop_source = image.copy()
+    crop_source[140:570, 445:980] = 46
+    assert _defer_dark_album_claims(crop_source, source_result, .70) == source_result
+    assert _defer_dark_album_claims(image, source_result, .50) == source_result
+    monkeypatch.setattr(pipeline, "segment_album_page", lambda _, __, source_image, **_kwargs:
+                        _defer_dark_album_claims(source_image, source_result, .70))
+
+    album_id = (await client.post("/api/v1/albums", json={"name": "Dark backing count review"})).json()["id"]
+    album = f"/api/v1/albums/{album_id}"
+    ok, png = cv2.imencode(".png", image)
+    assert ok
+    uploaded = await client.post(f"{album}/pages/upload", files={"files": ("dark-stock.png", png.tobytes(), "image/png")})
+    assert uploaded.status_code == 201, uploaded.text
+    queue_url = f"/api/v1/review/queue?album_id={album_id}&type=segmentation"
+    task, = (await client.get(queue_url)).json()
+    initial = task["payload"]
+    assert initial["detection_count"] == 2
+    proposal, = initial["deferred_print_proposals"]
+    assert proposal["reason"] == DARK_ALBUM_PROPOSAL and proposal["fusion_cluster_id"] == 2
+    assert len(proposal["dark_backing_traces"]) == len(proposal["borrowed_edge_traces"]) == 2
+    original = (await client.get(f"{album}/photos")).json()
+
+    quad = proposal["polygon"]
+    manual_url = f"/api/v1/pages/{task['page_id']}/manual-photos"
+    payload = {"request_id": str(uuid4()), "warp_quad": quad, "deferred_proposal_id": proposal["id"],
+               "photo_count_revision": initial["photo_count_revision"], "print_size_mm": {"width": 90, "height": 70}}
+    without_link = {key: payload[key] for key in ("request_id", "warp_quad")}
+    for request in (payload, without_link):
+        blocked = await client.post(manual_url, json=request)
+        assert blocked.status_code == 409 and blocked.json()["detail"] == "dark_backing_confirmation_required"
+    wrong_outline = await client.post(manual_url, json={**payload, "confirm_dark_backing": True,
+                                                       "warp_quad": neighbors[0].mask["polygon"]})
+    assert wrong_outline.status_code == 422 and wrong_outline.json()["detail"] == "dark_backing_outline_outside_proposal"
+    assert (await client.get(queue_url)).json() == [task]
+
+    confirmed = {**payload, "confirm_dark_backing": True}
+    saved = await client.post(manual_url, json=confirmed)
+    assert saved.status_code == 201, saved.text
+    restored = saved.json()
+    retry = await client.post(manual_url, json=confirmed)
+    assert retry.status_code == 200 and retry.json() == restored
+    remaining = (await client.get(queue_url)).json()[0]["payload"]
+    assert remaining["detection_count"] == 3 and remaining["deferred_print_proposals"] == []
+    assert [row for row in (await client.get(f"{album}/photos")).json() if row["id"] != restored["id"]] == original
+    url = f"/api/v1/photos/{restored['id']}"
+    edited = await client.patch(f"{url}/bounding-box", json={
+        "bounding_box": restored["bounding_box"], "confirm_print_outline": True,
+        "segmentation_mask": {"source": "manual_quad", "warp_quad": quad, "polygon": quad},
+    })
+    assert edited.status_code == 200 and edited.json()["segmentation_mask"]["dark_backing_outline_confirmed"] is True
+    assert (await client.post(f"{url}/reprocess")).status_code == 200
+    photo = (await client.get(url)).json()
+    modes = photo["enhancement_applied"]["correction"]["crop_modes"]
+    assert all(mode["status"] == "review_needed" and DARK_BACKING_OUTLINE_REVIEW in mode["reason_codes"]
+               for mode in modes.values())
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
+    assert (await client.get(f"{url}/image?variant=source_corrected_untrimmed")).status_code == 200
+
+
 @pytest.mark.parametrize("kind", ["film", "paper"])
 async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kind):
     from app.config import get_settings

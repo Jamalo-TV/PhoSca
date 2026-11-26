@@ -673,6 +673,34 @@ select {
   flex-basis: 100%;
 }
 
+.dark-backing-evidence {
+  flex-basis: 100%;
+  width: 100%;
+}
+
+.dark-backing-evidence p {
+  margin: 0;
+}
+
+.dark-backing-evidence ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.dark-backing-evidence li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dark-backing-evidence svg {
+  flex: none;
+}
+
 .count-group-review .text-button {
   min-height: 38px;
   padding: 0 12px;
@@ -1409,6 +1437,7 @@ pre {
 .overlay-image svg { position:absolute;inset:0;width:100%;height:100%;touch-action:none; }
 .overlay-image rect { fill:rgba(216,255,82,.08);stroke:#d8ff52;stroke-width:7;vector-effect:non-scaling-stroke; }
 .overlay-image text { fill:#102018;stroke:#d8ff52;stroke-width:18;paint-order:stroke;font-size:42px;font-weight:900; }
+.overlay-image .dark-backing-proposal-label { fill: #fff; stroke: #7e22ce; }
 .overlay-image .editable-quad { fill:rgba(216,255,82,.08);stroke:#d8ff52;stroke-width:7;vector-effect:non-scaling-stroke;stroke-linejoin:round; }
 .overlay-image .drag-handle { fill:#fff;stroke:#102018;stroke-width:7;vector-effect:non-scaling-stroke;cursor:grab; }
 .overlay-image .corner-label { fill:#102018;stroke:#fff;stroke-width:19;font-size:38px;pointer-events:none; }

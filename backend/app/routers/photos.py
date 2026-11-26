@@ -22,6 +22,7 @@ from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PageStatus, Ph
 from app.pipeline.adjacent_stock_review import ADJACENT_STOCK_REVIEW_SOURCE
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
 from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE, reviewed_outline_covers_traces
+from app.pipeline.dark_album_review import DARK_ALBUM_PROPOSAL
 from app.pipeline.decisions import (
     MANUAL_NEIGHBOR_OVERLAP, is_reviewed_non_print, photo_is_reviewed_non_print, remember_ready_print_for_neighbor_review,
 )
@@ -319,6 +320,8 @@ def _replay_manual_photo(
     creation = provenance.get("manual_creation") or {}
     if bool(creation.get("replace_mounted_fragments")) != bool(creation_request.get("replace_mounted_fragments")):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="mounted_print_fragments_stale")
+    if bool(creation.get("confirm_dark_backing")) != bool(creation_request.get("confirm_dark_backing")):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="dark_backing_confirmation_required")
     if photo.page_id != page_id or any(creation.get(key) != value for key, value in creation_request.items()):
         if creation_request["adjacent_suggestion"] is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="adjacent_print_suggestion_saved")
@@ -549,6 +552,8 @@ async def create_manual_photo(
     }
     if payload.replace_mounted_fragments:
         creation_request["replace_mounted_fragments"] = True
+    if payload.confirm_dark_backing:
+        creation_request["confirm_dark_backing"] = True
     # Two sessions can edit the same outline with different request UUIDs.
     # Its source and displayed coordinates identify a single addition.
     identity = str(payload.request_id)
@@ -570,11 +575,11 @@ async def create_manual_photo(
     if not settings.enable_precise_photo_crops:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Manual additions require precise crop modes.")
     deferred = None
+    page_metadata = page.processing_metadata or {}
+    pending = page_fusion_evidence(page_metadata).get("deferred_print_proposals") or []
     if deferred_id is not None:
-        page_metadata = page.processing_metadata or {}
         if payload.photo_count_revision is None or payload.photo_count_revision != page_metadata.get("photo_count_revision"):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="deferred_print_proposal_stale")
-        pending = page_fusion_evidence(page_metadata).get("deferred_print_proposals") or []
         deferred = next((candidate for candidate in pending if candidate["id"] == deferred_id), None)
         if deferred is None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="deferred_print_proposal_stale")
@@ -582,6 +587,23 @@ async def create_manual_photo(
     mask = {"source": "manual_added", "manual_added": True, "polygon": quad, "visible_polygon": quad, "warp_quad": quad}
     if (deferred or {}).get("reason") == PROJECTIVE_PRINT_PROPOSAL:
         mask["projective_outline_review"] = True
+    is_dark_offer = (deferred or {}).get("reason") == DARK_ALBUM_PROPOSAL
+    if payload.confirm_dark_backing and not is_dark_offer:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="dark_backing_confirmation_stale")
+    if is_dark_offer or (deferred is None and any(
+        candidate.get("reason") == DARK_ALBUM_PROPOSAL
+        and _same_visible_outline(candidate.get("polygon"), quad, native_size=(width, height))
+        for candidate in pending
+    )):
+        if not payload.confirm_dark_backing:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="dark_backing_confirmation_required")
+        match = normalized_polygon_overlap(
+            [(point["x"], point["y"]) for point in deferred["polygon"]],
+            [(point["x"], point["y"]) for point in quad], raster_size=512,
+        )
+        if match.iou < .30 and match.second_containment < .75:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="dark_backing_outline_outside_proposal")
+        mask["dark_backing_outline_review"] = True
     if size:
         mask["print_size_mm"] = size.model_dump()
     try:
@@ -770,7 +792,7 @@ async def update_photo_bounding_box(
             margin_regions = motif_mode.get("margin_mark_regions")
         if margin_regions:
             segmentation_mask["paper_stock_margin_regions"] = deepcopy(margin_regions)
-        for kind in ("mounted", "projective"):
+        for kind in ("mounted", "projective", "dark_backing"):
             review, confirmed = f"{kind}_outline_review", f"{kind}_outline_confirmed"
             if original_mask.get(review) is True:
                 segmentation_mask[review] = True
