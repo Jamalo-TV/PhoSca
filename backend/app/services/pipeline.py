@@ -58,7 +58,7 @@ from app.pipeline.edge_prints import capture_edge_requires_review
 from app.pipeline.enhancement import conservative_enhance_photo, prepare_for_cutout
 from app.pipeline.exif import write_caption_exif
 from app.pipeline.fragmented_prints import SOURCE_FRAGMENT_PROPOSAL
-from app.pipeline.fusion_ownership import deferred_neighbor_masks
+from app.pipeline.fusion_ownership import NESTED_EDGE_CONTOUR, NESTED_EDGE_CONTOUR_REVIEW, deferred_neighbor_masks
 from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels
 from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, save_png, sha256_file
 from app.pipeline.manual_paper_boundary import (
@@ -173,6 +173,23 @@ async def photo_views_for_current_album_marks(
 def page_fusion_evidence(metadata: dict | None) -> dict:
     segmentation = ((metadata or {}).get("steps") or {}).get("segmentation") or {}
     return segmentation.get("fusion") or {}
+
+
+def resolve_nested_edge_parent_reviews(photos: list[ExtractedPhoto], resolved: list[dict]) -> None:
+    clusters = {offer["parent_cluster_id"] for offer in resolved if offer.get("reason") == NESTED_EDGE_CONTOUR}
+    if not clusters:
+        return
+    for photo in photos:
+        metadata = dict(photo.enhancement_applied or {})
+        cluster = ((photo.segmentation_mask or {}).get("fusion") or {}).get("cluster_id")
+        if cluster is None:
+            cluster = ((original_prediction_mask(metadata) or {}).get("fusion") or {}).get("cluster_id")
+        if cluster not in clusters:
+            continue
+        for key in ("segmentation_review_reasons", "review_reasons"):
+            if NESTED_EDGE_CONTOUR_REVIEW in (metadata.get(key) or []):
+                metadata[key] = [reason for reason in metadata[key] if reason != NESTED_EDGE_CONTOUR_REVIEW]
+        photo.enhancement_applied = metadata
 
 
 def retire_source_fragment_proposals(

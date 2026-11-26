@@ -110,6 +110,45 @@ async def test_embossed_carrier_cannot_restore_a_manually_updated_child_outline(
         assert page.processing_metadata["steps"]["segmentation"]["fusion"]["deferred_print_proposals"] == [pending]
 
 
+async def test_nested_edge_count_decision_keeps_evidence_and_retires_only_its_parent_reason(client):
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, Page, ReviewEvent
+    from app.pipeline.fusion_ownership import NESTED_EDGE_CONTOUR, NESTED_EDGE_CONTOUR_REVIEW
+
+    _, page_id, photo_id = await _seed_review_data()
+    revision = uuid4().hex
+    outline = [{"x": x, "y": y} for x, y in ((.25, .40), (.60, .40), (.60, .80), (.25, .80))]
+    offer = {"id": 2, "reason": NESTED_EDGE_CONTOUR, "polygon": outline, "parent_cluster_id": 1,
+             "source_mask": {"polygon": outline}, "shared_paper_edge_traces": [outline[:2], outline[2:]]}
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        page.processing_metadata = {"photo_count_revision": revision, "steps": {
+            "segmentation": {"fusion": {"deferred_print_proposals": [offer]}},
+        }}
+        parent = await session.get(ExtractedPhoto, photo_id)
+        parent.enhancement_applied = {**parent.enhancement_applied, "segmentation_review_reasons": [NESTED_EDGE_CONTOUR_REVIEW],
+            "review_reasons": ["PRINT_BOUNDARY_UNSUPPORTED", NESTED_EDGE_CONTOUR_REVIEW],
+            "review_provenance": {"original_prediction": {"segmentation_mask": {"fusion": {"cluster_id": 1}}}}}
+        await session.commit()
+
+    payload = {"task_type": "segmentation", "task_id": str(page_id), "answer": "correct", "idempotency_key": uuid4().hex,
+               "metadata": {"photo_count_revision": revision, "deferred_proposal_ids": [2]}}
+    saved = await client.post("/api/v1/review/events", json=payload)
+    assert saved.status_code == 201, saved.text
+    replay = await client.post("/api/v1/review/events", json=payload)
+    assert replay.status_code == 201 and replay.json()["duplicate"] is True
+    stale = await client.post("/api/v1/review/events", json={**payload, "idempotency_key": uuid4().hex})
+    assert stale.status_code == 409
+    async with get_session_factory()() as session:
+        parent = await session.get(ExtractedPhoto, photo_id)
+        assert parent.enhancement_applied["segmentation_review_reasons"] == []
+        assert parent.enhancement_applied["review_reasons"] == ["PRINT_BOUNDARY_UNSUPPORTED"]
+        event = await session.get(ReviewEvent, UUID(saved.json()["id"]))
+        assert event.event_metadata["snapshot"]["deferred_print_proposals"] == [offer]
+        page = await session.get(Page, page_id)
+        assert "deferred_print_proposals" not in page.processing_metadata["steps"]["segmentation"]["fusion"]
+
+
 async def test_edge_trace_reads_the_exif_oriented_source_without_editing_review(client, monkeypatch):
     from PIL import Image
     from sqlalchemy import func, select

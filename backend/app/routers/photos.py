@@ -31,6 +31,7 @@ from app.pipeline.decisions import (
 from app.pipeline.edge_trace import measure_edge_trace
 from app.pipeline.embossed_album_pockets import EMBOSSED_CARRIER_PROPOSAL, EMBOSSED_POCKET_PROPOSAL
 from app.pipeline.fragmented_prints import SOURCE_FRAGMENT_PROPOSAL
+from app.pipeline.fusion_ownership import NESTED_EDGE_CONTOUR
 from app.pipeline.geometry import normalized_polygon_overlap
 from app.pipeline.image_ops import load_image, normalized_box_to_pixels
 from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_SOURCE
@@ -65,6 +66,7 @@ from app.services.pipeline import (
     persistence_task_logic,
     perspective_correction_task_logic,
     photo_views_for_current_album_marks,
+    resolve_nested_edge_parent_reviews,
     retire_source_fragment_proposals,
 )
 
@@ -385,6 +387,8 @@ def _replay_manual_photo(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="dark_backing_confirmation_required")
     if bool(creation.get("confirm_album_pocket_print")) != bool(creation_request.get("confirm_album_pocket_print")):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_pocket_print_confirmation_required")
+    if bool(creation.get("confirm_standalone_print")) != bool(creation_request.get("confirm_standalone_print")):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="standalone_print_confirmation_required")
     if photo.page_id != page_id or any(creation.get(key) != value for key, value in creation_request.items()):
         if creation_request["adjacent_suggestion"] is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="adjacent_print_suggestion_saved")
@@ -619,6 +623,8 @@ async def create_manual_photo(
         creation_request["confirm_dark_backing"] = True
     if payload.confirm_album_pocket_print:
         creation_request["confirm_album_pocket_print"] = True
+    if payload.confirm_standalone_print:
+        creation_request["confirm_standalone_print"] = True
     # Two sessions can edit the same outline with different request UUIDs.
     # Its source and displayed coordinates identify a single addition.
     identity = str(payload.request_id)
@@ -652,6 +658,26 @@ async def create_manual_photo(
     mask = {"source": "manual_added", "manual_added": True, "polygon": quad, "visible_polygon": quad, "warp_quad": quad}
     if (deferred or {}).get("reason") == PROJECTIVE_PRINT_PROPOSAL:
         mask["projective_outline_review"] = True
+    nested_edge_offer = (deferred or {}).get("reason") == NESTED_EDGE_CONTOUR
+    if payload.confirm_standalone_print and not nested_edge_offer:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="standalone_print_confirmation_stale")
+    if nested_edge_offer:
+        if not payload.confirm_standalone_print:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="standalone_print_confirmation_required")
+        match = normalized_polygon_overlap(
+            [(point["x"], point["y"]) for point in deferred["polygon"]],
+            [(point["x"], point["y"]) for point in quad], raster_size=512,
+        )
+        if match.first_containment < .55 or match.second_containment < .75:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail="standalone_print_outline_outside_proposal")
+        mask["projective_outline_review"] = True
+    elif deferred is None and any(
+        candidate.get("reason") == NESTED_EDGE_CONTOUR
+        and _same_visible_outline(candidate.get("polygon"), quad, native_size=(width, height))
+        for candidate in pending
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="standalone_print_confirmation_required")
     embossed_reasons = (EMBOSSED_POCKET_PROPOSAL, EMBOSSED_CARRIER_PROPOSAL)
     is_pocket_offer = (deferred or {}).get("reason") in embossed_reasons
     if payload.confirm_album_pocket_print and not is_pocket_offer:
@@ -711,11 +737,12 @@ async def create_manual_photo(
             (photo.enhancement_applied or {}).get("review_rejected_detection"), photo.bounding_box, photo.segmentation_mask,
         )
     ]
-    if (deferred or {}).get("reason") == EMBOSSED_CARRIER_PROPOSAL and any(
+    if (nested_edge_offer or (deferred or {}).get("reason") == EMBOSSED_CARRIER_PROPOSAL) and any(
         _same_visible_outline((photo.segmentation_mask or {}).get("warp_quad"), quad, native_size=(width, height))
         for photo in active
     ):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="album_carrier_matches_detected_print")
+        detail = "standalone_print_matches_detected_print" if nested_edge_offer else "album_carrier_matches_detected_print"
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
     replaced_fragments = []
     source_group = (deferred or {}).get("reason") == SOURCE_FRAGMENT_PROPOSAL
     if source_group:
@@ -816,6 +843,7 @@ async def create_manual_photo(
         fusion = page_fusion_evidence(metadata)
         fusion["deferred_print_proposals"] = [candidate for candidate in pending if candidate["id"] != deferred_id]
         page.processing_metadata = metadata
+        resolve_nested_edge_parent_reviews(active, [deferred])
     retire_source_fragment_proposals(page, claim=quad)
     _claim_missing_print_trace(page, review_provenance, quad, width, height)
     photo.enhancement_applied = {"review_provenance": review_provenance}

@@ -8,11 +8,11 @@ import numpy as np
 from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic
 from app.pipeline.multipanel_prints import _edge_has_step
 from app.pipeline.print_edges import (
-    _backing_color, _edge_band, _is_pale_stock, _pale_backing_transition, _side_line, refine_print_boundary,
+    _backing_color, _edge_band, _is_pale_stock, _line_endpoints, _pale_backing_transition, _side_line, refine_print_boundary,
 )
 
 
-FRAGMENTED_PRINT_REVISION = 4
+FRAGMENTED_PRINT_REVISION = 5
 SOURCE_FRAGMENT_PROPOSAL = "possible_source_fragmented_print"
 SOURCE_FRAGMENT_GROUP_REVIEW = "SOURCE_FRAGMENT_GROUP_REVIEW"
 FRAGMENTED_PRINT_REVIEW = "FRAGMENTED_PRINT_REVIEW"
@@ -47,33 +47,105 @@ def nested_scene_fragment_continuities(
     image: np.ndarray, outer: np.ndarray, fragment: np.ndarray,
 ) -> list[np.ndarray]:
     """Trace two adjacent cuts through scene detail in a contained proposal."""
+    return _nested_scene_evidence(image, outer, fragment, require_shared_edges=False)[0]
+
+
+def _shared_fragment_rail(
+    image: np.ndarray, outer: np.ndarray, first: np.ndarray, last: np.ndarray, line: np.ndarray,
+) -> np.ndarray | None:
+    start, stop = np.float32(_line_endpoints(first, last, line))
+    direction = stop - start
+    inward = np.float32([-direction[1], direction[0]]) / float(np.linalg.norm(direction))
+    offsets = [-7, -4, -2, 2, 4, 7]
+    inside = _edge_band(image, start, stop, offsets, fractions=np.linspace(.10, .90, 100, dtype=np.float32))
+    if inside is None:
+        return None
+    backing = np.median(inside[:, :3], axis=(0, 1))
+    delta = np.median(inside[:, 3:], axis=1) - np.median(inside[:, :3], axis=1)
+    signed = np.median(delta, axis=0)
+    strength = np.linalg.norm(signed)
+    if strength < 30 or np.mean(delta @ signed >= 18 * strength) < .88:
+        return None
+    for begin, end in ((-.48, -.10), (1.10, 1.48)):
+        stations = np.linspace(begin, end, 64, dtype=np.float32)
+        path = start + stations[:, None] * direction
+        if min(cv2.pointPolygonTest(outer, tuple(p + 12 * inward), True) for p in path[::4]) < -3:
+            continue
+        extension = _edge_band(image, start, stop, offsets, fractions=stations)
+        if extension is None or np.linalg.norm(np.median(extension[:, :3], axis=(0, 1)) - backing) > 25:
+            continue
+        change = np.median(extension[:, 3:], axis=1) - np.median(extension[:, :3], axis=1)
+        valid = change @ signed >= 18 * strength
+        if valid.mean() >= .86 and min(part.mean() for part in np.array_split(valid, 4)) >= .72:
+            return path[[0, -1]]
+    return None
+
+
+def _contour_has_material_step(image: np.ndarray, first: np.ndarray, last: np.ndarray) -> bool:
+    """Find a consistent narrow step after subtracting a broad illumination ramp."""
+    offsets = np.arange(-16., 16.5, .5)
+    band = _edge_band(image, first, last, offsets, fractions=np.linspace(.10, .90, 192, dtype=np.float32))
+    if band is None:
+        return True
+    for i in range(12, len(offsets) - 12):
+        near = np.median(band[:, i + 2:i + 6], axis=1) - np.median(band[:, i - 5:i - 1], axis=1)
+        far = np.median(band[:, i + 8:i + 12], axis=1) - np.median(band[:, i - 11:i - 7], axis=1)
+        step = near - .4375 * far
+        direction = np.median(step, axis=0)
+        strength = np.linalg.norm(direction)
+        if strength < 1.25:
+            continue
+        support = step @ direction >= strength
+        if support.mean() >= .53 and min(part.mean() for part in np.array_split(support, 4)) >= .35:
+            return True
+    return False
+
+
+def nested_scene_fragment_with_shared_edges(
+    image: np.ndarray, outer: np.ndarray, fragment: np.ndarray,
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    """Trace scene continuities and the larger print's rails past a small proposal."""
+    return _nested_scene_evidence(image, outer, fragment, require_shared_edges=True)
+
+
+def _nested_scene_evidence(
+    image: np.ndarray, outer: np.ndarray, fragment: np.ndarray, *, require_shared_edges: bool,
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
     directions = np.roll(fragment, -1, axis=0) - fragment
     lengths = np.linalg.norm(directions, axis=1)
     if lengths.min() < 320:
-        return []
+        return [], []
     radius = int(np.clip(round(.014 * lengths.min()), 12, 24))
-    strong, traces = [], []
+    strong, traces, shared = [], [], []
+    material_steps = 0
     for index, (start, direction) in enumerate(zip(fragment, directions, strict=True)):
         stop = start + direction
         line, side = _side_line(image, start, stop, radius)
         if side["ambiguous"]:
-            return []
+            return [], []
         if line is not None and side["support"] >= .85 and (side["corner_support"] or 0) >= .70:
             strong.append(index)
+            if require_shared_edges:
+                extension = _shared_fragment_rail(image, outer, start, stop, line)
+                if extension is None:
+                    return [], []
+                shared.append(extension)
             continue
         if line is not None or side["support"] > .30:
-            return []
+            return [], []
         first, last = start + .10 * direction, stop - .10 * direction
         depth = np.float32([-direction[1], direction[0]]) * .015
         strip = np.float32([first - depth, last - depth, last + depth, first + depth])
         if any(cv2.pointPolygonTest(outer, tuple(point), True) < 4 for point in strip):
-            return []
+            return [], []
         if sum(_image_continues_across(image, strip, width) for width in (600, 768, 1000)) < 2:
-            return []
+            return [], []
+        if require_shared_edges:
+            material_steps += _contour_has_material_step(image, start, stop)
         traces.append(np.float32([first, last]))
-    if len(strong) != 2 or (strong[1] - strong[0]) == 2:
-        return []
-    return traces
+    if len(strong) != 2 or (strong[1] - strong[0]) == 2 or material_steps >= 2:
+        return [], []
+    return traces, shared
 
 
 def suggest_dark_mounted_outline(

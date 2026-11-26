@@ -35,10 +35,12 @@ from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
     SOURCE_FRAGMENT_GROUP_REVIEW, SOURCE_FRAGMENT_PROPOSAL,
     measure_extended_print_outline, measure_fragmented_print, nested_scene_fragment_continuities,
+    nested_scene_fragment_with_shared_edges,
     suggest_dark_mounted_outline, suggest_fragmented_outline,
 )
 from app.pipeline.fusion_ownership import (
-    BORROWED_FALLBACK_EDGE, NESTED_FALLBACK_CONTOUR, NESTED_FALLBACK_CONTOUR_REVIEW, _covered_area,
+    BORROWED_FALLBACK_EDGE, NESTED_EDGE_CONTOUR, NESTED_EDGE_CONTOUR_REVIEW,
+    NESTED_FALLBACK_CONTOUR, NESTED_FALLBACK_CONTOUR_REVIEW, _covered_area,
     borrowed_fallback_edge_traces, nested_fallback_contour_spans, unsupported_fallback_ownership,
 )
 from app.pipeline.geometry import (
@@ -4014,20 +4016,26 @@ def _offer_source_fragment_group_review(
     return SegmentationResult(detections, {**metadata, "fusion": {**fusion, "deferred_print_proposals": pending}})
 
 
-def _defer_nested_scene_fragments(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+def _defer_nested_scene_fragments(
+    image: np.ndarray, result: SegmentationResult, *, edge_contours: bool = False,
+) -> SegmentationResult:
     """Hold the count when a fallback outline ends inside a larger photograph."""
     if not result.metadata.get("fallback_used"):
         return result
+    source = "edge_contour" if edge_contours else "contrast_region"
     parents, fragments = [], []
     for index, item in enumerate(result.detections):
         if not item.geometry_valid or item.review_reasons or item.mask.get("warp_quad"):
             continue
         fusion = item.mask.get("fusion") or {}
         families = fusion.get("proposal_families") or []
-        if "model" in families and item.confidence >= .85:
+        if ("model" in families and item.confidence >= .85 and (not edge_contours
+                or (families == ["model"] and item.mask.get("detector_source") == "yolo_onnx"
+                    and item.mask.get("source") == "yolo_seg_mask"))):
             parents.append(index)
         if (families == ["classical"] and fusion.get("proposal_count") == 1
-                and item.mask.get("detector_source") == "contrast_region" and .60 <= item.confidence <= .82):
+                and item.mask.get("detector_source") == source and .60 <= item.confidence <= .82
+                and (not edge_contours or item.mask.get("source") == "classical_border_quad")):
             fragments.append(index)
     if not parents or not fragments:
         return result
@@ -4037,6 +4045,10 @@ def _defer_nested_scene_fragments(image: np.ndarray, result: SegmentationResult)
     polygons = [_detection_polygon(item) for item in detections]
     fusion = {**(result.metadata.get("fusion") or {})}
     pending = list(fusion.get("deferred_print_proposals") or [])
+    pending_masks = [records for offer in pending for records in (
+        offer.get("polygon"), offer.get("visible_polygon"), (offer.get("source_mask") or {}).get("polygon"),
+        (offer.get("source_mask") or {}).get("visible_polygon"),
+    ) if records and len(records) >= 3]
     next_id = max((proposal["id"] for proposal in pending), default=-1) + 1
     deferred = set()
     for child in fragments:
@@ -4050,25 +4062,47 @@ def _defer_nested_scene_fragments(image: np.ndarray, result: SegmentationResult)
         if len(owners) != 1:
             continue
         (parent, overlap), = owners
-        if (parent not in parents or detections[parent].review_reasons
-                or not .55 <= overlap.iou <= .78 or overlap.second_containment < .96):
+        if parent not in parents or detections[parent].review_reasons:
+            continue
+        minimum, maximum, containment = (.14, .26, .99) if edge_contours else (.55, .78, .96)
+        if not minimum <= overlap.iou <= maximum or overlap.second_containment < containment:
             continue
         quad = order_quad_cyclic(normalized_vertices_to_pixels(fragment, width, height))
         outline = normalized_vertices_to_pixels(polygons[parent], width, height)
-        traces = nested_scene_fragment_continuities(image, outline, quad)
+        extra = {}
+        if edge_contours:
+            alternate = [records for index, item in enumerate(detections) if index not in (parent, child)
+                         for records in (item.mask.get("polygon"), item.mask.get("visible_polygon"))
+                         if records and len(records) >= 3]
+            overlaps = (normalized_polygon_overlap([(p["x"], p["y"]) for p in other], fragment)
+                        for other in [*pending_masks, *alternate])
+            if any(max(hit.first_containment, hit.second_containment) >= .08 for hit in overlaps):
+                continue
+            traces, shared = nested_scene_fragment_with_shared_edges(image, outline, quad)
+            mask = detections[child].mask
+            extra = {
+                "shared_paper_edge_traces": [_normalized_polygon(trace, width, height) for trace in shared],
+                "source_mask": {key: mask[key] for key in ("source", "detector_source", "polygon", "visible_polygon",
+                                "visible_polygon_source", "proposal_visible_polygon") if key in mask},
+                "fusion_cluster_id": mask["fusion"]["cluster_id"],
+            }
+        else:
+            traces = nested_scene_fragment_continuities(image, outline, quad)
         if not traces:
             continue
 
         pending.append({
             "id": next_id,
-            "reason": NESTED_FALLBACK_CONTOUR,
+            "reason": NESTED_EDGE_CONTOUR if edge_contours else NESTED_FALLBACK_CONTOUR,
             "parent_cluster_id": detections[parent].mask["fusion"]["cluster_id"],
             "polygon": _normalized_polygon(quad, width, height),
             "interior_edge_traces": [_normalized_polygon(trace, width, height) for trace in traces],
+            **extra,
         })
         next_id += 1
         deferred.add(child)
-        detections[parent] = replace(detections[parent], review_reasons=[NESTED_FALLBACK_CONTOUR_REVIEW])
+        reason = NESTED_EDGE_CONTOUR_REVIEW if edge_contours else NESTED_FALLBACK_CONTOUR_REVIEW
+        detections[parent] = replace(detections[parent], review_reasons=[reason])
     if not deferred:
         return result
     fusion["deferred_print_proposals"] = pending
@@ -4345,6 +4379,7 @@ def segment_album_page(
                 result = _defer_nested_scene_fragments(source, result)
                 result = _defer_dark_album_claims(source, result, settings.yolo_confidence_threshold)
                 result = _defer_embossed_pocket_claims(source, result, settings.yolo_confidence_threshold)
+                result = _defer_nested_scene_fragments(source, result, edge_contours=True)
             # The rim is a count-review annotation. Add it after ownership
             # and backing checks that use review reasons to skip proposals.
             result = _flag_conflicting_film_grids(evidence_source, result, require_clear_rim=True)

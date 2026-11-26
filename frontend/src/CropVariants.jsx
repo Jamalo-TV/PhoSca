@@ -34,7 +34,11 @@ const scallopedOwnershipHint = "Prüfe am Original, ob im markierten Bereich ein
 export const adjacentPrintHint = "Prüfe am Original, ob der gestrichelte Bereich ein eigener Abzug ist und ob der helle Streifen zu seinem Papier gehört.";
 export const nestedPrintHint = "Prüfe am Original, ob der gestrichelte Bereich zum selben Papierabzug gehört. Bei einem Abzug bleiben alle Bilder im Motiv. Ergänze den Bereich, wenn dort ein eigener Abzug aufliegt.";
 export const deferredPrintHint = "Prüfe die violett gestrichelten Konturen am Original. Bestätige die Anzahl, wenn alle Abzüge bereits erfasst sind.";
-export const nestedFallbackProposal = "nested_fallback_contour";
+const nestedFallbackProposal = "nested_fallback_contour";
+export const nestedEdgeProposal = "nested_edge_contour";
+export function isNestedFallbackProposal(reason) {
+  return reason === nestedFallbackProposal || reason === nestedEdgeProposal;
+}
 export const frameBackingProposal = "possible_frame_backing";
 export const borrowedFallbackProposal = "possible_borrowed_print_edge";
 export const darkBackingProposal = "possible_dark_album_backing";
@@ -53,12 +57,24 @@ export const embossedPocketReviewErrors = {
   album_carrier_matches_detected_print: "Dieser Abzug ist bereits erfasst. Setze die Ecken an das Papier des weiteren Abzugs.",
 };
 export const standalonePrintConfirmation = "Hier liegt ein eigener Papierabzug.";
+export const standalonePrintReviewErrors = {
+  standalone_print_confirmation_required: "Bestätige, dass hier ein eigener Papierabzug aufliegt.",
+  standalone_print_confirmation_stale: "Dieser Vorschlag hat sich geändert. Prüfe die aktualisierte Albumseite.",
+  standalone_print_outline_outside_proposal: "Setze die vier Ecken an den sichtbaren Papierrand des kleinen Vorschlags.",
+  standalone_print_matches_detected_print: "Dieser Abzug ist bereits erfasst. Setze die Ecken an das Papier des weiteren Abzugs.",
+};
 const deferredPrintReviewHints = {
   [nestedFallbackProposal]: {
     countId: "nested-fallback-count-hint",
     count: "Die markierten Innenkonturen liegen in erfassten Abzügen. Prüfe am Original, ob dort eigene Papierabzüge aufliegen. Sind alle Abzüge erfasst, bestätige die Anzahl.",
     draft: "Erfasse die Innenkontur nur, wenn im Original ein eigener Papierabzug aufliegt. Setze die vier Ecken an seinen Papierrand.",
     evidence: "Türkis markiert zu prüfende Abschnitte innerhalb der Abzüge.",
+  },
+  [nestedEdgeProposal]: {
+    countId: "nested-edge-count-hint",
+    count: "Prüfe am Original, ob innerhalb des grösseren Fotos ein eigener Papierabzug aufliegt.",
+    draft: "Erfasse den kleinen Vorschlag nur, wenn du seinen eigenen Papierrand am Original erkennst.",
+    evidence: "Türkis markiert durchgehende Bilddetails. Blau zeigt die Papierkanten, die über den kleinen Vorschlag hinauslaufen.",
   },
   [frameBackingProposal]: {
     countId: "frame-backing-count-hint",
@@ -97,6 +113,10 @@ const deferredParentCropHints = [
     text: "Prüfe am Original, ob innerhalb dieses Umrisses ein eigener Papierabzug aufliegt. Vergleiche beim Zuschneiden auch den Aussenrand des erfassten Abzugs.",
   },
   {
+    reason: "NESTED_EDGE_CONTOUR_REVIEW", id: "nested-edge-crop-hint",
+    text: "Prüfe anhand der Anzahlprüfung, ob auf diesem Abzug ein weiterer Papierabzug liegt. Prüfe danach die Papierkontur und die sichtbaren Teile beider Motive.",
+  },
+  {
     reason: "FRAME_BACKING_COUNT_REVIEW", id: "frame-backing-crop-hint",
     text: "Prüfe am Original, wo der Papierabzug endet und der Untergrund beginnt. Achte beim Zuschneiden auf den Bildinhalt am Aufnahmerand.",
   },
@@ -112,6 +132,10 @@ const darkBackingEvidence = [
 ];
 const nestedFallbackEvidence = [
   { key: "interior_edge_traces", label: "Zu prüfender Abschnitt innerhalb des Abzugs", color: "#0e7490", dash: [6, 4] },
+];
+const nestedEdgeEvidence = [
+  { key: "interior_edge_traces", label: "Durchgehende Bilddetails", color: "#0e7490", dash: [6, 4] },
+  { key: "shared_paper_edge_traces", label: "Papierkante jenseits des kleinen Vorschlags", color: "#2563eb", dash: [9, 4] },
 ];
 const frameBackingEvidence = [
   { key: "surface_edge_traces", label: "Gemessener Materialwechsel am Aufnahmerand", color: "#0e7490", dash: [6, 4] },
@@ -206,6 +230,7 @@ export function getSourceEdgeTraces(traces) {
 export function getDeferredPrintEvidence(proposal) {
   const styles = proposal?.reason === darkBackingProposal ? darkBackingEvidence
     : proposal?.reason === nestedFallbackProposal ? nestedFallbackEvidence
+    : proposal?.reason === nestedEdgeProposal ? nestedEdgeEvidence
     : proposal?.reason === frameBackingProposal ? frameBackingEvidence
     : proposal?.reason === borrowedFallbackProposal ? borrowedFallbackEvidence
     : proposal?.reason === projectivePrintProposal ? mountedPaperEvidence
@@ -216,7 +241,7 @@ export function getDeferredPrintEvidence(proposal) {
 }
 
 export function standalonePrintNeedsConfirmation(reason) {
-  return reason === darkBackingProposal || reason === nestedFallbackProposal || reason === frameBackingProposal
+  return reason === darkBackingProposal || isNestedFallbackProposal(reason) || reason === frameBackingProposal
     || reason === borrowedFallbackProposal || reason === projectivePrintProposal || Boolean(embossedAlbumAction(reason));
 }
 

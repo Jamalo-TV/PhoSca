@@ -61,7 +61,7 @@ import {
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, scannerBackingHint, scannerBackingReason,
-  nestedFallbackProposal,
+  isNestedFallbackProposal, nestedEdgeProposal, standalonePrintReviewErrors,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
   embossedAlbumAction, embossedPocketReviewErrors,
@@ -1379,6 +1379,7 @@ const printAdditionErrors = {
   source_print_fragments_stale: sourceFragmentReviewErrors.source_print_fragments_stale,
   dark_backing_confirmation_stale: darkBackingReviewErrors.dark_backing_confirmation_stale,
   album_pocket_print_confirmation_stale: embossedPocketReviewErrors.album_pocket_print_confirmation_stale,
+  standalone_print_confirmation_stale: standalonePrintReviewErrors.standalone_print_confirmation_stale,
   adjacent_print_suggestion_saved: "Dieser Abzug wurde bereits gespeichert. Öffne ihn in der aktualisierten Ansicht, wenn du seine Ecken ändern möchtest.",
   adjacent_print_suggestion_stale: "Der Vorschlag wurde geändert. Prüfe die Albumseite in der aktualisierten Ansicht erneut.",
   deferred_print_proposal_saved: "Dieser Abzug wurde bereits ergänzt. Du kannst seine Ecken in der aktualisierten Ansicht ändern.",
@@ -2113,6 +2114,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           replaceMountedFragments: newPrint.replaceMountedFragments,
           confirmDarkBacking: darkBackingDraft && newPrint.confirmStandalonePrint,
           confirmAlbumPocketPrint: Boolean(embossedAlbumAction(newPrint.deferredProposal?.reason)) && newPrint.confirmStandalonePrint,
+          confirmStandalonePrint: newPrint.deferredProposal?.reason === nestedEdgeProposal && newPrint.confirmStandalonePrint,
         });
       if (activePage.current !== pageId) return;
       setAddition(null);
@@ -2125,7 +2127,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         : error.message === "mounted_print_outline_excludes_fragments"
           ? "Die Ecken müssen alle markierten Teilvorschläge umfassen. Wenn sie zu verschiedenen Abzügen gehören, prüfe sie einzeln."
           : darkBackingReviewErrors[error.message] || embossedPocketReviewErrors[error.message]
-            || sourceFragmentReviewErrors[error.message] || error.message);
+            || standalonePrintReviewErrors[error.message] || sourceFragmentReviewErrors[error.message] || error.message);
       if (activePage.current === pageId) setAddition({ ...newPrint, error: message, invalidated: Boolean(stale) });
     }
   }
@@ -2184,7 +2186,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
               disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving}>
               {proposal.reason === sourceFragmentProposal ? "Möglichen gemeinsamen Abzug prüfen"
                 : proposal.reason === darkBackingProposal ? `Dunkle Fläche prüfen${deferredProposals.length > 1 ? ` (${index + 1})` : ""}`
-                : proposal.reason === nestedFallbackProposal ? `Innenkontur ${index + 1} prüfen`
+                : isNestedFallbackProposal(proposal.reason) ? `Innenkontur ${index + 1} prüfen`
                 : embossedAlbumAction(proposal.reason) ?? ([frameBackingProposal, borrowedFallbackProposal].includes(proposal.reason) ? `Vorschlag ${index + 1} am Aufnahmerand prüfen`
                 : proposal.reason === "possible_mounted_print" ? `Möglichen Ganzabzug ${index + 1} prüfen`
                 : `Vorschlag ${index + 1} als Abzug ergänzen`)}

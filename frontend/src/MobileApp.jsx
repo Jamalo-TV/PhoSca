@@ -18,7 +18,7 @@ import {
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview,
-  nestedFallbackProposal, projectivePrintProposal,
+  isNestedFallbackProposal, nestedEdgeProposal, projectivePrintProposal, standalonePrintReviewErrors,
   scannerBackingHint, scannerBackingReason,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
@@ -356,6 +356,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         await addManualPhoto(item.page_id, deferredDraft.requestId, quad, size, null, deferredDraft, {
           replaceMountedFragments: sourceFragmentDraft, confirmDarkBacking: darkBackingDraft,
           confirmAlbumPocketPrint: Boolean(embossedAlbumAction(deferredDraft.reason)),
+          confirmStandalonePrint: deferredDraft.reason === nestedEdgeProposal,
         });
         onDeferredDraftClose(true);
         return;
@@ -395,7 +396,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       if (error.message === "album_page_mark_review_stale") albumMarkReview.reset();
       setSaveError(error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message === "print_outline_review_required" ? printOutlineSaveHint
-        : darkBackingReviewErrors[error.message] || embossedPocketReviewErrors[error.message]
+        : darkBackingReviewErrors[error.message] || embossedPocketReviewErrors[error.message] || standalonePrintReviewErrors[error.message]
           || sourceFragmentReviewErrors[error.message] || cropProtectionErrors[error.message]
           || error.message || "Ausschnitt konnte nicht gespeichert werden.");
       if (error.message === "protected_region_removed") {
@@ -444,7 +445,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="10 6" pointerEvents="none" />
   )) : !deferredDraft && deferredProposals.map(({ id, visible_polygon: polygon, uncertain_edge: uncertainEdge, reason }, index) => (
     <g key={id} aria-label={reason === darkBackingProposal ? `Dunkle Fläche ${index + 1}`
-      : reason === nestedFallbackProposal ? `Innenkontur ${index + 1}`
+      : isNestedFallbackProposal(reason) ? `Innenkontur ${index + 1}`
         : [frameBackingProposal, borrowedFallbackProposal].includes(reason) ? `Vorschlag ${index + 1} am Aufnahmerand` : "Möglicher Abzug"}
       stroke="#7e22ce" strokeWidth="6" pointerEvents="none">
       {polygon.map(({ x, y }, side) => {
@@ -1110,7 +1111,7 @@ function CropReview({ albumId, goHome }) {
               pageId: item.id, requestId: crypto.randomUUID() });
           }}>
           {proposal.reason === darkBackingProposal ? `Dunkle Fläche prüfen${deferredProposals.length > 1 ? ` (${index + 1})` : ""}`
-            : proposal.reason === nestedFallbackProposal ? `Innenkontur ${index + 1} prüfen`
+            : isNestedFallbackProposal(proposal.reason) ? `Innenkontur ${index + 1} prüfen`
               : proposal.reason === projectivePrintProposal ? "Vorgeschlagenen Abzug bearbeiten"
               : embossedAlbumAction(proposal.reason) ?? ([frameBackingProposal, borrowedFallbackProposal].includes(proposal.reason) ? `Vorschlag ${index + 1} am Aufnahmerand prüfen`
                 : "Möglichen gemeinsamen Abzug prüfen")}

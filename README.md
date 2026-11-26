@@ -361,6 +361,21 @@ Bestätigung der Anzahl diese Vorschläge. Beide Zuschnittmodi des
 übergeordneten Abzugs brauchen weiterhin die eigene Zuschnittprüfung.
 [Gedrehte Golden-Seite 26 und Gegenproben](data/evaluation/README.md#review-two-fallback-contours-inside-a-detected-print)
 
+Liegt eine kleine Kantenkontur fast vollständig im erkannten Abzug,
+prüft PhoSca zusätzlich die Papierkanten ausserhalb dieser Kontur.
+Die Anzahlprüfung zeigt in Türkis zwei Abschnitte, über die
+Motivdetails hinweggehen. Blau zeigt zwei gemessene Papierkanten,
+die über die kleine Kontur hinauslaufen. Ein fast gleich
+aufgelegter zweiter Abzug kann ähnliche Spuren erzeugen.
+
+Öffne die **Innenkontur** und prüfe, ob der kleine Bereich seinen
+eigenen Papierrand hat. Du kannst einen tatsächlich sichtbaren
+weiteren Abzug ausdrücklich ergänzen. Bis zum Entscheid bleibt die
+ursprüngliche Kontur als Nachbaranspruch bei den Zuschnitten
+berücksichtigt. Der Anzahlentscheid speichert die geprüften Konturen
+und Messabschnitte. Die beiden Zuschnittmodi haben ihre eigene Prüfung.
+[Innenkontur auf Scan 67](data/evaluation/README.md#review-a-small-contour-sharing-two-paper-edges)
+
 Ein schwacher Kontrastvorschlag am Aufnahmerand kann vom erkannten
 Foto über den Albumkarton bis auf den Untergrund reichen. PhoSca
 sucht im Original nach einem Materialwechsel, der beide seitlichen

@@ -31,7 +31,10 @@ from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, 
 from app.pipeline.protected_regions import album_mark_source_matches
 from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import PhotoRead, ReviewItem
-from app.services.pipeline import page_fusion_evidence, photo_views_for_current_album_marks, retire_source_fragment_proposals
+from app.services.pipeline import (
+    page_fusion_evidence, photo_views_for_current_album_marks, resolve_nested_edge_parent_reviews,
+    retire_source_fragment_proposals,
+)
 
 router = APIRouter(prefix="/api/v1/review", tags=["review"])
 
@@ -234,6 +237,10 @@ async def _snapshot_task(session: AsyncSession, payload: MobileReviewAnswer, con
         "provenance": provenance,
         "photos": [_photo_snapshot(photo, provenance) for photo in context.get("photos", [])],
     }
+    if payload.task_type == "segmentation":
+        pending = page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals") or []
+        if pending:
+            snapshot["deferred_print_proposals"] = deepcopy(pending)
     if context.get("ocr") is not None:
         ocr: OCRResult = context["ocr"]
         snapshot["ocr"] = {
@@ -462,8 +469,9 @@ def _apply_review_decision(event: ReviewEvent, payload: MobileReviewAnswer, cont
         )
         fusion = page_fusion_evidence(metadata)
         if payload.answer == "correct" and "deferred_print_proposals" in fusion:
-            fusion.pop("deferred_print_proposals")
+            resolved = fusion.pop("deferred_print_proposals") or []
             photos = context["photos"]
+            resolve_nested_edge_parent_reviews(photos, resolved)
             if (page.status == PageStatus.review_needed and not page.error_message
                     and page.blur_score is not None and page.blur_score >= get_settings().blur_threshold
                     and photos and all(photo.status == PhotoStatus.completed for photo in photos)):
@@ -546,8 +554,9 @@ async def add_review_event(
                 detail="Die Abzüge auf dieser Seite haben sich geändert. Prüfe die aktuelle Anzahl.",
             )
         pending = page_fusion_evidence(metadata).get("deferred_print_proposals") or []
-        if (payload.answer == "correct" and pending
-                and payload.metadata.get("deferred_proposal_ids") != [candidate["id"] for candidate in pending]):
+        submitted = payload.metadata.get("deferred_proposal_ids")
+        if (payload.answer == "correct" and (pending or submitted is not None)
+                and submitted != [candidate["id"] for candidate in pending]):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Prüfe die gestrichelten Konturen, bevor du die Anzahl bestätigst.",

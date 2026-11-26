@@ -11,7 +11,8 @@ from app.pipeline.crossing_fallback_review import CROSSING_FALLBACK_COUNT_REVIEW
 from app.pipeline.enhancement import prepare_for_cutout
 from app.pipeline.frame_backing_review import FRAME_BACKING_COUNT_REVIEW, FRAME_BACKING_PROPOSAL
 from app.pipeline.fusion_ownership import (
-    BORROWED_FALLBACK_EDGE, NESTED_FALLBACK_CONTOUR, NESTED_FALLBACK_CONTOUR_REVIEW,
+    BORROWED_FALLBACK_EDGE, NESTED_EDGE_CONTOUR, NESTED_EDGE_CONTOUR_REVIEW,
+    NESTED_FALLBACK_CONTOUR, NESTED_FALLBACK_CONTOUR_REVIEW,
     deferred_neighbor_masks, nested_fallback_contour_spans,
 )
 from app.pipeline.geometry import order_quad_cyclic
@@ -97,6 +98,49 @@ def test_nested_scene_fragment_is_deferred_only_when_the_scene_crosses_both_cuts
     assert offer["parent_cluster_id"] == 0
     assert len(offer["polygon"]) == 4
     assert len(offer["interior_edge_traces"]) == 2
+
+
+@pytest.mark.parametrize("case", ["scene", "separate_stock", "short_rail", "small_pending_claim"])
+def test_nested_edge_proposal_requires_two_continued_paper_rails_and_no_other_owner(case):
+    image = np.full((1000, 1050, 3), 135, np.uint8)
+    image[86:906, 80:973] = 230
+    image[112:875, 105:945] = (50, 85, 110)
+    for center in [(139, 520), (198, 520), (265, 520), (338, 520), (419, 520),
+                   (464, 562), (464, 625), (464, 695), (464, 773), (464, 838)]:
+        cv2.ellipse(image, center, (12, 18), 15, 0, 360, (160, 125, 200), -1)
+    if case == "separate_stock":
+        image[520:875, 105:465] = cv2.add(image[520:875, 105:465], np.full((355, 360, 3), 14, np.uint8))
+    if case == "short_rail":
+        image[863:891, 487:660] = (50, 85, 110)
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+
+    def proposal(points, confidence, source, detector, families, cluster):
+        item = _make_detection(box={}, points=np.float32(points), confidence=confidence, image_width=1050,
+                               image_height=1000, settings=settings, source=source, detector_source=detector)
+        assert item is not None and item.geometry_valid and not item.review_reasons
+        return replace(item, mask={**item.mask, "fusion": {
+            "cluster_id": cluster, "proposal_families": families, "proposal_count": len(families),
+        }})
+
+    parent = proposal([(80, 86), (972, 86), (972, 905), (80, 905)],
+                      .91, "yolo_seg_mask", "yolo_onnx", ["model"], 0)
+    child = proposal([(105, 520), (464, 520), (464, 874), (105, 874)],
+                     .80, "classical_border_quad", "edge_contour", ["classical"], 1)
+    metadata = {"fallback_used": True}
+    if case == "small_pending_claim":
+        small = [{"x": x / 1049, "y": y / 999} for x, y in ((209, 655), (275, 655), (275, 720), (209, 720))]
+        metadata["fusion"] = {"deferred_print_proposals": [{"id": 0, "source_mask": {"visible_polygon": small}}]}
+    baseline = SegmentationResult([parent, child], metadata)
+    result = _defer_nested_scene_fragments(image, baseline, edge_contours=True)
+    if case != "scene":
+        assert result is baseline
+        return
+    assert result.detections == [replace(parent, review_reasons=[NESTED_EDGE_CONTOUR_REVIEW])]
+    offer, = result.metadata["fusion"]["deferred_print_proposals"]
+    assert offer["reason"] == NESTED_EDGE_CONTOUR and offer["parent_cluster_id"] == 0
+    assert deferred_neighbor_masks(result.metadata) == [offer["source_mask"]]
+    assert offer["source_mask"]["polygon"] == child.mask["polygon"]
+    assert len(offer["interior_edge_traces"]) == len(offer["shared_paper_edge_traces"]) == 2
 
 
 def _proposals(image, turn):

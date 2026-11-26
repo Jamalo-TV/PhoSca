@@ -6825,11 +6825,74 @@ The extra half-size proposal is a different failure. It lies
 within the lower print, with .186 IoU and about 99.95% containment.
 Scene texture crosses two internal sides. The remaining sides follow
 the print perimeter and continue beyond the small proposal. Nearly
-aligned copies of the same print can produce this relation. The
-half-size candidate remains active.
+aligned copies of the same print can produce this relation. This
+was the open half-size case in that baseline.
 
 ```bash
 python -m pytest -q backend/tests/test_pipeline/test_embossed_carrier_paper.py -k carrier_count
+```
+
+### Review a small contour sharing two paper edges
+
+The false half-size scan 67 proposal is a singleton classical
+`edge_contour` at .805 confidence. The surrounding model-only
+print is .880. The child occupies about 18.5% IoU and over 99%
+of its footprint lies in the parent. This is distinct from the
+larger contrast-region fragments. The new path requires
+14–26% IoU, at least 99% containment and a single owning
+model proposal. A substantial intersection with another raw,
+visible or pending claim vetoes the deferral in either containment
+direction.
+
+The source check needs two adjacent weak sides with continuous
+scene detail across the proposed cut, and two adjacent strong
+sides. On the strong sides a signed print-to-backing transition
+must continue beyond the child on the same fitted line, within
+the larger detected footprint with its geometric tolerance. The
+measured rail extensions are about 168 and 232 input pixels on
+scan 67. On the weak cuts a signed narrow transition is compared
+with the broader illumination ramp. A coherent step on both
+weak sides vetoes the hint.
+
+A separately visible print and a broken outer rail keep their
+rows in the controls. The production helper rejects 42 tested
+raised or stepped rim variants. One-level brightness differences
+and 1–2 pixel shifts of the same motif can still give matching
+tracks. Lossless and aligned-region right-angle controls retain
+the cue. Three of the 16 unaligned encoded-region controls
+abstain. These are registered transformations of one source.
+
+The original child mask remains available for neighbouring crop
+checks. The parent needs review while the count offer is open.
+Linked editing requires a current count revision and explicit
+confirmation of an independent print. The entered outline must
+cover at least 55% of the offer and lie at least 75% inside it.
+The added print enters a separate paper check. Confirming the
+count preserves the source offer in the decision snapshot and
+retires its parent count reason. The user's reprocess then
+evaluates the current paper and motif with the current claims.
+
+In the ordinary half-size upload the active list drops from two
+rows to one. The earlier pocket remains open with the same ID and
+evidence. The larger print's mask, mode records, warp and ordinary
+preview JPEG match the prior build. Desktop and mobile both display
+four trace intervals on the original. Cancelling writes no decision.
+A deliberate diagnostic linked addition requires the checkbox,
+and both of its named downloads and the legacy trimmed download
+remain held after reprocess. On a separate test instance, accepting
+the count preserves both pending records in the event snapshot.
+A fresh submission using those retired IDs returns 409. The active
+print keeps its distinct boundary review after the count reason
+clears. Local receipts are under `runs/crop-quality/nested-edge-count/exact/`.
+The original-size upload keeps both earlier offers and both active
+rows. All eight paired regressions match the previous detection,
+geometry and crop-mode reports. The source stage check took
+approximately 45 ms on the half-size scan. The validation profile
+uses `fragmented_print_detection` revision 5.
+
+```bash
+python -m pytest -q backend/tests/test_pipeline/test_fusion_ownership.py -k nested_edge
+python -m pytest -q backend/tests/test_api/test_mobile_review.py -k nested_edge
 ```
 
 The separate scan 66 replay showed no overlap with the 112-pixel
