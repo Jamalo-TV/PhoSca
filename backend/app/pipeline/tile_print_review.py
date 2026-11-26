@@ -39,9 +39,16 @@ def tile_print_outline(image: np.ndarray, polygon: np.ndarray) -> np.ndarray | N
     if seed is None:
         return None
     outline, sides, reasons = refine_print_boundary(image, seed)
-    if (outline is None or set(reasons) - {"PRINT_BOUNDARY_AMBIGUOUS"}
-            or len(sides) != 4 or min(side["support"] for side in sides.values()) < .70
+    if (outline is None or len(sides) != 4
+            or min(side["support"] for side in sides.values()) < .70
             or sum(side["support"] >= .85 and not side["ambiguous"] for side in sides.values()) < 3):
+        return None
+    # A curved paper edge can still identify a missing print for count review.
+    # Require four clear, strongly measured sides for this case.
+    if reasons == ["PRINT_BOUNDARY_CURVED"]:
+        if not all(side["support"] >= .90 and not side["ambiguous"] for side in sides.values()):
+            return None
+    elif set(reasons) - {"PRINT_BOUNDARY_AMBIGUOUS"}:
         return None
     if np.any(np.minimum(outline, [width - 1, height - 1] - outline) < 4):
         return None

@@ -4618,7 +4618,8 @@ def _segment_album_page(
                     }
                 if (source is not None and tile_offers is not None and deskew_enabled and risk_reasons
                         and settings.visible_mask_model_path is None and 3 <= len(detections) <= 8
-                        and all(.02 <= _score_value(item, "area_ratio") <= .16 for item in detections)
+                        and sum(item.geometry_valid and .02 <= _score_value(item, "area_ratio") <= .20
+                                for item in detections) >= 2
                         and sum(item.confidence < settings.yolo_confidence_threshold for item in detections) >= 2):
                     review_started = perf_counter()
                     tile_review = {}

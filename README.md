@@ -68,8 +68,10 @@ Bei fehlenden, auffälligen oder schwierigen Vorschlägen ergänzt
 OpenCV Konturen, Kontrastflächen oder Papierränder. Dichte Seiten kann
 das System zusätzlich in überlappenden Teilbildern untersuchen.
 
-Bei drei bis acht mittelgrossen und unsicheren Ganzseitenvorschlägen
+Bei drei bis acht Vorschlägen aus einer unsicheren Ganzseitenanalyse
 kann PhoSca vier überlappende Teilbilder auf weitere Abzüge prüfen.
+Dafür müssen mindestens zwei mittelgrosse Vorschläge eine gültige
+Geometrie haben.
 Ein zusätzlicher Vorschlag braucht auf allen vier Seiten Unterstützung
 aus den Originalpixeln und darf keine vorhandene oder ungeklärte
 Papierkontur schneiden. Er erscheint gestrichelt in der Anzahlprüfung.

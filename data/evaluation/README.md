@@ -2128,8 +2128,8 @@ check does not cover the ambiguity exposed by the reproduction.
 
 #### Missing prints in count review
 
-A risky full-page pass with three to eight moderately sized masks can run
-the existing four overlapping inference tiles for additional suggestions.
+A risky full-page pass with three to eight masks can run the existing
+four overlapping inference tiles for additional suggestions.
 The detector keeps the full-page pass and its normal fusion. Tile candidates
 need support on all four sides in the original pixels, including three
 strong unambiguous sides. Any intersection with another paper claim above
@@ -2153,6 +2153,32 @@ The seeded geometry set passes 11/11 whole prints and 12/12 motifs.
 The detector profile binds the new tile review to revision 3. The spiral
 results use the development checkpoint and draft geometry. Local receipts
 are under `runs/crop-quality/tiled-print-review/`.
+
+On a later spiral page, the full-frame model and classical stages miss
+both rounded prints beneath a mounted souvenir card. Three model masks
+claim parts of the fabric at the capture boundaries and fail the existing
+aspect-ratio check. The card's upper photo and printed caption require
+separate ownership review.
+
+The tile review in revision 4 requires at least two geometrically valid
+full-frame masks covering 2% to 20% of the capture each. A larger card
+proposal and invalid edge proposals can coexist with these masks. A
+curvature finding can support an additional count suggestion when all
+four sides have unambiguous native support of at least 0.90. The existing
+review route still requires confirmation and holds the proposed crops.
+
+On the souvenir card page the retry takes about 0.40 s and finds the
+previously missed lower-left print at 0.98318 IoU against the draft. The
+full-size JPEG75 and 75%-size JPEG75 derivatives retain the same offer at
+0.98302 and 0.98264 IoU. A quarter turn instead recovers both lower prints
+as active detections at 0.95658 and 0.91895 IoU on that derivative. The
+offered print and the automatically detected instances are scored
+separately. The upload replay confirms that the offer leaves all five
+original proposals in place. After confirmation
+and photo reprocessing, the preview is available and both export modes
+remain held. The lower-right tile candidate still fails native edge
+verification. The original cloth and card proposals require review.
+Local receipts are under `runs/crop-quality/spiral-card-recovery/`.
 
 ### Scalloped paper on white scanner backing
 
