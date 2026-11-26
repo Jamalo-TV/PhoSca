@@ -90,6 +90,15 @@ Ecken. Überlappende Vorschläge halten beide Zuschnitte in Prüfung, bis
 der Reviewer ihre Zuordnung geklärt hat.
 [Beispiel Kontaktabzug](data/evaluation/README.md#open-the-measured-contact-outline-from-count-review)
 
+Wenn der Zuschnitt an einer Papierkante in Prüfung bleibt und zwei
+Linien im Original ausreichend gestützt sind, zeichnet **Ganzer Abzug**
+beide als gestrichelte Kanten ein. Die Linien folgen dem beobachteten
+Abschnitt. Der Editor bittet den Reviewer, die Papierkante zu bestimmen.
+Der gespeicherte Zuschnitt, die Anzahl der erkannten Abzüge und die
+Downloadfreigabe bleiben beim Einblenden der Linien gleich. Ein bereits
+vorhandener Umriss- oder Kantenhinweis hat Vorrang.
+[Kantenvergleich](data/evaluation/README.md#show-competing-edges-in-review)
+
 Die ONNX-Koordinaten werden nach dem Entfernen des Letterbox-Paddings
 auf das Quellbild zurückgerechnet. Eine auf eine Linie kollabierte
 Vorhersage kann verworfen werden, während die übrigen Vorschläge einer

@@ -93,6 +93,40 @@ def test_ambiguous_stock_fit_improves_only_the_review_warp(obstruction, proposal
         np.testing.assert_allclose(measured, proposal, atol=.01)
 
 
+@pytest.mark.parametrize("ownership_cue", [None, "film_grid_review_seam", "paper_grid_review"])
+def test_competing_paper_edge_traces_keep_the_existing_review_warp(ownership_cue) -> None:
+    from app.evaluation.crop_fixtures import synthetic_crop_pages
+
+    page = next(fixture for fixture in synthetic_crop_pages("locked") if fixture.name == "touching")
+    image = page.image
+    proposal = {"source": "yolo_seg_mask", "polygon": _vertices(_rect(86, 196, 414, 420), image)}
+    neighbor = {"polygon": _vertices(_rect(419, 230, 697, 425), image)}
+    seam = _vertices([(86, 413), (414, 413)], image)
+    if ownership_cue == "film_grid_review_seam":
+        proposal[ownership_cue] = seam
+    elif ownership_cue == "paper_grid_review":
+        proposal[ownership_cue] = {"outline": proposal["polygon"], "cut": seam}
+
+    crop = _crop(image, {}, proposal, dual_mode=True, neighbor_masks=[neighbor])
+    full, motif = (crop.metadata["crop_modes"][mode] for mode in ("full_print", "image_only"))
+    assert full["status"] == motif["status"] == "review_needed"
+    assert full["reason_codes"] == motif["reason_codes"] == ["PRINT_BOUNDARY_AMBIGUOUS"]
+    assert crop.image_only is None and "suggested_warp_quad" not in full
+    assert "suggested_edge_traces" not in motif
+    height = image.shape[0] - 1
+    np.testing.assert_allclose([point["y"] * height for point in full["warp_quad"][2:]], [420, 420], atol=.01)
+
+    if ownership_cue:
+        assert "suggested_edge_source" not in full and "suggested_edge_traces" not in full
+        return
+
+    assert full["suggested_edge_source"] == "competing_print_edges"
+    traces = full["suggested_edge_traces"]
+    assert len(traces) == 2 and all(len(line) == 2 for line in traces)
+    native_rows = sorted(np.mean([point["y"] for point in line]) * height for line in traces)
+    np.testing.assert_allclose(native_rows, [413.8, 425.5], atol=.5)
+
+
 def test_faint_outer_edge_extends_review_preview_unless_a_neighbor_claims_the_band() -> None:
     from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE
 

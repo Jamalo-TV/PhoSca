@@ -2741,6 +2741,52 @@ The production renderer keeps the existing preview. A subsequent trial
 must preserve every previously visible sample and test foreign samples
 at the expanded edge independently of the nearby proposal.
 
+Even a containment gate with a 0.05-pixel tolerance leaves an ownership
+problem. A fresh 384-input control set gives 24 false expansions onto
+album backing, a transparent carrier or a separately printed strip. All
+24 have a native one-pixel gap. Measured on the separate-strip preview,
+foreign sample centres increase from 1,932 to 4,830 with the previous
+preview corners preserved. Both modes stay in Review.
+
+#### Show competing edges in Review
+
+For an already-held whole-print crop, retain the two strong alternatives
+from the native line-fit evidence. Both need support at 88% of stations
+and at least 70% in every quarter of the edge. The marks stop at observed
+stations. Display them as possible edges in the original image. The
+print and motif warps, previews, release statuses and paper counts keep
+the previous values. Existing explicit outline, capture-edge and other
+measured trace hints take precedence, as do film and paper grid ownership
+groups. The code also skips a side that an existing stock fit has resolved
+in the preview.
+
+The locked `touching` control shows a pair of alternatives at source
+rows 413.8 and 425.5. The provisional lower warp edge stays at row 420
+and the motif still requires review. The reviewer can compare the
+printed image edge and the actual outer paper edge on the full page.
+
+The normal multipart replay with the mixed-legacy development model
+keeps two counted photos. The original-coordinate alternatives appear in
+the full-print editor on desktop and mobile. Both named downloads and
+the legacy trimmed path return 404, with the untrimmed preview available.
+Paired renders before and after the change produce identical preview
+bytes and identical crop geometry for both photos. On mobile the full
+approval button points to the paper-edge hint and stays disabled during
+this geometry review state. An explicit mobile edit to the four known
+paper corners with the 166 × 114 mm test measurement removes the traces
+and opens both named downloads. The active count and the neighboring
+photo's mask, modes and JPEG bytes reproduce.
+
+The locked detection control retains 18/18 matches, 6/11 whole-print
+passes and 7/12 motif passes. The independent seeded replay retains
+11/11 and 12/12. Contact JPEG75, flatbed and clipped NerdScan keep the
+same per-instance crop metrics and availability in both modes. Across
+100 alternating CPU measurements of three ambiguous line fits, retaining
+the native traces adds a median 0.06 ms. The JPEG75 and lossless PNG
+contact-sheet group hints retain precedence, including the competing
+negative-sleeve and paper-grid proposals. All encoded crops and previews
+of those 11 rows are byte-identical to the trace-disabled reference.
+
 ### Measure an open edge at an overextended corner
 
 The classical and mixed hybrid proposals on Golden page 31 include an extra

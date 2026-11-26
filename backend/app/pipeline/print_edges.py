@@ -13,6 +13,7 @@ PRINT_FAINT_RIM_REVIEW = "PRINT_FAINT_OUTER_RIM_REVIEW"
 PRINT_OUTER_EDGE_CONFLICT_REVIEW = "PRINT_OUTER_EDGE_CONFLICT_REVIEW"
 PRINT_SHARED_RIM_UNCERTAIN = "PRINT_SHARED_RIM_UNCERTAIN"
 PRINT_EDGE_CONFIRMATION = "PRINT_EDGE_CONFIRMATION_REQUIRED"
+COMPETING_PRINT_EDGES = "competing_print_edges"
 PRINT_BOUNDARY_REVISION = 11
 CLASSICAL_CONTOUR_REFINEMENT_REVISION = 1
 _PRINT_SIDES = ("top", "right", "bottom", "left")
@@ -170,6 +171,17 @@ def _side_line(
     competitors = (separation >= 2.4) & (quality >= quality[winner] - 0.045)
     if competitors.any():
         evidence["ambiguous"] = True
+        if collect_curve_segments and rim_color is None and not outward_only:
+            strong = (support >= .88) & (coverage.min(axis=1) >= .70)
+            rivals = np.flatnonzero(competitors & strong)
+            if strong[winner] and len(rivals):
+                rival = rivals[np.argmax(quality[rivals])]
+                traces = []
+                for index in (winner, rival):
+                    ends = np.flatnonzero(inliers[index])[[0, -1]]
+                    points = start + positions[ends, None] * along + hypotheses[index, ends, None] * inward
+                    traces.append(points.tolist())
+                evidence[COMPETING_PRINT_EDGES] = traces
         return None, evidence
 
     closest = delta[winner].argmin(axis=1)

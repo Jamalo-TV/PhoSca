@@ -42,6 +42,7 @@ from app.pipeline.page_plane import (
     measured_page_aspect,
 )
 from app.pipeline.print_edges import (
+    COMPETING_PRINT_EDGES,
     PRINT_EDGE_CONFIRMATION,
     PRINT_FAINT_RIM_REVIEW,
     PRINT_SHADOW_EDGE_REVIEW,
@@ -1426,6 +1427,12 @@ def correct_photo_crop(
     boundary_refinement, full_reasons = inspection.boundary, inspection.reasons.copy()
     curve_segments = [segment for edge in boundary_refinement.values() if isinstance(edge, dict)
                       for segment in edge.pop("curve_segments", [])]
+    competing_segments = []
+    for edge in boundary_refinement.values():
+        if isinstance(edge, dict):
+            segments = edge.pop(COMPETING_PRINT_EDGES, [])
+            if not edge.get("review_stock_fit"):
+                competing_segments.extend(segments)
     print_edge_traces = []
     if ("PRINT_BOUNDARY_CURVED" in full_reasons
             and set(full_reasons) <= {"PRINT_BOUNDARY_CURVED", EXTENDED_PRINT_OUTLINE_REVIEW}):
@@ -1642,6 +1649,15 @@ def correct_photo_crop(
                     mode["status"] = "review_needed"
                     if PRINT_EDGE_CONFIRMATION not in mode["reason_codes"]:
                         mode["reason_codes"].append(PRINT_EDGE_CONFIRMATION)
+        full_mode = modes["full_print"]
+        if (competing_segments and not manual and "PRINT_BOUNDARY_AMBIGUOUS" in full_reasons
+                and not full_mode.get("suggested_edge_traces") and not full_mode.get("suggested_warp_quad")
+                and not (mask.get("film_grid_review_seam") or mask.get("paper_grid_review"))
+                and set(full_reasons) <= {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}):
+            full_mode["suggested_edge_traces"] = [
+                _vertices_on_page(np.asarray(segment), width, height) for segment in competing_segments
+            ]
+            full_mode["suggested_edge_source"] = COMPETING_PRINT_EDGES
         return result
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:
