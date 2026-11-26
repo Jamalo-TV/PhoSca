@@ -32,6 +32,7 @@ from app.pipeline.manual_paper_boundary import (
 from app.pipeline.multipanel_prints import GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.perspective import manual_print_intersects, validate_review_quads
 from app.pipeline.presets import available_presets
+from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.variants import (
     CROP_REVIEW_PREVIEWS,
     FULL_PRINT_REVIEW_PREVIEW,
@@ -241,10 +242,14 @@ async def _review_overlapping_crops(
         modes = correction.get("crop_modes") or {}
         full_mode = modes.get("full_print") or {}
         preview = full_mode.get("outline_preview") or {}
-        if quad is not None and preview.get("source") == GRID_OUTLINE_REVIEW_SOURCE and manual_print_intersects(
+        preview_source = preview.get("source")
+        if quad is not None and preview_source in {GRID_OUTLINE_REVIEW_SOURCE, POSSIBLE_OVEREXTENDED_PRINT_EDGE} and manual_print_intersects(
             preview.get("source_outline"), quad, width, height,
         ):
             full_mode.pop("outline_preview")
+            if full_mode.get("suggested_edge_source") == POSSIBLE_OVEREXTENDED_PRINT_EDGE:
+                full_mode.pop("suggested_edge_source", None)
+                full_mode.pop("suggested_edge_traces", None)
             correction.pop(f"{FULL_PRINT_REVIEW_PREVIEW}_path", None)
             correction.pop(f"{FULL_PRINT_REVIEW_PREVIEW}_asset_id", None)
             neighbor.enhancement_applied = metadata

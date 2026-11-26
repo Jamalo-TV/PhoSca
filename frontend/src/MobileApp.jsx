@@ -10,7 +10,7 @@ import {
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   deferredPrintHint, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
-  nestedPrintHint, printOutlineSaveHint,
+  nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperOutlineRequiresReview,
   scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
@@ -177,6 +177,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const [motifQuad, setMotifQuad] = useState(storedMotif);
   const editingMotif = canEditMotif && editMode === "image_only";
   const displayedQuad = editingMotif ? motifQuad || savedQuad : quad;
+  const comparePaperEdge = !editingMotif && fullPrintMode?.outline_preview?.source === possibleOverextendedPrintEdge
+    && item.payload?.untrimmed_url && item.payload?.variant_urls?.full_print_preview;
   const [usingOutlineSuggestion, setUsingOutlineSuggestion] = useState(Boolean(initialPaperOutline));
   const [editingPreview, setEditingPreview] = useState(Boolean(initialPaperOutline && !outlinePreviewHint));
   const [measurementFields, setMeasurementFields] = useState(() => printSizeInputs(storedMeasurement));
@@ -479,12 +481,15 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         <Save size={18}/>{saving ? "Richtet das Bild …" : editingMotif ? "Motivzuschnitt speichern" : "Viereck speichern & geraderichten"}
       </button>
       {saveError && <p className="crop-save-error">{saveError}</p>}
-      {displayedQuad && !motifOutside && <LiveCropPreview src={item.preview_url} quad={displayedQuad} savedCropUrl={savedCropUrl}
-        outlinePreviewUrl={editingPreview ? null : item.payload?.variant_urls?.[editingMotif ? "image_only_preview" : "full_print_preview"]}
-        outlinePreviewHint={editingMotif ? motifBoundaryReviewHint : outlinePreviewHint}
-        measuredAspect={!editingMotif && size ? size.width / size.height : null}
-        referenceMatrix={editingMotif ? fullPrintMode.page_to_output : null}
-        orientation={editingMotif ? item.payload?.orientation?.rotation_degrees : orientation} />}
+      {displayedQuad && !motifOutside && (comparePaperEdge && !editingPreview && !savedCropUrl
+        ? <PaperEdgePreviewComparison currentUrl={item.payload.untrimmed_url} possibleUrl={comparePaperEdge}
+            hint={outlinePreviewHint} />
+        : <LiveCropPreview src={item.preview_url} quad={displayedQuad} savedCropUrl={savedCropUrl}
+            outlinePreviewUrl={editingPreview ? null : item.payload?.variant_urls?.[editingMotif ? "image_only_preview" : "full_print_preview"]}
+            outlinePreviewHint={editingMotif ? motifBoundaryReviewHint : outlinePreviewHint}
+            measuredAspect={!editingMotif && size ? size.width / size.height : null}
+            referenceMatrix={editingMotif ? fullPrintMode.page_to_output : null}
+            orientation={editingMotif ? item.payload?.orientation?.rotation_degrees : orientation} />)}
     </>}
   </>;
 }

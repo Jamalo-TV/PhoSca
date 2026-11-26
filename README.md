@@ -107,6 +107,15 @@ Stelle bleibt zwischen den Linien offen. Die Ecken im Editor sind
 weiterhin die bisher gespeicherten Ecken, bis sie bewusst geändert werden.
 [Beispiel unscharfer Scan](data/evaluation/README.md#show-the-visible-spans-of-an-interrupted-paper-edge)
 
+Ragt eine Ecke weit über den Abzug hinaus, prüft PhoSca, wo die
+beiden angrenzenden Papierkanten im Original enden. Eine gestützte
+innere Kante kann in der Geometrieprüfung eine zweite Vorschau geben.
+Daneben bleibt der bisherige Zuschnitt sichtbar. Die gestrichelten
+Abschnitte helfen bei der Entscheidung, ob der Streifen zum Papier
+gehört. Schutzwarnungen gelten weiter und die Galerie zeigt die
+bisherige Vorschau, solange die Geometrie in Prüfung ist.
+[Beispiel Golden 33](data/evaluation/README.md#compare-an-overextended-corner-with-the-measured-edge)
+
 Ein grosser Vorschlag, der wegen mehrerer innerer Konturen als
 Albumfläche verworfen wurde, kann in der Anzahlprüfung wieder zur
 Auswahl stehen. Dafür prüft PhoSca drei Aussenkanten am dunklen

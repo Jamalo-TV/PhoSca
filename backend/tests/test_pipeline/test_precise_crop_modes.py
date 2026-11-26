@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import cv2
 import numpy as np
 import pytest
@@ -160,6 +162,42 @@ def test_backed_edge_review_draws_observed_spans_without_changing_crops(monkeypa
     options["neighbor_masks"].append(competing_claim)
     occupied = _crop(page, {}, mask, **options)
     assert "suggested_edge_source" not in occupied.metadata["crop_modes"]["full_print"]
+
+
+def test_overextended_review_preview_keeps_the_current_warp_and_protected_content(monkeypatch) -> None:
+    from app.pipeline import perspective
+    from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
+
+    fixture = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_33.jpg"
+    page = cv2.imread(str(fixture))
+    seed = np.float32([[77.45, 545.36], [955, 539.19], [997.19, 1557.90], [347.62, 1540.96]])
+    mask = {"source": "yolo_seg_mask", "polygon": _vertices(seed, page)}
+    warning = {"type": "face", "source": "opencv_haarcascade_frontalface_default",
+               "box": {"x1": 263, "y1": 1231, "x2": 320, "y2": 1288}}
+    options = dict(dual_mode=True, auto_orient=False, enable_classical_retry=True, allow_page_face_overlap=True)
+    with monkeypatch.context() as disabled:
+        disabled.setattr(perspective, "suggest_overextended_print_outline", lambda *_: None)
+        baseline = correct_photo_crop(page, {}, mask, protected_regions=[warning], **options)
+    compared = correct_photo_crop(page, {}, mask, protected_regions=[warning], **options)
+    full = compared.metadata["crop_modes"]["full_print"].copy()
+    assert full.pop("suggested_edge_source") == POSSIBLE_OVEREXTENDED_PRINT_EDGE
+    assert full.pop("suggested_edge_traces")
+    alternative = full.pop("outline_preview")
+    assert alternative["source"] == POSSIBLE_OVEREXTENDED_PRINT_EDGE and alternative["protected_content_review"]
+    assert "suggested_warp_quad" not in full
+    corners = [(p["x"], p["y"]) for p in alternative["source_outline"]]
+    corners = normalized_vertices_to_pixels(corners, *page.shape[1::-1])
+    assert abs(corners[0, 0] - 208) < 2
+    assert compared.full_print_preview.shape[:2] == tuple(alternative["shape"][k] for k in ("height", "width"))
+    assert {**compared.metadata["crop_modes"], "full_print": full} == baseline.metadata["crop_modes"]
+    assert compared.metadata["protected_regions"] == baseline.metadata["protected_regions"]
+    np.testing.assert_array_equal(compared.rectified_untrimmed, baseline.rectified_untrimmed)
+
+    trusted = {"type": "subject", "source": "manual",
+               "box": {"x1": 132, "y1": 565, "x2": 175, "y2": 625}, "margin_ratio": .15}
+    guarded = correct_photo_crop(page, {}, mask, protected_regions=[warning, trusted], **options)
+    assert guarded.full_print_preview is None
+    assert "suggested_edge_source" not in guarded.metadata["crop_modes"]["full_print"]
 
 
 def test_faint_outer_edge_extends_review_preview_unless_a_neighbor_claims_the_band() -> None:

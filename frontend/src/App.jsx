@@ -50,7 +50,7 @@ import {
   crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   deferredPrintHint, filmGridCountHint, filmGridHint, filmGridReason, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, missingPrintEdgeHint,
-  nestedPrintHint, printOutlineSaveHint,
+  nestedPrintHint, PaperEdgePreviewComparison, possibleOverextendedPrintEdge, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, scannerBackingHint, scannerBackingReason,
 } from "./CropVariants.jsx";
 import {
@@ -1451,6 +1451,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const edgeTraces = useMemo(() => getSourceEdgeTraces(traces), [traces]);
   const motifPreview = selected?.variant_urls?.image_only_preview || selected?.urls?.image_only_preview;
   const fullPrintPreview = selected?.variant_urls?.full_print_preview || selected?.urls?.full_print_preview;
+  const untrimmedPrint = selected?.untrimmed_url || selected?.variant_urls?.source_corrected_untrimmed;
+  const comparePaperEdge = untrimmedPrint && fullPrintMode?.outline_preview?.source === possibleOverextendedPrintEdge;
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const motifCorners = selectedShape?.imageQuad || savedShape?.warpQuad;
   const needsMotifSelection = editingImage && !selectedShape?.imageQuad;
@@ -2108,7 +2110,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         <img className="review-crop-preview" src={motifPreview} alt="Konturgetreue Motivvorschau zur Prüfung" />
       )}
       {!editingImage && !newPrint && fullPrintPreview && !currentSave?.url && (
-        <>
+        comparePaperEdge ? <PaperEdgePreviewComparison currentUrl={untrimmedPrint} possibleUrl={fullPrintPreview}
+          hint={outlinePreviewHint} /> : <>
           <img className="review-crop-preview" src={fullPrintPreview} alt="Abzugsvorschau zur Prüfung" />
           {outlinePreviewHint && <p className="crop-mode-status">{outlinePreviewHint}</p>}
         </>

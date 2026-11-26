@@ -2779,6 +2779,12 @@ reached the final pixel checks and failed on insufficient outward gain,
 neighbor ownership or incompatible stock colour. This branch remains
 exploratory.
 
+After unblinding, a subpixel-phase stress test found several successful
+warps on one generated layout. A follow-up placed a distinct stock
+strip along the added edge with a faint visible seam. The same rule
+accepted 28/48 derivatives and retained 4,946–7,979 foreign strip
+centres in those results. The trial remains outside the crop path.
+
 #### Show competing edges in Review
 
 For an already-held whole-print crop, retain the two strong alternatives
@@ -3049,6 +3055,58 @@ beyond one pixel fall from 72,458 to 1,564 and omitted centres remain
 three. The source fit repeats on the original, JPEG70, blurred and
 mirrored variants. A nearby, similarly pale cover can also pass the
 source test, so the application keeps its existing geometry.
+
+#### Compare an overextended corner with the measured edge
+
+The left print of Golden page 33 now has a separate full-print review
+PNG. The source search requires one unsupported side and three strong
+sides. It looks for the two adjacent colour transitions to start near
+the proposed endpoints, one far from the current corner. A connected
+dark-to-light edge in native pixels has to agree with both local backing
+samples. Continued edge signal past the endpoints, a strong step at the
+old edge or different material in the wedge vetoes the comparison. The
+overlay draws only supported observations. A straight four-line fit
+with a half-native-pixel allowance at the measured side supplies the
+separate rectification.
+
+The comparison retains previously covered protected regions. It tolerates
+only a matching, already-disputed automatic face region from the original
+review warning. In this image the existing detector flags a handwritten
+album label as a face. Both the warning and original crop stay visible.
+Giving the algorithm a separate trusted subject box in the wedge vetoes
+the alternate. A new overlapping print on the same page invalidates the
+alternate link and the measured overlay.
+
+On a standard multipart upload, both counted prints, masks, mode
+statuses, protection reports and original review JPEGs are identical
+to the disabled comparison arm. The alternate PNG is 748 × 1021 and
+available through the inline private review path. Both named variants
+and the legacy trimmed alias return HTTP 404. Geometry approval returns
+HTTP 409. Desktop and Mobile show the two previews together, with a
+possible-content-loss warning and estimated aspect. The Gallery keeps
+the current JPEG. The alternate adds no editable corner preset.
+Manual saves of the old corners and of the exact comparison corners
+both return `422 protected_region_cut` for this print. The existing
+face protection therefore still governs the editable crop.
+
+Against the independent source-line development mask, the 879 × 1033
+current preview has footprint IoU 0.9107, 8.14% foreign samples and
+72,662 foreign contributions beyond one native pixel. The comparison
+has IoU 0.9951, 0.39% foreign samples and 2,154 beyond one pixel. Three
+omitted source centres exceed one pixel in each view. Maximum corner
+deviation drops from 129.62 to 1.88 native pixels. The fit and protection
+check took 8.95 ms warm median and 10.96 ms at p95 over 20 CPU calls.
+Rendering took 11.76 ms median and 15.99 ms at p95 on the same thread.
+
+An independent 144-view blind set and a fixed polarity reversal test
+the same 36 layouts. Seven of the reversed views, from two fully
+visible dark print layouts, get a comparison with zero lost owned
+centres. The original views and the cover, sleeve, partial-edge and
+printed continuation controls yield no alternative. A separate follow-up
+extends the real paper into the wedge with a low-contrast marked strip.
+The plausible alternative still appears and can omit roughly 8,200–9,000
+owned rectified sample centres containing the mark. The current preview
+remains available for this reason.
 
 ### Keep an unassigned paper rim in review
 
@@ -4161,6 +4219,25 @@ volumes before treating them as independent groups.
 [Ramsay collection](https://finna.fi/Record/aipa.node-8323?lng=en-gb) ·
 [Volume 1](https://www.finna.fi/Record/tmk.161614005277700) ·
 [Print record](https://www.finna.fi/Record/tmk.162305386114000)
+
+The Boston Public Library finding aid for `MS q G.3.30` records that 85
+original prints were physically removed, separately photographed in June
+and July 2025, and returned to their original pockets. The public set
+catalogues the parent album and individual print records, including item
+78 `06_01_019931_0078`. Its mounted views contain four-slot leaves. The
+native IIIF request returned HTTP 403 and the exact leaf to print mapping
+and visible stock boundaries need to be verified. The published image
+rights designation is No Copyright – United States.
+[Finding aid](https://archives.bpl.org/repositories/2/resources/180) ·
+[Image collection](https://www.digitalcommonwealth.org/collections/commonwealth:63964b37k)
+
+The 1908 Hungarian family album on Commons separately catalogues 17
+mounted page JPEGs and 68 individual TIFFs. The uploader links print
+001 to page 1. The public derivatives show a nine-minute interval in
+their scan records. The native pixels are still needed to distinguish
+separate exposure from a transformed copy and to verify the visible
+paper and motif for both modes.
+[Hungarian album](https://commons.wikimedia.org/wiki/Category:Photograph_album_of_an_unknown_Hungarian_family_(1908))
 
 The Bancroft Red Album study documents a mounted, measured print on
 page 8 and a 1999 State Library of Queensland copy negative showing the

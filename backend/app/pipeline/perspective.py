@@ -60,9 +60,13 @@ from app.pipeline.print_edges import (
     suggest_partial_backed_edge,
     suggest_partial_corner_edge,
 )
-from app.pipeline.print_outline_suggestion import suggest_outer_print_outline
+from app.pipeline.print_outline_suggestion import (
+    POSSIBLE_OVEREXTENDED_PRINT_EDGE, suggest_outer_print_outline, suggest_overextended_print_outline,
+)
 from app.pipeline.print_stock import find_outer_stock_candidate
-from app.pipeline.protected_regions import detect_protected_regions, merge_protected_regions, validate_protected_regions
+from app.pipeline.protected_regions import (
+    detect_protected_regions, merge_protected_regions, region_box_in_pixels, validate_protected_regions,
+)
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVIEW, SCALLOPED_PRINT_REVISION
 from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE, refine_visible_paper_rim
 
@@ -853,18 +857,22 @@ def _render_outline_preview(page: np.ndarray, outline: np.ndarray, matrix: np.nd
     }
 
 
-def _render_grid_outline_preview(
-    page: np.ndarray, mask: dict, rotation: int, neighbors: list[np.ndarray], regions: list[dict],
-    camera_matrix: np.ndarray | None, page_plane: PrintPagePlane | None,
+def _render_review_quad_preview(
+    page: np.ndarray, quad: np.ndarray, rotation: int, neighbors: list[np.ndarray], regions: list[dict],
+    camera_matrix: np.ndarray | None, page_plane: PrintPagePlane | None, *, source: str,
+    prior_protection: dict | None = None,
 ) -> tuple[np.ndarray, dict] | None:
     """Straighten the proposed print outline independently of the primary crop."""
     height, width = page.shape[:2]
     try:
-        quad = _explicit_quad(mask, "visible_polygon", width, height)
-        if quad is None or any(_material_print_intersection(quad, cv2.convexHull(neighbor)) for neighbor in neighbors):
+        if any(_material_print_intersection(quad, cv2.convexHull(neighbor)) for neighbor in neighbors):
             return None
-        if regions and not validate_protected_regions(quad, regions, width=width, height=height)["passed"]:
-            return None
+        protection = validate_protected_regions(quad, regions, width=width, height=height)
+        if not protection["passed"]:
+            previous = prior_protection or {}
+            if (not _advisory_face_overlap(protection, previous.get("review_untrimmed") is True)
+                    or any(violation not in (previous.get("violations") or []) for violation in protection["violations"])):
+                return None
         out_width, out_height, aspect, reasons = _crop_dimensions(
             quad, width, height, metric=True, camera_matrix=camera_matrix, print_aspect_ratio=None, page_plane=page_plane,
         )
@@ -881,14 +889,39 @@ def _render_grid_outline_preview(
 
     geometry = _geometry_for_mode(quad, matrix, pixels, width, height, rotation, reasons)
     return rotate_image(pixels, rotation), {
-        "source": GRID_OUTLINE_REVIEW_SOURCE,
+        "source": source,
         "source_outline": geometry["warp_quad"],
         "page_to_output": geometry["page_to_output"],
         "shape": geometry["shape"],
         "sampling": OWNED_BILINEAR,
         "aspect_ratio_estimation": aspect,
         "reason_codes": reasons,
+        **({"protected_content_review": True} if (prior_protection or {}).get("review_untrimmed") else {}),
     }
+
+
+def _keeps_protected_preview_content(
+    page: np.ndarray, original: np.ndarray, alternative: np.ndarray, regions: list[dict], protection: dict,
+) -> bool:
+    height, width = page.shape[:2]
+    advisory = (protection.get("violations") or []) if protection.get("review_untrimmed") else []
+    for region in regions:
+        box = region_box_in_pixels(region, width, height)
+        if box is None:
+            continue
+        key = {"type": region.get("type", "unknown"), "source": region.get("source", "unknown"),
+               "box": region.get("box", region)}
+        if key in advisory and key["source"] in _PAGE_FACE_SUGGESTIONS:
+            continue
+        x1, y1, x2, y2 = box
+        pad = float(region.get("margin_ratio", .08)) * max(x2 - x1, y2 - y1)
+        padded = np.float32([[x1 - pad, y1 - pad], [x2 + pad, y1 - pad],
+                             [x2 + pad, y2 + pad], [x1 - pad, y2 + pad]])
+        before = cv2.intersectConvexConvex(original, padded)[0]
+        after = cv2.intersectConvexConvex(alternative, padded)[0]
+        if before - after > 1:
+            return False
+    return True
 
 
 def _dual_crop_result(
@@ -1632,8 +1665,13 @@ def correct_photo_crop(
                 if PRINT_EDGE_CONFIRMATION not in mode["reason_codes"]:
                     mode["reason_codes"].append(PRINT_EDGE_CONFIRMATION)
             rotation = int(result.metadata["orientation"].get("rotation_degrees") or 0) % 360
-            preview = _render_grid_outline_preview(
-                page_image, mask, rotation, neighbor_polygons, regions, camera_matrix, page_plane,
+            try:
+                outline = _explicit_quad(mask, "visible_polygon", width, height)
+            except ValueError:
+                outline = None
+            preview = None if outline is None else _render_review_quad_preview(
+                page_image, outline, rotation, neighbor_polygons, regions, camera_matrix, page_plane,
+                source=GRID_OUTLINE_REVIEW_SOURCE,
             )
             if preview is not None:
                 pixels, modes["full_print"]["outline_preview"] = preview
@@ -1678,6 +1716,28 @@ def correct_photo_crop(
             if traces:
                 full_mode["suggested_edge_traces"] = [_vertices_on_page(trace, width, height) for trace in traces]
                 full_mode["suggested_edge_source"] = POSSIBLE_BACKED_PAPER_EDGE
+        if (enable_classical_retry and not manual and "PRINT_BOUNDARY_UNSUPPORTED" in full_reasons
+                and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN",
+                                          "PRINT_ASPECT_UNCERTAIN", "POSSIBLE_CONTENT_CUTOFF"}
+                and all(mode["status"] == "review_needed" for mode in modes.values())
+                and not any(full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview"))
+                and not any(mask.get(key) for key in ("warp_quad", "paper_grid_review", "film_grid_review_seam",
+                                                      "crossing_print_suggestion", "fragment_outline_suggestion"))):
+            alternative = suggest_overextended_print_outline(page_image, src_points, boundary_refinement)
+            if alternative is not None:
+                outline, traces = alternative
+                rotation = int(result.metadata["orientation"].get("rotation_degrees") or 0) % 360
+                preview = None
+                if _keeps_protected_preview_content(page_image, src_points, outline, regions, protection):
+                    preview = _render_review_quad_preview(
+                        page_image, outline, rotation, neighbor_polygons, regions, camera_matrix, page_plane,
+                        source=POSSIBLE_OVEREXTENDED_PRINT_EDGE, prior_protection=protection,
+                    )
+                if preview is not None:
+                    pixels, full_mode["outline_preview"] = preview
+                    full_mode["suggested_edge_traces"] = [_vertices_on_page(trace, width, height) for trace in traces]
+                    full_mode["suggested_edge_source"] = POSSIBLE_OVEREXTENDED_PRINT_EDGE
+                    result = replace(result, full_print_preview=pixels)
         return result
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:

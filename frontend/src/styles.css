@@ -737,6 +737,41 @@ select {
   margin-top: 12px;
 }
 
+.paper-edge-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.paper-edge-comparison figure {
+  margin: 0;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #ccd9d6;
+  border-radius: 8px;
+  background: #f4f9f7;
+}
+
+.paper-edge-comparison img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  max-height: min(46vh, 420px);
+  object-fit: contain;
+}
+
+.paper-edge-comparison figcaption,
+.paper-edge-comparison p {
+  margin: 8px 0 0;
+  color: #40534e;
+  font-size: 0.875rem;
+}
+
+.paper-edge-comparison p {
+  grid-column: 1 / -1;
+}
+
 .variant-preview {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

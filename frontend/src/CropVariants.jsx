@@ -36,6 +36,7 @@ export const captureOutlineReviewReason = "PRINT_CAPTURE_OUTLINE_REVIEW";
 const captureAtEdgeReason = "PRINT_AT_CAPTURE_EDGE";
 const competingPrintEdges = "competing_print_edges";
 const possibleBackedPaperEdge = "possible_backed_paper_edge";
+export const possibleOverextendedPrintEdge = "possible_overextended_print_edge";
 const captureAtEdgeHint = "Der Abzug reicht über den Aufnahmerand hinaus. Für einen vollständigen Zuschnitt brauchst du eine neue Aufnahme.";
 export const captureSplitReviewHint = "Die gestrichelten Linien zeigen einen möglichen gemeinsamen Papierrand. Prüfe am Original, wie viele Abzüge dort liegen.";
 export const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
@@ -78,6 +79,7 @@ export function captureRequiresReview(fullPrint) {
 export function paperOutlineRequiresReview(fullPrint) {
   return fullPrint?.status === "review_needed" && (fullPrint.suggested_edge_source === competingPrintEdges
     || fullPrint.suggested_edge_source === possibleBackedPaperEdge
+    || fullPrint.suggested_edge_source === possibleOverextendedPrintEdge
     || fullPrint.reason_codes?.some(reason => reason === "PRINT_EDGE_CONFIRMATION_REQUIRED" || reason === "PAPER_GRID_OVERLAP_REVIEW"));
 }
 
@@ -97,6 +99,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
     }
     if (fullPrint.suggested_edge_source === possibleBackedPaperEdge) {
       return "Die gestrichelten Abschnitte zeigen eine mögliche Papierkante im Original. Prüfe auch den Abschnitt dazwischen.";
+    }
+    if (fullPrint.suggested_edge_source === possibleOverextendedPrintEdge) {
+      return "Die gestrichelten Abschnitte zeigen eine mögliche Papierkante. Prüfe am Original, ob der Streifen daneben zum Abzug gehört.";
     }
     if (fullPrint.suggested_edge_source === "capture_edge_split") return captureSplitReviewHint;
     if (fullPrint.suggested_edge_source === "capture_edge_boundary") {
@@ -122,10 +127,29 @@ export function getMotifMarginMarks(motif) {
 
 export function getPrintOutlinePreviewHint(fullPrint) {
   const preview = fullPrint?.outline_preview;
+  if (preview?.source === possibleOverextendedPrintEdge) {
+    const aspect = preview.reason_codes?.includes("PRINT_ASPECT_UNCERTAIN") ? "Das Seitenverhältnis ist geschätzt. " : "";
+    return aspect + (preview.protected_content_review ? "Prüfe vor einer Korrektur auch den Ausschnitt auf möglichen Inhaltsverlust."
+      : "Vergleiche die mögliche Papierkante mit dem Original.");
+  }
   if (!preview?.aspect_ratio_estimation) return null;
   return preview.reason_codes?.includes("PRINT_ASPECT_UNCERTAIN")
     ? "Vorgeschlagener Abzug mit geschätztem Seitenverhältnis."
     : "Vorschau des vorgeschlagenen Aussenumrisses.";
+}
+
+export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint }) {
+  return <div className="paper-edge-comparison">
+    <figure>
+      <img src={currentUrl} alt="Bisherige Abzugsvorschau" />
+      <figcaption>Bisherige Vorschau</figcaption>
+    </figure>
+    <figure>
+      <img src={possibleUrl} alt="Prüfvorschau entlang der möglichen Papierkante" />
+      <figcaption>Mögliche Papierkante</figcaption>
+    </figure>
+    {hint && <p>{hint}</p>}
+  </div>;
 }
 
 export function getCropModes(photo) {
@@ -219,7 +243,8 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
   const captureSplit = getCropModes(photo)?.full_print?.suggested_edge_source === "capture_edge_split";
   const pendingPaperEdge = getCropModes(photo)?.full_print?.reason_codes?.includes("PRINT_EDGE_CONFIRMATION_REQUIRED");
   const scallopedOutline = mode === "full_print" && result?.reason_codes?.includes(scallopedOutlineReviewReason);
-  const printOutline = photo.urls?.full_print_preview;
+  const printOutline = getCropModes(photo)?.full_print?.outline_preview?.source === possibleOverextendedPrintEdge
+    ? null : photo.urls?.full_print_preview;
   const fullPreview = printOutline || photo.urls?.source_corrected_untrimmed || photo.urls?.original;
   const motifPreview = photo.urls?.image_only_preview;
   const preview = mode === "image_only"
