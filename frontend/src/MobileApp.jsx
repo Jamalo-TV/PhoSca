@@ -299,7 +299,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     <polygon key={index} points={outline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="6" strokeDasharray="16 9" pointerEvents="none" />
   ));
-  const deferredOverlay = deferredProposals.map(({ id, polygon }) => (
+  const deferredOverlay = deferredProposals.map(({ id, visible_polygon: polygon }) => (
     <polygon key={id} points={polygon.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#7e22ce" strokeWidth="6" strokeDasharray="18 10" pointerEvents="none" />
   ));

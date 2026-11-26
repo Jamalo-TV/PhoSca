@@ -12,7 +12,7 @@ from app.pipeline.print_edges import (
 )
 
 
-FRAGMENTED_PRINT_REVISION = 2
+FRAGMENTED_PRINT_REVISION = 3
 FRAGMENTED_PRINT_REVIEW = "FRAGMENTED_PRINT_REVIEW"
 FRAGMENT_OUTLINE_REVIEW = "FRAGMENT_OUTLINE_UNCERTAIN"
 EXTENDED_PRINT_OUTLINE_REVIEW = "PRINT_EXTENDED_OUTLINE_REVIEW"
@@ -39,6 +39,62 @@ def _image_continues_across(image: np.ndarray, strip: np.ndarray, width: int) ->
             locations[label] = float(np.median(crossing))
     extended = set(np.intersect1d(labels[8], labels[24])) & locations.keys()
     return len(extended) >= 2 and len(locations) >= 3 and np.ptp(list(locations.values())) >= .40 * width
+
+
+def suggest_dark_mounted_outline(
+    image: np.ndarray, outline: np.ndarray, fragments: list[np.ndarray],
+) -> np.ndarray | None:
+    """Find three physical edges and scene continuities for count review."""
+    if _backing_color(image)[0] > 70:
+        return None
+    seed = order_quad_cyclic(cv2.boxPoints(cv2.minAreaRect(outline)))
+    shortest = float(np.linalg.norm(np.roll(seed, -1, axis=0) - seed, axis=1).min())
+    if shortest < 300:
+        return None
+    radius = min(130, round(.054 * shortest))
+    quad, evidence, reasons = refine_print_boundary(image, seed, search_radius=radius)
+    if quad is None or "PRINT_BOUNDARY_UNSUPPORTED" not in reasons:
+        return None
+    missing = [index for index, side in enumerate(evidence.values()) if "edge_width_px" not in side]
+    if len(missing) != 1:
+        return None
+    weak, = missing
+    for index, side in enumerate(evidence.values()):
+        if index == weak:
+            continue
+        if side["support"] < .68:
+            return None
+        band = _edge_band(image, quad[index], quad[(index + 1) % 4], [-24, -12, -8, 8, 12, 24])
+        if band is None:
+            return None
+        exterior = np.median(band[:, :3, 0], axis=1)
+        print_side = np.median(band[:, 3:, 0], axis=1)
+        if np.mean((exterior <= 90) & (print_side >= exterior + 18)) < .76:
+            return None
+
+    if _has_broad_inner_edge(image, quad):
+        return None
+
+    for fragment in fragments:
+        crossing = 0
+        for start, end in zip(fragment, np.roll(fragment, -1, axis=0), strict=True):
+            tangent = end - start
+            length = float(np.linalg.norm(tangent))
+            if length < 100:
+                continue
+            normal = np.float32([-tangent[1], tangent[0]]) * (16 / length)
+            first, last = start + .12 * tangent, end - .12 * tangent
+            strip = np.float32([first - normal, last - normal, last + normal, first + normal])
+            if any(cv2.pointPolygonTest(quad, tuple(point), True) < 2 for point in strip):
+                continue
+            line, side = _side_line(image, start, end, 25)
+            if line is not None or side["ambiguous"]:
+                continue
+            width = round(min(length * .76, 1024))
+            crossing += sum(_image_continues_across(image, strip, width + offset) for offset in (-2, 0, 2)) >= 2
+        if crossing < 2:
+            return None
+    return quad
 
 
 def _no_internal_split(

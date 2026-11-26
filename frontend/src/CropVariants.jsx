@@ -64,7 +64,10 @@ export function getSourceEdgeTraces(traces) {
 
 export function getDeferredPrintProposals(proposals) {
   return Array.isArray(proposals) ? proposals.filter((proposal) => Number.isInteger(proposal?.id) && proposal.id >= 0
-    && proposal.polygon?.length === 4 && getSourceEdgeTraces([proposal.polygon]).length === 1) : [];
+    && proposal.polygon?.length === 4 && getSourceEdgeTraces([proposal.polygon]).length === 1).map((proposal) => {
+      const [outline] = getSourceEdgeTraces([proposal.visible_polygon]);
+      return { ...proposal, visible_polygon: outline?.length >= 3 ? outline : proposal.polygon };
+    }) : [];
 }
 
 export function captureRequiresReview(fullPrint) {

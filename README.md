@@ -99,6 +99,16 @@ Downloadfreigabe bleiben beim Einblenden der Linien gleich. Ein bereits
 vorhandener Umriss- oder Kantenhinweis hat Vorrang.
 [Kantenvergleich](data/evaluation/README.md#show-competing-edges-in-review)
 
+Ein grosser Vorschlag, der wegen mehrerer innerer Konturen als
+Albumfläche verworfen wurde, kann in der Anzahlprüfung wieder zur
+Auswahl stehen. Dafür prüft PhoSca drei Aussenkanten am dunklen
+Albumuntergrund und Motivstrukturen, die über die geschätzten
+Innenkanten hinweg verlaufen. Der Editor zeigt die ursprüngliche
+Kontur und lädt auf Wunsch einen separaten Entwurf mit vier Ecken.
+Der Reviewer entscheidet über die vorhandenen Vorschläge und speichert
+einen zusätzlichen Abzug bewusst.
+[Beispiel Willett-Album](data/evaluation/README.md#compare-a-large-mounted-print-with-album-container-proposals)
+
 Die ONNX-Koordinaten werden nach dem Entfernen des Letterbox-Paddings
 auf das Quellbild zurückgerechnet. Eine auf eine Linie kollabierte
 Vorhersage kann verworfen werden, während die übrigen Vorschläge einer

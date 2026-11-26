@@ -20,7 +20,7 @@ from app.pipeline.edge_prints import (
 )
 from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
-    measure_extended_print_outline, measure_fragmented_print, suggest_fragmented_outline,
+    measure_extended_print_outline, measure_fragmented_print, suggest_dark_mounted_outline, suggest_fragmented_outline,
 )
 from app.pipeline.fusion_ownership import _covered_area, unsupported_fallback_ownership
 from app.pipeline.geometry import (
@@ -2765,8 +2765,6 @@ def refine_album_page_result(
     containers = _page_containers(detections, image)
     if not rejected and not quads and not containers and not panels:
         return result
-    detections = [detection for index, detection in enumerate(detections) if index not in containers]
-    detections.sort(key=lambda detection: (detection.bounding_box["y1"], detection.bounding_box["x1"]))
     replacement_count = sum(len(polygons) + offset not in paper_rejections for offset in range(len(quads)))
     metadata = {
         **result.metadata,
@@ -2775,7 +2773,55 @@ def refine_album_page_result(
         "container_rejections": len(containers),
         "multipanel_fragments": panels,
     }
+    if source_image is not None and containers:
+        recovery = _mounted_container_review(source_image, detections, containers)
+        if recovery is not None:
+            fusion = dict(metadata.get("fusion") or {})
+            pending = list(fusion.get("deferred_print_proposals") or [])
+            if not any(proposal["polygon"] == recovery["polygon"] for proposal in pending):
+                next_id = max((proposal["id"] for proposal in pending), default=-1) + 1
+                pending.append({"id": next_id, **recovery})
+                metadata["fusion"] = {**fusion, "deferred_print_proposals": pending}
+    detections = [detection for index, detection in enumerate(detections) if index not in containers]
+    detections.sort(key=lambda detection: (detection.bounding_box["y1"], detection.bounding_box["x1"]))
     return SegmentationResult(detections=detections, metadata=metadata)
+
+
+def _mounted_container_review(
+    image: np.ndarray, detections: list[SegmentationDetection], containers: set[int],
+) -> dict | None:
+    """Offer a possible whole print in count review without assigning the fragments."""
+    height, width = image.shape[:2]
+    polygons = [_detection_polygon(item) for item in detections]
+    candidates = []
+    for index in sorted(containers):
+        item, polygon = detections[index], polygons[index]
+        boundary = item.mask.get("boundary_evidence") or {}
+        if (item.mask.get("source") != "yolo_seg_mask" or not item.geometry_valid or item.review_reasons
+                or item.confidence < .80 or boundary.get("score", 0) < .70
+                or np.any((polygon < .05) | (polygon > .95))):
+            continue
+        conflicts = {other: normalized_polygon_overlap(shape, polygon) for other, shape in enumerate(polygons)
+                     if other != index}
+        claims = [other for other, match in conflicts.items() if match.first_containment >= .98 and .05 <= match.iou <= .67]
+        if (not 3 <= len(claims) <= _MULTIPANEL_MAX_GROUP_SIZE or any(other in containers for other in claims)
+                or any(match.first_containment >= .08 for other, match in conflicts.items() if other not in claims)):
+            continue
+        try:
+            fragments = [quad_from_polygon(normalized_vertices_to_pixels(polygons[child], width, height))[0]
+                         for child in claims]
+            distinct = {fragment.tobytes(): fragment for fragment in fragments}
+            if len(distinct) < 3:
+                continue
+            native = normalized_vertices_to_pixels(polygon, width, height)
+            quad = suggest_dark_mounted_outline(image, native, list(distinct.values()))
+        except (cv2.error, ValueError, np.linalg.LinAlgError):
+            continue
+        if quad is None or normalized_polygon_overlap(polygon, pixel_vertices_to_normalized(quad, width, height)).iou < .90:
+            continue
+        candidates.append({"reason": "possible_mounted_print", "polygon": _normalized_polygon(quad, width, height),
+                           "visible_polygon": item.mask.get("visible_polygon") or item.mask["polygon"]})
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def _page_containers(detections: list[SegmentationDetection], image: np.ndarray) -> set[int]:

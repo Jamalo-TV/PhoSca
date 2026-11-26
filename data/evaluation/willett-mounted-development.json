@@ -1,0 +1,112 @@
+{
+  "split_policy": {
+    "role": "development",
+    "album_independent": false
+  },
+  "source_use": "The catalogue limits use to education and research, with possible copyright restrictions. Keep native rasters local. Exclude this physical album from training, calibration and final release evaluation.",
+  "reference_scope": "Approximate visible rectangles traced before detector inspection. Newspaper and drawing are not photos in this count check. Independent metric crop references are pending.",
+  "pages": [
+    {
+      "id": "col003_p6",
+      "source_group": "meridian-willett-col003-physical-album-dev",
+      "annotation_provenance": "source_only_development_draft",
+      "page_category": "real_mounted_album",
+      "image": "../../runs/crop-quality/willett-mounted-development/col003_p6.jpg",
+      "image_sha256": "99773f080a806c092f225be57b080be5aa6f2d73f443904b48dd069a84bc2210",
+      "source_image_url": "https://github.com/historycenter-mld/willett_album/blob/f02315fbb8ab62f491c1003ce06614daf30cf617/objects/col003_p6.jpg",
+      "source_catalog_url": "https://historycenter.mld.org/willett_album/items/col003_p6.html",
+      "source_raster_pixels": [
+        6016,
+        3807
+      ],
+      "annotations": "willett-6-draft-labels.txt",
+      "annotations_sha256": "50e985b8049cd507dc8a0261a35edd3cb36581282642e5bf972dd9a7a09637f7",
+      "expected_count": 1
+    },
+    {
+      "id": "col003_p10",
+      "source_group": "meridian-willett-col003-physical-album-dev",
+      "annotation_provenance": "source_only_development_draft",
+      "page_category": "real_mounted_album",
+      "image": "../../runs/crop-quality/willett-mounted-development/col003_p10.jpg",
+      "image_sha256": "6ef79d2aacb622c4b0e1b03237d6c36d315825ffe88edbc858e6e58dd14ab895",
+      "source_image_url": "https://github.com/historycenter-mld/willett_album/blob/f02315fbb8ab62f491c1003ce06614daf30cf617/objects/col003_p10.jpg",
+      "source_catalog_url": "https://historycenter.mld.org/willett_album/items/col003_p10.html",
+      "source_raster_pixels": [
+        6016,
+        3816
+      ],
+      "annotations": "willett-10-draft-labels.txt",
+      "annotations_sha256": "d09a8746f74ca667d0900496503cc78496737e6c4dd119419d6554e322121e05",
+      "expected_count": 1
+    },
+    {
+      "id": "col003_p20",
+      "source_group": "meridian-willett-col003-physical-album-dev",
+      "annotation_provenance": "source_only_development_draft",
+      "page_category": "real_mounted_album",
+      "image": "../../runs/crop-quality/willett-mounted-development/col003_p20.jpg",
+      "image_sha256": "9b7b996d8518babc4b0ac7618f771e29277dacb8108c04780b32f55685bb5578",
+      "source_image_url": "https://github.com/historycenter-mld/willett_album/blob/f02315fbb8ab62f491c1003ce06614daf30cf617/objects/col003_p20.jpg",
+      "source_catalog_url": "https://historycenter.mld.org/willett_album/items/col003_p20.html",
+      "source_raster_pixels": [
+        6016,
+        3819
+      ],
+      "annotations": "willett-20-draft-labels.txt",
+      "annotations_sha256": "d55572e617483249079ca85cc1f2508c2dd2c5c2bdfc5b06dcbe25a02b224994",
+      "expected_count": 1
+    },
+    {
+      "id": "col003_p98",
+      "source_group": "meridian-willett-col003-physical-album-dev",
+      "annotation_provenance": "source_only_development_draft",
+      "page_category": "real_mounted_album",
+      "image": "../../runs/crop-quality/willett-mounted-development/col003_p98.jpg",
+      "image_sha256": "8bc8e09109ad25f9adcf3c632cf0aa2a70509b36e649c0570e5a7aec4c32ae15",
+      "source_image_url": "https://github.com/historycenter-mld/willett_album/blob/f02315fbb8ab62f491c1003ce06614daf30cf617/objects/col003_p98.jpg",
+      "source_catalog_url": "https://historycenter.mld.org/willett_album/items/col003_p98.html",
+      "source_raster_pixels": [
+        6016,
+        3803
+      ],
+      "annotations": "willett-98-draft-labels.txt",
+      "annotations_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "expected_count": 0
+    },
+    {
+      "id": "col003_p100",
+      "source_group": "meridian-willett-col003-physical-album-dev",
+      "annotation_provenance": "source_only_development_draft",
+      "page_category": "real_mounted_album",
+      "image": "../../runs/crop-quality/willett-mounted-development/col003_p100.jpg",
+      "image_sha256": "c93fa83079d25d0a48ec3e8a1957207fa7a4b9cc3bbf91be941984629650a008",
+      "source_image_url": "https://github.com/historycenter-mld/willett_album/blob/f02315fbb8ab62f491c1003ce06614daf30cf617/objects/col003_p100.jpg",
+      "source_catalog_url": "https://historycenter.mld.org/willett_album/items/col003_p100.html",
+      "source_raster_pixels": [
+        6016,
+        3804
+      ],
+      "annotations": "willett-100-draft-labels.txt",
+      "annotations_sha256": "7e9b4ea36232a7d4989fa46a944dfbdd34f6b397cc0ed53ec3f93f7cbfefde98",
+      "expected_count": 3
+    },
+    {
+      "id": "col003_p109",
+      "source_group": "meridian-willett-col003-physical-album-dev",
+      "annotation_provenance": "source_only_development_draft",
+      "page_category": "real_mounted_album",
+      "image": "../../runs/crop-quality/willett-mounted-development/col003_p109.jpg",
+      "image_sha256": "20c2a984fff1079267d836c99c6bd2e5b896214b2e3ff785dec0a045c634e69b",
+      "source_image_url": "https://github.com/historycenter-mld/willett_album/blob/f02315fbb8ab62f491c1003ce06614daf30cf617/objects/col003_p109.jpg",
+      "source_catalog_url": "https://historycenter.mld.org/willett_album/items/col003_p109.html",
+      "source_raster_pixels": [
+        3491,
+        2325
+      ],
+      "annotations": "willett-109-draft-labels.txt",
+      "annotations_sha256": "ba1153dee695008e7a276c1b49cacc1be786954d9471d41bedcc0b1b9b54f953",
+      "expected_count": 2
+    }
+  ]
+}

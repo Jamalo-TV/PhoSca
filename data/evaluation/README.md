@@ -2741,6 +2741,16 @@ The production renderer keeps the existing preview. A subsequent trial
 must preserve every previously visible sample and test foreign samples
 at the expanded edge independently of the nearby proposal.
 
+On the sigma 1.2 Domoritz derivative, the lower-right corner of the
+current review preview is 9.48 native pixels outside a source-fitted
+right paper edge. A scratch side fit reduced that to 0.84 pixels or
+less. In a shadow render, footprint IoU rose from 0.9755 to 0.9874
+against the native line model and foreign samples beyond one pixel
+fell from 1,486 to zero. Omitted pixels beyond one pixel rose from 14
+to 16. A same-colour physical paper extension can produce the same
+local line. Both modes remain in review and the production preview is
+unchanged.
+
 Even a containment gate with a 0.05-pixel tolerance leaves an ownership
 problem. A fresh 384-input control set gives 24 false expansions onto
 album backing, a transparent carrier or a separately printed strip. All
@@ -2786,6 +2796,101 @@ the native traces adds a median 0.06 ms. The JPEG75 and lossless PNG
 contact-sheet group hints retain precedence, including the competing
 negative-sleeve and paper-grid proposals. All encoded crops and previews
 of those 11 rows are byte-identical to the trace-disabled reference.
+
+### Compare a large mounted print with album-container proposals
+
+The Willett Album development set pins six native album-page JPEGs
+from `f02315fbb8ab62f491c1003ce06614daf30cf617`. Its eight approximate
+visible rectangles were traced before running the detector. Page 98
+is a newspaper control and the drawing on page 109 is excluded from
+the photo count. On page 100 three physically separate prints share
+the dark album backing. This entire physical album is reserved for
+development. The catalogue's educational and research use statement
+requires an independent rights check for training, calibration and
+product release. The references are source-only drafts for instance
+counting.
+
+```bash
+git clone --no-checkout https://github.com/historycenter-mld/willett_album.git /tmp/willett-source
+mkdir -p runs/crop-quality/willett-mounted-development
+for page in 6 10 20 98 100 109; do
+  git -C /tmp/willett-source show "f02315fbb8ab62f491c1003ce06614daf30cf617:objects/col003_p$page.jpg" \
+    > "runs/crop-quality/willett-mounted-development/col003_p$page.jpg"
+done
+```
+
+Set `--dataset-manifest data/evaluation/willett-mounted-development.json`
+and `--include-classical-fallback` in the registered mixed-legacy replay.
+For the 23-megapixel files, running the mounted-page replays sequentially
+avoids concurrent high native-memory peaks. The manifest pins both the
+page bytes and the label files.
+
+With the pinned mixed-legacy development checkpoint at IoU 0.85,
+the hybrid count before the trial yields 7 of 8 matches and 10 extra
+active proposals. Page 6 is an actual single mounted print with dark
+corner holders. Its complete model mask scores 0.948 IoU against the
+coarse reference and takes 40.49% of the page. Cross-source fusion
+retains it. The later broad-container rule discards it because several
+high-confidence fragments are inside. The hybrid then counts six
+false proposals and misses the complete print. Detector-only gives
+one correct match and one extra proposal on the same page.
+
+Native line fits have support of 72.3%, 87.5% and 70.5% on three
+exterior sides. The fourth stays unsupported, and the mount obscures
+the corners. Every nested candidate has at least two inner edges
+across which several distinct source scene features continue at
+near-native sampling. Physical ownership still needs review. A
+nearly registered second print and separate dark-backed sheets with
+displaced slanted gaps can preserve the same local signal. A strict
+whole-interior step veto blocked 2 of 16 blind native physical split
+layouts and one of two continuous native artwork controls.
+
+The initial reassignment trial reduced page 6 from six false proposals
+to one correct complete print and one false proposal, with five interior
+alternatives in count review. A second exploratory veto tracks dark
+backing in any direction across the entire print. It recovered nine of
+the fourteen missed native splits and still grouped five split layouts
+incorrectly. The 14-pixel uninterrupted tilted control recovered both
+natively and after JPEG92. Nearby tilted splits around two to three
+pixels remain hard. The working hypothesis also remains possible with
+a nearly aligned print of the same scene laid on top.
+
+The implementation keeps the active instance set and offers exactly one
+optional complete outline in count review when a strong interior model
+container and several distinct fragments meet the source checks. Both
+clients show the original visible detector polygon. The desktop editor
+loads the four editable corners from the native fits and one provisional
+side. Saving a new print and approving its crops still require explicit
+actions. Other pending alternatives keep their IDs and stored status.
+
+In the paired replay on page 6, all six active proposals and their crop
+metrics and availability are identical for both modes. The complete
+print remains an automatic miss, with a new 12-point count-review
+outline at 0.948 draft mask IoU and a separate four-corner starting
+shape at 0.980 draft IoU. A normal multipart upload reproduced the hint
+and the six open geometry tasks. Editing and cancelling the desktop
+draft made zero writes. Mobile displayed the same 12 points, rejected
+a confirmation without the proposal ID with HTTP 409, and accepted an
+explicit count acknowledgement without saving any draft geometry. Both
+named exports and the legacy trimmed export returned HTTP 404 for all
+six entries. The untrimmed inspection images returned HTTP 200.
+
+The exact implementation still finds all three separate prints on page
+100 at IoU 0.85. One nested false proposal remains and no new count hint
+appears there. On page 6, the original-pixel check for five fragments
+took a warm median of 322 ms over six runs on one OpenCV thread. The
+single paired page replays took 11.2 and 11.8 seconds in segmentation
+and 44.7 and 50.6 seconds from source to JPEG. Those totals are individual
+development runs and include other stages and system load.
+
+The frozen hybrid retains 18/18 detection matches and zero extra
+proposals, with 6/11 whole-print and 7/12 motif passes. Supplying the
+reference contours retains 11/11 and 12/12 respectively. Golden retains
+29/29 matched prints, zero extra proposals and its existing crop
+results. These are regression checks. Separate production calibration
+and verified independent reference groups are still required.
+[Willett archive](https://historycenter.mld.org/willett_album/) ·
+[Pinned source tree](https://github.com/historycenter-mld/willett_album/tree/f02315fbb8ab62f491c1003ce06614daf30cf617)
 
 ### Measure an open edge at an overextended corner
 
@@ -3361,6 +3466,17 @@ variant. Some physically separate row controls also satisfied both
 film-grid witness checks. These counterexamples leave the current
 boundary and release decisions in force. The source overlay draws the
 measured sections and prompts the reviewer to check beyond them.
+
+A separate object-type trial compared the nested left candidate with
+the adjacent contact print at JPEG55, JPEG75 and lossless PNG. The
+35 fields have opposite polarity in every input. Feature matching after
+inversion gives 39, 55 and 67 inliers respectively and zero in normal
+polarity. The clear lip carries the backing grain, with a correlation
+near 0.92, while the light interior measures 0.01–0.02. An opaque
+negative print inserted into the same clear protector also passes both
+tests, with 202, 206 and 236 inverted inliers. Ownership and material
+inside the print remain ambiguous, so the nested candidate stays in
+count review.
 
 After the paper outline is saved and the whole print is ready, the
 phone editor can switch between the paper and the motif. With a held

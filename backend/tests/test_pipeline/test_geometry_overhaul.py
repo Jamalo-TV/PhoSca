@@ -444,6 +444,49 @@ def test_weak_container_requires_plain_paper_outside_a_well_bounded_print() -> N
     assert _page_containers([page, photo, other], image) == set()
 
 
+@pytest.mark.parametrize("source_support", [False, True])
+def test_mounted_container_review_keeps_the_active_count(monkeypatch, source_support) -> None:
+    import app.pipeline.segmentation as segmentation
+
+    parent = _detection({"x1": .10, "y1": .12, "x2": .84, "y2": .82}, .89, family="model")
+    parent.mask["boundary_evidence"] = {"score": .79}
+    children = [
+        _detection(box, .77, family="classical") for box in (
+            {"x1": .14, "y1": .20, "x2": .38, "y2": .78},
+            {"x1": .48, "y1": .20, "x2": .77, "y2": .78},
+            {"x1": .32, "y1": .29, "x2": .61, "y2": .60},
+        )
+    ]
+    unrelated = _detection({"x1": .90, "y1": .04, "x2": .98, "y2": .30}, .73, family="classical")
+    image = np.full((760, 1200, 3), 32, dtype=np.uint8)
+    height, width = image.shape[:2]
+    points = segmentation.normalized_vertices_to_pixels(segmentation._detection_polygon(children[0]), width, height)
+    first, _ = segmentation.quad_from_polygon(points)
+    existing = {"id": 4, "reason": "shared_confirmed_edge", "polygon": segmentation._normalized_polygon(first, width, height)}
+    original = segmentation.SegmentationResult(
+        [parent, *children, children[0], unrelated], {"fusion": {"deferred_print_proposals": [existing]}},
+    )
+    monkeypatch.setattr(segmentation, "mounted_print_evidence", lambda *_: ({}, []))
+    monkeypatch.setattr(segmentation, "paper_and_edge_rejection_reasons", lambda *_, **__: {})
+
+    def measure(source, outer, fragments):
+        assert source is image and len(fragments) == 3
+        return outer if source_support else None
+
+    monkeypatch.setattr(segmentation, "suggest_dark_mounted_outline", measure)
+    result = segmentation.refine_album_page_result(image, original, source_image=image)
+    claims = result.metadata["fusion"]["deferred_print_proposals"]
+    assert result.detections == [unrelated, children[0], children[0], children[1], children[2]]
+    assert result.metadata["container_rejections"] == 1
+    assert claims[0] == existing
+    if source_support:
+        assert [claim["id"] for claim in claims] == [4, 5]
+        assert claims[1]["reason"] == "possible_mounted_print"
+        assert claims[1]["visible_polygon"] == parent.mask["polygon"] and len(claims[1]["polygon"]) == 4
+    else:
+        assert claims == [existing]
+
+
 def test_classical_segmentation_records_measured_elapsed_time(monkeypatch) -> None:
     import app.pipeline.segmentation as segmentation
 

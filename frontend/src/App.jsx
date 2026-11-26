@@ -1614,7 +1614,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       context.lineWidth = 3;
       context.font = "bold 14px sans-serif";
       context.setLineDash([9, 5]);
-      deferredProposals.forEach(({ polygon }, index) => {
+      deferredProposals.forEach(({ visible_polygon: polygon }, index) => {
         const [[left, top], ...corners] = polygon.map(({ x, y }) => [x * canvas.width, y * canvas.height]);
         context.beginPath();
         context.moveTo(left, top);
@@ -1941,11 +1941,12 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             {photos.filter((photo) => !photo.reviewed_non_print).length} erfasste Abzüge, {deferredProposals.length === 1
               ? "1 unklarer Vorschlag" : `${deferredProposals.length} unklare Vorschläge`}. {deferredPrintHint}
           </p>
-          {deferredProposals.map(({ id, polygon }, index) => (
+          {deferredProposals.map(({ id, polygon, reason }, index) => (
             <button className="text-button compact" key={id} type="button"
               onClick={() => startAddition(polygon, null, { id, revision: page.processing_metadata?.photo_count_revision })}
               disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving}>
-              {`Vorschlag ${index + 1} als Abzug ergänzen`}
+              {reason === "possible_mounted_print" ? `Möglichen Ganzabzug ${index + 1} prüfen`
+                : `Vorschlag ${index + 1} als Abzug ergänzen`}
             </button>
           ))}
           <button className="text-button compact" type="button" onClick={confirmCount}
