@@ -235,10 +235,13 @@ async def test_source_corner_preview_is_held_and_retires_for_a_new_claim(client,
         "segmentation_mask": {"source": "manual_quad", "polygon": proposal, "warp_quad": proposal},
     })
     assert implicit.status_code == 409 and implicit.json()["detail"] == "print_outline_review_required"
+    queue = f"/api/v1/review/queue?album_id={album_id}&type=segmentation"
+    pending, = (await client.get(queue)).json()[0]["payload"]["deferred_print_proposals"]
+    manual_url = f"/api/v1/pages/{row['page_id']}/manual-photos"
 
     in_added_region = [{"x": x / 2559, "y": y / 1919}
                        for x, y in ((1050, 657), (1190, 657), (1190, 729), (1050, 729))]
-    manual = await client.post(f"/api/v1/pages/{row['page_id']}/manual-photos", json={
+    manual = await client.post(manual_url, json={
         "request_id": str(uuid4()), "warp_quad": in_added_region,
     })
     assert manual.status_code == 201, manual.text
@@ -254,6 +257,129 @@ async def test_source_corner_preview_is_held_and_retires_for_a_new_claim(client,
         assert corrected["image_only"] == modes["image_only"]
         assert (await client.get(preview_url)).status_code == 404
         assert (await client.get(f"{url}/image?variant=full_print")).status_code == 404
+    latest = (await client.get(queue)).json()[0]["payload"]
+    assert latest["deferred_print_proposals"] == [pending]
+    intersecting_claim = [{"x": x / 2559, "y": y / 1919}
+                          for x, y in ((2240, 1725), (2300, 1725), (2300, 1810), (2240, 1810))]
+    overlap = await client.post(manual_url, json={"request_id": str(uuid4()), "warp_quad": intersecting_claim})
+    assert overlap.status_code == 201, overlap.text
+    invalidated = (await client.get(queue)).json()[0]["payload"]
+    assert invalidated["deferred_print_proposals"] == []
+    assert invalidated["detection_count"] == latest["detection_count"] + 1
+    stale = await client.post(manual_url, json={
+        "request_id": str(uuid4()), "warp_quad": pending["polygon"], "deferred_proposal_id": pending["id"],
+        "photo_count_revision": latest["photo_count_revision"], "replace_mounted_fragments": True,
+    })
+    assert stale.status_code == 409 and stale.json()["detail"] == "deferred_print_proposal_stale"
+
+
+async def _upload_source_fragment_review_page(client, monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.services import pipeline
+
+    for name, value in {
+        "AUTO_ANALYZE_UPLOADS": "true", "MAX_UPLOAD_SIZE": "2000000", "MAX_REQUEST_SIZE": "2100000",
+        "ENABLE_PHOTO_ORIENTATION_CORRECTION": "false", "ENABLE_PRECISE_PHOTO_CROPS": "true",
+        "ENABLE_CLASSICAL_SEGMENTATION_FALLBACK": "true", "ENABLE_PROTECTED_REGION_GUARD": "true",
+        "YOLO_MODEL_PATH": str(tmp_path / "absent.onnx"),
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
+    get_settings.cache_clear()
+    source = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_05.jpg"
+    album_id = (await client.post("/api/v1/albums", json={"name": "One fragmented print"})).json()["id"]
+    album = f"/api/v1/albums/{album_id}"
+    uploaded = await client.post(f"{album}/pages/upload", files={"files": (source.name, source.read_bytes(), "image/jpeg")})
+    assert uploaded.status_code == 201, uploaded.text
+    queue = f"/api/v1/review/queue?album_id={album_id}&type=segmentation"
+    task, = (await client.get(queue)).json()
+    return album, queue, task
+
+
+async def test_source_fragment_group_replaces_only_its_two_held_rows(client, monkeypatch, tmp_path):
+    from app.pipeline.fragmented_prints import SOURCE_FRAGMENT_GROUP_REVIEW, SOURCE_FRAGMENT_PROPOSAL
+    from app.routers import photos
+
+    album, queue, task = await _upload_source_fragment_review_page(client, monkeypatch, tmp_path)
+    initial = task["payload"]
+    proposal, = initial["deferred_print_proposals"]
+    assert proposal["reason"] == SOURCE_FRAGMENT_PROPOSAL and proposal["uncertain_edge"] == 1
+    assert initial["detection_count"] == 5
+    rows = (await client.get(f"{album}/photos")).json()
+    fragments = [row for row in rows if row["segmentation_mask"].get("source_fragment_group_review") == proposal["id"]]
+    assert [row["segmentation_mask"]["polygon"] for row in fragments] == proposal["fragment_polygons"]
+    for row in fragments:
+        for mode in ("full_print", "image_only"):
+            result = row["enhancement_applied"]["correction"]["crop_modes"][mode]
+            assert result["status"] == "review_needed" and SOURCE_FRAGMENT_GROUP_REVIEW in result["reason_codes"]
+
+    manual = f"/api/v1/pages/{task['page_id']}/manual-photos"
+    form = {"request_id": str(uuid4()), "warp_quad": proposal["polygon"], "deferred_proposal_id": proposal["id"],
+            "photo_count_revision": initial["photo_count_revision"]}
+    for attempt in (form, {"request_id": form["request_id"], "warp_quad": form["warp_quad"]}):
+        response = await client.post(manual, json=attempt)
+        assert response.status_code == 409 and response.json()["detail"] == "source_print_fragments_confirmation_required"
+    confirmed = {**form, "replace_mounted_fragments": True}
+    wrong_outline = await client.post(manual, json={**confirmed, "warp_quad": proposal["fragment_polygons"][0]})
+    assert wrong_outline.status_code == 422 and wrong_outline.json()["detail"] == "source_print_outline_excludes_fragments"
+
+    async def fail_render(*args, **kwargs):
+        raise ValueError("test_render_failure")
+
+    with monkeypatch.context() as failure:
+        failure.setattr(photos, "perspective_correction_task_logic", fail_render)
+        failed = await client.post(manual, json=confirmed)
+        assert failed.status_code == 422 and failed.json()["detail"] == "test_render_failure"
+    assert (await client.get(queue)).json() == [task]
+    assert (await client.get(f"{album}/photos")).json() == rows
+
+    saved = await client.post(manual, json=confirmed)
+    assert saved.status_code == 201, saved.text
+    replacement = saved.json()
+    retry = await client.post(manual, json=confirmed)
+    assert retry.status_code == 200 and retry.json() == replacement
+    assert (await client.post(manual, json={**confirmed, "request_id": str(uuid4())})).status_code == 409
+    after, = (await client.get(queue)).json()
+    assert after["payload"]["detection_count"] == 4 and after["payload"]["deferred_print_proposals"] == []
+    excluded = {row["id"] for row in fragments}
+    kept = [row for row in (await client.get(f"{album}/photos")).json() if row["id"] != replacement["id"]]
+    assert kept == [row for row in rows if row["id"] not in excluded]
+    for photo_id in excluded | {replacement["id"]}:
+        url = f"/api/v1/photos/{photo_id}"
+        for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+            assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
+    replacement_url = f"/api/v1/photos/{replacement['id']}"
+    assert (await client.post(f"{replacement_url}/reprocess")).status_code == 200
+    assert (await client.get(f"{replacement_url}/image?variant=source_corrected_untrimmed")).status_code == 200
+    assert (await client.post("/api/v1/review/events", json={
+        "task_type": "geometry", "task_id": replacement["id"], "answer": "correct", "idempotency_key": uuid4().hex,
+    })).status_code == 409
+
+
+async def test_overwriting_a_source_fragment_retires_the_shared_offer(client, monkeypatch, tmp_path):
+    _, queue, task = await _upload_source_fragment_review_page(client, monkeypatch, tmp_path)
+    initial = task["payload"]
+    proposal, = initial["deferred_print_proposals"]
+    carrier = next(row for row in initial["detections"] if row["polygon"] == proposal["fragment_polygons"][0])
+    quad = proposal["polygon"]
+    box = {"x1": min(p["x"] for p in quad), "y1": min(p["y"] for p in quad),
+           "x2": max(p["x"] for p in quad), "y2": max(p["y"] for p in quad)}
+    updated = await client.patch(f"/api/v1/photos/{carrier['photo_id']}/bounding-box", json={
+        "bounding_box": box, "segmentation_mask": {"source": "manual_quad", "warp_quad": quad, "polygon": quad,
+                                                   "print_size_mm": {"width": 150, "height": 100}},
+    })
+    assert updated.status_code == 200, updated.text
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        url = f"/api/v1/photos/{carrier['photo_id']}/image?variant={variant}"
+        assert (await client.get(url)).status_code == 404
+    current = (await client.get(queue)).json()[0]["payload"]
+    assert current["detection_count"] == 5 and current["deferred_print_proposals"] == []
+    assert current["photo_count_revision"] != initial["photo_count_revision"]
+    stale = await client.post(f"/api/v1/pages/{task['page_id']}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": quad, "deferred_proposal_id": proposal["id"],
+        "photo_count_revision": initial["photo_count_revision"], "replace_mounted_fragments": True,
+    })
+    assert stale.status_code == 409 and stale.json()["detail"] == "deferred_print_proposal_stale"
 
 
 @pytest.mark.parametrize("kind", ["film", "paper"])

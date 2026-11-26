@@ -181,6 +181,24 @@ speichert den Umriss. Das Seitenverhältnis und die Eignung für beide
 Exporte werden separat geprüft.
 [Beispiel Golden 05](data/evaluation/README.md#offer-a-reviewed-preview-for-the-inset-corner-on-golden-05)
 
+In der **Anzahlprüfung** kann PhoSca einen gemeinsamen Papierumriss
+für zwei klassische Teilvorschläge anzeigen. Ein Teilvorschlag muss
+drei am Original belegte Papierkanten und eine schwache Innenkante
+haben. Der zweite muss bis zum Aufnahmerand reichen. Kann PhoSca in
+seinem sichtbaren Bereich eine eigene Papierkante messen, unterbleibt
+der gemeinsame Vorschlag. Die Suche bleibt auf die Umgebung der
+beiden Flächen begrenzt. Der Editor kennzeichnet die schwächere Seite
+des gemeinsamen Umrisses mit kürzeren Strichen.
+
+**Möglichen gemeinsamen Abzug prüfen** öffnet die vier Ecken am
+Original. Die beiden bisherigen Flächen bleiben beim Prüfen gezählt.
+Mit der Bestätigung ersetzt PhoSca genau diese beiden Flächen in
+einem Schritt durch einen neuen Abzug. Beide Zuschnittmodi des neuen
+Abzugs behalten die Prüfung der Papierkante. Eine neue überlappende
+Markierung, eine veränderte Teilfläche oder deren Ablehnung macht
+einen offenen Vorschlag ungültig.
+[Beispiel Golden 05 unten rechts](data/evaluation/README.md#review-the-lower-right-fragments-together)
+
 Bei zwei eng benachbarten Abzügen mit unterscheidbarem Papier
 kann der Editor einen zusätzlichen Aussenumriss anbieten. PhoSca
 schätzt den Papierton für jeden Abzug aus seinen gestützten Seiten.

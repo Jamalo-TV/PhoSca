@@ -29,7 +29,7 @@ from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_JOIN_REVIEW
 from app.pipeline.protected_regions import album_mark_source_matches
 from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import PhotoRead, ReviewItem
-from app.services.pipeline import page_fusion_evidence, photo_views_for_current_album_marks
+from app.services.pipeline import page_fusion_evidence, photo_views_for_current_album_marks, retire_source_fragment_proposals
 
 router = APIRouter(prefix="/api/v1/review", tags=["review"])
 
@@ -354,6 +354,7 @@ def _apply_review_decision(event: ReviewEvent, payload: MobileReviewAnswer, cont
             _record_rejected_detection(photo, metadata)
             if not previously_rejected:
                 page: Page = context["page"]
+                retire_source_fragment_proposals(page, fragment=(photo.segmentation_mask or {}).get("polygon"))
                 page.processing_metadata = {**(page.processing_metadata or {}), "photo_count_revision": str(event.id)}
         elif not previously_rejected:
             metadata.pop("review_rejected_detection", None)

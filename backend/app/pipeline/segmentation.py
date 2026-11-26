@@ -22,6 +22,7 @@ from app.pipeline.edge_prints import (
 )
 from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
+    SOURCE_FRAGMENT_GROUP_REVIEW, SOURCE_FRAGMENT_PROPOSAL,
     measure_extended_print_outline, measure_fragmented_print, suggest_dark_mounted_outline, suggest_fragmented_outline,
 )
 from app.pipeline.fusion_ownership import _covered_area, unsupported_fallback_ownership
@@ -47,6 +48,7 @@ from app.pipeline.print_edges import (
 )
 from app.pipeline.print_outline_suggestion import suggest_outer_print_outline
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL, projective_print_review
+from app.pipeline.protected_regions import validate_protected_regions
 from app.pipeline.quality import evaluate_segmentation_geometry
 from app.pipeline.scalloped_prints import (
     SCALLOPED_PRINT_CONFLICT, SCALLOPED_PRINT_REVIEW, measure_scalloped_print, possible_layer_edge, suggest_scalloped_motif,
@@ -57,6 +59,7 @@ from app.pipeline.segmentation_filter import (
     paper_and_edge_rejection_reasons,
     paper_around_nested_print,
 )
+from app.pipeline.source_fragment_review import source_fragment_role, suggest_source_fragment_group
 
 _CLASSICAL_MIN_AREA_RATIO = 0.02
 _CLASSICAL_DUPLICATE_CHECK_LIMIT = 12
@@ -1012,13 +1015,8 @@ def _find_separated_contrast_prints(image: np.ndarray, settings: Settings) -> li
     return candidates
 
 
-def _find_contour_candidates(image: np.ndarray, min_area_ratio: float) -> list[_ContourCandidate]:
-    height, width = image.shape[:2]
-    image_area = width * height
-    gray = _enhanced_gray(image)
+def _closed_edge_contours(gray: np.ndarray) -> Iterator[np.ndarray]:
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    candidates: list[_ContourCandidate] = []
-
     # Faded album photos vary enough that one Canny setting either splits prints
     # by internal detail or misses low-contrast prints entirely.
     passes = [
@@ -1031,19 +1029,19 @@ def _find_contour_candidates(image: np.ndarray, min_area_ratio: float) -> list[_
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
         closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=iterations)
         contours, _ = cv2.findContours(closed, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        yield from contours
 
-        for contour in contours:
-            candidate = _candidate_from_contour(
-                contour,
-                width=width,
-                height=height,
-                image_area=image_area,
-                min_area_ratio=min_area_ratio,
-                source="edge_contour",
-            )
-            if candidate is not None:
-                candidates.append(candidate)
 
+def _find_contour_candidates(image: np.ndarray, min_area_ratio: float) -> list[_ContourCandidate]:
+    height, width = image.shape[:2]
+    candidates = []
+    for contour in _closed_edge_contours(_enhanced_gray(image)):
+        candidate = _candidate_from_contour(
+            contour, width=width, height=height, image_area=width * height,
+            min_area_ratio=min_area_ratio, source="edge_contour",
+        )
+        if candidate is not None:
+            candidates.append(candidate)
     candidates.extend(_find_contrast_candidates(image, min_area_ratio))
     return candidates
 
@@ -3602,6 +3600,90 @@ def _offer_projective_print_review(image: np.ndarray, result: SegmentationResult
     })
 
 
+def _native_fragment_seeds(image: np.ndarray) -> Iterator[np.ndarray]:
+    height, width = image.shape[:2]
+    seen = set()
+    for contour in _closed_edge_contours(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)):
+        candidate = _candidate_from_contour(
+            contour, width=width, height=height, image_area=width * height,
+            min_area_ratio=.05, source="edge_contour",
+        )
+        if candidate is None:
+            continue
+        quad, source = _quadrilateral_from_contour(contour)
+        if source != "classical_border_quad":
+            continue
+        try:
+            ordered = order_quad_cyclic(quad)
+        except ValueError:
+            continue
+        key = ordered.tobytes()
+        if cv2.isContourConvex(ordered) and cv2.contourArea(ordered) >= 1 and key not in seen:
+            seen.add(key)
+            yield ordered
+
+
+def _offer_source_fragment_group_review(
+    image: np.ndarray, result: SegmentationResult, regions: list[dict] | None,
+) -> SegmentationResult:
+    metadata = result.metadata
+    fusion = metadata.get("fusion") or {}
+    if (not metadata.get("fallback_used") or fusion.get("model_proposals") != 0
+            or not 2 <= len(result.detections) <= 8
+            or not (metadata.get("rejected_candidates") or {}).get("frame_touching_container_candidate")):
+        return result
+    height, width = image.shape[:2]
+    quads = []
+    partials = []
+    crossings = []
+    for index, item in enumerate(result.detections):
+        mask = item.mask
+        records = mask.get("visible_polygon") or mask.get("polygon") or []
+        quad = None
+        if len(records) == 4:
+            try:
+                points = normalized_vertices_to_pixels([(p["x"], p["y"]) for p in records], width, height)
+                quad = order_quad_cyclic(points)
+            except (KeyError, TypeError, ValueError):
+                pass
+        if quad is not None and (not cv2.isContourConvex(quad) or cv2.contourArea(quad) < 1):
+            quad = None
+        quads.append(quad)
+        if quad is None or item.review_reasons or not item.geometry_valid:
+            continue
+        role = source_fragment_role(mask, item.confidence, quad, width, height)
+        if role == "partial":
+            partials.append(index)
+        elif role == "frame_crossing":
+            crossings.append(index)
+    if not 1 <= len(partials) <= 3 or len(crossings) != 1:
+        return result
+    group = suggest_source_fragment_group(image, quads, partials, crossings, _native_fragment_seeds)
+    if group is None:
+        return result
+    first, second, outline, weak = group
+    if regions and not validate_protected_regions(outline, regions, width=width, height=height)["passed"]:
+        return result
+    pending = list(fusion.get("deferred_print_proposals") or [])
+    normalized = _normalized_polygon(outline, width, height)
+    if any(normalized_polygon_overlap(
+        [(point["x"], point["y"]) for point in proposal["polygon"]],
+        pixel_vertices_to_normalized(outline, width, height),
+    ).iou > .10 for proposal in pending):
+        return result
+    proposal_id = max((proposal["id"] for proposal in pending), default=-1) + 1
+    detections = result.detections.copy()
+    pending.append({
+        "id": proposal_id, "reason": SOURCE_FRAGMENT_PROPOSAL, "polygon": normalized, "uncertain_edge": weak,
+        "fragment_polygons": [detections[index].mask["polygon"] for index in (first, second)],
+    })
+    for index in (first, second):
+        item = detections[index]
+        detections[index] = replace(item, mask={**item.mask, "source_fragment_group_review": proposal_id},
+                                    review_reasons=[SOURCE_FRAGMENT_GROUP_REVIEW, *item.review_reasons])
+    return SegmentationResult(detections, {**metadata, "fusion": {**fusion, "deferred_print_proposals": pending}})
+
+
 def segment_album_page(
     image: np.ndarray, settings: Settings, *, source_image: np.ndarray | None = None,
     protected_regions: list[dict] | None = None,
@@ -3627,6 +3709,8 @@ def segment_album_page(
             result = _flag_conflicting_film_grids(evidence_source, result)
             result = _flag_disputed_paper_joins(evidence_source, result)
             result = _offer_projective_print_review(evidence_source, result)
+            if source is not None and settings.visible_mask_model_path is None:
+                result = _offer_source_fragment_group_review(source, result, protected_regions)
     model_path = settings.visible_mask_model_path
     if not settings.enable_precise_photo_crops:
         return result

@@ -56,6 +56,7 @@ import {
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, scannerBackingHint, scannerBackingReason,
+  sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
@@ -1361,6 +1362,7 @@ function TrainingAnnotationView() {
 
 const printAdditionErrors = {
   mounted_print_fragments_stale: "Die Teilvorschläge haben sich geändert. Prüfe die aktuelle Seite erneut.",
+  source_print_fragments_stale: sourceFragmentReviewErrors.source_print_fragments_stale,
   adjacent_print_suggestion_saved: "Dieser Abzug wurde bereits gespeichert. Öffne ihn in der aktualisierten Ansicht, wenn du seine Ecken ändern möchtest.",
   adjacent_print_suggestion_stale: "Der Vorschlag wurde geändert. Prüfe die Albumseite in der aktualisierten Ansicht erneut.",
   deferred_print_proposal_saved: "Dieser Abzug wurde bereits ergänzt. Du kannst seine Ecken in der aktualisierten Ansicht ändern.",
@@ -1644,14 +1646,16 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       context.fillStyle = "#7e22ce";
       context.lineWidth = 3;
       context.font = "bold 14px sans-serif";
-      context.setLineDash([9, 5]);
-      deferredProposals.forEach(({ visible_polygon: polygon }, index) => {
-        const [[left, top], ...corners] = polygon.map(({ x, y }) => [x * canvas.width, y * canvas.height]);
-        context.beginPath();
-        context.moveTo(left, top);
-        corners.forEach(([x, y]) => context.lineTo(x, y));
-        context.closePath();
-        context.stroke();
+      deferredProposals.forEach(({ visible_polygon: polygon, uncertain_edge: uncertainEdge }, index) => {
+        const corners = polygon.map(({ x, y }) => [x * canvas.width, y * canvas.height]);
+        const [[left, top]] = corners;
+        corners.forEach((corner, side) => {
+          context.setLineDash(side === uncertainEdge ? [2, 5] : [9, 5]);
+          context.beginPath();
+          context.moveTo(...corner);
+          context.lineTo(...corners[(side + 1) % corners.length]);
+          context.stroke();
+        });
         context.fillText(`?${index + 1}`, Math.min(left + 6, canvas.width - 28), Math.max(top - 6, 16));
       });
       context.restore();
@@ -1970,6 +1974,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
 
   async function saveNewPrint() {
     if (!newPrint || newPrint.saving || newPrint.invalidated || newPrint.corners.length !== 4 || additionSize.error) return;
+    if (newPrint.deferredProposal?.reason === sourceFragmentProposal && !newPrint.replaceMountedFragments) return;
     setAddition({ ...newPrint, saving: true, error: null });
     try {
       const photo = await onAddPhoto(pageId, newPrint.requestId, newPrint.corners, additionSize.size,
@@ -1984,7 +1989,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         ? "Der Ausschnitt schneidet einen geschützten Bildbereich ab. Verschiebe die Ecken, bis der Bereich vollständig sichtbar ist."
         : error.message === "mounted_print_outline_excludes_fragments"
           ? "Die Ecken müssen alle markierten Teilvorschläge umfassen. Wenn sie zu verschiedenen Abzügen gehören, prüfe sie einzeln."
-          : error.message);
+          : sourceFragmentReviewErrors[error.message] || error.message);
       if (activePage.current === pageId) setAddition({ ...newPrint, error: message, invalidated: Boolean(stale) });
     }
   }
@@ -2027,15 +2032,17 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         <div className="manual-print-actions">
           <p className="crop-editor-hint">
             {photos.filter((photo) => !photo.reviewed_non_print).length} erfasste Abzüge, {deferredProposals.length === 1
-              ? "1 unklarer Vorschlag" : `${deferredProposals.length} unklare Vorschläge`}. {deferredPrintHint}
+              ? "1 unklarer Vorschlag" : `${deferredProposals.length} unklare Vorschläge`}. {deferredProposals.some(({ reason }) => reason === sourceFragmentProposal)
+              ? sourceFragmentCountHint : deferredPrintHint}
           </p>
           {deferredProposals.map(({ id, polygon, reason, fragment_polygons: parts }, index) => (
             <button className="text-button compact" key={id} type="button"
-              onClick={() => startAddition(polygon, null, { id, revision: page.processing_metadata?.photo_count_revision,
-                fragmentPolygons: reason === "possible_mounted_print" ? getSourceEdgeTraces(parts).filter(part => part.length >= 4) : [],
+              onClick={() => startAddition(polygon, null, { id, reason, revision: page.processing_metadata?.photo_count_revision,
+                fragmentPolygons: getSourceEdgeTraces(parts).filter(part => part.length >= 4),
               })}
               disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving}>
-              {reason === "possible_mounted_print" ? `Möglichen Ganzabzug ${index + 1} prüfen`
+              {reason === sourceFragmentProposal ? "Möglichen gemeinsamen Abzug prüfen"
+                : reason === "possible_mounted_print" ? `Möglichen Ganzabzug ${index + 1} prüfen`
                 : `Vorschlag ${index + 1} als Abzug ergänzen`}
             </button>
           ))}
@@ -2158,7 +2165,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       )}
       {newPrint && (
         <div className="manual-print-actions">
-          {newPrint.deferredProposal?.fragmentPolygons?.length >= 3 && (
+          {newPrint.deferredProposal?.fragmentPolygons?.length >= 2 && (
             <label className="mounted-print-fragment-review">
               <input type="checkbox" checked={Boolean(newPrint.replaceMountedFragments)}
                 onChange={event => setAddition(current => ({ ...current, replaceMountedFragments: event.target.checked, error: null }))}
@@ -2173,7 +2180,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             error={additionSize.error}
           />}
           <button className="primary-button compact" type="button" onClick={saveNewPrint}
-            disabled={newPrint.saving || newPrint.invalidated || newPrint.corners.length !== 4 || Boolean(additionSize.error)}>
+            disabled={newPrint.saving || newPrint.invalidated || newPrint.corners.length !== 4 || Boolean(additionSize.error)
+              || (newPrint.deferredProposal?.reason === sourceFragmentProposal && !newPrint.replaceMountedFragments)}>
             {newPrint.saving ? "Abzug wird berechnet …" : newPrint.replaceMountedFragments ? "Als einen Abzug speichern" : "Abzug speichern"}
           </button>
           <button className="text-button compact" type="button" onClick={() => startAddition([], newPrint.adjacentSuggestion, newPrint.deferredProposal)}

@@ -56,7 +56,8 @@ from app.pipeline.dl_enhancement import dl_enhance_photo
 from app.pipeline.edge_prints import capture_edge_requires_review
 from app.pipeline.enhancement import conservative_enhance_photo, prepare_for_cutout
 from app.pipeline.exif import write_caption_exif
-from app.pipeline.geometry import normalized_vertices_to_pixels
+from app.pipeline.fragmented_prints import SOURCE_FRAGMENT_PROPOSAL
+from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels
 from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, save_png, sha256_file
 from app.pipeline.manual_paper_boundary import (
     MANUAL_PAPER_BOUNDARY_REVISION, PAPER_GRID_OVERLAP_REVIEW, hold_overlapping_paper_claim_modes,
@@ -162,6 +163,25 @@ async def photo_views_for_current_album_marks(
 def page_fusion_evidence(metadata: dict | None) -> dict:
     segmentation = ((metadata or {}).get("steps") or {}).get("segmentation") or {}
     return segmentation.get("fusion") or {}
+
+
+def retire_source_fragment_proposals(
+    page: Page, *, fragment: list[dict] | None = None, claim: list[dict] | None = None,
+) -> bool:
+    pending = page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals") or []
+    claim_points = [(point["x"], point["y"]) for point in claim or []]
+    kept = [proposal for proposal in pending if proposal.get("reason") != SOURCE_FRAGMENT_PROPOSAL or not (
+        (fragment and fragment in (proposal.get("fragment_polygons") or []))
+        or (claim_points and normalized_polygon_overlap(
+            [(point["x"], point["y"]) for point in proposal["polygon"]], claim_points,
+        ).first_containment >= .002)
+    )]
+    if len(kept) == len(pending):
+        return False
+    metadata = deepcopy(page.processing_metadata)
+    page_fusion_evidence(metadata)["deferred_print_proposals"] = kept
+    page.processing_metadata = metadata
+    return True
 
 
 def _append_metadata(entity: Page | ExtractedPhoto, step: str, payload: dict) -> None:

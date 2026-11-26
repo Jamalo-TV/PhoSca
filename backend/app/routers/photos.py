@@ -26,6 +26,7 @@ from app.pipeline.decisions import (
     MANUAL_NEIGHBOR_OVERLAP, is_reviewed_non_print, photo_is_reviewed_non_print, remember_ready_print_for_neighbor_review,
 )
 from app.pipeline.edge_trace import measure_edge_trace
+from app.pipeline.fragmented_prints import SOURCE_FRAGMENT_PROPOSAL
 from app.pipeline.geometry import normalized_polygon_overlap
 from app.pipeline.image_ops import load_image, normalized_box_to_pixels
 from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_SOURCE
@@ -59,6 +60,7 @@ from app.services.pipeline import (
     persistence_task_logic,
     perspective_correction_task_logic,
     photo_views_for_current_album_marks,
+    retire_source_fragment_proposals,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["photos"])
@@ -347,6 +349,42 @@ def _same_visible_outline(
     return False
 
 
+def _source_fragment_replacements(deferred: dict, quad: list[dict], active: list[ExtractedPhoto]) -> list[ExtractedPhoto]:
+    def points(polygon):
+        return [(point["x"], point["y"]) for point in polygon]
+
+    polygons = deferred.get("fragment_polygons") or []
+    if len(polygons) != 2 or polygons[0] == polygons[1]:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="source_print_fragments_stale")
+    replacements = []
+    for polygon in polygons:
+        candidates = [photo for photo in active if photo.segmentation_confidence is not None
+                      and (photo.segmentation_mask or {}).get("source_fragment_group_review") == deferred["id"]
+                      and photo.segmentation_mask.get("polygon") == polygon
+                      and not variant_path_from_photo(photo, "full_print")
+                      and not variant_path_from_photo(photo, "image_only")]
+        if len(candidates) != 1:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="source_print_fragments_stale")
+        replacements.append(candidates[0])
+    edited = points(quad)
+    measured = points(deferred["polygon"])
+    if (normalized_polygon_overlap(measured, edited, raster_size=1024).iou < .96
+            or any(normalized_polygon_overlap(points(part), edited, raster_size=1024).first_containment < minimum
+                   for part, minimum in zip(polygons, (.97, .84), strict=True))):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="source_print_outline_excludes_fragments")
+    for photo in active:
+        if photo in replacements:
+            continue
+        mask = photo.segmentation_mask or {}
+        polygon = mask.get("visible_polygon") or mask.get("polygon") or mask.get("warp_quad")
+        if not polygon:
+            continue
+        overlap = normalized_polygon_overlap(edited, points(polygon), raster_size=1024)
+        if overlap.first_containment >= .002 and overlap.second_containment >= .02:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="source_print_fragments_stale")
+    return replacements
+
+
 @router.get("/presets")
 async def get_presets() -> dict[str, dict]:
     return available_presets()
@@ -560,7 +598,19 @@ async def create_manual_photo(
         )
     ]
     replaced_fragments = []
-    if payload.replace_mounted_fragments:
+    source_group = (deferred or {}).get("reason") == SOURCE_FRAGMENT_PROPOSAL
+    if source_group:
+        if not payload.replace_mounted_fragments:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="source_print_fragments_confirmation_required")
+        replaced_fragments = _source_fragment_replacements(deferred, quad, active)
+        mask["mounted_outline_review"] = True
+    elif deferred is None and any(
+        candidate.get("reason") == SOURCE_FRAGMENT_PROPOSAL
+        and _same_visible_outline(candidate.get("polygon"), quad, native_size=(width, height))
+        for candidate in page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals") or []
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="source_print_fragments_confirmation_required")
+    elif payload.replace_mounted_fragments:
         polygons = (deferred or {}).get("fragment_polygons") or []
         if (deferred or {}).get("reason") != "possible_mounted_print" or not 3 <= len(polygons) <= 6:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="mounted_print_fragments_stale")
@@ -634,7 +684,8 @@ async def create_manual_photo(
             ]))
             fragment.enhancement_applied = metadata
             fragment.status = PhotoStatus.review_needed
-            session.add(AuditLog(entity_type="photo", entity_id=fragment.id, action="mounted_print_fragment_reviewed",
+            action = "source_print_fragment_reviewed" if source_group else "mounted_print_fragment_reviewed"
+            session.add(AuditLog(entity_type="photo", entity_id=fragment.id, action=action,
                                  details={"replacement_photo_id": str(photo_id), "deferred_proposal_id": deferred_id}))
     review_provenance = {
         "manual_creation": creation,
@@ -646,6 +697,7 @@ async def create_manual_photo(
         fusion = page_fusion_evidence(metadata)
         fusion["deferred_print_proposals"] = [candidate for candidate in pending if candidate["id"] != deferred_id]
         page.processing_metadata = metadata
+    retire_source_fragment_proposals(page, claim=quad)
     _claim_missing_print_trace(page, review_provenance, quad, width, height)
     photo.enhancement_applied = {"review_provenance": review_provenance}
     page.processing_metadata = {**(page.processing_metadata or {}), "photo_count_revision": str(photo_id)}
@@ -854,15 +906,18 @@ async def update_photo_bounding_box(
             },
         )
     )
-    await session.flush()
     prior_mask = before["segmentation_mask"] or {}
     prior_crop_modes = (metadata.get("correction") or {}).get("crop_modes") or {}
     prior_outer = prior_mask.get("warp_quad") or (prior_crop_modes.get("full_print") or {}).get("warp_quad")
     outer = segmentation_mask.get("warp_quad")
+    edited_claim = outer if outer and not _same_visible_outline(prior_outer, outer) else None
+    if retire_source_fragment_proposals(page, fragment=prior_mask.get("polygon"), claim=edited_claim):
+        page.processing_metadata = {**(page.processing_metadata or {}), "photo_count_revision": str(uuid4())}
     if (was_non_print or segmentation_mask.get("manual_added") is True
             or paper_claim_groups(segmentation_mask, original_prediction_mask(metadata))
-            or (outer and not _same_visible_outline(prior_outer, outer))):
+            or edited_claim):
         await _review_overlapping_crops(session, photo, width, height)
+    await session.flush()
     return await _render_photo_edit(session, photo.id, settings, previous_manual_crop=previous_crop)
 
 

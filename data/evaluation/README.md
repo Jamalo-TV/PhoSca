@@ -165,6 +165,17 @@ overall and per-album counts for both modes.
 A verified motif can qualify separately when its print corners require review.
 Detector calibration and the other release gates still apply.
 
+The Doro Levi album conservation record identifies inventory 20 in
+the historical photograph collection of the Florence Archaeological
+Museum. Figure 3b identifies leaf 22 verso before treatment. The photo
+archive records separate captures before and after lifting prints. The
+online catalogue returned HTTP 403. Native files and a verified link
+between that leaf and an individual paired capture remain outstanding.
+The project agreement restricts reuse of the copies. This album remains
+a source lead.
+[Conservation study](https://faic.wpenginepowered.com/pmg-topics/wp-content/uploads/sites/9/2022/11/T18-142-150-Cattaneo-Formatted.pdf#page=4)
+and [project agreement](https://bncf.cultura.gov.it/wp-content/uploads/2019/11/566.pdf#page=3).
+
 Validate the real reference files before running the detector on an independent
 split. `--check-references` checks hashes, geometry and review coverage without
 inference. It can prepare a draft before the model or calibration is available.
@@ -3371,6 +3382,73 @@ The next product step is a single editable group suggestion that
 keeps both underlying observations until the reviewer resolves
 the physical count. No count or crop change from this diagnostic
 is enabled.
+
+#### Review the lower-right fragments together
+
+The precise model-free path can now offer one shared outline on
+Golden 05. It only searches when one weak classical rectangle
+reaches the capture boundary and a separate partly supported
+contour overlaps it. The first fragment must have three supported
+side lines and corners and one weak internal edge. The second
+must have enough observable span to check every edge. Its own
+supported or ambiguous edge stops the group search. The two
+observations still count separately at this stage.
+
+The search starts in a padded union of the two raw proposals.
+It extracts coarse quads from the original grayscale image and
+uses the supported rails of the first fragment to initialize an
+independent fit. The native pass samples a signed album-to-image
+step on each side. Three sides need at least 231 of 256 supported
+stations with coverage across all quarters. The candidate's weak
+side needs 181 stations and reliable support across three quarters.
+Both arms at each newly located corner must present a transition
+and terminate. A substantial third claim, a protected cut or
+competing outlines block the group. The short-dashed review edge
+marks the weaker side. A printed rectangle on larger pale paper
+can still produce the observed transitions, so the reviewer must
+confirm the physical count from the original.
+
+The original upper-left corner preview remains separate. For the
+lower-right print the two current mask IoUs are about 0.449 and
+0.388. The shared draft reaches 0.99341 native footprint IoU with
+5.20 px maximum corner error against the development outline. It
+omits 2,161 of 700,861 draft-owned centres and includes 2,474 centres
+outside the draft. The complete suggestion takes 98 ms at the median
+and 110 ms at p95 over 14 warm runs on one OpenCV thread.
+When the original fragment shapes are reused, the source fit
+produces a proposed outline on all 16 tested rotations and
+encodings. Across 16 complete reanalyses, only the upright original
+and upright JPEG95 produce the required group. The other encodings
+and quarter turns can produce different fragments. A disjoint narrow
+paper remains separate. A planted clipped print with the same
+apparent overlap, an independent third claim and a covered corner
+all suppress the group in controlled replays. A small independent
+print entirely inside the candidate can still evade this ownership
+check if the original fragment shapes are preserved and the
+independent print has no active claim. Fresh detection of the tested
+overlays changed the fragment graph and produced no shared proposal.
+The added small prints had detection overlap below 0.13 IoU.
+
+Desktop and mobile load the proposed corners into the count
+editor. The two purple outlines identify the exact rows being
+replaced. Saving needs explicit confirmation and a current page
+revision. The server checks both fragments against the stored
+group, tests the submitted corners against the measured outline
+and refuses overlapping claims. The original JPEG upload has five
+active rows before the save and four after it. The three unrelated
+rows are preserved. An identical retry returns the same replacement
+and a failed render rolls back the entire edit. Editing or rejecting
+a member or adding an intersecting manual claim retires the offer.
+Both named cropped exports and the legacy trimmed route stay held
+for the replacement, including after repeat processing. An explicit
+geometry confirmation clears that hold only when the native boundary
+checks pass.
+
+The five paired detector and crop regressions retain their prior
+metrics, including 18/18 frozen mixed matches, 11/11 and 12/12
+seeded mode passes, 29/29 mixed Golden matches and 14/29 automatic
+classical Golden matches. The two targeted Golden 05 fragments were
+already in review. The group adds a shared reason to both modes.
 
 ### Show the visible spans of an interrupted paper edge
 

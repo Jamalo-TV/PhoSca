@@ -17,7 +17,9 @@ from app.pipeline.edge_prints import (
     CAPTURE_EDGE_HOLD, CAPTURE_EDGE_SOURCE, CAPTURE_SPLIT_REVIEW_SOURCE, capture_edge_requires_review,
 )
 from app.pipeline.crossing_prints import CROSSING_PRINT_REVIEW, REVIEWED_CROSSING_OUTLINE
-from app.pipeline.fragmented_prints import EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW
+from app.pipeline.fragmented_prints import (
+    EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW, SOURCE_FRAGMENT_GROUP_REVIEW,
+)
 from app.pipeline.geometry import (
     normalized_polygon_overlap,
     normalized_vertices_to_pixels,
@@ -1433,6 +1435,8 @@ def _inspect_print(
             reasons.append(EXTENDED_PRINT_OUTLINE_REVIEW)
         if not manual and mask.get("fragment_outline_suggestion"):
             reasons.append(FRAGMENT_OUTLINE_REVIEW)
+        if not manual and mask.get("source_fragment_group_review") is not None:
+            reasons.append(SOURCE_FRAGMENT_GROUP_REVIEW)
         if not manual and mask.get("crossing_print_suggestion"):
             reasons.append(CROSSING_PRINT_REVIEW)
         if mask.get("album_window_occluded") is True:

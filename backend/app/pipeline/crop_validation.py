@@ -29,6 +29,7 @@ from app.pipeline.projective_prints import PROJECTIVE_PRINT_REVISION
 from app.pipeline.protected_regions import PROTECTED_REGION_REVISION
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
 from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
+from app.pipeline.source_fragment_review import SOURCE_FRAGMENT_REVIEW_REVISION
 from app.pipeline.training_provenance import (
     FINAL_SPLIT_ROLES, TrainingProvenance, TrainingProvenanceError,
     disjoint_sources, load_training_provenance, source_index,
@@ -121,6 +122,10 @@ def crop_validation_profile(settings: Settings) -> dict:
         ),
         "fragmented_print_detection": (
             FRAGMENTED_PRINT_REVISION
+            if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+        ),
+        "source_fragment_review": (
+            SOURCE_FRAGMENT_REVIEW_REVISION
             if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "scalloped_print_outline": (

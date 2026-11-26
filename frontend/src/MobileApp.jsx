@@ -1,6 +1,6 @@
 import { Camera, Check, ChevronLeft, CircleHelp, CloudOff, Images, ListChecks, RefreshCw, Save, Upload, WandSparkles, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createAlbum, excludeCountReviewGroup, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
+import { addManualPhoto, createAlbum, excludeCountReviewGroup, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
 import { projectedCropAspect, resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import {
@@ -16,6 +16,7 @@ import {
   paperGridCountHint, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview,
   scannerBackingHint, scannerBackingReason,
+  sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
 } from "./CropVariants.jsx";
 import {
   getCaptureSplitReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
@@ -118,7 +119,7 @@ function Capture({ albums, activeAlbumId, setActiveAlbumId, reload, goHome, uplo
 }
 
 function DetectionOverlay({ item, editable = false, openPaperOutline, countOutlines, captureSplitGroups, filmGridGroups,
-  selectedCountGroup, paperGridGroups, paperJoinGroups, onSaved, onProtectionBlocked }) {
+  selectedCountGroup, paperGridGroups, paperJoinGroups, onSaved, onProtectionBlocked, sourceGroupDraft, onSourceGroupClose }) {
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
   const [showMissingEdges, setShowMissingEdges] = useState(false);
@@ -160,7 +161,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const motifTraces = motifReviewPending ? getSourceEdgeTraces(motifMode?.suggested_seam_traces) : [];
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
-  const initialPaperOutline = openPaperOutline && paperGrid?.cut === null && printSuggestion;
+  const initialPaperOutline = sourceGroupDraft?.polygon || (openPaperOutline && paperGrid?.cut === null && printSuggestion);
   const printEdgeTraces = getSourceEdgeTraces(fullPrintMode?.suggested_edge_traces);
   const adjacentOutline = item.payload?.confidence != null
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.adjacent_print_suggestion));
@@ -182,6 +183,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     sourceBox,
   ));
   const [quad, setQuad] = useState(initialOuter); const [saving, setSaving] = useState(false);
+  const [confirmSourceGroup, setConfirmSourceGroup] = useState(false);
   const [editMode, setEditMode] = useState("full_print");
   const [motifQuad, setMotifQuad] = useState(storedMotif);
   const editingMotif = canEditMotif && editMode === "image_only";
@@ -259,8 +261,14 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   }
   async function save() {
     if (editingMotif ? !validMotif : (!validQuad || sizeError || crossingNeedsCorrection)) return;
+    if (sourceGroupDraft && !confirmSourceGroup) return;
     setSaving(true); setSaveError("");
     try {
+      if (sourceGroupDraft) {
+        await addManualPhoto(item.page_id, sourceGroupDraft.requestId, quad, size, null, sourceGroupDraft, true);
+        onSourceGroupClose(true);
+        return;
+      }
       const mask = editingMotif ? {
         polygon: item.payload.segmentation_mask?.polygon || savedQuad,
         visible_polygon: visiblePolygon || savedQuad, warp_quad: savedQuad,
@@ -292,7 +300,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     } catch (error) {
       setSaveError(error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message === "print_outline_review_required" ? printOutlineSaveHint
-        : cropProtectionErrors[error.message] || error.message || "Ausschnitt konnte nicht gespeichert werden.");
+        : sourceFragmentReviewErrors[error.message] || cropProtectionErrors[error.message]
+          || error.message || "Ausschnitt konnte nicht gespeichert werden.");
       if (error.message === "protected_region_removed") {
         setBlockedCrop(error.detail);
         onProtectionBlocked?.(item.id);
@@ -321,9 +330,18 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     <polygon key={index} points={outline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="6" strokeDasharray="16 9" pointerEvents="none" />
   ));
-  const deferredOverlay = deferredProposals.map(({ id, visible_polygon: polygon }) => (
-    <polygon key={id} points={polygon.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
-      fill="none" stroke="#7e22ce" strokeWidth="6" strokeDasharray="18 10" pointerEvents="none" />
+  const deferredOverlay = sourceGroupDraft ? getSourceEdgeTraces(sourceGroupDraft.fragment_polygons).map((polygon, index) => (
+    <polygon key={index} aria-label="Teilvorschlag für den gemeinsamen Abzug"
+      points={polygon.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
+      fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="10 6" pointerEvents="none" />
+  )) : deferredProposals.map(({ id, visible_polygon: polygon, uncertain_edge: uncertainEdge }) => (
+    <g key={id} aria-label="Möglicher Abzug" stroke="#7e22ce" strokeWidth="6" pointerEvents="none">
+      {polygon.map(({ x, y }, side) => {
+        const next = polygon[(side + 1) % polygon.length];
+        return <line key={side} x1={x * 1000} y1={y * 1000} x2={next.x * 1000} y2={next.y * 1000}
+          strokeDasharray={side === uncertainEdge ? "4 10" : "18 10"} />;
+      })}
+    </g>
   ));
   const fragmentCountOverlay = countOutlines.map(({ key, supportedSides, weakEdge }) => (
     <g key={key} aria-label="Möglicher gemeinsamer Abzug" fill="none" stroke="#2563eb" strokeWidth="6" pointerEvents="none">
@@ -480,7 +498,10 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       Die blau gestrichelten Linien zeigen gemessene Abschnitte einer möglichen Motivkante. Prüfe den Inhalt auch ausserhalb der Linien.
     </p>}
     {nestedOutlines.length > 0 && <p className="quad-hint">{nestedPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
-    {deferredProposals.length > 0 && <p className="quad-hint">{deferredPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.</p>}
+    {deferredProposals.length > 0 && <p className="quad-hint">
+      {deferredProposals.some(({ reason }) => reason === sourceFragmentProposal) ? sourceFragmentCountHint
+        : `${deferredPrintHint} Einen eigenen Abzug kannst du im Desktop-Editor ergänzen.`}
+    </p>}
     {measurementPage && measurementPage === item.page_id && <EdgeMeasurement key={item.page_id} pageId={item.page_id}
       onClose={() => setMeasurementPage(null)} onMeasured={(traces) => setMeasuredEdge({ pageId: item.page_id, traces })} />}
     {editable && <>
@@ -544,16 +565,25 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         disabled={saving}
         error={sizeError}
       />
-      <CropOrientationField value={orientation} disabled={saving} onChange={(value) => {
+      {!sourceGroupDraft && <CropOrientationField value={orientation} disabled={saving} onChange={(value) => {
         setOrientation(value);
         setEditingPreview(true);
         setSavedCropUrl("");
         setSaveError("");
-      }} /></>}
+      }} />}</>}
+      {sourceGroupDraft && <label className="mounted-print-fragment-review">
+        <input type="checkbox" checked={confirmSourceGroup} disabled={saving}
+          onChange={event => setConfirmSourceGroup(event.target.checked)} />
+        Beide violett markierten Teilvorschläge gehören zu diesem Abzug.
+      </label>}
       <button className="save-crop" onClick={save} disabled={saving
+        || (sourceGroupDraft && !confirmSourceGroup)
         || (editingMotif ? !validMotif : (!validQuad || Boolean(sizeError) || crossingNeedsCorrection))}>
-        <Save size={18}/>{saving ? "Richtet das Bild …" : editingMotif ? "Motivzuschnitt speichern" : "Viereck speichern & geraderichten"}
+        <Save size={18}/>{saving ? "Richtet das Bild …" : sourceGroupDraft ? "Als einen Abzug speichern"
+          : editingMotif ? "Motivzuschnitt speichern" : "Viereck speichern & geraderichten"}
       </button>
+      {sourceGroupDraft && <button type="button" className="magnifier-toggle" disabled={saving}
+        onClick={() => onSourceGroupClose(false)}>Zurück zur Printanzahl</button>}
       {saveError && <p className="crop-save-error" role="alert">{saveError}</p>}
       {displayedQuad && !motifOutside && (comparePaperEdge && !editingPreview && !savedCropUrl
         ? <PaperEdgePreviewComparison currentUrl={item.payload.untrimmed_url} possibleUrl={comparePaperEdge}
@@ -691,6 +721,8 @@ function CropReview({ albumId, goHome }) {
   const [answerError, setAnswerError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [groupSelection, setGroupSelection] = useState(null);
+  const [sourceGroupDraft, setSourceGroupDraft] = useState(null);
+  const [savedSourceGroupPage, setSavedSourceGroupPage] = useState(null);
   const returnCountId = useRef(null);
   const leavingRef=useRef(false); const goHomeRef=useRef(goHome);
   const queueKey = JSON.stringify([albumId, type, focusedPhotoId]);
@@ -721,6 +753,8 @@ function CropReview({ albumId, goHome }) {
   const approvalHint = captureReviewPending || paperOutlinePending ? "mobile-print-edge-review-hint"
     : motifReviewPending ? "mobile-motif-review-hint" : undefined;
   const deferredProposals = getDeferredPrintProposals(item?.payload?.deferred_print_proposals);
+  const sourceGroupOffers = deferredProposals.filter(({ reason }) => reason === sourceFragmentProposal);
+  const activeSourceGroup = sourceGroupDraft?.pageId === item?.id ? sourceGroupDraft : null;
   const countOutlines = type === "segmentation" ? getFragmentReviewOutlines(item?.payload?.detections || []) : [];
   const captureSplitGroups = type === "segmentation" ? getCaptureSplitReviewGroups(item?.payload?.detections || []) : [];
   const filmGridGroups = type === "segmentation" ? getFilmGridReviewSeams(item?.payload?.detections || []) : [];
@@ -749,6 +783,7 @@ function CropReview({ albumId, goHome }) {
     setType(nextType);
     setBlockedCropTaskId(null);
     setGroupSelection(null);
+    setSavedSourceGroupPage(null);
     setAnswerError("");
     setMessage("");
   }
@@ -823,15 +858,33 @@ function CropReview({ albumId, goHome }) {
       setSubmitting(false);
     }
   }
+  function closeSourceGroup(saved) {
+    setSourceGroupDraft(null);
+    returnCountId.current = item.id;
+    if (saved) setSavedSourceGroupPage(item.id);
+    load().catch(error => setAnswerError(error.message));
+  }
   return <div className="mobile-shell crop-review-shell"><MobileHeader title="Cropping prüfen" onBack={leaveReview}/><main className="mobile-content"><div className="review-top"><div><span>Kurze Sitzung</span><strong>{Math.min(index + 1, items.length || 5)} / {Math.min(items.length, 5) || 5}</strong></div><div className="review-progress"><i style={{width:`${Math.min(100, index / Math.max(1, Math.min(items.length,5)) * 100)}%`}}/></div></div>
-    <div className="task-switch"><button className={type === "segmentation" ? "active" : ""} onClick={() => switchTask("segmentation")} disabled={submitting}>Printanzahl</button><button className={type === "geometry" ? "active" : ""} onClick={() => switchTask("geometry")} disabled={submitting}>Crop-Qualität</button></div>
+    <div className="task-switch"><button className={type === "segmentation" ? "active" : ""} onClick={() => switchTask("segmentation")} disabled={submitting || Boolean(activeSourceGroup)}>Printanzahl</button><button className={type === "geometry" ? "active" : ""} onClick={() => switchTask("geometry")} disabled={submitting || Boolean(activeSourceGroup)}>Crop-Qualität</button></div>
     {answerError && <p role="alert">{answerError}</p>}
+    {item?.id === savedSourceGroupPage && !activeSourceGroup && <p role="status">
+      Ein gemeinsamer Abzug gespeichert. Die Papierkanten bleiben in Prüfung.
+    </p>}
     {item ? <>
-      <DetectionOverlay item={item} editable={type === "geometry"} openPaperOutline={Boolean(focusedPhotoId)}
+      <DetectionOverlay key={activeSourceGroup?.requestId || "review"} item={item}
+        editable={type === "geometry" || Boolean(activeSourceGroup)} openPaperOutline={Boolean(focusedPhotoId)}
         countOutlines={countOutlines} captureSplitGroups={captureSplitGroups}
         filmGridGroups={filmGridGroups} selectedCountGroup={selectedCountGroup} paperGridGroups={paperGridGroups}
         paperJoinGroups={paperJoinGroups} onSaved={updateSavedCropModes}
+        sourceGroupDraft={activeSourceGroup} onSourceGroupClose={closeSourceGroup}
         onProtectionBlocked={setBlockedCropTaskId} />
+      {!activeSourceGroup && <>
+      {sourceGroupOffers.map(proposal => <button key={proposal.id} className="magnifier-toggle" type="button"
+        disabled={submitting} onClick={() => {
+          const polygon = cyclicReviewQuad(sanitizeReviewPolygon(proposal.polygon));
+          if (polygon) setSourceGroupDraft({ ...proposal, polygon, revision: item.payload.photo_count_revision,
+            pageId: item.id, requestId: crypto.randomUUID() });
+        }}>Möglichen gemeinsamen Abzug prüfen</button>)}
       <CountGroupReview groups={countGroups} selected={selectedCountGroup} busy={submitting}
         onSelect={key => { setGroupSelection(key == null ? null : { pageId: item.id, key }); setAnswerError(""); }}
         onExclude={excludeCountGroup} />
@@ -857,11 +910,12 @@ function CropReview({ albumId, goHome }) {
           </button>
         ))}
       </section>
+      </>}
     </> : <section className="review-done"><Check size={48}/><h2>{message || (loading ? "Prüfaufgaben werden geladen …"
       : focusedPhotoId ? "Dieser Abzug ist nicht mehr in der Prüfung" : "Keine Aufgaben offen")}</h2>
       {focusedPhotoId ? <button onClick={() => switchTask("segmentation")}>Zurück zur Printanzahl</button>
         : <button onClick={() => load().catch(error => setMessage(error.message))}><RefreshCw/> Neu laden</button>}
-    </section>}{item && <button className="skip-task" disabled={submitting}
+    </section>}{item && !activeSourceGroup && <button className="skip-task" disabled={submitting}
       onClick={() => focusedPhotoId ? switchTask("segmentation") : setIndex(i => i + 1)}>
       {focusedPhotoId ? "Zurück zur Printanzahl" : "Überspringen"}
     </button>}

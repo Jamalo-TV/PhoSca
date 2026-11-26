@@ -32,6 +32,15 @@ const scallopedOwnershipHint = "Prüfe am Original, ob im markierten Bereich ein
 export const adjacentPrintHint = "Prüfe am Original, ob der gestrichelte Bereich ein eigener Abzug ist und ob der helle Streifen zu seinem Papier gehört.";
 export const nestedPrintHint = "Prüfe am Original, ob der gestrichelte Bereich zum selben Papierabzug gehört. Bei einem Abzug bleiben alle Bilder im Motiv. Ergänze den Bereich, wenn dort ein eigener Abzug aufliegt.";
 export const deferredPrintHint = "Prüfe die violett gestrichelten Konturen am Original. Bestätige die Anzahl, wenn alle Abzüge bereits erfasst sind.";
+export const sourceFragmentProposal = "possible_source_fragmented_print";
+const sourceFragmentGroupReason = "SOURCE_FRAGMENT_GROUP_REVIEW";
+export const sourceFragmentCountHint = "Prüfe am Original, ob die beiden Teilvorschläge zu einem Abzug gehören. Prüfe besonders die kurz gestrichelte Papierkante.";
+export const sourceFragmentReviewErrors = {
+  source_print_fragments_stale: "Die Teilvorschläge haben sich geändert. Prüfe die aktuelle Seite erneut.",
+  deferred_print_proposal_stale: "Der Vorschlag ist nicht mehr aktuell. Gehe zurück zur Anzahlprüfung und prüfe die aktualisierte Seite.",
+  source_print_fragments_confirmation_required: "Bestätige, dass beide Teilvorschläge zu diesem Abzug gehören.",
+  source_print_outline_excludes_fragments: "Prüfe die vier Ecken am Original. Der Umriss muss zu den gemessenen Kanten und den beiden Teilvorschlägen passen.",
+};
 export const crossingPrintReason = "CROSSING_PRINT_OUTLINE_REVIEW";
 export const crossingPrintHint = "Prüfe am Original, ob die gestrichelte Kontur einen eigenen Abzug zeigt. Falls die durchgezogene Markierung falsch ist, lade die gestrichelte Kontur und setze die Ecken an den Papierrand.";
 export const crossingPrintSaveHint = "Korrigiere und speichere zuerst die vier Ecken unter «Ganzer Abzug».";
@@ -141,6 +150,7 @@ export function paperOutlineRequiresReview(fullPrint) {
     || fullPrint.suggested_edge_source === possibleOverextendedPrintEdge
     || fullPrint.reason_codes?.some(reason => reason === "PRINT_EDGE_CONFIRMATION_REQUIRED"
       || reason === "PAPER_GRID_OVERLAP_REVIEW" || reason === manualNeighborOverlap
+      || reason === sourceFragmentGroupReason
       || reason === manualNeighborContentLoss) || paperOutlineNeedsConfirmation(fullPrint));
 }
 
@@ -324,6 +334,7 @@ const reviewMessages = {
   MULTIPANEL_PRINT_REVIEW: "Prüfe die Papierkanten am Original. Auf einem Abzug muss der Motivzuschnitt alle Bilder enthalten. Sind es getrennte Abzüge, korrigierst du die Ecken für den ersten und ergänzt die übrigen im Editor.",
   FRAGMENTED_PRINT_REVIEW: "Prüfe die durchgehende Papierkante am Original. Liegen zwei einzelne Abzüge vor, korrigiere die Ecken des ersten und ergänze den zweiten im Editor.",
   [fragmentOutlineReason]: fragmentOutlineHint,
+  [sourceFragmentGroupReason]: "Prüfe in der Anzahlprüfung am Original, ob dieser Teil zu demselben Abzug gehört wie der zweite Vorschlag.",
   [crossingPrintReason]: crossingPrintHint,
   [scannerBackingReason]: scannerBackingHint,
   [filmGridReason]: filmGridHint,
