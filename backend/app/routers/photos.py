@@ -20,7 +20,7 @@ from app.core.auth import Principal, get_principal, require_write_principal
 from app.database import get_async_session
 from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PageStatus, PhotoStatus, ProcessingRun, StageRun
 from app.pipeline.adjacent_stock_review import ADJACENT_STOCK_REVIEW_SOURCE
-from app.pipeline.bowed_edge_review import POSSIBLE_BOWED_PRINT_EDGE
+from app.pipeline.bowed_edge_review import MEASURED_PRINT_PREVIEW_SOURCES
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
 from app.pipeline.crossing_prints import REVIEWED_CROSSING_OUTLINE, reviewed_outline_covers_traces
 from app.pipeline.dark_album_review import DARK_ALBUM_PROPOSAL
@@ -261,14 +261,15 @@ async def _review_overlapping_crops(
         preview = full_mode.get("outline_preview") or {}
         preview_source = preview.get("source")
         assisted_previews = (GRID_OUTLINE_REVIEW_SOURCE, POSSIBLE_OVEREXTENDED_PRINT_EDGE, INWARD_CORNER_REVIEW_SOURCE)
-        bowed_preview = preview_source == POSSIBLE_BOWED_PRINT_EDGE
-        preview_claim = preview.get("source_search_band" if bowed_preview else "source_outline")
-        if (quad is not None and (preview_source in assisted_previews or bowed_preview) and manual_print_intersects(
-            preview_claim, quad, width, height, minimum_overlap_px=1. if bowed_preview else None,
+        measured_preview = preview_source in MEASURED_PRINT_PREVIEW_SOURCES
+        fields = ("source_search_band", "source_inset_band") if measured_preview else ("source_outline",)
+        if (quad is not None and (preview_source in assisted_previews or measured_preview) and any(
+            manual_print_intersects(preview[key], quad, width, height, minimum_overlap_px=1. if measured_preview else None)
+            for key in fields if preview.get(key)
         )):
             full_mode.pop("outline_preview")
             correction.pop("album_page_mark_review", None)
-            if full_mode.get("suggested_edge_source") in {POSSIBLE_OVEREXTENDED_PRINT_EDGE, POSSIBLE_BOWED_PRINT_EDGE}:
+            if full_mode.get("suggested_edge_source") in (POSSIBLE_OVEREXTENDED_PRINT_EDGE, *MEASURED_PRINT_PREVIEW_SOURCES):
                 full_mode.pop("suggested_edge_source", None)
                 full_mode.pop("suggested_edge_traces", None)
             if full_mode.get("suggested_outline_source") == INWARD_CORNER_REVIEW_SOURCE:

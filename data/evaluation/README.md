@@ -396,6 +396,19 @@ native whole-leaf acquisition for that print is still unverified.
 [Venice catalogue](https://prokudin-gorsky.org/gallery/photo/1176) ·
 [Figueres album catalogue](https://www.bibgirona.cat/regira/municipis/figueres/colleccions/album-rubaudonadeu)
 
+A byte-level inventory against 228 pinned images checks 1,682 Git blobs,
+10,747 workspace images, and 22 image members in 11 local archives. The
+only matching Git assets are 17 known Golden or legacy JPEGs. The Git
+LFS inventory is empty. Four Romanov whole leaves and five edition
+rasters can be tied to their published Git blobs and local SHA-256
+values. Their physical boundaries, print process and rights still
+need verification. Seven published whole-leaf JPEG hashes match the
+Kreis albums `SGV_10A_00031` and `SGV_10A_00050`. These published
+derivatives use CC BY-NC 4.0. The separate print acquisitions and rights
+for the required evaluation remain open. These checks added zero shared
+verified release groups. Receipts are under
+`runs/crop-quality/displaced-print-edges/reference-intake/`.
+
 The source-only preflight at `eccc049` rechecked seven tracked drafts.
 On this workspace it reported 26 missing pinned page rasters and 12
 missing independent scan assets. The drafts account for 15 final-split
@@ -5688,6 +5701,95 @@ optional source trace and preview metadata.
 The `print_outline_suggestion` profile moves to revision 4. The paired
 native masks, PNG, browser receipts and evaluator comparisons are
 local under `runs/crop-quality/bowed-edge-preview/`.
+
+### Compare two displaced edges on Golden page 04
+
+The original Golden page 04 (`7666f3ff…`, 2560 × 1920) has three
+correctly detected prints and zero extra proposals in the mixed replay.
+The left lower print (truth index 1, prediction index 2) keeps the
+detector's rectangle. The automatic fit supports top and right, weakly
+supports the left side at 0.1964, and reports two competing transitions
+at the bottom at 0.7679. The legacy annotation reports 8,794 missed
+source centres beyond one pixel. Two disjoint sets of source
+measurements both confirm 6,072 of those centres. The measured loss
+is printed stone and window detail along the bowed left edge. The
+adjacent centre print starts only about 2–6 native px beyond the
+right boundary over part of its length.
+
+Revision 5 looks for a weak outward and an ambiguous inward side
+beside two well-supported sides. Each disputed side is sampled in
+half-pixel offsets at 256 native stations. A signed lightness step
+with a pale, locally consistent outer collar nominates source samples.
+The robust quadratic fit needs at least 87% distributed coverage and
+at most 1.35 px p95 residual. The outward fit needs a 2.5–10 px bow.
+The inward fit also needs a source-supported transition that ends at
+a corner where the pale material continues past the print. A weaker
+outer lightness drop can identify a competing paper rim. Its veto
+checks the three-pixel drop and its excess above both adjacent
+three-pixel slopes. A detected neighbor intersecting either search
+corridor vetoes the comparison.
+
+Four open sections can be drawn over the original. The optional PNG
+uses the same homography plus an 11 × 1 output pixel translation.
+On the left, it expands only to the nearer measured or fitted edge
+with a 1.5 native px margin. At the bottom it retains at least 2.5
+native px of the pale side of the strong scene transition. Any
+inset strip touching a protected region, its existing padding, or
+an extra native pixel returns locally to the existing cut. Open
+intervals and the corners return to the existing cut as well.
+The comparison adds 4,753 source centres, removes 4,607, and omits
+zero previously sampled centres in the padded protected regions.
+Both optical fits support 4,752 of the additions and find zero
+removed centres in their strict content intersection.
+
+| Measured quantity | Stored crop | Transparent review preview |
+| --- | ---: | ---: |
+| Source footprint IoU against the old annotation | 0.96641 | 0.97752 |
+| Omitted source centres beyond one pixel, old annotation | 8,794 | 4,063 |
+| Output pixels with foreign contribution beyond one pixel, old annotation | 20,284 | 14,141 |
+| Source footprint IoU against optical fit on the second station split | 0.97087 | 0.98203 |
+| Omitted source centres beyond one pixel, second split | 6,177 | 1,425 |
+| Output pixels with foreign contribution beyond one pixel, second split | 18,002 | 12,732 |
+
+The optical splits describe one exposure. At the bottom the pale
+material reaches the neighbouring album area and a lower layer
+edge continues past the print. A pale paper border with the same
+appearance remains possible. A separate white-rim ScanCropper print
+has two discernible edges, a strong scene-to-stock step and a weaker
+stock-to-scanner step farther out. With matching pale material the
+second edge can remain unobservable. A narrow color-matched layer
+over the left side can also pass the optical test in a constructed
+control. These limits govern how the comparison is described in both
+editors. Metric dimensions, landmark accuracy and the true motif
+boundary remain unverified on this page.
+
+The comparison is served as a review PNG beside the stored JPEG.
+Both named modes and the old cropped export remain held through
+upload and reprocessing. Upload and reprocessing produced the same
+PNG and JPEG bytes in the normal application path. An unchanged
+mobile corner submission without physical dimensions received
+`protected_region_cut` and left the review open. An overlapping manual claim retires the
+comparison, including when it crosses only the inward measurement
+band. The new cue does not record a manual paper-curve decision.
+The ordinary manual geometry and protected-content checks still
+apply separately.
+
+The helper took 39 ms median and 84 ms p95 across 25 warm calls
+on one OpenCV thread with the verification suite running. Eight
+paired evaluations preserve detections, named crop geometry and
+mode availability. These include 18/18 frozen detections, 11/11
+seeded whole prints and 12/12 seeded motifs. The new comparison
+appears on the original Golden 04 only. In the separate replay of
+its original and three rotated JPEG encodings the detector matches
+all 12 prints and keeps two existing extra proposals. The rotated
+encodings enter different boundary diagnostics and get no new
+comparison. On the 180° JPEG55 replay the original model seed reaches
+native y = 1886 in the original orientation. The subsequent boundary
+fit follows a different album edge out to y = 1906. Beyond the
+separately measured album layer and a further 3 px guard are 22,581
+output samples with foreign material, including 21,667 wholly foreign
+samples. This case remains held. Browser captures, renderer replay
+and paired metrics are under `runs/crop-quality/displaced-print-edges/`.
 
 ### Measure seed displacement and competing print edges
 

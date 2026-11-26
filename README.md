@@ -230,6 +230,23 @@ Verschiebung löst die Prüfung einer gebogenen Kante nicht auf.
 Bei sichtbarer Wölbung hilft eine flache Neuaufnahme.
 [Gemessener gebogener Rand auf Golden-Seite 26](data/evaluation/README.md#recover-an-observed-bowed-edge-in-a-transparent-review-preview)
 
+Sind zwei benachbarte Zuschnittkanten in entgegengesetzte Richtungen
+verschoben, misst PhoSca beide Übergänge im Original. Ein sichtbarer
+Bildstreifen ausserhalb des bisherigen Zuschnitts kann in der
+transparenten Prüfvorschau wieder sichtbar werden. An der anderen
+Seite kann die Vorschau einen hellen Streifen teilweise ausblenden,
+wenn sich der Untergrund über die Ecke hinaus fortsetzt. Schutzflächen
+mit ihrem Sicherheitsabstand bleiben sichtbar. Eine zweite, klar
+messbare Aussenkante im hellen Streifen oder ein Nachbarvorschlag im
+Messbereich verhindert den transparenten Vergleich.
+
+Die zwei Vorschauen unter **Ganzer Abzug** zeigen den Unterschied mit
+derselben Perspektive. Der helle Streifen kann zum Fotopapier gehören.
+Prüfe beide Übergänge am Original. Die offenen Markierungen zeigen,
+wo die Übergänge messbar sind. Beide Zuschnittmodi warten weiterhin
+auf die Prüfung ihrer jeweiligen Grenzen.
+[Beispiel Golden-Seite 04](data/evaluation/README.md#compare-two-displaced-edges-on-golden-page-04)
+
 Bei hellen Papierrändern direkt nebeneinander kann der Zuschnitt an
 der inneren Bildkante enden. PhoSca prüft zusätzlich, ob sich der
 helle Streifen ausserhalb der Schnittkante bis zum benachbarten

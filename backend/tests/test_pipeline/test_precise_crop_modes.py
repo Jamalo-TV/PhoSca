@@ -113,6 +113,63 @@ def test_rotated_album_adds_a_bowed_strip_only_to_the_held_preview(monkeypatch):
     assert check_manual_paper_boundary(image, quad, {"outline": [], "curve": reference}) == (True, reference["traces"])
 
 
+def test_displaced_album_edges_change_only_the_comparison_and_keep_protected_centres(monkeypatch):
+    from app.pipeline import perspective
+    from app.pipeline.bowed_edge_review import POSSIBLE_DISPLACED_PRINT_EDGES, suggest_displaced_print_preview
+    from app.pipeline.crop_sampling import _outline_mask
+    from app.pipeline.manual_paper_boundary import paper_curve_review_reference
+
+    path = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_04.jpg"
+    image = cv2.imread(str(path))
+    # Mixed detector seed before the native edge inspection.
+    seed = [(0.0324345455, 0.3887441456), (0.0578350909, 0.9775924683),
+            (0.3348964453, 0.9718603492), (0.3372411132, 0.3856174946)]
+    mask = {"polygon": [{"x": x, "y": y} for x, y in seed], "source": "yolo_seg_mask", "detector_source": "yolo_onnx"}
+    region = {"type": "face", "source": "opencv_haarcascade_frontalface_default", "margin_ratio": .18,
+              "box": {"x1": 91, "y1": 1446, "x2": 454, "y2": 1809}}
+    options = {"dual_mode": True, "enable_classical_retry": True, "protect_regions": True, "auto_orient": False,
+               "protected_regions": [region], "allow_page_face_overlap": True}
+    with monkeypatch.context() as baseline:
+        baseline.setattr(perspective, "suggest_displaced_print_preview", lambda *_, **__: None)
+        before = correct_photo_crop(image, {}, mask, **options)
+    after = correct_photo_crop(image, {}, mask, **options)
+    original, modes = before.metadata["crop_modes"], after.metadata["crop_modes"]
+    full = modes["full_print"].copy()
+    assert full.pop("suggested_edge_source") == POSSIBLE_DISPLACED_PRINT_EDGES
+    assert len(full.pop("suggested_edge_traces")) >= 2
+    preview = full.pop("outline_preview")
+    assert preview["source"] == POSSIBLE_DISPLACED_PRINT_EDGES and preview["source_side"] == 3
+    assert len(preview["source_inset_band"]) == 4 and "suggested_warp_quad" not in full
+    assert full == original["full_print"] and modes["image_only"] == original["image_only"]
+    assert all(mode["status"] == "review_needed" for mode in modes.values())
+    assert paper_curve_review_reference(after.metadata) is None
+    np.testing.assert_array_equal(after.image, before.image)
+    assert before.full_print_preview is None and after.image_only is None
+    assert after.full_print_preview.shape[2] == 4 and np.any(after.full_print_preview[..., 3] == 0)
+
+    height, width = image.shape[:2]
+    quad, outline = (normalized_vertices_to_pixels([(p["x"], p["y"]) for p in row], width, height)
+                     for row in (full["warp_quad"], preview["source_outline"]))
+    original_source = _outline_mask(quad, image.shape[:2]).astype(bool)
+    comparison_source = _outline_mask(outline, image.shape[:2]).astype(bool)
+    removed = original_source & ~comparison_source
+    assert 4_000 <= np.count_nonzero(comparison_source & ~original_source) <= 5_600
+    assert 3_200 <= np.count_nonzero(removed) <= 5_400
+    assert not removed[1380:1875, 25:520].any()
+    evidence = after.metadata["boundary_refinement"]
+    for neighbor in (_rect(76, 812, 82, 980), _rect(620, 1850, 653, 1866)):
+        assert suggest_displaced_print_preview(image, quad, evidence, [neighbor]) is None
+
+    # A pale rim beyond the main scene edge supplies a competing outer edge.
+    ys, xs = np.ogrid[:height, :width]
+    outward_distance = (ys - 1852.15) + .0103 * (860.31 - xs)
+    rim = (xs > 141) & (xs < 858) & (outward_distance > 0) & (outward_distance < 14)
+    pale = image.copy()
+    tone = 4.5 * np.clip(np.minimum(outward_distance[rim], 14 - outward_distance[rim]), 0, 2)
+    pale[rim] = np.clip(pale[rim].astype(np.float32) + tone[:, None], 0, 255).astype(np.uint8)
+    assert suggest_displaced_print_preview(pale, quad, evidence, []) is None
+
+
 def test_overlapping_print_shows_only_exposed_paper_without_changing_either_crop(monkeypatch):
     from app.evaluation.crop_fixtures import synthetic_crop_pages
     from app.pipeline import perspective

@@ -884,6 +884,61 @@ async def test_bowed_source_review_survives_preview_invalidation_and_small_manua
         assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
 
 
+async def test_inset_source_claim_retires_displaced_edge_comparison(client, monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, Page
+    from app.pipeline.bowed_edge_review import POSSIBLE_DISPLACED_PRINT_EDGES
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_CLASSICAL_SEGMENTATION_FALLBACK", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    get_settings.cache_clear()
+    original = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures" / "page_04.jpg"
+    source = tmp_path / "golden04.jpg"
+    source.write_bytes(original.read_bytes())
+    height, width = cv2.imread(str(source)).shape[:2]
+    _, page_id, photo_id = await _seed_review_data()
+    seed = [(0.0324345455, 0.3887441456), (0.0578350909, 0.9775924683),
+            (0.3348964453, 0.9718603492), (0.3372411132, 0.3856174946)]
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        page.storage_path = str(source)
+        page.file_hash_sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.bounding_box = {"x1": .0324, "y1": .3854, "x2": .3375, "y2": .9776}
+        photo.segmentation_mask = {"source": "yolo_seg_mask", "detector_source": "yolo_onnx",
+                                   "polygon": [{"x": x, "y": y} for x, y in seed]}
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    rendered = await client.post(f"{url}/reprocess")
+    assert rendered.status_code == 200, rendered.text
+    photo = (await client.get(url)).json()
+    metadata = photo["enhancement_applied"]
+    full = metadata["correction"]["crop_modes"]["full_print"]
+    assert full["outline_preview"]["source"] == POSSIBLE_DISPLACED_PRINT_EDGES
+    assert not (metadata.get("review_provenance") or {}).get("paper_curve_review")
+    preview = photo["urls"]["full_print_preview"]
+    assert (await client.get(preview)).status_code == 200
+
+    # This separate source claim intersects only the inset measurement band.
+    claim = [(603, 1847), (673, 1847), (673, 1869), (603, 1869)]
+    added = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": [{"x": x / (width - 1), "y": y / (height - 1)} for x, y in claim],
+    })
+    assert added.status_code == 201, added.text
+    assert (await client.get(preview)).status_code == 404
+    replay = await client.post(f"{url}/reprocess")
+    assert replay.status_code == 200, replay.text
+    modes = replay.json()["enhancement_applied"]["correction"]["crop_modes"]
+    assert all(mode["status"] == "review_needed" for mode in modes.values())
+    assert all(key not in modes["full_print"] for key in ("outline_preview", "suggested_edge_source", "suggested_edge_traces"))
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
+
+
 async def test_legacy_photo_serves_trim_and_keeps_untrimmed_variant(client, monkeypatch) -> None:
     from app.config import get_settings
 

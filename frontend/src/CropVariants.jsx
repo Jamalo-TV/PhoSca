@@ -107,6 +107,7 @@ export const possibleOverextendedPrintEdge = "possible_overextended_print_edge";
 const possibleInwardPrintEdge = "possible_inward_print_edge";
 const possibleInwardPrintCorner = "possible_inward_print_corner";
 const possibleBowedPrintEdge = "possible_bowed_print_edge";
+const possibleDisplacedPrintEdges = "possible_displaced_print_edges";
 const curvedPrintOutlineReviewReason = "PRINT_CURVED_OUTLINE_REVIEW";
 const captureAtEdgeHint = "Der Abzug reicht über den Aufnahmerand hinaus. Für einen vollständigen Zuschnitt brauchst du eine neue Aufnahme.";
 export const captureSplitReviewHint = "Die gestrichelten Linien zeigen einen möglichen gemeinsamen Papierrand. Prüfe am Original, wie viele Abzüge dort liegen.";
@@ -264,8 +265,8 @@ export function captureRequiresReview(fullPrint) {
   return fullPrint?.reason_codes?.some(reason => reason === captureAtEdgeReason || reason === captureOutlineReviewReason);
 }
 
-function hasBowedPrintReview(fullPrint) {
-  return fullPrint?.suggested_edge_source === possibleBowedPrintEdge || fullPrint?.outline_preview?.source === possibleBowedPrintEdge;
+function hasMeasuredEdgeReview(fullPrint, source) {
+  return fullPrint?.suggested_edge_source === source || fullPrint?.outline_preview?.source === source;
 }
 
 export function paperOutlineRequiresReview(fullPrint) {
@@ -274,7 +275,8 @@ export function paperOutlineRequiresReview(fullPrint) {
     || fullPrint.suggested_edge_source === possibleBackedPaperEdge
     || fullPrint.suggested_edge_source === possibleOverextendedPrintEdge
     || fullPrint.suggested_edge_source === possibleInwardPrintEdge
-    || hasBowedPrintReview(fullPrint)
+    || hasMeasuredEdgeReview(fullPrint, possibleBowedPrintEdge)
+    || hasMeasuredEdgeReview(fullPrint, possibleDisplacedPrintEdges)
     || fullPrint.reason_codes?.some(reason => reason === "PRINT_EDGE_CONFIRMATION_REQUIRED"
       || reason === curvedPrintOutlineReviewReason
       || reason === "PAPER_GRID_OVERLAP_REVIEW" || reason === manualNeighborOverlap
@@ -309,7 +311,10 @@ export function getPrintEdgeReviewHint(fullPrint) {
   if (fullPrint?.suggested_warp_quad?.length === 4) {
     return "Vergleiche den vorgeschlagenen Aussenumriss mit dem Original. Setze die Ecken an die sichtbare Papierkante.";
   }
-  if (hasBowedPrintReview(fullPrint)) {
+  if (hasMeasuredEdgeReview(fullPrint, possibleDisplacedPrintEdges)) {
+    return "Die gestrichelten Abschnitte zeigen zwei Übergänge im Original. Prüfe, wo das Bild weitergeht und ob der helle Streifen zum Fotopapier gehört. Bei verdecktem Rand hilft eine Aufnahme mit getrennten, flach liegenden Abzügen.";
+  }
+  if (hasMeasuredEdgeReview(fullPrint, possibleBowedPrintEdge)) {
     return "Prüfe am Original, ob sich die Papierkante wölbt, und verfolge den Papierrand rundum. Bleibt er unklar, fotografiere den Abzug flach aufgelegt.";
   }
   if (fullPrint?.reason_codes?.includes(curvedPrintOutlineReviewReason)) {
@@ -361,6 +366,9 @@ export function getMotifMarginMarks(motif) {
 
 export function getPrintOutlinePreviewHint(fullPrint) {
   const preview = fullPrint?.outline_preview;
+  if (preview?.source === possibleDisplacedPrintEdges) {
+    return "Die Prüfvorschau ergänzt an einer Seite sichtbaren Inhalt und blendet an der anderen einen hellen Streifen teilweise aus. Der Streifen kann zum Abzug gehören. Vergleiche beide Vorschauen mit dem Original.";
+  }
   if (preview?.source === possibleBowedPrintEdge) {
     return "Die Prüfvorschau ergänzt nur den am Original gemessenen sichtbaren Streifen. Der vollständige Papierrand ist noch unklar.";
   }
@@ -380,7 +388,8 @@ export function getPrintOutlinePreviewHint(fullPrint) {
 }
 
 export function showsPaperEdgeComparison(fullPrint) {
-  return [possibleOverextendedPrintEdge, possibleInwardPrintCorner, possibleBowedPrintEdge].includes(fullPrint?.outline_preview?.source);
+  return [possibleOverextendedPrintEdge, possibleInwardPrintCorner, possibleBowedPrintEdge,
+    possibleDisplacedPrintEdges].includes(fullPrint?.outline_preview?.source);
 }
 
 export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint }) {

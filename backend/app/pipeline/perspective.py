@@ -9,7 +9,10 @@ from app.pipeline.album_windows import (
     ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves,
 )
 from app.pipeline.border_removal import CURVED_IMAGE_BOUNDARY, border_chord_quad, find_physical_border, wide_paper_motif_proposal
-from app.pipeline.bowed_edge_review import POSSIBLE_BOWED_PRINT_EDGE, suggest_bowed_print_preview
+from app.pipeline.bowed_edge_review import (
+    POSSIBLE_BOWED_PRINT_EDGE, POSSIBLE_DISPLACED_PRINT_EDGES, suggest_bowed_print_preview,
+    suggest_displaced_print_preview,
+)
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
 from app.pipeline.dark_album_review import DARK_BACKING_OUTLINE_REVIEW
 from app.pipeline.decisions import (
@@ -2023,30 +2026,39 @@ def correct_photo_crop(
             if spans:
                 full_mode["suggested_edge_traces"] = [_vertices_on_page(span, width, height) for span in spans]
                 full_mode["suggested_edge_source"] = POSSIBLE_INWARD_PRINT_EDGE
-        if (enable_classical_retry and not manual and protection["passed"]
-                and mask.get("source") == "classical_border_quad" and mask.get("detector_source") == "edge_contour"
-                and "PRINT_BOUNDARY_UNSUPPORTED" in full_reasons
-                and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
-                and all(mode["status"] == "review_needed" for mode in modes.values())
+        if (enable_classical_retry and not manual and all(mode["status"] == "review_needed" for mode in modes.values())
                 and not any(full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview"))
                 and not any(mask.get(key) for key in ("warp_quad", *_STOCK_REVIEW_CONFLICTS))):
-            try:
-                observed = suggest_bowed_print_preview(page_image, src_points, boundary_refinement, neighbor_polygons)
-                if observed is not None:
-                    preview, evidence = _render_outline_preview(
-                        page_image, observed.outline, np.asarray(full_mode["page_to_output"]),
-                    )
-                    full_mode["outline_preview"] = {
-                        **evidence, "source": POSSIBLE_BOWED_PRINT_EDGE, "source_side": observed.side,
-                        "source_search_band": _vertices_on_page(observed.search_band, width, height),
-                    }
-                    full_mode["suggested_edge_traces"] = [
-                        _vertices_on_page(path, width, height) for path in observed.traces
-                    ]
-                    full_mode["suggested_edge_source"] = POSSIBLE_BOWED_PRINT_EDGE
-                    result = replace(result, full_print_preview=preview)
-            except (ValueError, cv2.error, np.linalg.LinAlgError):
-                pass  # Keep the original held preview when local recovery cannot be rendered.
+            preview_source, measure = None, None
+            if (protection["passed"] and mask.get("source") == "classical_border_quad"
+                    and mask.get("detector_source") == "edge_contour" and "PRINT_BOUNDARY_UNSUPPORTED" in full_reasons
+                    and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}):
+                preview_source, measure = POSSIBLE_BOWED_PRINT_EDGE, suggest_bowed_print_preview
+            elif ((protection["passed"] or protection.get("review_untrimmed")) and mask.get("source") == "yolo_seg_mask"
+                  and mask.get("detector_source") == "yolo_onnx" and "PRINT_BOUNDARY_AMBIGUOUS" in full_reasons
+                  and set(full_reasons) <= {"PRINT_BOUNDARY_AMBIGUOUS", "POSSIBLE_CONTENT_CUTOFF", "PRINT_ASPECT_UNCERTAIN"}):
+                preview_source, measure = POSSIBLE_DISPLACED_PRINT_EDGES, suggest_displaced_print_preview
+            if measure is not None:
+                try:
+                    options = {"protected_regions": regions} if preview_source == POSSIBLE_DISPLACED_PRINT_EDGES else {}
+                    observed = measure(page_image, src_points, boundary_refinement, neighbor_polygons, **options)
+                    if observed is not None:
+                        preview, evidence = _render_outline_preview(
+                            page_image, observed.outline, np.asarray(full_mode["page_to_output"]),
+                        )
+                        full_mode["outline_preview"] = {
+                            **evidence, "source": preview_source, "source_side": observed.side,
+                            "source_search_band": _vertices_on_page(observed.search_band, width, height),
+                        }
+                        if observed.inset_band is not None:
+                            full_mode["outline_preview"]["source_inset_band"] = _vertices_on_page(observed.inset_band, width, height)
+                        full_mode["suggested_edge_traces"] = [
+                            _vertices_on_page(path, width, height) for path in observed.traces
+                        ]
+                        full_mode["suggested_edge_source"] = preview_source
+                        result = replace(result, full_print_preview=preview)
+                except (ValueError, cv2.error, np.linalg.LinAlgError):
+                    pass  # Keep the original held preview when local recovery cannot be rendered.
         if (cuts := full_mode.get("shared_rim_cut_traces")) and not any(
             full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview")
         ):
