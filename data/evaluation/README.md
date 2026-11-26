@@ -2620,6 +2620,56 @@ experiment ONNX digest and its 512 × 512 NCHW input to
 frozen comparison. Run the model with and without
 `--include-classical-fallback` and compare with `--classical-only`.
 
+### Train a detector from architecture without inherited weights
+
+The procedural stock corpus already has an auditable split. The
+two local builds reproduce all 144 JPEG and polygon pairs in
+`detector-stock-experiment-sources.csv`. There are 96 training
+images, 24 validation images for checkpoint choice and 24 separate
+challenge images. The inherited synthetic-control checkpoint used
+a COCO-derived base and included two legacy camera pages in its
+validation split. The new trial uses only the procedural stock
+training and validation images.
+
+Load the architecture with `YOLO("yolo11n-seg.yaml", task="segment")`.
+Train on CPU for 12 epochs at 512 pixels and batch size 8, with
+`workers=0`, `seed=0`, `deterministic=True`, `pretrained=False`,
+`resume=False` and `amp=False`. This trial uses Ultralytics
+8.3.0, Torch 2.7.1+cpu, NumPy 2.2.6 and OpenCV 4.10.0.
+The architecture digest is
+`13215703e646f21dff3eb159b421fac6657903b40bd9981f6e3583b1d291c07f`.
+The initial tensor digest is
+`e3fd8231d60829127a0243b13fd21eff4393ba837f9596d645bdc17d999bcba4`.
+The first attempt was killed before the first batch under memory
+pressure. After closing completed QA processes, restarting from
+the architecture reproduced the same initial tensor digest.
+
+The best checkpoint digest is
+`dd4813f9a3c1d87d2d894e472c88602716a12a4f047b543973286906122c76b8`.
+The fixed 512-pixel ONNX export uses opset 17 and has digest
+`fd656186dd486283486533ac24a704d92c5ae9375f2ba29a5379d7cd94107b35`.
+At the default proposal threshold of 0.25, the exported model
+finds zero of the 46 expected prints on the separate stock
+challenge. Inspecting the exported outputs on all 24 challenge
+pages gives a maximum raw score of 0.11763.
+
+| Diagnostic | Correct / expected | Extra |
+| --- | ---: | ---: |
+| Stock challenge, model only | 0/46 | 0 |
+| Stock challenge, with fallback | 11/46 | 21 |
+| Frozen detection, with fallback | 13/18 | 6 |
+| Golden development, with fallback | 14/29 | 15 |
+| Original camera contact sheet, with fallback | 1/1 | 1 |
+| Domoritz development, with fallback | 4/4 | 0 |
+
+The candidate falls short of the existing frozen and Golden
+baselines. Its frozen result matches the model-free control in
+both crop modes. The training and export can be repeated from
+documented inputs. The candidate stays outside the product
+registry. A future model selection needs the complete inventory
+of all sources used in fitting or selection and the independent
+calibration and release checks for the selected configuration.
+
 ### Isolate invalid model proposals at the image boundary
 
 An exported stock model reproduced a whole-page parse failure on challenge
@@ -3167,6 +3217,41 @@ separate strip. A second visible colour may locate an edge while
 the reviewer still has to assign the added area to a physical print.
 The tested Golden ambiguous cases also have other held reasons
 and do not meet this path's entry condition.
+
+#### Locate a diagonal detection cutoff on Golden 05
+
+In the model-free replay, two proposals match four draft reference
+prints at mask IoU 0.85, with three extra proposals. On the
+upper-left print, the lower-right vertex lies about 289 pixels inside
+the reference. The original detector already places it there. The
+renderer changes that vertex by less than two pixels. Against the
+development outline, the original render omits 144,277 of 641,447
+visible source centres. The mixed run detects all four prints and
+omits 2,109 centres on the same upper-left print.
+
+The nearest upper pair has roughly 263–266 native pixels of
+backing between the prints. The proposed paired-stock check lacks
+the shared paper evidence in this case. An isolated source-fit
+diagnostic starts from the truncated proposal. The retained
+lower-left corner and upper direction define a bottom search
+window. The short right side gives a direction for the second
+window. At original resolution, a light-to-dark transition
+supports 225/256 bottom stations and 256/256 right stations.
+Both arms near the recovered lower-right corner show the same
+local transition. The existing top contour is close to a separate
+dark album rail.
+
+The diagnostic alternate reduces the maximum corner error against
+the draft from 289.3 to 3.68 px. It reduces omitted centres to
+913, includes 2,733 foreign centres relative to that draft and
+has no measured intersection with the other three proposals.
+The native source and four compressed or blurred development
+variants produce supported fits. A covered corner, removed paper
+and a dark added strip fail the combined side and corner checks.
+This trial uses the same already observed proposal as the
+starting geometry. The production path and instance count
+remain as measured above. The metric aspect and final ownership
+need separate proof.
 
 ### Show the visible spans of an interrupted paper edge
 
