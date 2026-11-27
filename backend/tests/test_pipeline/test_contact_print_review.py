@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import pytest
 
-from app.pipeline.contact_print_review import contact_print_review_outline
+from app.pipeline.contact_print_review import _chroma_line, _remeasure_chroma_line, contact_print_review_outline
 from app.pipeline.geometry import order_quad_cyclic
 
 
@@ -44,3 +44,28 @@ def test_source_outline_recovers_the_extent_of_a_printed_contact_grid(rotation):
 def test_source_outline_declines_negative_density_broken_stock_and_missing_rails(positive, split, periodic):
     page, seed, _ = _contact_grid(positive=positive, split=split, periodic=periodic)
     assert contact_print_review_outline(page, seed, seed) is None
+
+
+@pytest.mark.parametrize(("ink_x", "seed_offset", "accepted"), [(119, 0., True), (118, 0., False), (121, 2.5, False)])
+def test_remeasured_chroma_side_needs_three_close_native_fits(ink_x, seed_offset, accepted):
+    page, _, expected = _contact_grid(positive=True, split=False, periodic=True)
+    page[260:480, ink_x:ink_x + 6] = (105, 150, 180)
+    start, end = expected[[3, 0]] + np.float32([seed_offset, 0])
+    assert _chroma_line(page, start, end) is None
+
+    line = _remeasure_chroma_line(page, start, end)
+
+    if accepted:
+        assert line is not None
+        np.testing.assert_allclose(line, [1., 0., -109.5], atol=.05)
+    else:
+        assert line is None
+
+
+def test_remeasured_chroma_side_cannot_narrow_the_original_outline():
+    page, _, expected = _contact_grid(positive=True, split=False, periodic=True)
+    inward = np.float32([1, 0])
+    start, end = expected[[3, 0]] - 1.5 * inward
+    assert all(_chroma_line(page, start - d * inward, end - d * inward) is not None for d in (1, 2, 3))
+
+    assert _remeasure_chroma_line(page, start, end) is None

@@ -11,7 +11,7 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic,
 from app.pipeline.print_edges import _edge_band, _is_pale_stock, refine_print_boundary
 
 
-MULTIPANEL_PRINT_REVISION = 12
+MULTIPANEL_PRINT_REVISION = 13
 MULTIPANEL_PRINT_REVIEW = "MULTIPANEL_PRINT_REVIEW"
 FILM_GRID_REVIEW = "FILM_GRID_REVIEW"
 PAPER_GRID_REVIEW = "PAPER_GRID_REVIEW"

@@ -1015,6 +1015,18 @@ benachbarter Papierabzug behält seine eigene Prüfung in beiden
 Zuschnittmodi.
 [Negativhülle auf der gedrehten Aufnahme](data/evaluation/README.md#review-partial-film-groups-on-the-rotated-contact-page)
 
+Scheitert bei einer solchen Hülle genau eine der vier Farbmessungen,
+setzt PhoSca für diese Seite drei zusätzliche Messungen ein, jeweils
+um ein, zwei und drei Originalpixel nach aussen versetzt. Die drei
+Messungen müssen dieselbe Kante ergeben. An beiden Enden dürfen ihre
+Ergebnisse höchstens 0,60 Pixel auseinanderliegen und maximal
+2,50 Pixel weiter aussen liegen. Eine Messung auf der Innenseite
+sperrt den Hinweis. Wenn eine weitere Kontur die ursprüngliche
+Hüllenfläche beansprucht, bleibt diese Nachmessung gesperrt. PhoSca
+prüft die rekonstruierte Kontur erneut auf die Lage der Filmstreifen
+und auf konkurrierende Flächen, bevor es einen Gruppenhinweis anbietet.
+[Prüfung der verlustfreien Aufnahme](data/evaluation/README.md#recheck-one-uncertain-sleeve-side-on-the-lossless-contact-page)
+
 Bleibt genau eine Papierkante strittig, kann PhoSca ihren Verlauf
 anhand der anderen drei Seiten und der angrenzenden Ecken für
 die Prüfung genauer messen. Vier im Original gestützte Motivkanten,

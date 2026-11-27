@@ -6939,10 +6939,11 @@ are approximately `(152.6, 50.7)` and `(839.4, 58.7)`. A separate
 source measurement finds a median gap of 11.12 pixels between the
 carrier and the paper print. The stage takes a median 141 ms CPU time
 over nine warm calls with one OpenCV thread on this qualifying source.
-Through normal segmentation of 16 development views, only this JPEG
-gets a new group. The lossless 270° twin passes the proposal checks
-but fails source support at one side of the chroma refit. The 90°
-and 180° JPEG75 views each contain only one qualifying strip mask.
+Through normal segmentation of 16 development views, this JPEG is the
+only new group in revision 12. Its lossless 270° twin passes the
+proposal checks but fails source support at one side of the chroma
+refit in that revision. The 90° and 180° JPEG75 views each contain
+only one qualifying strip mask.
 
 In 90 same-source optical controls with fixed detector records, the
 marker is withheld for all 12 wood gaps of 1–5 pixels and all 18
@@ -6971,6 +6972,80 @@ seeded motif recoveries. None of these views adds an independent
 release reference.
 The source comparison and paired local receipts are under
 `runs/crop-quality/rotated-film-group/`.
+
+### Recheck one uncertain sleeve side on the lossless contact page
+
+On the 1014 × 1346 lossless 270° view, the two ONNX fragments cover
+53.1% of the contrast proposal. The source PNG is pinned by SHA-256
+`487af95500bcb3d3c396b30a965fd80b35da0e2161dc22754c32d620d1281cc3`.
+At one long side, support for the measured chroma plateaus falls
+to 81.7% across the edge and 62.2% in the weakest longitudinal section.
+The minimum is 86% across the edge and 65% in every section. The
+other three sides pass the original test.
+
+Revision 13 repeats the existing source-pixel line measurement at
+outward offsets of one, two and three pixels, only for the sleeve and
+only when one of the four original measurements is missing. All
+three fits must pass. At both endpoints of the initial line, their
+signed distances must differ by at most 0.60 native pixels across
+the fits. Each fit must lie between zero and 2.50 pixels outward.
+More than one square pixel of overlap between the original carrier
+proposal and any other active or deferred outline disables the retry.
+The two-pixel measurement supplies the line for that side. The
+resulting quad still goes through the previous shape, corner,
+containment, peer, divider and rim checks. This also rules out an
+inward transition where all three scans agree but the fitted contour
+would leave part of a competing claim outside.
+
+The largest spread in this lossless view is 0.33 pixels and the
+largest displacement from the initial line is 1.58 pixels. The
+output lines are approximately `(628.5, 138.1)` to `(629.1, 609.6)`
+for the divider and `(152.6, 50.9)` to `(839.3, 58.6)` for the rim.
+Both strip masks lie entirely within the refitted carrier. The
+independent paper mask has zero overlap with the carrier. The
+lossless source gains the group in normal segmentation. The other
+15 recorded development views retain their existing grouping.
+On this lossless source the complete sleeve stage takes a median
+167 ms CPU time over nine warm calls with one OpenCV thread. The
+four-side-only stage declines in 77 ms under the same conditions.
+
+All 90 JPEG75 divider controls retain their earlier results. On 60
+lossless source edits with fixed proposals, all 12 wood gaps of 1–5
+pixels and all 18 grey or muted-grey gaps of 2–5 pixels suppress the
+cue. The cue stays visible on six one-pixel grey or muted-grey gaps,
+12 matching pale gaps and six near-stock gaps of one or two pixels.
+The editor still needs a person to distinguish physical pieces in
+these cases.
+
+In a separate 177-case challenge around the exterior edge, the
+outward rule excludes 13 of 54 earlier advisories. The largest
+accepted displacement from the original source edge falls from
+2.442 to 1.123 native pixels. The outward and raw-overlap checks
+block all 27 authored overlapping pending claims that passed the
+earlier retry. The raw-carrier check may also withhold the group
+when a corrected neighbor extends into an overlong raw proposal.
+The known paper in this capture is clear of the fitted sleeve,
+while its independently measured outer outline overlaps the raw
+sleeve by 338.22 native square pixels. Keeping both proposals in
+that circumstance leaves their physical ownership available for
+manual inspection.
+
+Multipart PNG upload with the same mixed-legacy checkpoint reports
+four proposals. Explicit confirmation of the three sleeve rows
+reduces the count to one. Missing confirmation, an unrelated member
+and a stale revision are rejected. Replaying the same decision is
+idempotent. For the independent paper print, both named crop states,
+the geometry, the two checked protected regions and the untrimmed
+preview JPEG match revision 12 through confirmation and reprocessing.
+Both named crops and the trimmed alias remain held because the paper
+rim and aspect remain uncertain. The initial detector result on this
+view is still one true positive, three false proposals and zero
+missed prints. All eight paired reports preserve detection metrics,
+both sets of crop metrics and review availability from `54cb64f`.
+The frozen replay still has 18/18 detections and the seeded geometry
+replay still passes 11/11 whole prints and 12/12 motifs. Timings and
+the multipanel revision are recorded separately. The source comparison
+and local paired receipts are under `runs/crop-quality/lossless-film-group/`.
 
 ### Compare the whole contact print with its counted fragments
 

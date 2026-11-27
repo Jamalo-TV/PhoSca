@@ -65,7 +65,10 @@ def refitted_film_carrier_traces(
     image: np.ndarray, seed: np.ndarray, children: list[np.ndarray], peers: list[np.ndarray],
 ) -> tuple[np.ndarray, np.ndarray] | None:
     """Use the refit for measurement and abstain when another claim overlaps it."""
-    outline = measure_chroma_outer_outline(image, seed, seed)
+    peer_hulls = [cv2.convexHull(peer) for peer in peers]
+    # A disputed raw carrier may use the four-side fit but cannot retry a missing side.
+    clear_raw_carrier = not any(cv2.intersectConvexConvex(seed, peer)[0] > 1 for peer in peer_hulls)
+    outline = measure_chroma_outer_outline(image, seed, seed, remeasure_one_side=clear_raw_carrier)
     if outline is None:
         return None
     for child in children:
@@ -73,7 +76,7 @@ def refitted_film_carrier_traces(
         area, _ = cv2.intersectConvexConvex(outline, hull)
         if area < .98 * cv2.contourArea(hull):
             return None
-    if any(cv2.intersectConvexConvex(outline, cv2.convexHull(peer))[0] > 1 for peer in peers):
+    if any(cv2.intersectConvexConvex(outline, peer)[0] > 1 for peer in peer_hulls):
         return None
     seam = _divider_between_claims(image, outline, children)
     if seam is None:

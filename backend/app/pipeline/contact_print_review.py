@@ -87,6 +87,25 @@ def _chroma_line(image: np.ndarray, start: np.ndarray, end: np.ndarray) -> np.nd
     return np.cross(np.r_[first, 1.], np.r_[last, 1.])
 
 
+def _remeasure_chroma_line(image: np.ndarray, start: np.ndarray, end: np.ndarray) -> np.ndarray | None:
+    edge = end - start
+    inward = np.float32([-edge[1], edge[0]]) / np.linalg.norm(edge)
+    lines = []
+    for distance in (1, 2, 3):
+        offset = distance * inward
+        line = _chroma_line(image, start - offset, end - offset)
+        if line is None:
+            return None
+        lines.append(line / np.linalg.norm(line[:2]))
+
+    # The inward normal makes a positive distance an outward correction.
+    endpoints = np.c_[[start, end], np.ones(2)]
+    distances = np.asarray(lines) @ endpoints.T
+    if distances.min() < 0 or distances.max() > 2.50 or np.ptp(distances, axis=0).max() > .60:
+        return None
+    return lines[1]
+
+
 def _continuous_pale_perimeter(image: np.ndarray, outline: np.ndarray) -> bool:
     for start, end in zip(outline, np.roll(outline, -1, axis=0), strict=True):
         length = float(np.linalg.norm(end - start))
@@ -127,14 +146,22 @@ def _positive_grid_on_stock(image: np.ndarray, outline: np.ndarray) -> bool:
                for row, pitch in zip(centers, pitches, strict=True))
 
 
-def measure_chroma_outer_outline(image: np.ndarray, seed: np.ndarray, current: np.ndarray) -> np.ndarray | None:
+def measure_chroma_outer_outline(
+    image: np.ndarray, seed: np.ndarray, current: np.ndarray, *, remeasure_one_side: bool = False,
+) -> np.ndarray | None:
     """Refit a larger color-supported contour in the source, independent of its material."""
     proposal = _stable_chroma_outline(image, seed)
     if proposal is None:
         return None
     lines = [_chroma_line(image, a, b) for a, b in zip(proposal, np.roll(proposal, -1, axis=0), strict=True)]
-    if any(line is None for line in lines):
-        return None
+    missing = [index for index, line in enumerate(lines) if line is None]
+    if missing:
+        if not remeasure_one_side or len(missing) != 1:
+            return None
+        side, = missing
+        lines[side] = _remeasure_chroma_line(image, proposal[side], proposal[(side + 1) % len(proposal)])
+        if lines[side] is None:
+            return None
     corners = np.cross(np.roll(np.asarray(lines), 1, axis=0), lines)
     if np.any(np.abs(corners[:, 2]) < 1e-6):
         return None
