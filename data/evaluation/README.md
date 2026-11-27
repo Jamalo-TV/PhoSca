@@ -7183,6 +7183,75 @@ metrics, including the 18 frozen detections and 23 seeded geometry
 recoveries. Local evidence and the comparison are under
 `runs/crop-quality/film-neighbor-edge/`.
 
+### Show an open inner edge with one clear corner
+
+Golden page 10 is the 2560 × 1920 development capture with JPEG
+SHA-256 `02466bf77cf62be45ed4d4b6d3d3c2827b783c7448daba85842dc66998755206`.
+Its fourth active proposal is a dark print from the registered
+mixed model. The stored lower side is flat at native y=1856 and
+includes some pale album backing. Both named modes are held with
+`PRINT_BOUNDARY_UNSUPPORTED` and `PRINT_ASPECT_UNCERTAIN`.
+The former source guides abstain.
+
+Print outline revision 15 can add an open span for a plain base YOLO
+mask with those two held reasons, protected content intact and
+the existing alternative guides absent. It starts with the stored
+geometry and uses the boundary measurements from the current crop.
+The weak side needs the opposite side and at least one adjacent
+side to have strong support. The inward search fits lines in
+six bounded windows at offsets scaled to the short side. It
+requires a unique pair with a strong scene transition inside a
+line whose pale band agrees with the backing. On this capture the
+outer line follows the transition into the album backing.
+The displayed inside span runs approximately between native
+`(2229.05, 1809.96)` and `(1379.03, 1832.45)`.
+
+The left terminal probes would use pixels claimed by another real
+print. The right corner supplies its own evidence. Local fits from
+6–56 and 12–76 pixels along that adjacent side independently meet
+the inside line within 0.27 pixels of each other. The measured
+transverse edge starts at that corner and the inside line loses
+its support beyond the corner in the same direction. A separately
+supported enclosing perimeter withholds the hint. The scope covers
+both source lines, the search strip and the verified terminal,
+with two pixels around their sample footprint. All active raw,
+visible and warp claims and all pending proposal outlines are
+checked against that scope. Protected regions in the possible
+removed area suppress the line as well.
+
+The multipart upload, worker and review endpoints retain all five
+existing masks, warps, held states, JPEGs and protected-region
+decisions compared with `f5a8d31`. In the exact case a newly added
+manual claim at x2320–2368 and y1797–1850 touches the measurement
+scope alone. It lies outside the saved crop and the displayed
+segment. It removes the hint immediately and on reprocessing.
+A pending proposal with only an outer polygon in the same area
+also withholds the hint on reprocessing.
+
+The fixed-proposal replay emits the line at all eight full-size
+rotation and JPEG75 combinations and abstains at all eight
+75%-size combinations. Full-size endpoints remap to within 0.08
+native pixels. In a 74-proposal independent screen on 22 real
+development views, only this row gets the additional guide.
+The native stage takes 132 ms median CPU time over nine warm calls
+with one OpenCV thread.
+Across the eight paired benchmark reports, all detection, crop and
+review-availability metrics match the prior revision. The new scope
+and line are the sole fixture metadata changes, on this Golden10
+proposal. The frozen and seeded checks retain 18 detections and
+23 passing recoveries.
+
+A diagnostic warp keeping the other three sides fixed improves
+footprint IoU from 0.94688 to 0.99554 and reduces foreign
+interpolation samples beyond one native pixel from 35,974 to 466
+against the development outline. Visible omission at that tolerance
+is unchanged in the matched diagnostic. This warp is an offline
+comparison. Some warm bordered prints and reproduced scenes on
+pale stock produce a similar source transition after JPEG encoding.
+The product shows the single open line for inspection and leaves
+the saved geometry and both named exports held. Receipts and the
+source comparison are under `runs/crop-quality/golden10-inward-edge/`.
+
 ### Compare the whole contact print with its counted fragments
 
 Multipanel revision 9 keeps the right paper outline, the original crop

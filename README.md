@@ -1053,6 +1053,19 @@ Linie am Papier. Der Hinweis hilft beim Vergleich und beide
 Zuschnittmodi bleiben in Prüfung.
 [Vergleich der Papier- und Hüllenkante](data/evaluation/README.md#distinguish-the-previously-reviewed-sleeve-edge)
 
+Liegt eine schwach gestützte gespeicherte Kante im Albumkarton,
+kann PhoSca einen weiter innen sichtbaren Übergang als offene Linie
+markieren. Es vergleicht dafür zwei Linien und prüft am Original,
+welche zum hellen Untergrund überleitet. Eine freie Ecke muss an
+denselben inneren Übergang anschliessen. Beansprucht ein anderer
+Abzug oder ein offener Vorschlag die Messstelle, erscheint der
+Hinweis nur, wenn sich der Übergang an einer anderen freien Ecke
+abstützen lässt. Die Linie zeigt, wo die Person in der Prüfung den
+Papierrand oder den Rand des Motivs vergleichen kann. Ein
+geschützter Bildbereich im fraglichen Streifen sperrt den Hinweis.
+Beide gespeicherten Zuschnittmodi bleiben in Prüfung.
+[Dunkler Abzug und Albumkarton](data/evaluation/README.md#show-an-open-inner-edge-with-one-clear-corner)
+
 Bleibt genau eine Papierkante strittig, kann PhoSca ihren Verlauf
 anhand der anderen drei Seiten und der angrenzenden Ecken für
 die Prüfung genauer messen. Vier im Original gestützte Motivkanten,

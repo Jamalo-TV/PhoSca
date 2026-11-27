@@ -673,9 +673,12 @@ async def perspective_correction_task_logic(
             reference = _measured_print_reference(other_id, other_mask, confidence, correction, width, height)
             if reference is not None:
                 measured_references.append(reference)
-        pending_neighbors = deferred_neighbor_masks(page_steps.get("segmentation") or {})
+        segmentation = page_steps.get("segmentation") or {}
+        pending_neighbors = deferred_neighbor_masks(segmentation)
+        deferred_print_proposals = (segmentation.get("fusion") or {}).get("deferred_print_proposals")
     else:
         pending_neighbors = []
+        deferred_print_proposals = None
     try:
         if stale_mark:
             raise ValueError("album_page_mark_review_stale")
@@ -710,6 +713,7 @@ async def perspective_correction_task_logic(
             page_plane=page_plane,
             measured_page_references=measured_references,
             neighbor_masks=[*neighbor_masks, *pending_neighbors],
+            **({"deferred_print_proposals": deferred_print_proposals} if deferred_print_proposals else {}),
             manual_boundary_reference=manual_boundary,
             verify_manual_contrast_outline=contrast_outline,
             manual_scalloped_polygon=None if paper_claim_conflicts else scalloped_outline,

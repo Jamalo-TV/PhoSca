@@ -42,6 +42,7 @@ from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.merged_print_review import MERGED_PRINT_PAIR, MERGED_PRINT_PAIR_REVIEW
 from app.pipeline.manual_paper_extent import MANUAL_PAPER_EXTENT_SOURCE, measure_manual_paper_extent
 from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_SOURCE, suggest_inward_corner_outline
+from app.pipeline.inward_scene_edge import INWARD_SCENE_EDGE_SCOPE, measure_inward_scene_edge
 from app.pipeline.local_print_edge_review import suggest_local_print_edge_preview
 from app.pipeline.motif_boundary import (
     PARTIAL_MOTIF_SEAMS, close_motif_outline, motif_outline_corners_supported, motif_seams_intersect_claim,
@@ -1831,6 +1832,7 @@ def correct_photo_crop(
     print_aspect_ratio: float | None = None,
     measured_page_references: list[MeasuredPrintReference] | None = None,
     neighbor_masks: list[dict] | None = None,
+    deferred_print_proposals: list[dict] | None = None,
     manual_boundary_reference: dict | None = None,
     manual_scalloped_polygon: list[dict] | None = None,
     reviewed_album_mark: dict | None = None,
@@ -2586,6 +2588,32 @@ def correct_photo_crop(
                 if not any(motif_seams_intersect_claim(spans, box) for box in boxes):
                     full_mode["suggested_edge_traces"] = [_vertices_on_page(span, width, height) for span in spans]
                     full_mode["suggested_edge_source"] = VISIBLE_SCENE_EDGE
+            if (protection["passed"] and set(full_reasons) == {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_ASPECT_UNCERTAIN"}
+                    and mask.get("source") == "yolo_seg_mask" and not mask.get("warp_quad")
+                    and not full_mode.get("suggested_edge_traces")):
+                try:
+                    peers = [
+                        cv2.convexHull(points) for claim in [*(neighbor_masks or []), *(deferred_print_proposals or [])]
+                        for key in ("polygon", "visible_polygon", "warp_quad")
+                        if (points := _proposal_polygon({"polygon": claim.get(key)}, width, height)) is not None
+                    ]
+                    measured = measure_inward_scene_edge(page_image, src_points, boundary_refinement, peers)
+                except (ValueError, cv2.error, np.linalg.LinAlgError):
+                    measured = None
+                if measured is not None:
+                    protected = []
+                    for region in regions:
+                        if box := region_box_in_pixels(region, width, height):
+                            left, top, right, bottom = box
+                            pad = float(region.get("margin_ratio", .08)) * max(right - left, bottom - top)
+                            protected.append(np.float32([
+                                [left - pad, top - pad], [right + pad, top - pad],
+                                [right + pad, bottom + pad], [left - pad, bottom + pad],
+                            ]))
+                    if not any(cv2.intersectConvexConvex(measured.possible_cut, region)[0] > 1 for region in protected):
+                        full_mode["suggested_edge_traces"] = [_vertices_on_page(measured.trace, width, height)]
+                        full_mode["suggested_edge_source"] = POSSIBLE_INWARD_PRINT_EDGE
+                        full_mode[INWARD_SCENE_EDGE_SCOPE] = _vertices_on_page(measured.scope, width, height)
         classical_contact = (
             mask.get("source") == "classical_border_quad" and mask.get("detector_source") == "contrast_region"
             and {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN"} <= uncertain_edges

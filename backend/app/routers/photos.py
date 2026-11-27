@@ -26,6 +26,7 @@ from app.pipeline.bowed_scene_preview import BOWED_SCENE_PREVIEW
 from app.pipeline.capture_fabric_review import CAPTURE_FABRIC_PROPOSAL
 from app.pipeline.contact_print_review import CONTACT_PRINT_EDGE_CHECK, CONTACT_PRINT_EDGE_SCOPE
 from app.pipeline.film_neighbor_edge import FILM_NEIGHBOR_EDGE
+from app.pipeline.inward_scene_edge import INWARD_SCENE_EDGE_SCOPE
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
 from app.pipeline.crossing_prints import CONTESTED_TILE_OUTLINE, REVIEWED_CROSSING_OUTLINE, reviewed_outline_covers_traces
 from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES, near_capture_guide_conflicts
@@ -385,6 +386,15 @@ async def _review_overlapping_crops(
             neighbor.enhancement_applied = metadata
         if (full_mode.get("suggested_edge_source") == VISIBLE_SCENE_EDGE and full_mode.get("warp_quad")
                 and review_outline_intersects_claim(full_mode["warp_quad"], mask, width, height)):
+            full_mode.pop("suggested_edge_source", None)
+            full_mode.pop("suggested_edge_traces", None)
+            neighbor.enhancement_applied = metadata
+        inward_scope = full_mode.get(INWARD_SCENE_EDGE_SCOPE)
+        if inward_scope and any(
+            review_outline_intersects_claim(inward_scope, {"polygon": mask.get(key)}, width, height, convex_scope=True)
+            for key in ("polygon", "visible_polygon", "warp_quad")
+        ):
+            full_mode.pop(INWARD_SCENE_EDGE_SCOPE, None)
             full_mode.pop("suggested_edge_source", None)
             full_mode.pop("suggested_edge_traces", None)
             neighbor.enhancement_applied = metadata
