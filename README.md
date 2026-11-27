@@ -1371,6 +1371,18 @@ die Eckgriffe des ausgewählten Abzugs auch dann ziehen, wenn sie
 innerhalb einer anderen sichtbaren Kontur liegen.
 [Gemessener Bildverlauf am linken Hochzeitsabzug](data/evaluation/README.md#trace-an-unsupported-cut-through-a-compact-scene)
 
+Bei einem Modellvorschlag mit konkurrierenden Übergängen an gegenüberliegenden
+Seiten kann die genaue Papierkante offen bleiben. PhoSca hält dann beide
+Zuschnittmodi in der Prüfung und behält den bestehenden Vorschauzuschnitt bei.
+Die violett gestrichelten Abschnitte zeigen im Original erneut gemessene
+Übergänge. Ein Abschnitt kann fehlen, wenn der Übergang an der Gegenseite
+unscharf ist oder der Messstreifen einen anderen Vorschlag berührt. Prüfe die
+vier Papierecken am Original. Beim Speichern des ganzen Abzugs ist eine
+ausdrückliche Bestätigung der geprüften Papierkante erforderlich. Das gilt auch
+bei einer Grössen- oder Drehänderung. PhoSca prüft den bestätigten Umriss beim
+Rendern erneut. Ein Motivzuschnitt wird separat geprüft.
+[Zwei Aufnahmen desselben Hochzeitsabzugs](data/evaluation/README.md#hold-a-print-when-opposing-outer-lines-remain-ambiguous)
+
 | Aktion | Verhalten |
 | --- | --- |
 | Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |

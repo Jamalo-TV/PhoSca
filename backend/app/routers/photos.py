@@ -57,6 +57,7 @@ from app.pipeline.perspective import (
     manual_print_intersects, review_outline_intersects_claim, review_traces_intersect_claim, validate_review_quads,
 )
 from app.pipeline.presets import available_presets
+from app.pipeline.print_edges import OPPOSING_OUTER_EDGES_CHECK
 from app.pipeline.print_outline_suggestion import POSSIBLE_OUTER_PRINT_PREVIEW, POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
 from app.pipeline.protected_regions import (
@@ -1082,11 +1083,12 @@ async def update_photo_bounding_box(
         explicit = payload.segmentation_mask is not None and payload.segmentation_mask.warp_quad is not None
         detector_source = original_mask.get("detector_source")
         contact_outline = detector_source in {"contrast_region", "yolo_onnx"} and full_print.get(CONTACT_PRINT_EDGE_CHECK) is True
+        opposing_outline = detector_source == "yolo_onnx" and full_print.get(OPPOSING_OUTER_EDGES_CHECK) is True
         unsupported_contrast = (detector_source == "contrast_region"
                                 and "PRINT_BOUNDARY_UNSUPPORTED" in (full_print.get("reason_codes") or []))
         confirm_contrast_outline = (
             photo.segmentation_confidence is not None and full_print.get("status") == "review_needed"
-            and (contact_outline or unsupported_contrast) and not capture_outline_review_required(full_print)
+            and (contact_outline or opposing_outline or unsupported_contrast) and not capture_outline_review_required(full_print)
         )
         if confirm_contrast_outline:
             if not payload.confirm_print_outline or not explicit or segmentation_mask.get("image_quad") is not None:

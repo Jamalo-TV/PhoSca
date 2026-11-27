@@ -74,9 +74,11 @@ from app.pipeline.page_plane import (
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_REVIEW, PARTIAL_PRINT_EXTENT_TRACES
 from app.pipeline.print_edges import (
     COMPETING_PRINT_EDGES,
+    OPPOSING_OUTER_EDGES_CHECK,
     POSSIBLE_BACKED_PAPER_EDGE,
     PRINT_EDGE_CONFIRMATION,
     PRINT_FAINT_RIM_REVIEW,
+    PRINT_OUTER_EDGE_CONFLICT_REVIEW,
     PRINT_SHADOW_EDGE_REVIEW,
     PRINT_SHARED_RIM_UNCERTAIN,
     SHARED_PRINT_RIM_SOURCE,
@@ -92,6 +94,7 @@ from app.pipeline.print_edges import (
     suggest_missing_pale_backing_edge,
     suggest_partial_backed_edge,
     suggest_partial_corner_edge,
+    unresolved_opposing_outer_edges,
 )
 from app.pipeline.print_outline_suggestion import (
     POSSIBLE_INWARD_PRINT_EDGE, POSSIBLE_OUTER_PRINT_PREVIEW, POSSIBLE_OVEREXTENDED_PRINT_EDGE, suggest_inward_print_edge,
@@ -1917,6 +1920,10 @@ def correct_photo_crop(
     if dual_mode and not manual and shared_rim_reference and PRINT_SHARED_RIM_UNCERTAIN not in inspection.reasons:
         inspection.reasons.append(PRINT_SHARED_RIM_UNCERTAIN)
     boundary_refinement, full_reasons = inspection.boundary, inspection.reasons.copy()
+    opposing_edges = []
+    if (dual_mode and not manual and not full_reasons and mask.get("source") == "yolo_seg_mask"
+            and mask.get("detector_source") == "yolo_onnx" and mask.get("visible_polygon_source") == _PRINT_BOUNDARY_SOURCE):
+        opposing_edges = unresolved_opposing_outer_edges(page_image, src_points, boundary_refinement)
     missing_paper = []
     backing_match_pixels = 0
     if dual_mode and manual and manual_neighbor_reference and inspection.occluding_neighbor is None and neighbor_polygons:
@@ -1933,7 +1940,12 @@ def correct_photo_crop(
             segments = edge.pop(COMPETING_PRINT_EDGES, [])
             if not edge.get("review_stock_fit"):
                 competing_segments.extend(segments)
-    print_edge_traces = []
+    print_edge_traces = [_vertices_on_page(trace, width, height) for trace in opposing_edges]
+    if print_edge_traces:
+        claims = [*(neighbor_masks or []), *(deferred_print_proposals or [])]
+        print_edge_traces = [trace for trace in print_edge_traces if not any(
+            review_traces_intersect_claim([trace], claim, width, height) for claim in claims
+        )]
     if ("PRINT_BOUNDARY_CURVED" in full_reasons
             and set(full_reasons) <= {"PRINT_BOUNDARY_CURVED", EXTENDED_PRINT_OUTLINE_REVIEW}):
         print_edge_traces = [_vertices_on_page(np.asarray(segment), width, height) for segment in curve_segments]
@@ -2046,6 +2058,9 @@ def correct_photo_crop(
     if blurred_boundary:
         # Retain the measured warp as a preview and keep its sampling guard.
         full_reasons.append("PRINT_BOUNDARY_BLURRED")
+    if opposing_edges:
+        # Preserve the current review raster and its source-owned interpolation.
+        full_reasons.append(PRINT_OUTER_EDGE_CONFLICT_REVIEW)
     corrected = analysis[top : top + target_height, left : left + target_width]
     if corrected.size == 0 or min(corrected.shape[:2]) < 2:
         raise ValueError("empty_perspective_output")
@@ -2158,6 +2173,8 @@ def correct_photo_crop(
             neighbor_masks=neighbor_masks,
         )
         modes = result.metadata["crop_modes"]
+        if opposing_edges:
+            modes["full_print"][OPPOSING_OUTER_EDGES_CHECK] = True
         if (contrast_outline_suggestion is not None and protection["passed"]
                 and set(full_reasons) <= {PRINT_EDGE_CONFIRMATION, "PRINT_ASPECT_UNCERTAIN"}
                 and not any(_material_print_intersection(contrast_outline_suggestion, cv2.convexHull(neighbor))

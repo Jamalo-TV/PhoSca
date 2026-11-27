@@ -36,6 +36,16 @@ test("a held model contact outline needs the paper confirmation and can refresh 
   assert.equal(contactEdgesNeedRefresh({ ...photo, confidence: null }, full), false);
 });
 
+test("opposing outer lines require explicit paper confirmation for a held model proposal", () => {
+  const photo = { confidence: .85, segmentation_mask: { detector_source: "yolo_onnx" } };
+  const mode = { status: "review_needed", reason_codes: ["PRINT_OUTER_EDGE_CONFLICT_REVIEW"],
+    opposing_outer_edges_check_required: true };
+  assert.equal(contrastOutlineNeedsConfirmation(photo, mode), true);
+  assert.equal(contrastOutlineNeedsConfirmation({ ...photo, confidence: null }, mode), false);
+  assert.equal(contrastOutlineNeedsConfirmation(photo, { ...mode, opposing_outer_edges_check_required: false }), false);
+  assert.equal(contactEdgesNeedRefresh(photo, mode), false);
+});
+
 test("the current whole-print URL controls geometry approval even when a mode says ready", () => {
   const urls = { full_print: null, full_print_preview: "/comparison", image_only: "/motif" };
   assert.equal(wholePrintApprovalHeld({ full_print: { status: "review_needed" } }, urls), true);

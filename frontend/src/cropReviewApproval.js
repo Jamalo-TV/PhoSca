@@ -6,10 +6,11 @@ export function contrastOutlineNeedsConfirmation(photo, fullPrint) {
   const source = photo?.segmentation_mask?.detector_source;
   const reasons = fullPrint?.reason_codes || [];
   const contact = fullPrint?.contact_print_edge_check_required === true && ["contrast_region", "yolo_onnx"].includes(source);
+  const opposingEdges = fullPrint?.opposing_outer_edges_check_required === true && source === "yolo_onnx";
   const unsupportedContrast = source === "contrast_region" && reasons.includes("PRINT_BOUNDARY_UNSUPPORTED");
   return confidence != null
     && fullPrint?.status === "review_needed"
-    && (contact || unsupportedContrast)
+    && (contact || opposingEdges || unsupportedContrast)
     && !reasons.includes("PRINT_AT_CAPTURE_EDGE");
 }
 

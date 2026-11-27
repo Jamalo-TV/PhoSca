@@ -13,6 +13,7 @@ from app.pipeline.print_edges import (
     PRINT_SHADOW_EDGE_REVIEW,
     line_fit_omits_print_stock,
     refine_print_boundary,
+    unresolved_opposing_outer_edges,
 )
 
 
@@ -116,6 +117,71 @@ def test_faint_backing_guide_continued_past_corners_does_not_verify_a_rim():
         assert side["outward_search"]["support"] >= .88
         assert side["outward_search"]["corner_support"] >= .78
     assert PRINT_FAINT_RIM_REVIEW not in reasons
+
+
+_OPPOSING_SEED = np.float32([[210, 160], [550, 160], [550, 459], [210, 459]])
+
+
+def _opposing_outer_line_scene(right_step: int = 4, *, competing_right: bool = False) -> np.ndarray:
+    lab = np.full((640, 810, 3), (247, 128, 128), np.uint8)
+    lab[160:460, 210:551] = (126, 132, 143)
+    # The left pale strip terminates at a strong transition. The right
+    # strip terminates at a weak but distributed illumination step.
+    lab[160:460, 187:210] = (214, 129, 131)
+    lab[160:460, 551:573] = (208, 129, 130)
+    lab[160:460, 573:] = (208 + right_step, 129, 130)
+    if competing_right:
+        lab[160:460, 581:] = (208 + 2 * right_step, 129, 130)
+    return cv2.GaussianBlur(cv2.cvtColor(lab, cv2.COLOR_LAB2BGR), (0, 0), .45)
+
+
+@pytest.mark.parametrize("competing_right", [False, True], ids=["two-clear-lines", "opposite-side-ambiguous"])
+def test_opposing_outer_lines_hold_both_modes_and_keep_the_owned_raster(competing_right):
+    image = _opposing_outer_line_scene(competing_right=competing_right)
+    polygon = segmentation._normalized_polygon(_OPPOSING_SEED, *image.shape[1::-1])
+    mask = {
+        "polygon": polygon,
+        "visible_polygon": polygon,
+        "source": "yolo_seg_mask",
+        "detector_source": "yolo_onnx",
+    }
+    options = dict(dual_mode=True, auto_orient=False, protect_regions=False, print_aspect_ratio=340 / 299)
+    baseline = correct_photo_crop(image, {}, mask, **options)
+    reviewed = correct_photo_crop(
+        image, {}, {**mask, "visible_polygon_source": "physical_print_boundary"}, **options,
+    )
+
+    original = baseline.metadata["crop_modes"]["full_print"]
+    modes = reviewed.metadata["crop_modes"]
+    assert original["status"] == "ready"
+    for mode in modes.values():
+        assert mode["status"] == "review_needed"
+        assert mode["reason_codes"] == [PRINT_OUTER_EDGE_CONFLICT_REVIEW]
+    for key in ("warp_quad", "page_to_output", "shape", "sampling"):
+        assert modes["full_print"][key] == original[key]
+    assert original["sampling"] == "owned_bilinear"
+    np.testing.assert_array_equal(reviewed.image, baseline.image)
+
+    traces = modes["full_print"]["suggested_edge_traces"]
+    assert reviewed.metadata["boundary_refinement"]["right"]["outward_search"]["ambiguous"] == competing_right
+    expected_columns = [[187, 187]] if competing_right else [[572, 572], [187, 187]]
+    assert len(traces) == len(expected_columns) and all(len(trace) == 2 for trace in traces)
+    native_traces = [
+        normalized_vertices_to_pixels([(point["x"], point["y"]) for point in trace], *image.shape[1::-1])
+        for trace in traces
+    ]
+    np.testing.assert_allclose([trace[:, 0] for trace in native_traces], expected_columns, atol=.6)
+
+
+@pytest.mark.parametrize("new_step", [0, 12], ids=["missing-line", "consistent-pale-rim"])
+def test_opposing_outer_line_evidence_is_remeasured_on_the_current_source(new_step):
+    image = _opposing_outer_line_scene()
+    fitted, sides, reasons = refine_print_boundary(image, _OPPOSING_SEED)
+    assert fitted is not None and not reasons
+    assert len(unresolved_opposing_outer_edges(image, fitted, sides)) == 2
+
+    changed = _opposing_outer_line_scene(new_step)
+    assert unresolved_opposing_outer_edges(changed, fitted, sides) == []
 
 
 @pytest.mark.parametrize("layout", ["single_print", "matching_album", "continuing_line", "adjacent_print", "near_rail"])

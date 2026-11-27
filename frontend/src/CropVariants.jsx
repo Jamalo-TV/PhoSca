@@ -669,6 +669,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
     return "Türkis zeigt einen möglichen Papierrand ausserhalb des Zuschnitts. Prüfe am Original, wo das Fotopapier endet und welcher Abzug oben liegt.";
   }
   if (getSourceEdgeTraces(fullPrint?.suggested_edge_traces).length) {
+    if (fullPrint.reason_codes?.includes("PRINT_OUTER_EDGE_CONFLICT_REVIEW")) {
+      return "Die gestrichelten Abschnitte zeigen weitere sichtbare Übergänge ausserhalb des Zuschnitts. Prüfe am Original, welche Kanten das Fotopapier begrenzen.";
+    }
     if (fullPrint.suggested_edge_source === "possible_album_opening_edge") {
       return "Die gestrichelten Linien zeigen Übergänge an einer möglichen Albumöffnung. Prüfe am Original, ob sie zum Fotopapier oder zum Albumkarton gehören. Falls der Karton Bildinhalt verdeckt, hilft eine Aufnahme des frei liegenden Abzugs.";
     }

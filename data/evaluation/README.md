@@ -9809,8 +9809,8 @@ and varies under re-encoding. Neither observation establishes ownership.
 
 The upper diagonal is also visible in the separate U093 capture of the
 same print. That registration uses 169 mutually matched landmarks and
-has held-fold median error of 0.51–0.95 and p95 error of 2.23–4.21 U065
-pixels. The two
+has held-fold median and p95 errors of 0.51 and 2.23 pixels in U065,
+and 0.95 and 4.21 pixels in U093, in their respective native rasters. The two
 nearby physical prints have measured visible image gaps of at least
 20.71 and 16.90 U065 pixels to the large left motif. Actual untrimmed
 review rasters cover 76,169 of 76,255 definitely interior motif centres
@@ -9858,6 +9858,77 @@ All eight frozen and development comparisons preserve their crop and
 detection metrics, including 18/18 frozen detections and 23/23 seeded
 crop passes. Evidence and screenshots are stored under
 `runs/crop-quality/u065-compact-scene-review/`.
+
+### Hold a print when opposing outer lines remain ambiguous
+
+U065 and U093 are independent captures of the same wedding print within
+one development album. The native original hashes are
+`23687f91d6148601f8606edcc9840c213099cc7e1ade14fb1ef6b058e353f1c3`
+and `266dcc79120ce43b26447332eeddade6c41d1aeeee491dea1f1d977114dfe765`.
+The development detector was mixed legacy 512
+(`1e95a1a90ff897df7099ff80675186ec1d8145f7bb07559fe918b3dd3a6db748`),
+with confidence 0.25, NMS IoU 0.70 and classical fallback. The normal
+upload has eight proposals on U065 and four on U093. In U093 the 0.845
+model proposal for the wedding print reached full-print geometry `ready`
+before calibration gating. The motif was already held. Customer export
+was blocked for both modes throughout the automatic runs.
+
+The right outer dip has two pale flanks. Across sampled sections, the
+inner and outer flanks lie 7.75–8.38 and 9.37–10.00 U065 pixels from the
+motif, and 16.32–16.80 and 18.44–19.08 U093 pixels from it. These are
+10th–90th percentile native offsets along the measured segment. The
+dip can arise at the paper or immediately beside it. The left line
+continues at least 25 U065 pixels beyond both ends of the photograph in
+both views after registration. A stronger far-right line follows
+neighboring prints. The top and bottom have insufficient independent
+paper evidence to close the outline or determine the physical aspect.
+
+The old U093 untrimmed warp omits 5,097 conservative centres against a
+single-view draft, compared with 23 against the paired motif estimate
+and 15 inside the conservative intersection. Of the 5,097, 5,082 lie
+only inside the single-view draft. Most are pale, near an album-side
+seam. The omitted motif count is uncertain. The geometry was incorrectly
+rated ready despite competing paper transitions. A source-only motif
+experiment on U065 covered both draft motifs with a two-pixel envelope.
+That envelope still intersects two active classical claims. Applied to
+30 authored controls it would omit all 114 known marginal lettering
+centres per control. This comparative render is outside the product path.
+
+The automatic guard applies to an otherwise ready model crop derived from
+a refined physical print boundary. Two opposite outward transitions must
+have supported inner lines and repeat on the native image, with independent
+rim evidence on exactly one side. The repeated outer geometry must remain
+outside the current crop with plausible end-to-end displacement. The guard
+checks the original pixels for shadow evidence and measures only the stable
+interior span of a visible line. A strongly supported but ambiguous
+opposite edge can keep the crop held with only the independently measured
+span shown. Overlap with another active or deferred claim suppresses the
+affected guide. The guard adds `PRINT_OUTER_EDGE_CONFLICT_REVIEW` without
+changing the quad, perspective map or source-owned interpolation.
+
+Normal U093 upload and rendering change both modes to geometry review.
+The pre-JPEG 726 × 506 BGR raster and all four untrimmed JPEGs are
+byte-identical to the baseline. Desktop and mobile show the native spans
+with the confirmation box cleared. The API rejects an ordinary unchanged
+save, a size or rotation change, and a combined motif save with HTTP 409.
+An explicit reviewer confirmation with four paper corners follows the
+audited manual path. In a disposable test, explicitly confirming the
+unchanged corners exposed the same full-print JPEG after the manual
+renderer ran. That test records an operator decision. The motif and
+trimmed alias stayed held, and the physical uncertainty remains in the
+source evidence.
+
+Fixed-mask rotations, re-encodings and mild blur are development stress
+tests for the native check. All four rotations and twelve JPEG95, JPEG85
+and JPEG75 combinations repeat both spans with the fixed boundary evidence.
+With fresh boundary evidence eleven combinations reach the guard and five
+are held by existing checks. With Gaussian sigma 0.55 or 0.60 the supported
+side remains visible and the disputed side has no displayed coordinates.
+A one-thread warm native pass took approximately 26–28 ms. All eight
+frozen and development reports preserve the detection and crop metrics,
+including 18/18 frozen detections and 23/23 seeded recoverable crops.
+Evidence, screenshots and crop receipts are stored under
+`runs/crop-quality/u093-opposing-outer-edge-review/`.
 
 ### Review a fallback outline crossing the album edge
 
@@ -11361,3 +11432,13 @@ terms for those exact master files are still needed to evaluate both
 modes. The rebinding also complicates visibility near the gutter.
 [Digitization report](https://sap.waw.pl/wp-content/uploads/2022/08/43-Wrotek_Dzwigalska_J-Bolesta_M-Pamiec-niewybiorcza.pdf) ·
 [Archive inventory](https://www.nac.gov.pl/wp-content/uploads/2024/07/NAC_SPIS_ZESPOLOW_2024.pdf)
+
+An exact-hash intake cross-check compared 38 archive source pins against
+4,808 local image files and 100 image members in the uploaded ZIPs. It
+found no matches. Ten source-only preflights still have zero shared
+verified physical album groups. Seven historical image-label pairs could
+be reconstructed from Git. The reviewed inventory and physical album IDs
+for the registered production detector remain outstanding. The exact-hash
+comparison detects duplicate files. Album identity requires further source
+records even when the hashes are distinct. The private receipts are under
+`runs/crop-quality/nac-czarnecki-source-intake/source-crosscheck-0923a29/`.

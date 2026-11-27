@@ -2332,10 +2332,10 @@ async def test_ribbed_outline_comparison_is_held_and_retires_with_an_adjacent_cl
     assert (await crop("source_corrected_untrimmed")).status_code == 200
 
 
-@pytest.mark.parametrize(("detector_source", "contact_edge_guide"), [
-    ("contrast_region", False), ("contrast_region", True), ("yolo_onnx", True),
+@pytest.mark.parametrize(("detector_source", "edge_guide"), [
+    ("contrast_region", None), ("contrast_region", "contact"), ("yolo_onnx", "contact"), ("yolo_onnx", "opposing"),
 ])
-async def test_held_contrast_outline_requires_separate_paper_confirmation(client, monkeypatch, detector_source, contact_edge_guide):
+async def test_held_contrast_outline_requires_separate_paper_confirmation(client, monkeypatch, detector_source, edge_guide):
     from copy import deepcopy
 
     from app.config import get_settings
@@ -2343,6 +2343,7 @@ async def test_held_contrast_outline_requires_separate_paper_confirmation(client
     from app.models import ExtractedPhoto, PhotoStatus
     from app.pipeline.contact_print_review import CONTACT_PRINT_EDGE_CHECK
     from app.pipeline.manual_paper_boundary import MANUAL_CONTRAST_OUTLINE_CHECK, MANUAL_CONTRAST_OUTLINE_REVISION
+    from app.pipeline.print_edges import OPPOSING_OUTER_EDGES_CHECK, PRINT_OUTER_EDGE_CONFLICT_REVIEW
 
     monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
     monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
@@ -2356,15 +2357,17 @@ async def test_held_contrast_outline_requires_separate_paper_confirmation(client
         quad = photo.segmentation_mask["warp_quad"]
         photo.segmentation_mask = {**photo.segmentation_mask, "detector_source": detector_source, "polygon": quad}
         reasons = {
-            ("contrast_region", False): ["PRINT_BOUNDARY_UNSUPPORTED"],
-            ("contrast_region", True): ["PRINT_BOUNDARY_AMBIGUOUS"],
-            ("yolo_onnx", True): ["PRINT_OUTER_RIM_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"],
-        }[detector_source, contact_edge_guide]
+            ("contrast_region", None): ["PRINT_BOUNDARY_UNSUPPORTED"],
+            ("contrast_region", "contact"): ["PRINT_BOUNDARY_AMBIGUOUS"],
+            ("yolo_onnx", "contact"): ["PRINT_OUTER_RIM_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"],
+            ("yolo_onnx", "opposing"): [PRINT_OUTER_EDGE_CONFLICT_REVIEW],
+        }[detector_source, edge_guide]
+        checks = {"contact": {CONTACT_PRINT_EDGE_CHECK: True}, "opposing": {OPPOSING_OUTER_EDGES_CHECK: True}}
         photo.enhancement_applied = {
             **photo.enhancement_applied,
             "correction": {"crop_modes": {
                 name: {"status": "review_needed", "warp_quad": quad, "reason_codes": reasons,
-                       **({CONTACT_PRINT_EDGE_CHECK: True} if contact_edge_guide and name == "full_print" else {})}
+                       **(checks.get(edge_guide, {}) if name == "full_print" else {})}
                 for name in ("full_print", "image_only")
             }},
         }
@@ -2376,6 +2379,7 @@ async def test_held_contrast_outline_requires_separate_paper_confirmation(client
             "print_size_mm": {"width": 100, "height": 75}}
     for update in (
         {"segmentation_mask": mask},
+        {"segmentation_mask": {**mask, "orientation_degrees": 90}},
         {"confirm_print_outline": True},
         {"confirm_print_outline": True, "segmentation_mask": {**mask, "image_quad": quad}},
     ):

@@ -11,12 +11,13 @@ import numpy as np
 PRINT_SHADOW_EDGE_REVIEW = "PRINT_SHADOW_EDGE_REVIEW"
 PRINT_FAINT_RIM_REVIEW = "PRINT_FAINT_OUTER_RIM_REVIEW"
 PRINT_OUTER_EDGE_CONFLICT_REVIEW = "PRINT_OUTER_EDGE_CONFLICT_REVIEW"
+OPPOSING_OUTER_EDGES_CHECK = "opposing_outer_edges_check_required"
 PRINT_SHARED_RIM_UNCERTAIN = "PRINT_SHARED_RIM_UNCERTAIN"
 SHARED_PRINT_RIM_SOURCE = "shared_print_rim"
 PRINT_EDGE_CONFIRMATION = "PRINT_EDGE_CONFIRMATION_REQUIRED"
 COMPETING_PRINT_EDGES = "competing_print_edges"
 POSSIBLE_BACKED_PAPER_EDGE = "possible_backed_paper_edge"
-PRINT_BOUNDARY_REVISION = 12
+PRINT_BOUNDARY_REVISION = 13
 CLASSICAL_CONTOUR_REFINEMENT_REVISION = 1
 _PRINT_SIDES = ("top", "right", "bottom", "left")
 
@@ -276,6 +277,46 @@ def _line_endpoints(start: np.ndarray, end: np.ndarray, line: np.ndarray) -> tup
     offsets = -((np.array([start, end]) @ line[:2] + line[2]) / (line[:2] @ inward))
     first, last = np.array([start, end]) + offsets[:, None] * inward
     return first.astype(np.float32), last.astype(np.float32)
+
+
+def unresolved_opposing_outer_edges(image: np.ndarray, quad: np.ndarray, boundary: dict) -> list[np.ndarray]:
+    """Verify two opposing outside lines whose paper ownership is unresolved."""
+    candidates = []
+    for index, side in enumerate(_PRINT_SIDES):
+        current = boundary.get(side) or {}
+        outward = current.get("outward_search") or {}
+        repeatable = outward.get("support", 0) >= .92 and (outward.get("corner_support") or 0) >= .75
+        disputed = outward.get("ambiguous") is True and outward.get("support", 0) >= .96
+        if (current.get("support", 0) >= .92 and (current.get("corner_support") or 0) >= .75
+                and (repeatable or disputed) and outward.get("search_radius_px")):
+            candidates.append((index, outward))
+    if (len(candidates) != 2 or candidates[1][0] - candidates[0][0] != 2
+            or sum(item.get("print_rim_supported") is True for _, item in candidates) != 1):
+        return []
+
+    traces = []
+    for index, outward in candidates:
+        start, end = quad[index], quad[(index + 1) % 4]
+        line, support = _side_line(image, start, end, outward["search_radius_px"], outward_only=True)
+        if (outward.get("ambiguous") is True and outward.get("print_rim_supported") is not True
+                and support["ambiguous"] and support["support"] >= .96):
+            # The competing lines justify review, but no single line can be shown here.
+            continue
+        if (line is None or support["ambiguous"] or support["support"] < .92
+                or (support.get("corner_support") or 0) < .75):
+            return []
+        rim = _observe_print_rim(image, start, end, line, minimum_transition=5)
+        if (rim is not None and rim.shadow_shoulder_support >= .70
+                or (rim is not None) != (outward.get("print_rim_supported") is True)):
+            return []
+        first, last = _line_endpoints(start, end, line)
+        distances = np.linalg.norm(np.float32([first - start, last - end]), axis=1)
+        span = np.float32([first + .12 * (last - first), last + .12 * (first - last)])
+        if (distances.min() <= 4 or np.ptp(distances) > .025 * np.linalg.norm(end - start)
+                or not ((span >= 0) & (span <= np.array(image.shape[1::-1]) - 1)).all()):
+            return []
+        traces.append(span)
+    return traces
 
 
 def suggest_partial_corner_edge(image: np.ndarray, quad: np.ndarray, boundary: dict) -> np.ndarray | None:
