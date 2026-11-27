@@ -7,7 +7,7 @@ import {
   filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
   getFilmGridReviewSeams, getFilmNeighborEdgeIndex, getFragmentReviewOutlines, getMergedPrintPairs,
   getPaperGridOutlineParents, getPaperGridReviewGroups,
-  getPaperJoinReviewGroups, getPrintedIllustrationReviewGroups, getStoredMotifQuad, motifFitsPaper, paperGridSourceWindows,
+  getPaperJoinReviewGroups, getPossiblePrintRegions, getPrintedIllustrationReviewGroups, getStoredMotifQuad, motifFitsPaper, paperGridSourceWindows,
   savedFullPrintReviewUrl,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource,
   getMeasuredMotifComparison, isMeasuredMotifComparison, measuredMotifComparisonSource,
@@ -131,6 +131,32 @@ test("a merged pair is shown on the current held row with both guides", () => {
     { ...row, crop_modes: { full_print: { status: "ready" }, image_only: held } },
     { ...row, segmentation_mask: { merged_print_pair: null } },
     { ...row, segmentation_mask: { merged_print_pair: { ...pair, outlines: outlines.slice(1) } } },
+  ]), []);
+});
+
+test("uncertain regions only guide the current held automatic owner without becoming a merged print pair", () => {
+  const upper = quad.map(({ x, y }) => ({ x, y: y / 2 }));
+  const lower = quad.map(({ x, y }) => ({ x, y: .5 + y / 2 })).reverse();
+  const outlines = [upper, lower];
+  const held = { status: "review_needed" };
+  const modes = { full_print: held, image_only: held };
+  const mask = { possible_print_regions: { outlines } };
+  const photo = { photo_id: "owner", confidence: .61, crop_modes: modes, segmentation_mask: mask };
+  assert.deepEqual(getPossiblePrintRegions([photo]), [{ id: "owner", outlines }]);
+  assert.deepEqual(getPossiblePrintRegions([{ id: "owner", segmentation_confidence: .61, segmentation_mask: mask,
+    enhancement_applied: { correction: { crop_modes: modes } } }]), [{ id: "owner", outlines }]);
+  assert.deepEqual(getMergedPrintPairs([photo]), []);
+  assert.deepEqual(getPossiblePrintRegions([
+    null,
+    { ...photo, reviewed_non_print: true },
+    { ...photo, review_reasons: ["GEOMETRY_REVIEW_WRONG_OBJECT"] },
+    { ...photo, confidence: null },
+    { ...photo, crop_modes: { full_print: held, image_only: { status: "ready" } } },
+    { ...photo, segmentation_mask: { ...mask, warp_quad: quad } },
+    { ...photo, segmentation_mask: { ...mask, merged_print_pair: { outlines } } },
+    { ...photo, segmentation_mask: { possible_print_regions: { outlines: [upper, [...upper].reverse()] } } },
+    { ...photo, segmentation_mask: { possible_print_regions: { outlines: [upper, lower.slice(1)] } } },
+    { ...photo, segmentation_mask: { possible_print_regions: { outlines: [upper, [lower[0], lower[2], lower[1], lower[3]]] } } },
   ]), []);
 });
 

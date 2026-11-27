@@ -1416,6 +1416,17 @@ Beansprucht ein anderer Vorschlag den Messstreifen, blendet PhoSca die
 Abschnitte aus. Die Prüfung der Papierkontur bleibt erforderlich.
 [Schwacher Papierrand beim Brautporträt](data/evaluation/README.md#show-two-faint-transitions-beyond-the-image-edge)
 
+Auf einer dicht belegten Seite kann ein Vorschlag zwei benachbarte
+Bildbereiche umfassen. Wenn ein zusätzlicher Ausschnitt des Originals
+beide Bereiche stützt, zeigt PhoSca sie hellblau gepunktet in der
+Anzahl- und Zuschnittprüfung. Sie zählen zusammen weiterhin als ein
+Vorschlag. Vergleiche ihre Papierkanten mit dem Original und bestätige
+die vier Ecken eines Papierabzugs ausdrücklich vor dem Speichern.
+Beide Zuschnittmodi bleiben bis zur erneuten Kantenprüfung gesperrt.
+Überschneidet sich ein neuer Nachbarzuschnitt mit einem der Bereiche,
+verschwinden beide Hinweise. Die Prüfung der Papierkontur bleibt nötig.
+[Zwei Bildbereiche auf einer Spiral-Albumseite](data/evaluation/README.md#reproduce-a-second-merged-proposal-on-u008)
+
 | Aktion | Verhalten |
 | --- | --- |
 | Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |

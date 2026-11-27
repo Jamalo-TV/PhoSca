@@ -230,6 +230,8 @@ const captureAtEdgeHint = "Der Abzug reicht über den Aufnahmerand hinaus. Für 
 export const captureSplitReviewHint = "Die gestrichelten Linien zeigen einen möglichen gemeinsamen Papierrand. Prüfe am Original, wie viele Abzüge dort liegen.";
 export const mergedPrintPairHint = "Die gestrichelten Umrisse zeigen zwei mögliche Abzüge innerhalb eines Vorschlags. Prüfe am Original, ob beide Motive auf demselben Papier liegen.";
 export const mergedPrintAsOneLabel = "Beide Motive liegen auf einem gemeinsamen Papierabzug.";
+export const possiblePrintRegionsHint = "Die hellblau gepunkteten Umrisse markieren zwei Bildbereiche in einem Vorschlag. Prüfe am Original, ob sie zusammen auf einem Papierabzug liegen oder ob getrennte Papierkanten sichtbar sind.";
+const possiblePrintRegionsReason = "POSSIBLE_PRINT_REGIONS_REVIEW";
 export const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
 export const nearCapturePrintEdgeHint = "Die blauen Abschnitte markieren sichtbare Kanten eines möglichen Abzugs am Aufnahmerand. Die Ecke am Rand bleibt offen. Prüfe am Original, ob dort ein eigener Abzug liegt.";
 const curvedMotifReviewReason = "IMAGE_BOUNDARY_CURVED";
@@ -1062,6 +1064,7 @@ const reviewMessages = {
   ORIENTATION_UNCERTAIN: "Prüfe die Ausrichtung und speichere die passende Drehung im Zuschnitt-Editor.",
   SEGMENTATION_CONFIDENCE_UNCALIBRATED: "Prüfe und speichere die Abzugsecken, um den Download freizugeben.",
   MULTIPANEL_PRINT_REVIEW: "Prüfe die Papierkanten am Original. Auf einem Abzug muss der Motivzuschnitt alle Bilder enthalten. Sind es getrennte Abzüge, korrigierst du die Ecken für den ersten und ergänzt die übrigen im Editor.",
+  [possiblePrintRegionsReason]: "Prüfe in der Zuschnittprüfung am Original, ob die Bildbereiche zu einem gemeinsamen Papierabzug gehören.",
   FRAGMENTED_PRINT_REVIEW: "Prüfe die durchgehende Papierkante am Original. Liegen zwei einzelne Abzüge vor, korrigiere die Ecken des ersten und ergänze den zweiten im Editor.",
   [fragmentOutlineReason]: fragmentOutlineHint,
   [sourceFragmentGroupReason]: "Prüfe in der Anzahlprüfung am Original, ob dieser Teil zu demselben Abzug gehört wie der zweite Vorschlag.",
@@ -1102,6 +1105,8 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
   const result = getCropModes(photo)?.[mode];
   const url = result?.status === "ready" ? photo.urls?.[mode] : null;
   const possibleMultipanel = photo.enhancement_applied?.segmentation_review_reasons?.includes("MULTIPANEL_PRINT_REVIEW");
+  const possiblePrintRegions = photo.enhancement_applied?.segmentation_review_reasons?.includes(possiblePrintRegionsReason)
+    || result?.reason_codes?.includes(possiblePrintRegionsReason);
   const possibleFragmentedPrint = photo.segmentation_confidence != null
     && photo.enhancement_applied?.segmentation_review_reasons?.includes("FRAGMENTED_PRINT_REVIEW");
   const possibleFragmentOutline = photo.segmentation_confidence != null
@@ -1143,6 +1148,7 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
   const reviewMessage = (captureEdgeClipped
     && "Der vorgeschlagene Abzug reicht bis an den Aufnahmerand. Lade für den Zuschnitt eine Aufnahme hoch, die ihn ganz zeigt.")
     || (captureSplit && captureSplitReviewHint)
+    || (possiblePrintRegions && reviewMessages[possiblePrintRegionsReason])
     || (possibleNestedPrint && nestedPrintHint)
     || (possibleMultipanel && reviewMessages.MULTIPANEL_PRINT_REVIEW)
     || (possibleFragmentedPrint && reviewMessages.FRAGMENTED_PRINT_REVIEW)

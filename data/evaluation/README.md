@@ -3301,16 +3301,50 @@ existing rib check abstains. Along the weaker facing side, support falls
 from 0.947 on the original to 0.572 on JPEG75 and 0.276 on JPEG55 with
 masks held fixed. These codec derivatives test only the optical fit.
 
-An opaque reproduction on one sheet and exact-optical one-sheet aliases
-with narrow matte rims produce the same local evidence. Two independent
-prints and one composite print remain viable physical interpretations.
-A future review guide can present both regions on the original with the
-existing count, while any count change needs independent ownership
-evidence or the user's decision. The development test gives about 0.52 s
-for the extra local model call and its two standard refits, and 0.53 s
-for the experimental source measurement. The reports, visual comparison,
-exact aliases and scripts are under
-`runs/crop-quality/u008-right-merge-independent/`.
+An exact-optical one-sheet alias with a narrow matte rim produces the
+same local evidence. Two independent prints and one composite print
+remain viable physical interpretations. The shipped review compares both
+image regions on the current parent. It keeps the current count and both
+crop holds. Desktop and mobile show the two outlines on the original in
+count and crop review. Moving the editor's draft corners hides the
+comparison. There is no count or crop action on these outlines.
+
+The application tries at most one more local model window, only when the
+existing measured pair is already available on another proposal of the
+same page. The nominated parent must be a single native, unedited model
+proposal with confidence below the configured acceptance threshold and
+an elongated source outline. The window is capped at half of the source
+raster. Exactly two locally supported observations must occupy opposite
+ends. Both facing transitions must be supported across the original and
+leave a 3.5–6.5 native-pixel strip that agrees with the observed backing.
+The native fit rejects a claimed exterior witness, overlap with another
+paper claim, overlapping fitted regions and a common outer stock
+outline. Fixed quarter turns keep the two measurements on the native
+source. JPEG90, JPEG75 and JPEG55, a wider flat stripe, opaque light or
+dark outer stock, a shifted backing and stitched scenery all abstain in
+the fixed-mask source controls. These controls preserve the exact-optical
+alias because source pixels alone cannot resolve its physical ownership.
+Fresh end-to-end quarter turns and JPEG95, JPEG90, JPEG75 and JPEG55 lack
+the pre-existing measured pair on this page, so they make no additional
+local model call and show no new guide. Three native one-thread replays
+retain the guide. Their median comparison stage takes 579 ms including
+the local inference, native checks and overlap tests under shared load.
+
+An exact PNG upload derived losslessly from the original WebP keeps all
+three active and three deferred proposals, the previous left-pair guide,
+all crop geometry and all prior preview bytes. The right parent gains
+two comparison outlines and a review reason in both modes. A bbox-only,
+an unconfirmed paper edit or a combined paper-and-motif edit is rejected.
+Explicitly checked paper corners go through the existing audited source
+recheck. In U008, both modes remain held after confirming the unchanged
+four corners. A later intersecting claim withdraws both guides and keeps
+the need for explicit confirmation, including after reprocessing.
+The eight fixed and development benchmarks preserve detections, geometry,
+previews and review outcomes. This includes 18/18 locked detections and
+23/23 recoverable seeded crops across the two modes.
+The precise crop and detector calibration profiles include the new
+review revision. Controls, normal-path receipts, visual comparisons and
+scripts are under `runs/crop-quality/u008-possible-print-regions/`.
 
 #### Corroborate one rotated mask in a local view
 
@@ -11802,3 +11836,20 @@ different physical copy. This intake contributes zero verified groups.
 [NGA volume](https://www.nga.gov/artworks/219354-gardners-photographic-sketch-book-war-volume-1) ·
 [NGA example print](https://www.nga.gov/artworks/220156-marshall-house-alexandria-virginia) ·
 [NGA media index at the inspected revision](https://github.com/NationalGalleryOfArt/opendata/blob/343e6d65fc7d3e8f7ab6465af6e1a93ea30d8f38/data/published_images.csv)
+
+Golestan Palace album `289`, leaf `4`, has five identified physical
+prints with individually recorded dimensions. Each entry gives only one
+size. The publicly indexed publications show the mounted leaf as a
+reproduction. Reachable full-resolution Git files are scans of the paper
+catalogue's tables. The inspected index offers no pinned and reusable
+native image of leaf 4 or independent stock and motif measurements.
+[Album 289 measurements and figure 109](https://tile.loc.gov/storage-services/master/gdc/gdcebookspublic/20/20/71/90/01/2020719001/2020719001.pdf) ·
+[Independent published leaf identification](https://journals.openedition.org/photographica/pdf/521)
+
+The Museum Rietberg records physical print `2023.14.19` in its intact
+red Alpiger album `2023.14.1-88` and gives the print's overall dimensions
+as 134 × 219 mm. The exact full leaf, native reproduction of the loose
+print and the reuse terms for those image files are unresolved. Neither
+of these two archival leads adds a verified physical release group.
+[Alpiger album](https://rietberg.ch/sammlungen/2023-14-1-88) ·
+[Individual print](https://rietberg.ch/sammlungen/2023-14-19)

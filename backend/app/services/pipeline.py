@@ -75,6 +75,7 @@ from app.pipeline.manual_paper_boundary import (
 )
 from app.pipeline.merged_print_review import MERGED_PRINT_PAIR
 from app.pipeline.motif_comparison import MOTIF_COMPARISON_PAPER_EDIT
+from app.pipeline.possible_print_regions import POSSIBLE_PRINT_REGIONS
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
 from app.pipeline.page_plane import MeasuredPrintReference, PrintPagePlane
@@ -619,7 +620,7 @@ async def perspective_correction_task_logic(
                      or prior_contact_check or bool(prior_paper_checks)
                      or mask.get(REVIEWED_CROSSING_OUTLINE) is True or bool(mask.get("crossing_print_suggestion"))
                      or bool(mask.get(PARTIAL_PRINT_EXTENT_TRACES))
-                     or MERGED_PRINT_PAIR in mask
+                     or MERGED_PRINT_PAIR in mask or POSSIBLE_PRINT_REGIONS in mask
                      or capture_edge_requires_review(mask) or boundary_needs_review or bool(paper_claims)
                      or scalloped_outline is not None
                      or reviewed_mark is not None

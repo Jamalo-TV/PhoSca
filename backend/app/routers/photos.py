@@ -48,6 +48,7 @@ from app.pipeline.manual_paper_boundary import (
     overlapping_paper_claims, paper_claim_groups, shared_rim_cut_is_inside, shared_rim_cut_reference,
 )
 from app.pipeline.merged_print_review import MERGED_PRINT_PAIR
+from app.pipeline.possible_print_regions import POSSIBLE_PRINT_REGIONS
 from app.pipeline.motif_boundary import PARTIAL_MOTIF_SEAMS
 from app.pipeline.motif_comparison import MEASURED_MOTIF_COMPARISON, MOTIF_COMPARISON_PAPER_EDIT
 from app.pipeline.faint_paper_review import (
@@ -384,6 +385,9 @@ async def _review_overlapping_crops(
         if (any(review_outline_intersects_claim(outline, mask, width, height) for outline in pair.get("outlines", []))
                 or (separator and review_traces_intersect_claim([separator], mask, width, height))):
             neighbor.segmentation_mask = {**neighbor.segmentation_mask, MERGED_PRINT_PAIR: None}
+        possible = (neighbor.segmentation_mask or {}).get(POSSIBLE_PRINT_REGIONS) or {}
+        if any(tiled_outline_conflicts(outline, [mask], width, height) for outline in possible.get("outlines", [])):
+            neighbor.segmentation_mask = {**neighbor.segmentation_mask, POSSIBLE_PRINT_REGIONS: None}
         modes = correction.get("crop_modes") or {}
         full_mode = modes.get("full_print") or {}
         film_edge = full_mode.get(FILM_NEIGHBOR_EDGE)
@@ -1103,6 +1107,7 @@ async def update_photo_bounding_box(
         detector_source = original_mask.get("detector_source")
         measured_paper_edit = detector_source == "yolo_onnx" and full_print.get(MOTIF_COMPARISON_PAPER_EDIT) is True
         faint_paper = detector_source == "yolo_onnx" and full_print.get(FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION) is True
+        possible_regions = detector_source == "yolo_onnx" and POSSIBLE_PRINT_REGIONS in original_mask
         if photo.segmentation_confidence is not None and measured_paper_edit:
             outer = segmentation_mask.get("warp_quad") or []
             motif_mode = (correction.get("crop_modes") or {}).get("image_only") or {}
@@ -1117,9 +1122,11 @@ async def update_photo_bounding_box(
         unsupported_contrast = (detector_source == "contrast_region"
                                 and "PRINT_BOUNDARY_UNSUPPORTED" in (full_print.get("reason_codes") or []))
         confirm_contrast_outline = (
-            photo.segmentation_confidence is not None and full_print.get("status") == "review_needed"
-            and (contact_outline or opposing_outline or unsupported_contrast or measured_paper_edit or faint_paper)
-            and not capture_outline_review_required(full_print)
+            photo.segmentation_confidence is not None and (possible_regions or (
+                full_print.get("status") == "review_needed"
+                and (contact_outline or opposing_outline or unsupported_contrast or measured_paper_edit or faint_paper)
+                and not capture_outline_review_required(full_print)
+            ))
         )
         if confirm_contrast_outline:
             if not payload.confirm_print_outline or not explicit or segmentation_mask.get("image_quad") is not None:

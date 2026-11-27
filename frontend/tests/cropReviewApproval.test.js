@@ -74,6 +74,21 @@ test("a held faint paper edge needs explicit confirmation even if its guide is r
   assert.equal(contrastOutlineNeedsConfirmation(fallback, full), false);
 });
 
+test("possible print regions require a paper decision on the held automatic model row, even after retirement", () => {
+  const mask = { detector_source: "yolo_onnx" };
+  const photo = { confidence: .62, segmentation_mask: mask };
+  const full = { status: "review_needed", reason_codes: ["POSSIBLE_PRINT_REGIONS_REVIEW"] };
+  for (const possible_print_regions of [{ outlines: [] }, null]) {
+    const owner = { ...photo, segmentation_mask: { ...mask, possible_print_regions } };
+    assert.equal(contrastOutlineNeedsConfirmation(owner, full), true);
+    assert.equal(contrastOutlineNeedsConfirmation({ ...owner, confidence: null }, full), false);
+    assert.equal(contrastOutlineNeedsConfirmation({ ...owner, segmentation_mask: { ...owner.segmentation_mask,
+      detector_source: "edge_contour" } }, full), false);
+    assert.equal(contrastOutlineNeedsConfirmation(owner, { ...full, status: "ready" }), false);
+  }
+  assert.equal(contrastOutlineNeedsConfirmation(photo, full), false);
+});
+
 test("the current whole-print URL controls geometry approval even when a mode says ready", () => {
   const urls = { full_print: null, full_print_preview: "/comparison", image_only: "/motif" };
   assert.equal(wholePrintApprovalHeld({ full_print: { status: "review_needed" } }, urls), true);

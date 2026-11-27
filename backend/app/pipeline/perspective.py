@@ -76,6 +76,7 @@ from app.pipeline.page_plane import (
     measured_page_aspect,
 )
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_REVIEW, PARTIAL_PRINT_EXTENT_TRACES
+from app.pipeline.possible_print_regions import POSSIBLE_PRINT_REGIONS, POSSIBLE_PRINT_REGIONS_REVIEW
 from app.pipeline.print_edges import (
     COMPETING_PRINT_EDGES,
     OPPOSING_OUTER_EDGES_CHECK,
@@ -2722,6 +2723,11 @@ def correct_photo_crop(
                             result = replace(result, image_only_preview=pixels)
             except (ValueError, cv2.error, np.linalg.LinAlgError):
                 pass  # The measured comparison is optional when the original remains unresolved.
+        if not manual and POSSIBLE_PRINT_REGIONS in mask:
+            for mode in modes.values():
+                if mode["status"] == "ready":
+                    mode.update(status="review_needed", geometry_status="ready")
+                mode["reason_codes"] = [*(mode.get("reason_codes") or []), POSSIBLE_PRINT_REGIONS_REVIEW]
         return result
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:

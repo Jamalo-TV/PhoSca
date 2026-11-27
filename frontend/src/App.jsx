@@ -65,7 +65,7 @@ import {
   CompetingPhotoOutlineLegend,
   getDeferredPrintEvidence, getDeferredPrintProposals, getDeferredParentCropHints, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin,
-  MeasuredMotifReview, mergedPrintAsOneLabel, mergedPrintPairHint, missingPrintEdgeHint,
+  MeasuredMotifReview, mergedPrintAsOneLabel, mergedPrintPairHint, missingPrintEdgeHint, possiblePrintRegionsHint,
   nearCapturePrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
@@ -85,7 +85,8 @@ import {
   getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
-  getMergedPrintPairs, getPaperJoinReviewGroups, getPrintedIllustrationReviewGroups, getStoredMotifQuad,
+  getMergedPrintPairs, getPaperJoinReviewGroups, getPossiblePrintRegions, getPrintedIllustrationReviewGroups, getStoredMotifQuad,
+  possiblePrintRegionStyle,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
   getMeasuredMotifComparison, isMeasuredMotifComparison, measuredMotifOutlineStyle, measuredMotifPaperStyle, measuredMotifSeamStyle,
   sameReviewQuad, savedFullPrintReviewUrl,
@@ -1535,6 +1536,13 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const crossingOutline = useMemo(() => cyclicQuad(sanitizePolygon(crossingPolygon)), [crossingPolygon]);
   const savedShape = useMemo(() => selected && draftShapeFromPhoto(selected), [selected]);
   const selectedShape = selected && (draftShapes[selected.id] || savedShape);
+  const possiblePrintRegions = useMemo(() => {
+    if (newPrint || editingImage || selectedCountGroup) return [];
+    if (reviewingCount) return getPossiblePrintRegions(photos);
+    return reviewingGeometry && sameReviewQuad(savedShape?.warpQuad, selectedShape?.warpQuad)
+      ? getPossiblePrintRegions([selected]) : [];
+  }, [newPrint, editingImage, selectedCountGroup, reviewingCount, reviewingGeometry, photos, selected,
+    savedShape?.warpQuad, selectedShape?.warpQuad]);
   const selectedMergedPair = selected && !rejectedDetection && getMergedPrintPairs([selected])[0];
   const fragmentGroups = useMemo(() => reviewingCount ? getFragmentReviewOutlines(photos) : [], [reviewingCount, photos]);
   const countOutlines = useMemo(() => !newPrint && !editingImage ? fragmentGroups.filter(
@@ -2027,7 +2035,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         context.restore();
       }
     }
-    const sourceGuides = [[contrastCrossingTraces, contrastCrossingTraceStyle], [captureBackgroundTraces, captureBackgroundTraceStyle]];
+    const sourceGuides = [[contrastCrossingTraces, contrastCrossingTraceStyle], [captureBackgroundTraces, captureBackgroundTraceStyle],
+      [possiblePrintRegions.flatMap(({ outlines }) => outlines), possiblePrintRegionStyle, true]];
     if (motifComparison) sourceGuides.push(
       [motifComparison.paperTraces, measuredMotifPaperStyle],
       [[motifComparison.outline], measuredMotifOutlineStyle, true],
@@ -2054,7 +2063,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   }, [alternateOutline, blockedRegions, captureBackgroundTraces, captureSplitGroups, competingPhotoOutlines, contrastCrossingTraces, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges, extentEdges, mergedPairs,
     filmEdgeIndex, filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
     printSuggestion, ribbedReviewOutline,
-    markBounds, missingTraces, motifComparison, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, preliminaryMotifMarks,
+    markBounds, missingTraces, motifComparison, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, possiblePrintRegions, preliminaryMotifMarks,
     selectedCountGroup, selectedPhotoId, showMissingEdges, sourceStrip]);
 
   useEffect(() => {
@@ -2395,6 +2404,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         id="paper-grid-count-result">{paperGridCountSaved}</p>}
       {countOutlines.length > 0 && <p className="crop-editor-hint" id="fragment-count-review-hint">{fragmentCountHint}</p>}
       {mergedPairs.length > 0 && <p className="crop-editor-hint" id="merged-print-pair-hint">{mergedPrintPairHint}</p>}
+      {possiblePrintRegions.length > 0 && <p className="crop-editor-hint" id="possible-print-regions-hint">{possiblePrintRegionsHint}</p>}
       {captureSplitGroups.length > 0 && <p className="crop-editor-hint" id="capture-split-count-hint">{captureSplitReviewHint}</p>}
       <CaptureSplitSourceReview groups={captureSplitGroups} photos={photos}
         sourceUrl={pageImage?.pageId === pageId ? pageImage.image.src : null} />
@@ -2503,6 +2513,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           paperJoinGroups.length && "paper-join-count-hint",
           captureSplitGroups.length && "capture-split-count-hint",
           mergedPairs.length && "merged-print-pair-hint",
+          possiblePrintRegions.length && "possible-print-regions-hint",
           competingPhotoOutlines.length && "competing-photo-outline-hint",
           contrastCrossingTraces.length && "contrast-crossing-review-hint",
           captureBackgroundTraces.length && "capture-background-review-hint",

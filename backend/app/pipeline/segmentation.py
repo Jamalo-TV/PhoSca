@@ -73,6 +73,9 @@ from app.pipeline.near_capture_review import (
 from app.pipeline.neighboring_print_review import neighboring_print_outline, next_print_position
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_REVIEW, PARTIAL_PRINT_EXTENT_TRACES, partial_print_extent_traces
+from app.pipeline.possible_print_regions import (
+    POSSIBLE_PRINT_REGIONS, POSSIBLE_PRINT_REGIONS_REVIEW, measure_possible_print_regions, possible_print_region_window,
+)
 from app.pipeline.print_edges import (
     PRINT_EDGE_CONFIRMATION, _backing_color, _is_pale_stock, line_fit_omits_print_stock, refine_print_boundary,
 )
@@ -4635,9 +4638,11 @@ def segment_album_page(
     recentered_rotated_tile = []
     near_capture_views = []
     neighboring_search = []
+    possible_region_inference = []
     result = _segment_album_page(
         image, settings, source, tile_offers, partial_tile_seeds, merged_tile_pairs, ribbed_tile_seeds, contrast_review,
         adjacent_view_pairs, grid_view_pairs, recentered_rotated_tile, near_capture_views, neighboring_search,
+        possible_region_inference,
     )
     if settings.enable_classical_segmentation_fallback:
         if settings.enable_precise_photo_crops and (
@@ -4742,6 +4747,9 @@ def segment_album_page(
                 result = _flag_printed_illustration(source, result)
                 result = _flag_shared_motif(source, result)
                 result = _flag_compact_scene_crossings(source, result)
+        if source is not None and possible_region_inference and any(item.mask.get(MERGED_PRINT_PAIR) for item in result.detections):
+            result = _review_possible_print_regions(source, image, result, possible_region_inference[0],
+                                                   settings.yolo_confidence_threshold)
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
@@ -5352,6 +5360,51 @@ def _review_merged_tile_pair(
     return SegmentationResult(detections, result.metadata)
 
 
+def _review_possible_print_regions(
+    source: np.ndarray, prepared: np.ndarray, result: SegmentationResult,
+    infer: Callable[[np.ndarray], list[SegmentationDetection]], confidence_threshold: float,
+) -> SegmentationResult:
+    candidates = []
+    for index, item in enumerate(result.detections):
+        mask = item.mask
+        fusion = mask.get("fusion") or {}
+        if (not item.geometry_valid or item.review_reasons or not .55 <= item.confidence < min(.70, confidence_threshold)
+                or mask.get("source") != "yolo_seg_mask" or mask.get("detector_source") != "yolo_onnx"
+                or fusion.get("proposal_count") != 1 or fusion.get("proposal_families") != ["model"]
+                or any(mask.get(key) for key in ("warp_quad", "visible_polygon", "crossing_print_suggestion", MERGED_PRINT_PAIR))):
+            continue
+        parent = _detection_polygon(item)
+        if (window := possible_print_region_window(parent, source.shape[:2])) is not None:
+            candidates.append((index, parent, window))
+    if len(candidates) != 1:
+        return result
+    (index, parent, window), = candidates
+    height, width = source.shape[:2]
+    left, top, right, bottom = window
+    started = perf_counter()
+    try:
+        local = _tile_detections_on_page(infer(prepared[top:bottom, left:right]), window, width, height)
+        inputs = _boundary_inputs(prepared)
+        observations = [(_detection_polygon(item), item.confidence, _detection_boundary_evidence(item, *inputs)["score"])
+                        for item in local]
+        peers = result.detections[:index] + result.detections[index + 1:]
+        claims = _tiled_review_claims(SegmentationResult(peers, result.metadata))
+        outlines = measure_possible_print_regions(source, parent, observations, claims)
+    except Exception:  # Optional comparison never replaces detection or existing review evidence.
+        outlines = None
+    metadata = {**result.metadata, "possible_print_region_review": {
+        "runtime_ms": round((perf_counter() - started) * 1000, 2), "found": outlines is not None,
+    }}
+    if outlines is None:
+        return SegmentationResult(result.detections, metadata)
+    detections = result.detections.copy()
+    item = detections[index]
+    detections[index] = replace(item, mask={
+        **item.mask, POSSIBLE_PRINT_REGIONS: {"outlines": [_normalized_polygon(quad, width, height) for quad in outlines]},
+    }, review_reasons=[POSSIBLE_PRINT_REGIONS_REVIEW])
+    return SegmentationResult(detections, metadata)
+
+
 def _collect_tiled_print_offers(
     source: np.ndarray, image: np.ndarray, detections: list[SegmentationDetection],
     model_evidence: dict[int, dict[str, float]], infer: Callable[[np.ndarray], list[SegmentationDetection]],
@@ -5551,6 +5604,7 @@ def _segment_album_page(
     recentered_rotated_tile: list[np.ndarray] | None = None,
     near_capture_views: list[np.ndarray] | None = None,
     neighboring_search: list[_NeighboringPrintSearch] | None = None,
+    possible_region_inference: list[Callable[[np.ndarray], list[SegmentationDetection]]] | None = None,
 ) -> SegmentationResult:
     model_path = Path(settings.yolo_model_path)
     line_budget = min(3 * image.shape[0] * image.shape[1], 12_000_000) if settings.enable_precise_photo_crops else None
@@ -5754,6 +5808,8 @@ def _segment_album_page(
                         neighboring_search.append(_NeighboringPrintSearch(
                             lambda frame: infer(frame, record_rejections=False)[0], _tiled_paper_claims(detections),
                         ))
+                    if possible_region_inference is not None and merged_tile_pairs:
+                        possible_region_inference.append(lambda frame: infer(frame, record_rejections=False)[0])
                 del inputs
                 if detections and settings.enable_classical_segmentation_fallback and risk_reasons and not dense_small_prints:
                     fallback = detect_photos_classical(

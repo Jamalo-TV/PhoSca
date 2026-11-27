@@ -20,7 +20,7 @@ import {
   borrowedFallbackProposal, captureFabricProposal, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints, frameBackingProposal,
   getDeferredParentCropHints, getDeferredPrintEvidence, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin,
-  MeasuredMotifReview, MeasuredMotifReviewOverlay, mergedPrintAsOneLabel, mergedPrintPairHint, missingPrintEdgeHint,
+  MeasuredMotifReview, MeasuredMotifReviewOverlay, mergedPrintAsOneLabel, mergedPrintPairHint, missingPrintEdgeHint, possiblePrintRegionsHint,
   nearCapturePrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
@@ -40,7 +40,8 @@ import {
   getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
-  getMergedPrintPairs, getPaperJoinReviewGroups, getPrintedIllustrationReviewGroups, getStoredMotifQuad, motifFitsPaper,
+  getMergedPrintPairs, getPaperJoinReviewGroups, getPossiblePrintRegions, getPrintedIllustrationReviewGroups, getStoredMotifQuad, motifFitsPaper,
+  possiblePrintRegionStyle,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
   getMeasuredMotifComparison, isMeasuredMotifComparison,
   sameReviewQuad, savedFullPrintReviewUrl,
@@ -301,6 +302,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     ] : detections.flatMap(getCompactSceneCrossingTraces);
   const captureBackgroundTraces = deferredDraft || editingMotif || selectedCountGroup ? [] : editable
     ? getCaptureBackgroundReviewTraces(item.payload) : detections.flatMap(getCaptureBackgroundReviewTraces);
+  const possiblePrintRegions = deferredDraft || editingMotif || selectedCountGroup ? [] : getPossiblePrintRegions(
+    editable ? (sameReviewQuad(initialOuter(), quad) ? [item.payload] : []) : detections,
+  );
   const selectedMergedPair = !reviewedNonPrint && getMergedPrintPairs([item.payload || {}])[0];
   const sourceStrip = editable && !deferredDraft && !editingMotif ? getSourceStripReview(fullPrintMode) : null;
   const albumMark = editable && !editingMotif && !reviewedNonPrint ? markOffer : null;
@@ -615,6 +619,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   ));
   const overlayHints = [countOutlines.length && "mobile-fragment-count-review-hint",
     mergedPairs.length && "mobile-merged-print-pair-hint",
+    possiblePrintRegions.length && "mobile-possible-print-regions-hint",
     competingPhotoOutlines.length && "mobile-competing-photo-outline-hint",
     captureSplitGroups.length && "mobile-capture-split-count-hint",
     filmGridGroups.length && "mobile-film-grid-count-hint", paperGridGroups.length && "mobile-paper-grid-count-hint",
@@ -729,6 +734,17 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           })}
         </g>)}
         {competingPhotoOutlines.some(outline => outline.motifGuide) && <SharedMotifGuideOverlay outlines={competingPhotoOutlines} />}
+        {possiblePrintRegions.map(({ id, outlines }) => <g className="possible-print-regions" key={id} aria-hidden="true"
+          fill="none" pointerEvents="none">
+          {outlines.map((outline, index) => {
+            const points = outline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ");
+            return <g key={index}>
+              <polygon points={points} stroke={possiblePrintRegionStyle.contrast} strokeWidth="4" vectorEffect="non-scaling-stroke" />
+              <polygon points={points} stroke={possiblePrintRegionStyle.color} strokeWidth="2" vectorEffect="non-scaling-stroke"
+                strokeDasharray={possiblePrintRegionStyle.dash.join(" ")} />
+            </g>;
+          })}
+        </g>)}
       </svg>
       {magnifier.visible && <div className="crop-magnifier" style={{
         left: `${lensX}%`, top: `${lensY}%`, backgroundImage: `url(${item.preview_url})`, backgroundPosition: `${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%`,
@@ -756,6 +772,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     )}
     {countOutlines.length > 0 && <p className="quad-hint" id="mobile-fragment-count-review-hint">{fragmentCountHint}</p>}
     {mergedPairs.length > 0 && <p className="quad-hint" id="mobile-merged-print-pair-hint">{mergedPrintPairHint}</p>}
+    {possiblePrintRegions.length > 0 && <p className="quad-hint" id="mobile-possible-print-regions-hint">{possiblePrintRegionsHint}</p>}
     {contrastCrossingTraces.length > 0 && <p className="quad-hint" id="mobile-contrast-crossing-review-hint">{contrastCrossingTraceHint}</p>}
     {captureBackgroundTraces.length > 0 && <p className="quad-hint" id="mobile-capture-background-review-hint">
       {captureBackgroundReviewHint}{editable && ` ${captureBackgroundWrongObjectHint}`}

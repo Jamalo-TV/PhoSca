@@ -31,6 +31,7 @@ from app.pipeline.motif_margin import MOTIF_MARGIN_REVIEW_REVISION
 from app.pipeline.off_print_advisory import OFF_PRINT_ADVISORY_REVISION
 from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVISION
 from app.pipeline.overlap_edge_review import OVERLAP_EDGE_REVIEW_REVISION
+from app.pipeline.possible_print_regions import POSSIBLE_PRINT_REGIONS_REVISION
 from app.pipeline.print_edges import CLASSICAL_CONTOUR_REFINEMENT_REVISION, PRINT_BOUNDARY_REVISION
 from app.pipeline.print_outline_suggestion import PRINT_OUTLINE_SUGGESTION_REVISION
 from app.pipeline.printed_illustration_review import PRINTED_ILLUSTRATION_REVIEW_REVISION
@@ -177,6 +178,10 @@ def crop_validation_profile(settings: Settings) -> dict:
         "dense_tile_inference": (
             17 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
+        "possible_print_regions_review": (
+            POSSIBLE_PRINT_REGIONS_REVISION if settings.enable_precise_photo_crops
+            and settings.enable_classical_segmentation_fallback and visible_model is None else None
+        ),
         "contrast_crossing_review": (
             1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback
             and visible_model is None else None
@@ -275,7 +280,7 @@ def detector_calibration_profile(settings: Settings, *, segmentation: dict | Non
         "crossing_print_outlines", "separated_contrast_prints", "dark_album_review", "embossed_album_pocket_review",
         "empty_drawn_frame_rejection",
         "album_window_detection", "multipanel_print_detection", "fragmented_print_detection", "scalloped_print_outline",
-        "capture_edge_outline", "dense_tile_inference",
+        "capture_edge_outline", "dense_tile_inference", "possible_print_regions_review",
         "deskew_inference", "proposal_threshold",
         "acceptance_threshold", "min_detection_aspect_ratio",
         "max_detection_aspect_ratio", "opencv_version",

@@ -1431,6 +1431,65 @@ async def test_new_paper_claim_retires_a_merged_pair_keeps_crop_hold(client, mon
         assert (await client.get(f"{url}/image", params={"variant": variant})).status_code == 404
 
 
+async def test_possible_print_regions_are_read_only_and_keep_held_crops_after_a_neighbor_claim(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.possible_print_regions import POSSIBLE_PRINT_REGIONS, POSSIBLE_PRINT_REGIONS_REVIEW
+
+    def quad(x1, y1, x2, y2):
+        return [{"x": x, "y": y} for x, y in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))]
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    album_id, page_id, photo_id = await _seed_review_data()
+    outlines = [quad(.15, .22, .75, .51), quad(.17, .54, .74, .83)]
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        outer = photo.segmentation_mask["warp_quad"]
+        box = photo.bounding_box
+        photo.segmentation_mask = {"source": "yolo_seg_mask", "detector_source": "yolo_onnx", "polygon": outer,
+                                   POSSIBLE_PRINT_REGIONS: {"outlines": outlines}}
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    rendered = await client.post(f"{url}/reprocess")
+    assert rendered.status_code == 200, rendered.text
+    assert rendered.json()["segmentation_mask"][POSSIBLE_PRINT_REGIONS] == {"outlines": outlines}
+    assert len((await client.get(f"/api/v1/albums/{album_id}/photos")).json()) == 1
+    paper = {"source": "manual_quad", "polygon": outer, "warp_quad": outer}
+    update = {"bounding_box": box, "segmentation_mask": paper}
+    for request in ({"bounding_box": box}, update,
+                    {**update, "confirm_print_outline": True, "segmentation_mask": {**paper, "image_quad": outlines[0]}}):
+        refused = await client.patch(f"{url}/bounding-box", json=request)
+        assert (refused.status_code, refused.json()["detail"]) == (409, "contrast_print_outline_review_required")
+    tampered = await client.patch(f"{url}/bounding-box", json={
+        **update, "segmentation_mask": {**paper, POSSIBLE_PRINT_REGIONS: {"outlines": outlines}},
+    })
+    assert tampered.status_code == 422
+
+    added = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": quad(.62, .56, .90, .85),
+    })
+    assert added.status_code == 201, added.text
+    assert (await client.get(url)).json()["segmentation_mask"][POSSIBLE_PRINT_REGIONS] is None
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "false")
+    get_settings.cache_clear()
+    repeated = await client.post(f"{url}/reprocess")
+    assert repeated.status_code == 200, repeated.text
+    modes = repeated.json()["enhancement_applied"]["correction"]["crop_modes"]
+    assert all(crop["status"] == "review_needed" and POSSIBLE_PRINT_REGIONS_REVIEW in crop["reason_codes"]
+               for crop in modes.values())
+    assert (await client.patch(f"{url}/bounding-box", json=update)).status_code == 409
+    confirmed = await client.patch(f"{url}/bounding-box", json={**update, "confirm_print_outline": True})
+    assert confirmed.status_code == 200, confirmed.text
+    assert POSSIBLE_PRINT_REGIONS not in confirmed.json()["segmentation_mask"]
+    assert (await client.get(f"{url}/image?variant=source_corrected_untrimmed")).status_code == 200
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image", params={"variant": variant})).status_code == 404
+
+
 @pytest.mark.parametrize("same_paper", [True, False])
 async def test_merged_print_owner_edit_requires_a_current_paper_decision(client, same_paper):
     from app.database import get_session_factory

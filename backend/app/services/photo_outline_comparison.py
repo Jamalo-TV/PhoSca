@@ -11,6 +11,7 @@ import numpy as np
 from app.models import ExtractedPhoto
 from app.pipeline.decisions import photo_is_reviewed_non_print
 from app.pipeline.geometry import normalized_polygon_overlap
+from app.pipeline.possible_print_regions import POSSIBLE_PRINT_REGIONS
 from app.pipeline.shared_motif_review import SHARED_MOTIF_REVIEW, motif_review_id
 from app.schemas.pipeline import CompetingPhotoOutline, PhotoRead
 
@@ -33,6 +34,7 @@ def _candidate(photo: ExtractedPhoto | PhotoRead) -> _Candidate | None:
     modes = correction.get("crop_modes") or {}
     if (photo.segmentation_confidence is None or photo_is_reviewed_non_print(photo)
             or mask.get("source") != "yolo_seg_mask" or mask.get("detector_source") != "yolo_onnx"
+            or POSSIBLE_PRINT_REGIONS in mask
             or any(mask.get(key) for key in ("warp_quad", "visible_polygon", "merged_print_pair", "paper_grid_review",
                                              "film_grid_review_seam", "crossing_print_suggestion",
                                              "paper_join_review_traces", "fragment_outline_suggestion", "capture_edge_clipped"))

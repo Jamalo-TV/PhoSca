@@ -4,16 +4,18 @@ export const measuredMotifPaperEditHint = "Setze vor dem Speichern alle vier Eck
 
 export function contrastOutlineNeedsConfirmation(photo, fullPrint) {
   const confidence = photo?.segmentation_confidence ?? photo?.confidence;
-  const source = photo?.segmentation_mask?.detector_source;
+  const mask = photo?.segmentation_mask;
+  const source = mask?.detector_source;
   const reasons = fullPrint?.reason_codes || [];
   const contact = fullPrint?.contact_print_edge_check_required === true && ["contrast_region", "yolo_onnx"].includes(source);
   const opposingEdges = fullPrint?.opposing_outer_edges_check_required === true && source === "yolo_onnx";
   const motifComparison = fullPrint?.motif_comparison_requires_paper_edit === true && source === "yolo_onnx";
   const faintPaper = fullPrint?.faint_paper_review_requires_confirmation === true && source === "yolo_onnx";
+  const possiblePrintRegions = source === "yolo_onnx" && Object.hasOwn(mask, "possible_print_regions");
   const unsupportedContrast = source === "contrast_region" && reasons.includes("PRINT_BOUNDARY_UNSUPPORTED");
   return confidence != null
     && fullPrint?.status === "review_needed"
-    && (contact || opposingEdges || motifComparison || faintPaper || unsupportedContrast)
+    && (contact || opposingEdges || motifComparison || faintPaper || possiblePrintRegions || unsupportedContrast)
     && !reasons.includes("PRINT_AT_CAPTURE_EDGE");
 }
 

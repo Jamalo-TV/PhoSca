@@ -419,6 +419,30 @@ export function getMergedPrintPairs(photos) {
   });
 }
 
+export const possiblePrintRegionStyle = { color: "#bae6fd", contrast: "#0c4a6e", dash: [2, 4] };
+
+export function getPossiblePrintRegions(photos) {
+  return photos.flatMap(photo => {
+    const id = photo?.photo_id ?? photo?.id;
+    const { segmentation_confidence: confidence = photo?.confidence, segmentation_mask: mask } = photo || {};
+    const outlines = mask?.possible_print_regions?.outlines;
+    if (!id || photo.reviewed_non_print || photo.review_reasons?.includes("GEOMETRY_REVIEW_WRONG_OBJECT")
+        || confidence == null || mask?.warp_quad || mask?.merged_print_pair || !bothModesHeld(cropModes(photo))
+        || !Array.isArray(outlines) || outlines.length !== 2 || !outlines.every(isRegionQuad)) return [];
+    const firstPoints = new Set(outlines[0].map(({ x, y }) => `${x},${y}`));
+    return outlines[1].every(({ x, y }) => firstPoints.has(`${x},${y}`)) ? [] : [{ id, outlines }];
+  });
+}
+
+function isRegionQuad(outline) {
+  if (!Array.isArray(outline) || outline.length !== 4 || !outline.every(isNormalizedPoint)) return false;
+  const turns = outline.map((start, i) => {
+    const next = outline[(i + 1) % 4], end = outline[(i + 2) % 4];
+    return (next.x - start.x) * (end.y - next.y) - (next.y - start.y) * (end.x - next.x);
+  });
+  return turns.every(turn => turn > 0) || turns.every(turn => turn < 0);
+}
+
 export function getStoredMotifQuad(photo, mode) {
   return photo.segmentation_mask?.image_quad
     ?? (mode?.status === "ready" ? mode.warp_quad || photo.image_quad : null);
