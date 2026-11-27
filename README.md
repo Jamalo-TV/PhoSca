@@ -1118,6 +1118,15 @@ beansprucht, verschwindet der Vergleich. Ob der helle Streifen zum
 Fotopapier gehört, bleibt eine eigene Prüfentscheidung.
 [Messung und Vergleich auf Golden 12](data/evaluation/README.md#recover-a-measured-strip-along-a-bowed-image-edge)
 
+Wenn sich hinter der Bildkante eine zweite Kante und danach
+ein durchgehender Hintergrund messen lassen, kann dieselbe
+Prüfvorschau einen belegten Abschnitt ausserhalb des hellen
+Streifens ausblenden. Der helle Streifen selbst bleibt sichtbar.
+Ein messbarer grösserer Papierrand, Schriftmerkmale oder
+geschützte Inhalte lassen die Vorschau bei der Ergänzung des
+Bildstreifens bleiben. Beide Zuschnittmodi bleiben in Prüfung.
+[Messung des äusseren Streifens und Gegenproben](data/evaluation/README.md#compare-a-measured-exterior-band-beyond-a-pale-rim)
+
 Wenn sich zwei gehaltene Modellvorschläge stark überdecken und
 der grössere zugleich in einen weiteren offenen Vorschlag reicht,
 kann die Prüfung die Originalmasken vergleichen. Violett liegt

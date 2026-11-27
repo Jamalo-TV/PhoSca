@@ -5,7 +5,9 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from app.pipeline.print_edges import _PRINT_SIDES, _edge_band
+from app.pipeline.crop_sampling import _outline_mask
+from app.pipeline.print_edges import _PRINT_SIDES, _edge_band, _sample_lab
+from app.pipeline.visible_scene_edge import has_enclosing_perimeter
 
 
 BOWED_SCENE_PREVIEW = "bowed_scene_preview"
@@ -16,6 +18,14 @@ class BowedScene:
     outline: np.ndarray
     trace: np.ndarray
     scope: np.ndarray
+    outside_trace: np.ndarray | None = None
+
+
+@dataclass(frozen=True)
+class _OutsideBand:
+    first: int
+    last: int
+    boundary: np.ndarray
 
 
 def _connected_depths(score: np.ndarray) -> np.ndarray:
@@ -85,8 +95,88 @@ def _signed_step(image: np.ndarray, start: np.ndarray, end: np.ndarray, radius: 
     return np.float32(points)
 
 
+def _outside_band(
+    image: np.ndarray, trace: np.ndarray, stations: np.ndarray, inward: np.ndarray, protected: list[np.ndarray],
+    corner_clear: np.ndarray,
+) -> _OutsideBand | None:
+    """Find one supported outboard band while keeping the entire pale stripe."""
+    offsets = np.arange(-3., 49.5, .5, dtype=np.float32)
+    points = trace[:, None] - offsets[None, :, None] * inward
+    if np.any((points < 0) | (points > np.float32(image.shape[1::-1]) - 1)):
+        return None
+    band = _sample_lab(image, points.reshape(-1, 2)).reshape(*points.shape[:2], 3)
+    exterior = np.median(band[:, 80:96], axis=1)
+    columns = np.arange(14, 37)
+    pale = np.median(band[:, columns[:, None] - np.arange(3, 7)], axis=2)
+    gray = np.median(band[:, columns[:, None] + np.arange(3, 7)], axis=2)
+    drop = pale[..., 0] - gray[..., 0]
+    local = band[:, columns - 2, 0] - band[:, columns + 2, 0]
+    collar = band[:, columns[:, None] + np.arange(7, 62)]
+    deviation = np.quantile(np.linalg.norm(collar - gray[:, :, None], axis=3), .90, axis=2)
+    drift = np.linalg.norm(gray - exterior[:, None], axis=2)
+    change = np.quantile(np.linalg.norm(np.diff(collar, axis=2), axis=3), .90, axis=2)
+    valid = ((pale[..., 0] >= 178) & (gray[..., 0] <= 178) & (drop >= 23) & (local >= 16)
+             & (deviation <= 17) & (drift <= 10) & (change <= 5))
+    score = drop + local - deviation - 2.1 * drift
+    peaks = np.where(valid, score, -np.inf).argmax(axis=1)
+    rail = offsets[columns[peaks]]
+    amount = (trace - stations) @ inward - rail - 2.4
+    supported = valid.any(axis=1) & (amount >= 1.25) & corner_clear
+    intervals = np.flatnonzero(np.diff(np.r_[False, supported, False])).reshape(-1, 2)
+    if len(intervals) == 0:
+        return None
+    first, stop = max(intervals, key=lambda run: run[1] - run[0])
+    last = stop - 1
+    if np.linalg.norm(stations[last] - stations[first]) < 100 or np.max(np.abs(np.diff(rail[first:stop]))) > 2:
+        return None
+    boundary = np.float32(stations[first:stop] + amount[first:stop, None] * inward)
+    boundary = cv2.approxPolyDP(boundary, .22, False)[:, 0]
+    wedge = np.vstack((stations[first], boundary, stations[last]))
+    hull = cv2.convexHull(wedge)
+    if any(cv2.intersectConvexConvex(hull, region)[0] > 0 for region in protected):
+        return None
+    if not _matches_removed_band(image, wedge, stations[first:stop], gray[np.arange(first, stop), peaks[first:stop]]):
+        return None
+    return _OutsideBand(int(first), int(last), boundary)
+
+
+def _matches_removed_band(
+    image: np.ndarray, wedge: np.ndarray, stations: np.ndarray, gray: np.ndarray,
+) -> bool:
+    """Check all candidate source centres against the observed exterior."""
+    left, top = np.floor(wedge.min(axis=0)).astype(int)
+    right, bottom = np.ceil(wedge.max(axis=0)).astype(int) + 1
+    mask = _outline_mask(wedge - np.float32([left, top]), (bottom - top, right - left))
+    y, x = np.nonzero(mask)
+    if len(y) < 180:
+        return False
+    centres = np.float32(np.column_stack((x + left, y + top)))
+    axis = stations[-1] - stations[0]
+    fractions = ((centres - stations[0]) @ axis) / (axis @ axis)
+    depth = ((stations - stations[0]) @ axis) / (axis @ axis)
+    reference = np.column_stack([np.interp(fractions, depth, channel) for channel in gray.T])
+    source = cv2.cvtColor(image[y + top, x + left, None, :], cv2.COLOR_BGR2LAB)[:, 0].astype(np.float32)
+    if np.any(np.linalg.norm(source - reference, axis=1) > 13):
+        return False
+    # Compare along the band so the nearby bright edge cannot mimic ink.
+    # A mark needs similar ground on both sides and connected native evidence.
+    tangent = axis / np.linalg.norm(axis)
+    flank_points = centres[:, None] + np.float32([-4, -3, 3, 4])[None, :, None] * tangent
+    if np.any((flank_points < 0) | (flank_points > np.float32(image.shape[1::-1]) - 1)):
+        return False
+    flanks = _sample_lab(image, flank_points.reshape(-1, 2)).reshape(-1, 2, 2, 3).mean(axis=2)
+    residual = np.min(flanks - source[:, None], axis=1)
+    matched = np.linalg.norm(flanks[:, 0] - flanks[:, 1], axis=1) <= 6
+    ink = matched & ((residual[:, 0] >= 4) | (residual[:, 2] >= 2))
+    marks = np.zeros_like(mask, dtype=np.uint8)
+    marks[y[ink], x[ink]] = 1
+    _, _, components, _ = cv2.connectedComponentsWithStats(marks, connectivity=8)
+    return not np.any(components[1:, cv2.CC_STAT_AREA] >= 4)
+
+
 def measure_bowed_scene(
     image: np.ndarray, quad: np.ndarray, boundary: dict, neighbors: list[np.ndarray],
+    *, protected: list[np.ndarray] | None = None,
 ) -> BowedScene | None:
     sides = [boundary.get(side) or {} for side in _PRINT_SIDES]
     weak = [i for i, side in enumerate(sides) if side.get("corner_support") is None]
@@ -113,18 +203,33 @@ def measure_bowed_scene(
     stations = start + fractions[:, None] * edge
     extension = stations + additions[:, None] * inward
     # Keep an unmodified corner where two different material steps meet.
-    inside = (np.minimum(fractions, 1 - fractions) * length[index] >= 12) & (additions < -.05)
+    corner_clear = np.minimum(fractions, 1 - fractions) * length[index] >= 12
+    inside = corner_clear & (additions < -.05)
     measured = np.flatnonzero(inside)
     if len(measured) < 4:
         return None
     first, last = measured[[0, -1]]
     added_edge = cv2.approxPolyDP(extension[first:last + 1], .27, False)[:, 0]
-    outline = np.vstack((start, stations[first], added_edge, stations[last], end, ordered[2:]))
-    if cv2.contourArea(outline) - cv2.contourArea(quad) < max(64, .001 * cv2.contourArea(quad)):
+    addition = np.vstack((stations[first], added_edge, stations[last]))
+    if cv2.contourArea(addition) < max(64, .001 * cv2.contourArea(quad)):
         return None
     scope = cv2.convexHull(np.vstack((quad, trace, np.float32([start, end]) - inward * radius)))[:, 0]
     if np.any((scope < 0) | (scope > np.float32(image.shape[1::-1]) - 1)):
         return None
     if any(cv2.intersectConvexConvex(scope, cv2.convexHull(peer))[0] > 1 for peer in neighbors):
         return None
-    return BowedScene(outline, trace[first:last + 1], scope)
+    segments = [(first, addition)]
+    outside = _outside_band(image, trace, stations, inward, protected or [], corner_clear)
+    outside_trace = None
+    if outside is not None and (outside.last < first or last < outside.first):
+        far = trace[[outside.first, outside.last]] - 49. * inward
+        complete_scope = cv2.convexHull(np.vstack((scope, far)))[:, 0]
+        if (not any(cv2.intersectConvexConvex(complete_scope, cv2.convexHull(peer))[0] > 1 for peer in neighbors)
+                and not has_enclosing_perimeter(image, quad, np.vstack((quad, outside.boundary)), length.min(),
+                                                search_margin=.20, maximum_area_ratio=1.86)):
+            scope = complete_scope
+            clipped = np.vstack((stations[outside.first], outside.boundary, stations[outside.last]))
+            segments.append((outside.first, clipped))
+            outside_trace = outside.boundary
+    outline = np.vstack((start, *(segment for _, segment in sorted(segments)), end, ordered[2:]))
+    return BowedScene(outline, trace[first:last + 1], scope, outside_trace)

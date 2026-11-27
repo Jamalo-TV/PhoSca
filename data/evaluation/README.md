@@ -2875,6 +2875,70 @@ The eight benchmark pairs retain their detections, crop metrics
 and mode availability. The only output difference is the intended
 new preview metadata on this Golden 12 print. [Original source](../golden_fixtures/page_12.jpg)
 
+#### Compare a measured exterior band beyond a pale rim
+
+The bowed-edge comparison can also make a measured exterior
+strip transparent. It searches 4–15 native pixels outward
+from the observed image transition for a second, signed step
+from the pale rim into a darker field. The field must agree
+with a separate outward sample and sustain its color across
+the intervening collar. The first and last 12 pixels near the
+corners stay outside this operation. The supported run has to
+be at least 100 native pixels long, and the comparison keeps a
+2.4-pixel band outside the second transition as well as the
+entire pale strip.
+
+The final veto checks every native pixel centre in the proposed
+removal against the local reference. For possible lettering or
+ink, it samples opposing flanks along the edge. Four connected
+centres darker than both flanks or with a coherent blue shift
+suppress the removal. An intersecting protected region or a
+larger closed perimeter measured on four native sides also vetoes
+it. When the removal fails, the original add-only comparison
+can still show the observed image extension. A neighbouring
+paper claim in the recorded measurement scope retires the
+comparison asset and both guides.
+
+On the original Golden 12 source, the accepted run covers
+native rows 1314–1437. The comparison gained zero new source
+centres over the preceding add-only preview and excluded 557.
+All 557 are beyond the paired pale-rim measurement. The
+measured image and pale-rim centres remain included, as do
+the previous 1,574 added centres. Independent sampling of the
+actual alpha output finds 4,799 to 4,205 sampled output
+positions with contributions beyond the whole pale rim.
+Source centers outside the supported run, including the lower
+fold, stay available. Both compared PNGs have the same
+703 × 994 canvas, homography and fully opaque colors where
+both include a pixel. At the cut's antialias, one nearly opaque
+pixel shifts in color by one channel unit.
+
+A visibly larger reproduction, a second paper edge, adjacent
+photo texture and known protected content preserve the add-only
+view. Nine of twelve faint-ink controls also preserve it.
+The three weakest graphite or blue controls can still match
+the nearby field closely enough to be hidden in the comparison.
+JPEG compression and blur can also weaken marks enough to
+defeat the veto.
+Physically different surfaces with equivalent visible evidence
+also remain possible. This is a provisional review asset and
+both named exports and geometry approval remain held.
+
+The original multipart upload and reprocess path reproduce the
+primary JPEG and per-mode geometry. Desktop and mobile display
+the new comparison and two guides. A subsequent claim through
+the measurement scope retires the PNG. The source-pixel metrics,
+controlled replays and screenshots are under
+`runs/crop-quality/golden12-outside-band/`.
+
+Eight paired benchmark runs preserve detection, crop metrics
+and mode availability. Only the Golden 12 print's full-print
+preview outline, second trace and exclusion flag change.
+On that native crop with one OpenCV thread, 24 alternating
+warm runs put the median preview measurement and render at
+64 ms with the band check disabled and 114 ms with it enabled.
+The median paired increment was 48 ms.
+
 #### Review a protection margin outside a manually added print
 
 Off-print advisory revision 2 adds a path for a manually added print

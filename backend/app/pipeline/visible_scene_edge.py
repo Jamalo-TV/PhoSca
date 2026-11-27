@@ -98,10 +98,13 @@ def _quiet_exterior(image: np.ndarray, spans: list[np.ndarray], inward: np.ndarr
     return max(part.mean() for part in np.array_split(edges, 8)) <= .005
 
 
-def _enclosing_perimeter(image: np.ndarray, quad: np.ndarray, inside: np.ndarray, short_side: float) -> bool:
+def has_enclosing_perimeter(
+    image: np.ndarray, quad: np.ndarray, inside: np.ndarray, short_side: float,
+    *, search_margin: float = .10, maximum_area_ratio: float = 1.38,
+) -> bool:
     """Withhold an interior guide when the outside has its own closed perimeter."""
-    low = np.maximum(0, np.floor(quad.min(axis=0) - .10 * short_side).astype(int))
-    high = np.minimum(image.shape[1::-1], np.ceil(quad.max(axis=0) + .10 * short_side).astype(int) + 1)
+    low = np.maximum(0, np.floor(quad.min(axis=0) - search_margin * short_side).astype(int))
+    high = np.minimum(image.shape[1::-1], np.ceil(quad.max(axis=0) + search_margin * short_side).astype(int) + 1)
     left, top = low
     right, bottom = high
     scale = min(1., 1100 / max(right - left, bottom - top))
@@ -115,7 +118,7 @@ def _enclosing_perimeter(image: np.ndarray, quad: np.ndarray, inside: np.ndarray
         contours, _ = cv2.findContours(closed, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
         for contour in contours:
             extent = cv2.contourArea(contour) / scale ** 2
-            if not .55 * area <= extent <= 1.38 * area:
+            if not .55 * area <= extent <= maximum_area_ratio * area:
                 continue
             polygon = cv2.approxPolyDP(contour, .013 * cv2.arcLength(contour, True), True)[:, 0]
             if len(polygon) != 4 or not cv2.isContourConvex(polygon):
@@ -156,6 +159,6 @@ def suggest_visible_scene_edge(
         if not _quiet_exterior(image, spans, inward, float(np.min((points - a) @ inward))):
             continue
         context = np.vstack((points, points - .13 * short_side * inward, points + .17 * short_side * inward))
-        if not _enclosing_perimeter(image, quad, context, short_side):
+        if not has_enclosing_perimeter(image, quad, context, short_side):
             candidates.append(spans)
     return candidates[0] if len(candidates) == 1 else []

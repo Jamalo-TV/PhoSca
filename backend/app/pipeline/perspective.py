@@ -2525,7 +2525,18 @@ def correct_photo_crop(
                 and not any(full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview"))
                 and all(mode["status"] == "review_needed" for mode in modes.values())):
             try:
-                bowed = measure_bowed_scene(page_image, src_points, boundary_refinement, neighbor_polygons)
+                protected_boxes = []
+                for region in regions:
+                    if box := region_box_in_pixels(region, width, height):
+                        left, top, right, bottom = box
+                        padding = float(region.get("margin_ratio", .08)) * max(right - left, bottom - top)
+                        protected_boxes.append(np.float32([
+                            [left - padding, top - padding], [right + padding, top - padding],
+                            [right + padding, bottom + padding], [left - padding, bottom + padding],
+                        ]))
+                bowed = measure_bowed_scene(
+                    page_image, src_points, boundary_refinement, neighbor_polygons, protected=protected_boxes,
+                )
                 if bowed is not None and validate_protected_regions(
                     cv2.convexHull(bowed.outline)[:, 0], regions, width=width, height=height,
                 )["passed"]:
@@ -2536,6 +2547,9 @@ def correct_photo_crop(
                     }
                     full_mode["suggested_edge_source"] = BOWED_SCENE_PREVIEW
                     full_mode["suggested_edge_traces"] = [_vertices_on_page(bowed.trace, width, height)]
+                    if bowed.outside_trace is not None:
+                        full_mode["outline_preview"]["excluded_outer_band"] = True
+                        full_mode["suggested_edge_traces"].append(_vertices_on_page(bowed.outside_trace, width, height))
                     result = replace(result, full_print_preview=pixels)
             except (ValueError, cv2.error, np.linalg.LinAlgError):
                 pass

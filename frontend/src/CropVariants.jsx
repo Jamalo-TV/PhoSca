@@ -584,6 +584,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
       return "Die gestrichelte Linie markiert einen sichtbaren Übergang ins Bild. Prüfe am Original, ob dort auch das Fotopapier beginnt. Sind die Ecken oder der Rand unter der Hülle verdeckt, hilft eine Aufnahme des frei liegenden Abzugs.";
     }
     if (fullPrint.suggested_edge_source === bowedScenePreview) {
+      if (fullPrint?.outline_preview?.excluded_outer_band) {
+        return "Die gestrichelten Linien zeigen den ergänzten Bildrand und den ausgeblendeten Bereich ausserhalb des hellen Streifens. Prüfe beide Stellen am Original.";
+      }
       return "Die gestrichelte Linie folgt dem sichtbaren Bildrand im ergänzten Abschnitt. Prüfe am Original, wo das Fotopapier endet.";
     }
     if (fullPrint.suggested_edge_source === possibleEmbossedAlbumPaperEdges) {
@@ -626,6 +629,9 @@ export function getPrintOutlinePreviewHint(fullPrint) {
     return "Vergleiche beide Vorschauen mit dem Original und prüfe die Bilddetails am Papierrand. Die vier Ecken bleiben in Prüfung.";
   }
   if (preview?.source === bowedScenePreview) {
+    if (preview?.excluded_outer_band) {
+      return "Die Vergleichsvorschau ergänzt den gemessenen Bildstreifen und blendet einen Teil des möglichen Albumhintergrunds aus. Der helle Streifen bleibt sichtbar.";
+    }
     return "Die Vorschau ergänzt den am Original gemessenen Bildstreifen. Der übrige Ausschnitt folgt den bisherigen Ecken.";
   }
   if (preview?.source === roundedCornerSource) {
@@ -682,7 +688,9 @@ export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outl
   const wholeGrid = outlinePreview?.source === disputedGridPreview;
   const wholeOutline = wholeGrid || outlinePreview?.source === measuredRibbedPrintOutlineSource;
   const extendedScene = outlinePreview?.source === bowedScenePreview;
-  const label = extendedScene ? "Ergänzte Bildfläche" : wholeOutline ? "Möglicher Aussenumriss" : "Mögliche Papierkante";
+  const trimmedScene = extendedScene && outlinePreview.excluded_outer_band;
+  const label = trimmedScene ? "Vergleich am Bildrand" : extendedScene ? "Ergänzte Bildfläche"
+    : wholeOutline ? "Möglicher Aussenumriss" : "Mögliche Papierkante";
   const { width, height } = outlinePreview?.shape || {};
   const cuts = wholeGrid && width > 1 && height > 1
     ? getSourceEdgeTraces(outlinePreview.projected_grid_cuts).filter((trace) => trace.length === 2) : [];
@@ -693,7 +701,8 @@ export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outl
     </figure>
     <figure>
       <div className="paper-edge-preview-image">
-        <img src={possibleUrl} alt={extendedScene ? "Prüfvorschau mit ergänztem sichtbarem Bildstreifen" : wholeOutline
+        <img src={possibleUrl} alt={trimmedScene ? "Prüfvorschau mit ergänztem Bildrand und ausgeblendetem Randbereich"
+          : extendedScene ? "Prüfvorschau mit ergänztem sichtbarem Bildstreifen" : wholeOutline
           ? "Prüfvorschau des gesamten möglichen Abzugs" : "Prüfvorschau entlang der möglichen Papierkante"} />
         {cuts.length > 0 && <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Mögliche Trennkanten der Teilvorschläge">
           {cuts.map((trace) => {
