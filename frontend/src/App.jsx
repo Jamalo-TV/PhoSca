@@ -89,6 +89,7 @@ import {
   possiblePrintRegionStyle,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
   getMeasuredMotifComparison, isMeasuredMotifComparison, measuredMotifOutlineStyle, measuredMotifPaperStyle, measuredMotifSeamStyle,
+  manualAdditionProtection,
   sameReviewQuad, savedFullPrintReviewUrl,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -1959,12 +1960,13 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       context.restore();
     }
-    if (blockedRegions?.length && !newPrint) {
+    const protectedBounds = newPrint ? newPrint.protection?.regions : blockedRegions;
+    if (protectedBounds?.length) {
       context.save();
       context.setLineDash([]);
       context.strokeStyle = "#b91c1c";
       context.lineWidth = 4;
-      for (const { x1, y1, x2, y2 } of blockedRegions) {
+      for (const { x1, y1, x2, y2 } of protectedBounds) {
         context.strokeRect(x1 * canvas.width, y1 * canvas.height, (x2 - x1) * canvas.width, (y2 - y1) * canvas.height);
       }
       context.restore();
@@ -2099,7 +2101,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         return;
       }
       const corners = [...newPrint.corners, { x: clampUnit(point.x), y: clampUnit(point.y) }];
-      setAddition({ ...newPrint, corners: cyclicQuad(corners) || corners, error: null });
+      setAddition({ ...newPrint, corners: cyclicQuad(corners) || corners, error: null, protection: null });
       return;
     }
     const selectedCorners = editingImage ? motifCorners : selectedShape?.warpQuad;
@@ -2147,6 +2149,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         corners: current.corners.map((corner, index) =>
           index === pointIndex ? { x: clampUnit(point.x), y: clampUnit(point.y) } : corner),
         error: null,
+        protection: null,
       });
       return;
     }
@@ -2297,7 +2300,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   async function saveNewPrint() {
     if (!newPrint || newPrint.saving || newPrint.invalidated || newPrint.corners.length !== 4
         || additionSize.error || needsPrintAdditionConfirmation) return;
-    setAddition({ ...newPrint, saving: true, error: null });
+    setAddition({ ...newPrint, saving: true, error: null, protection: null });
     try {
       const photo = await onAddPhoto(pageId, newPrint.requestId, newPrint.corners, additionSize.size,
         newPrint.adjacentSuggestion, newPrint.deferredProposal, {
@@ -2312,13 +2315,13 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       setSaveState({ photoId: photo.id, mode: "full_print", url: photo.urls?.full_print });
     } catch (error) {
       const stale = printAdditionErrors[error.message];
-      const message = stale || (error.message === "protected_region_cut"
-        ? "Der Ausschnitt schneidet einen geschützten Bildbereich ab. Verschiebe die Ecken, bis der Bereich vollständig sichtbar ist."
-        : error.message === "mounted_print_outline_excludes_fragments"
+      const protection = manualAdditionProtection(error);
+      const message = stale || (error.message === "mounted_print_outline_excludes_fragments"
           ? "Die Ecken müssen alle markierten Teilvorschläge umfassen. Wenn sie zu verschiedenen Abzügen gehören, prüfe sie einzeln."
           : darkBackingReviewErrors[error.message] || embossedPocketReviewErrors[error.message]
             || standalonePrintReviewErrors[error.message] || sourceFragmentReviewErrors[error.message] || error.message);
-      if (activePage.current === pageId) setAddition({ ...newPrint, error: message, invalidated: Boolean(stale) });
+      if (activePage.current === pageId) setAddition({ ...newPrint, error: protection ? null : message, protection,
+        invalidated: Boolean(stale) });
     }
   }
 
@@ -2514,6 +2517,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           captureSplitGroups.length && "capture-split-count-hint",
           mergedPairs.length && "merged-print-pair-hint",
           possiblePrintRegions.length && "possible-print-regions-hint",
+          newPrint?.protection?.regions.length && "print-addition-protection-error",
           competingPhotoOutlines.length && "competing-photo-outline-hint",
           contrastCrossingTraces.length && "contrast-crossing-review-hint",
           captureBackgroundTraces.length && "capture-background-review-hint",
@@ -2578,6 +2582,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           <button className="text-button compact" type="button" onClick={() => setAddition(null)} disabled={newPrint.saving}>
             Abbrechen
           </button>
+          {newPrint.protection && <p id="print-addition-protection-error" role="alert">{newPrint.protection.message}</p>}
           {newPrint.error && <p role="alert">{newPrint.error}</p>}
         </div>
       )}

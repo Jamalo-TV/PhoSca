@@ -162,7 +162,7 @@ export async function patchBoundingBox(photoId, boundingBox, segmentationMask = 
 
 export async function addManualPhoto(pageId, requestId, warpQuad, printSize, adjacentSuggestion, deferredProposal,
   { replaceMountedFragments, confirmDarkBacking, confirmAlbumPocketPrint, confirmStandalonePrint } = {}) {
-  return parseResponse(await apiFetch(`/api/v1/pages/${pageId}/manual-photos`, {
+  return parseResponse(await apiFetch(`/api/v1/pages/${pageId}/manual-photos?explain_protected_cut=true`, {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify({

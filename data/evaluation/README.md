@@ -3504,6 +3504,65 @@ Both configuration profiles record dense tile revision 16.
 Development receipts are under
 `runs/crop-quality/near-capture-print-review/`.
 
+#### Show the original protection conflict on a manual addition
+
+On U008 the lower giraffe print has eight open edge observations. The
+measured draft conflicts with a frontal Haar box at native coordinates
+`(141, 706)–(251, 816)`. The source pixels show tree canopy. The draft
+omits 28 of the 12,321 native pixel centres in the raw rectangle.
+Extending the paper to encompass the padded rectangle would add about
+6,102 square native pixels and intersect an active paper claim. The
+measured paper edge offers no basis for that extension.
+
+The relevant safety controls place an authentic photographed head from
+a separate development view into matching surroundings. In the stronger
+control all eight existing near-frame edge observations remain visible.
+All pixel centres in the sole detected face rectangle are retained, and
+the proposed cut still omits 512 source centres marked as visible head
+or hairline. A fully contained detector rectangle can coexist with
+potential content loss. It cannot waive the padding check.
+
+The pinned OpenCV YuNet 2023mar diagnostic found no matching detection
+at a score of 0.25 or higher in 42 canopy variants. It found the head
+in the matched control. All five facial landmarks in that control
+still landed at least 21.78 native pixels inside the proposed crop.
+Separate genuine faces were sensitive to resolution and rotation.
+This supports the canopy diagnosis. The active guard still uses the
+existing detector and padding rule.
+
+The manual-add endpoint supports `explain_protected_cut=true`. It returns
+422 with `detail.code = protected_region_cut` and normalized raw source
+rectangles. `padding_only` describes whether all corners of the unpadded
+detector rectangle are inside the submitted outline. Other clients
+continue receiving a string error. On either editor the draft keeps its
+four editable corners and shows the affected source in red. Moving a
+corner clears the old result. The message asks users to inspect the
+whole marked area, including the surrounding content. The rejection rolls
+back the whole operation and keeps existing count, suggestions and assets.
+
+The guard also checks intersections where all four padded rectangle
+corners lie outside a convex crop. In an independent bound-face control
+the previous check accepted a whole-print crop with only 61.5% of a
+pinned face rectangle inside. The corrected check rejects it. A pinned
+or verified face remains protected even when its source label names a
+local Haar detector. When none of the padded corners are inside, a local
+unverified detection adds a new conflict only if its raw rectangle meets
+the crop. The padding of a disjoint unverified box can still invalidate
+an existing album-mark confirmation when a separate print is claimed.
+The validation profile records revision 3.
+
+Desktop verification uses an ordinary U008 upload and manually drawn
+corners. Mobile uses the same decoded source and a separately seeded
+deferred outline to enter its existing manual-add flow. Both call the
+regular endpoint. Replaying all eight development comparisons preserves
+instance, mask, crop, landmark and availability scores in both modes.
+The frozen run still recognizes 18/18 instances. The seeded geometry
+test still passes 11/11 full-print and 12/12 image-only references.
+The classical-only Golden run adds a cutoff reason to two crops already
+in review. No additional crop enters review in the eight comparisons.
+Timings and the native source receipts are under
+`runs/crop-quality/u008-protected-manual-cut/`.
+
 #### Separate native crop ambiguity from missed detection
 
 The crowd-trained camera-tilt failure keeps the same detected print.

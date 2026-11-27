@@ -44,6 +44,7 @@ import {
   possiblePrintRegionStyle,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
   getMeasuredMotifComparison, isMeasuredMotifComparison,
+  manualAdditionProtection,
   sameReviewQuad, savedFullPrintReviewUrl,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -330,6 +331,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const savedAspectPreview = editable && !editingMotif && !deferredDraft && !reviewedNonPrint && !saving
     ? savedFullPrintReviewUrl(item.payload, initialOuter(), quad, measurementFields, orientation) : null;
   const [blockedCrop, setBlockedCrop] = useState(null);
+  const draftProtection = deferredDraft && blockedCrop?.message ? blockedCrop : null;
   const [magnifierEnabled, setMagnifierEnabled] = useState(true);
   const [magnifier, setMagnifier] = useState({ visible: false, x: 0, y: 0 });
   useEffect(() => {
@@ -385,6 +387,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       setEditingPreview(true);
       setDraftTouched(true);
       setSavedCropUrl(""); setSaveError("");
+      if (deferredDraft) setBlockedCrop(null);
       if (editingMotif) {
         setMotifQuad(current => {
           const next = resizedMotif || (current || savedQuad).map((point, index) => index === cornerIndex ? { x, y } : point);
@@ -410,6 +413,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     setSaving(true); setSaveError("");
     try {
       if (deferredDraft) {
+        setBlockedCrop(null);
         await addManualPhoto(item.page_id, deferredDraft.requestId, quad, size, null, deferredDraft, {
           replaceMountedFragments: sourceFragmentDraft, confirmDarkBacking: darkBackingDraft,
           confirmAlbumPocketPrint: Boolean(embossedAlbumAction(deferredDraft.reason)),
@@ -458,6 +462,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       setSavedCropUrl(cropUrl || "");
       onSaved?.(saved);
     } catch (error) {
+      const protection = deferredDraft && manualAdditionProtection(error);
+      if (protection) {
+        setBlockedCrop({ ...protection, mode: "full_print" });
+        return;
+      }
       if (error.message === "album_page_mark_review_stale") albumMarkReview.reset();
       setSaveError(error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message === "print_outline_review_required" ? printOutlineSaveHint
@@ -620,6 +629,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const overlayHints = [countOutlines.length && "mobile-fragment-count-review-hint",
     mergedPairs.length && "mobile-merged-print-pair-hint",
     possiblePrintRegions.length && "mobile-possible-print-regions-hint",
+    draftProtection?.regions.length && "mobile-print-addition-protection-error",
     competingPhotoOutlines.length && "mobile-competing-photo-outline-hint",
     captureSplitGroups.length && "mobile-capture-split-count-hint",
     filmGridGroups.length && "mobile-film-grid-count-hint", paperGridGroups.length && "mobile-paper-grid-count-hint",
@@ -932,6 +942,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       </button>
       {deferredDraft && <button type="button" className="magnifier-toggle" disabled={saving}
         onClick={() => onDeferredDraftClose(false)}>Zurück zur Printanzahl</button>}
+      {draftProtection && <p className="crop-save-error" id="mobile-print-addition-protection-error" role="alert">{draftProtection.message}</p>}
       {saveError && <p className="crop-save-error" role="alert">{saveError}</p>}
       {displayedQuad && !motifOutside && (comparePaperEdge && !editingPreview && !visibleSavedCropUrl
         ? <PaperEdgePreviewComparison currentUrl={item.payload.untrimmed_url} possibleUrl={comparePaperEdge}

@@ -173,6 +173,19 @@ export const contrastCrossingTraceHint = "An den orange markierten Stellen ist B
 export const contrastCrossingTraceStyle = { color: "#f59e0b", contrast: "#78350f", dash: [8, 5] };
 export const captureBackgroundTraceStyle = { color: "#67e8f9", contrast: "#164e63", dash: [8, 4] };
 
+export function manualAdditionProtection(error) {
+  if (error?.message !== "protected_region_cut") return null;
+  const bounds = error.detail?.regions;
+  const regions = Array.isArray(bounds) ? bounds.filter(box => box
+    && [box.x1, box.y1, box.x2, box.y2].every(value => Number.isFinite(value) && value >= 0 && value <= 1)
+    && box.x1 < box.x2 && box.y1 < box.y2) : [];
+  const paddingOnly = regions.length > 0 && regions.length === bounds.length && regions.every(box => box.padding_only === true);
+  const reason = paddingOnly ? "Der Zuschnitt reicht in den Schutzrand um den erkannten Bildbereich."
+    : "Der Zuschnitt würde einen geschützten Bereich abschneiden.";
+  const inspect = regions.length ? "Prüfe die roten Markierungen am Original." : "Prüfe den Bereich am Original.";
+  return { regions, message: `${reason} ${inspect} Gehört der Bereich zum Abzug oder bleibt die Zuordnung unklar, fotografiere den Abzug einzeln mit sichtbarem Rand.` };
+}
+
 export function getCaptureBackgroundReviewTraces(photo) {
   if (!photo || photo.reviewed_non_print || photo.review_reasons?.includes("GEOMETRY_REVIEW_WRONG_OBJECT")) return [];
   const { segmentation_confidence: confidence = photo.confidence, segmentation_mask: mask } = photo;

@@ -779,6 +779,42 @@ async def test_album_page_mark_is_bound_to_the_reviewed_crop_and_source(client, 
     assert await download_codes() == [404, 404, 404]
 
 
+@pytest.mark.parametrize("padding_only", [False, True])
+async def test_manual_add_can_explain_a_protected_cut_without_changing_the_page(client, monkeypatch, padding_only):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import Page
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "true")
+    get_settings.cache_clear()
+    width, height = 800, 600
+    album_id, page_id, _ = await _seed_review_data(np.full((height, width, 3), 150, np.uint8))
+    y1 = 260 if padding_only else 235
+    region = {"source": "opencv_haarcascade_frontalface_default", "type": "face", "margin_ratio": .18,
+              "box": {"x1": 280, "y1": y1, "x2": 400, "y2": 400}}
+    page_metadata = {"photo_count_revision": str(uuid4()), "steps": {"protected_regions": {"regions": [region]}}}
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        page.processing_metadata = page_metadata
+        await session.commit()
+
+    payload = {"request_id": str(uuid4()), "warp_quad": [
+        {"x": x / (width - 1), "y": y / (height - 1)} for x, y in ((100, 250), (700, 250), (700, 480), (100, 480))
+    ]}
+    url = f"/api/v1/pages/{page_id}/manual-photos"
+    legacy = await client.post(url, json=payload)
+    assert (legacy.status_code, legacy.json()["detail"]) == (422, "protected_region_cut")
+    detailed = await client.post(url, json=payload, params={"explain_protected_cut": "true"})
+    assert detailed.status_code == 422
+    assert detailed.json()["detail"] == {"code": "protected_region_cut", "regions": [{
+        "x1": 280 / 799, "y1": y1 / 599, "x2": 400 / 799, "y2": 400 / 599, "padding_only": padding_only,
+    }]}
+    assert len((await client.get(f"/api/v1/albums/{album_id}/photos")).json()) == 1
+    async with get_session_factory()() as session:
+        assert (await session.get(Page, page_id)).processing_metadata == page_metadata
+
+
 async def test_manual_print_margin_review_keeps_core_and_binds_confirmation(client, monkeypatch):
     from app.config import get_settings
     from app.database import get_session_factory

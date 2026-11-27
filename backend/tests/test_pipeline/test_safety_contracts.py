@@ -54,6 +54,17 @@ def test_protected_region_crossing_crop_is_a_hard_failure() -> None:
         )
 
 
+def test_protection_detects_a_strip_crossing_between_region_corners() -> None:
+    from app.pipeline.protected_regions import protected_region_key, validate_protected_regions
+
+    face = {"type": "face", "source": "manual", "box": {"x1": 300, "y1": 340, "x2": 400, "y2": 500}}
+    strip = np.float32([[100, 380], [700, 380], [700, 430], [100, 430]])
+    for region in (face, {**face, "source": "opencv_haarcascade_frontalface_default"}):
+        result = validate_protected_regions(strip, [region], width=800, height=800)
+        assert result == {"passed": False, "violations": [protected_region_key(region)], "regions_checked": 1}
+        assert validate_protected_regions(strip - [0, 130], [region], width=800, height=800)["passed"] is True
+
+
 def test_automatic_crop_with_page_face_overlap_is_available_untrimmed_for_review() -> None:
     from app.pipeline.perspective import correct_photo_crop
 
@@ -71,14 +82,11 @@ def test_automatic_crop_with_page_face_overlap_is_available_untrimmed_for_review
     assert result.metadata["protected_regions"]["review_untrimmed"] is True
     assert result.metadata["border_trim"]["applied"] is False
     assert result.image.shape[:2] == (60, 60)
-    with pytest.raises(ValueError, match="protected_region_cut"):
-        correct_photo_crop(
-            image,
-            box,
-            auto_orient=False,
-            protected_regions=[{**face, "source": "manual"}],
-            allow_page_face_overlap=True,
-        )
+    for trusted in ({**face, "source": "manual"}, {**face, "pinned": True}):
+        with pytest.raises(ValueError, match="protected_region_cut"):
+            correct_photo_crop(
+                image, box, auto_orient=False, protected_regions=[trusted], allow_page_face_overlap=True,
+            )
 
 
 def test_perspective_metadata_contains_stability_and_protection_gates() -> None:

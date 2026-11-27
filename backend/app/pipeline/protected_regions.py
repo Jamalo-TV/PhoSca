@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 
 
-PROTECTED_REGION_REVISION = 2
+PROTECTED_REGION_REVISION = 3
 OFF_PRINT_ADVISORY = "off_print_advisory"
 PAGE_FACE_SUGGESTIONS = {
     "opencv_haarcascade_frontalface_default": "face",
@@ -29,6 +29,30 @@ class ProtectedRegionRemoval(ValueError):
     def __init__(self, mode: str, regions: list[dict[str, float]]) -> None:
         super().__init__("protected_region_removed")
         self.detail = {"code": str(self), "mode": mode, "regions": regions}
+
+
+class ProtectedRegionCut(ValueError):
+    """A manual draft crossed a protected region in the original source."""
+
+    def __init__(self, quad: np.ndarray, violations: list[dict], width: int, height: int) -> None:
+        super().__init__("protected_region_cut")
+        contour = quad.astype(np.float32)
+        regions = []
+        for violation in violations:
+            box = region_box_in_pixels(violation, width, height)
+            if box is None or not np.isfinite(box).all():
+                continue
+            left, top, right, bottom = box
+            raw_corners = ((left, top), (right, top), (right, bottom), (left, bottom))
+            x1, y1, x2, y2 = np.clip(box, 0, [width - 1, height - 1] * 2).tolist()
+            if x1 >= x2 or y1 >= y2:
+                continue
+            regions.append({
+                "x1": x1 / (width - 1), "y1": y1 / (height - 1),
+                "x2": x2 / (width - 1), "y2": y2 / (height - 1),
+                "padding_only": all(cv2.pointPolygonTest(contour, point, False) >= 0 for point in raw_corners),
+            })
+        self.detail = {"code": str(self), "regions": regions}
 
 
 def protected_region_key(region: dict) -> dict:
@@ -195,8 +219,17 @@ def validate_protected_regions(
             dtype=np.float32,
         )
         inside = [cv2.pointPolygonTest(contour, (float(x), float(y)), False) >= 0 for x, y in corners]
-        if not all(inside) and (require_containment or any(inside)):
-            violations.append(protected_region_key(region))
+        if all(inside):
+            continue
+        if not require_containment and not any(inside):
+            # A strip can cut through the region with all four corners outside.
+            # A disjoint advisory box's padding may still touch a separate print claim.
+            collision = corners
+            if is_advisory_page_face(region):
+                collision = np.float32([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
+            if not cv2.isContourConvex(contour) or cv2.intersectConvexConvex(contour, collision)[0] <= 1.e-3:
+                continue
+        violations.append(protected_region_key(region))
     return {"passed": not violations, "violations": violations, "regions_checked": len(regions)}
 
 

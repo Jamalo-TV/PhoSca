@@ -829,6 +829,15 @@ Anspruch hält die betroffenen Downloads erneut zurück. Ein ungeklärtes
 Papierformat und eine strittige Motivgrenze bleiben eigene Prüfungen.
 [Beispiel mit zwei Markierungen](data/evaluation/README.md#review-multiple-advisory-marks-at-a-measured-paper-edge)
 
+Blockiert ein geschützter Bereich das manuelle Ergänzen eines Abzugs,
+bleiben die gesetzten Ecken zur Korrektur sichtbar. PhoSca zeigt die
+betroffene Stelle rot im Original. Die Meldung unterscheidet einen
+Schnitt durch das markierte Rechteck von einem Konflikt mit dem
+zusätzlichen Sicherheitsabstand. Beide Fälle bleiben gesperrt. Prüfe
+die gesamte Stelle am Original. Ist eine sichere Kontur im Album nicht
+erkennbar, hilft eine separate Aufnahme mit sichtbarem Papierrand.
+[Beispiel der blockierten manuellen Erfassung](data/evaluation/README.md#show-the-original-protection-conflict-on-a-manual-addition)
+
 Beim manuellen Ergänzen eines Abzugs prüft PhoSca einen einzelnen
 automatischen Gesicht- oder Kopftreffer, dessen erkannter Bereich
 vollständig jenseits der Papierkante liegt. Ragt nur sein

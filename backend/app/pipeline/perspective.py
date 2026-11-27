@@ -109,7 +109,7 @@ from app.pipeline.print_outline_suggestion import (
 from app.pipeline.print_stock import find_outer_stock_candidate
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_OUTLINE_REVIEW
 from app.pipeline.protected_regions import (
-    OFF_PRINT_ADVISORY, PAGE_FACE_SUGGESTIONS, ProtectedRegionRemoval, detect_protected_regions, is_advisory_page_face,
+    OFF_PRINT_ADVISORY, ProtectedRegionCut, ProtectedRegionRemoval, detect_protected_regions, is_advisory_page_face,
     merge_protected_regions, protected_region_key, region_box_in_pixels, removed_protected_regions,
     validate_protected_regions,
 )
@@ -492,9 +492,10 @@ def _analysis_padding(
 
 
 _UNIT_QUAD = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype=np.float32)
-def _advisory_face_overlap(protection: dict, allow_page_face_overlap: bool) -> bool:
+def _advisory_face_overlap(protection: dict, regions: list[dict], allow_page_face_overlap: bool) -> bool:
     return allow_page_face_overlap and all(
-        violation["source"] in PAGE_FACE_SUGGESTIONS for violation in protection["violations"]
+        is_advisory_page_face(region) for region in regions
+        if protected_region_key(region) in protection["violations"]
     )
 
 
@@ -1002,7 +1003,7 @@ def _render_review_quad_preview(
         protection = validate_protected_regions(quad, regions, width=width, height=height)
         if not protection["passed"]:
             previous = prior_protection or {}
-            if (not _advisory_face_overlap(protection, previous.get("review_untrimmed") is True)
+            if (not _advisory_face_overlap(protection, regions, previous.get("review_untrimmed") is True)
                     or any(violation not in (previous.get("violations") or []) for violation in protection["violations"])):
                 return None
         out_width, out_height, aspect, reasons = _crop_dimensions(
@@ -1176,7 +1177,7 @@ def _keeps_protected_preview_content(
         if box is None:
             continue
         key = protected_region_key(region)
-        if key in advisory and key["source"] in PAGE_FACE_SUGGESTIONS:
+        if key in advisory and is_advisory_page_face(region):
             continue
         x1, y1, x2, y2 = box
         pad = float(region.get("margin_ratio", .08)) * max(x2 - x1, y2 - y1)
@@ -1642,7 +1643,7 @@ def _inspect_print(
                 edge_confirmation = True
         if refined is not None and "PRINT_OUTER_RIM_UNCERTAIN" not in reasons:
             refined_protection = validate_protected_regions(refined, regions, width=width, height=height)
-            if not refined_protection["passed"] and not _advisory_face_overlap(refined_protection, allow_page_face_overlap):
+            if not refined_protection["passed"] and not _advisory_face_overlap(refined_protection, regions, allow_page_face_overlap):
                 reasons.append("PRINT_BOUNDARY_PROTECTED_CONTENT_VETO")
             else:
                 if suggestion is not None:
@@ -1755,8 +1756,8 @@ def _inspect_print(
     if not protection["passed"]:
         margin_marks = (manual_margin_advisory(page, quad, regions, protection["violations"], neighbors)
                         if dual_mode and manual and mask.get("manual_added") is True else [])
-        if not margin_marks and not _advisory_face_overlap(protection, allow_page_face_overlap):
-            raise ValueError("protected_region_cut")
+        if not margin_marks and not _advisory_face_overlap(protection, regions, allow_page_face_overlap):
+            raise ProtectedRegionCut(quad, protection["violations"], width, height)
         if margin_marks:
             protection["manual_margin_marks"] = margin_marks
         protection["review_untrimmed"] = True

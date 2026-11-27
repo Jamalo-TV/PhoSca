@@ -11,10 +11,29 @@ import {
   savedFullPrintReviewUrl,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource,
   getMeasuredMotifComparison, isMeasuredMotifComparison, measuredMotifComparisonSource,
+  manualAdditionProtection,
 } from "../src/cropReviewOutlines.js";
 
 const quad = [{ x: .1, y: .2 }, { x: .7, y: .2 }, { x: .7, y: .8 }, { x: .1, y: .8 }];
 const mask = { fragment_outline_suggestion: { quad, uncertain_edge: 1 } };
+
+test("a rejected manual addition explains only validated original bounds and keeps padding uncertain", () => {
+  const box = { x1: .2, y1: .3, x2: .5, y2: .6, padding_only: true };
+  const error = { message: "protected_region_cut", detail: { code: "protected_region_cut", regions: [box] } };
+  const protection = manualAdditionProtection(error);
+  assert.deepEqual(protection.regions, [box]);
+  assert.match(protection.message, /Schutzrand/);
+  assert.match(protection.message, /roten Markierungen am Original/);
+  assert.match(protection.message, /bleibt die Zuordnung unklar, fotografiere/);
+
+  const mixed = [box, { ...box, x1: .6, x2: .7, padding_only: false }];
+  const blocked = manualAdditionProtection({ ...error, detail: { regions: [...mixed, { ...box, y2: 1.2 }] } });
+  assert.deepEqual(blocked.regions, mixed);
+  assert.match(blocked.message, /geschützten Bereich abschneiden/);
+  assert.doesNotMatch(blocked.message, /Schutzrand/);
+  assert.match(manualAdditionProtection({ message: "protected_region_cut" }).message, /Prüfe den Bereich am Original/);
+  assert.equal(manualAdditionProtection({ ...error, message: "protected_region_removed" }), null);
+});
 
 test("a measured motif comparison follows the held source without changing its geometry", () => {
   const status = "review_needed";

@@ -66,7 +66,7 @@ from app.pipeline.print_edges import OPPOSING_OUTER_EDGES_CHECK
 from app.pipeline.print_outline_suggestion import POSSIBLE_OUTER_PRINT_PREVIEW, POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
 from app.pipeline.protected_regions import (
-    OFF_PRINT_ADVISORY, ProtectedRegionRemoval, album_mark_correction_matches, album_mark_matches_quad,
+    OFF_PRINT_ADVISORY, ProtectedRegionCut, ProtectedRegionRemoval, album_mark_correction_matches, album_mark_matches_quad,
     album_mark_source_matches,
 )
 from app.pipeline.ribbed_outline_review import MEASURED_RIBBED_PRINT_OUTLINE
@@ -327,6 +327,7 @@ async def _render_photo_edit(
     session: AsyncSession, photo_id: UUID, settings: Settings, *,
     reject_invalid_edit: bool = True, preset: str | None = "auto",
     previous_manual_crop: dict | None = None,
+    explain_protected_cut: bool = False,
 ) -> ExtractedPhoto:
     output_directories: set[Path] = set()
     try:
@@ -338,6 +339,11 @@ async def _render_photo_edit(
             )
         except ProtectedRegionRemoval as exc:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.detail) from exc
+        except ProtectedRegionCut as exc:
+            if not reject_invalid_edit:
+                raise
+            detail = exc.detail if explain_protected_cut else str(exc)
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail) from exc
         except ValueError as exc:
             if not reject_invalid_edit:
                 raise
@@ -798,6 +804,7 @@ async def create_manual_photo(
     page_id: UUID,
     payload: ManualPhotoCreate,
     response: Response,
+    explain_protected_cut: bool = False,
     session: AsyncSession = Depends(get_async_session),
     settings: Settings = Depends(get_settings),
     principal: Principal | None = Depends(require_write_principal),
@@ -1077,7 +1084,7 @@ async def create_manual_photo(
             raise
         return _replay_manual_photo(existing, page_id, creation_request, response)
     await _review_overlapping_crops(session, photo, width, height)
-    return await _render_photo_edit(session, photo_id, settings)
+    return await _render_photo_edit(session, photo_id, settings, explain_protected_cut=explain_protected_cut)
 
 
 @router.patch("/photos/{photo_id}/bounding-box", response_model=PhotoRead)
