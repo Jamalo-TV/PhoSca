@@ -54,7 +54,7 @@ from app.pipeline.perspective import (
     manual_print_intersects, review_outline_intersects_claim, review_traces_intersect_claim, validate_review_quads,
 )
 from app.pipeline.presets import available_presets
-from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
+from app.pipeline.print_outline_suggestion import POSSIBLE_OUTER_PRINT_PREVIEW, POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
 from app.pipeline.protected_regions import (
     OFF_PRINT_ADVISORY, ProtectedRegionRemoval, album_mark_correction_matches, album_mark_matches_quad,
@@ -423,7 +423,7 @@ async def _review_overlapping_crops(
             MEASURED_RIBBED_PRINT_OUTLINE, BOWED_SCENE_PREVIEW,
         ) else None
         if ((evidence_scope and review_outline_intersects_claim(evidence_scope, mask, width, height, convex_scope=True))
-                or (preview_source == DISPUTED_GRID_PREVIEW_SOURCE and preview.get("source_outline")
+                or (preview_source in (DISPUTED_GRID_PREVIEW_SOURCE, POSSIBLE_OUTER_PRINT_PREVIEW) and preview.get("source_outline")
              and review_outline_intersects_claim(preview["source_outline"], mask, width, height))
                 or (quad is not None and (preview_source in assisted_previews or measured_preview) and any(
                     manual_print_intersects(preview[key], quad, width, height, minimum_overlap_px=1. if measured_preview else None)

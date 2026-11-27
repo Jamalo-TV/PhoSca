@@ -92,7 +92,7 @@ from app.pipeline.print_edges import (
     suggest_partial_corner_edge,
 )
 from app.pipeline.print_outline_suggestion import (
-    POSSIBLE_INWARD_PRINT_EDGE, POSSIBLE_OVEREXTENDED_PRINT_EDGE, suggest_inward_print_edge,
+    POSSIBLE_INWARD_PRINT_EDGE, POSSIBLE_OUTER_PRINT_PREVIEW, POSSIBLE_OVEREXTENDED_PRINT_EDGE, suggest_inward_print_edge,
     suggest_outer_print_outline, suggest_overextended_print_outline, suggest_slanted_print_edge_comparison,
     verify_print_edge_at_claim, visible_gap_at_unchanged_claim,
 )
@@ -2266,13 +2266,25 @@ def correct_photo_crop(
                     mode["status"] = "review_needed"
                     if PRINT_EDGE_CONFIRMATION not in mode["reason_codes"]:
                         mode["reason_codes"].append(PRINT_EDGE_CONFIRMATION)
-                if grid_outline and _keeps_protected_preview_content(page_image, src_points, alternative, regions, protection):
+                full_mode = modes["full_print"]
+                if (grid_outline or not full_mode.get("outline_preview")) and _keeps_protected_preview_content(
+                    page_image, src_points, alternative, regions, protection,
+                ):
                     rotation = int(result.metadata["orientation"].get("rotation_degrees") or 0) % 360
-                    preview = _render_disputed_grid_preview(
-                        page_image, alternative, paper_grid, rotation, neighbor_masks or [], regions, camera_matrix, page_plane,
-                    )
+                    if grid_outline:
+                        preview = _render_disputed_grid_preview(
+                            page_image, alternative, paper_grid, rotation, neighbor_masks or [], regions, camera_matrix, page_plane,
+                        )
+                    elif any(review_outline_intersects_claim(full_mode["suggested_warp_quad"], neighbor, width, height)
+                             for neighbor in neighbor_masks or []):
+                        preview = None
+                    else:
+                        preview = _render_review_quad_preview(
+                            page_image, alternative, rotation, neighbor_polygons, regions, camera_matrix, page_plane,
+                            source=POSSIBLE_OUTER_PRINT_PREVIEW,
+                        )
                     if preview is not None:
-                        pixels, modes["full_print"]["outline_preview"] = preview
+                        pixels, full_mode["outline_preview"] = preview
                         result = replace(result, full_print_preview=pixels)
         full_mode = modes["full_print"]
         if PROJECTIVE_PRINT_OUTLINE_REVIEW in full_reasons and (mounted_traces := mask.get("mounted_paper_edge_traces")):

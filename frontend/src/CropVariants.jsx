@@ -221,6 +221,7 @@ const possibleDisplacedPrintEdges = "possible_displaced_print_edges";
 const possibleAlbumLayerEdge = "possible_album_layer_edge";
 const possibleLocalPrintEdge = "possible_local_print_edge";
 const disputedGridPreview = "disputed_paper_grid_outline_review";
+const possibleOuterPrintPreview = "possible_outer_print_preview";
 const curvedPrintOutlineReviewReason = "PRINT_CURVED_OUTLINE_REVIEW";
 const captureAtEdgeHint = "Der Abzug reicht über den Aufnahmerand hinaus. Für einen vollständigen Zuschnitt brauchst du eine neue Aufnahme.";
 export const captureSplitReviewHint = "Die gestrichelten Linien zeigen einen möglichen gemeinsamen Papierrand. Prüfe am Original, wie viele Abzüge dort liegen.";
@@ -638,7 +639,7 @@ export function getPrintOutlinePreviewHint(fullPrint) {
   if (preview?.source === roundedCornerSource) {
     return "Die transparenten Eckbereiche folgen den gemessenen Stellen. Vergleiche die markierten Ecken und alle Seiten mit dem Original.";
   }
-  if (preview?.source === disputedGridPreview) {
+  if ([disputedGridPreview, possibleOuterPrintPreview].includes(preview?.source)) {
     const countHint = preview.projected_grid_cuts?.length
       ? "So sieht der Aussenumriss aus, falls die markierten Teile zum selben Abzug gehören. Die gestrichelten Linien zeigen die Kanten der Teilvorschläge. Vergleiche sie mit dem Original."
       : "Vergleiche den vorgeschlagenen Aussenumriss mit den Papierkanten am Original.";
@@ -681,13 +682,13 @@ export function getPrintOutlinePreviewHint(fullPrint) {
 export function showsPaperEdgeComparison(fullPrint) {
   return [possibleOverextendedPrintEdge, possibleInwardPrintCorner, possibleBowedPrintEdge,
     possibleDisplacedPrintEdges, possibleAlbumLayerEdge, possibleLocalPrintEdge,
-    "possible_mounted_edge_strip", disputedGridPreview, roundedCornerSource, measuredRibbedPrintOutlineSource, bowedScenePreview]
+    "possible_mounted_edge_strip", disputedGridPreview, possibleOuterPrintPreview, roundedCornerSource, measuredRibbedPrintOutlineSource, bowedScenePreview]
     .includes(fullPrint?.outline_preview?.source);
 }
 
 export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outlinePreview }) {
   const wholeGrid = outlinePreview?.source === disputedGridPreview;
-  const wholeOutline = wholeGrid || outlinePreview?.source === measuredRibbedPrintOutlineSource;
+  const wholeOutline = wholeGrid || [measuredRibbedPrintOutlineSource, possibleOuterPrintPreview].includes(outlinePreview?.source);
   const extendedScene = outlinePreview?.source === bowedScenePreview;
   const trimmedScene = extendedScene && outlinePreview.excluded_outer_band;
   const label = trimmedScene ? "Vergleich am Bildrand" : extendedScene ? "Ergänzte Bildfläche"

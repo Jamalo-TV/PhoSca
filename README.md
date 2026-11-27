@@ -972,6 +972,18 @@ zwischen Papier und Bild. Der Renderer berechnet beide Ausgaben
 direkt aus der Quellseite. Beim präzisen Sampling gehen in die
 Interpolation nur Quellpixel ein, die zur jeweiligen Fläche gehören.
 
+Liegt für einen klassischen Kontrastvorschlag ein grösserer Aussenumriss
+vor, kann die App den bisherigen Zuschnitt und den neu entzerrten
+Vergleich anzeigen. Das gilt auch, wenn kein Modell verfügbar ist.
+PhoSca rendert den Vergleich nur dann, wenn beide Zuschnittmodi in
+Prüfung stehen und die bisher enthaltenen geschützten Flächen
+erhalten bleiben. Mehr als ein Quadratpixel Überschneidung im
+Original mit einem aktiven oder offenen Vorschlag sperrt den
+Vergleich. Gespeicherte Ecken, Anzahl und Exporte
+ändern sich durch die Anzeige nicht. Legt die Person in der Prüfung
+eine überlappende Nachbarkontur an, zieht PhoSca die Vergleichsvorschau
+zurück. [Vergleich am Kontaktbogen](data/evaluation/README.md#render-the-measured-paper-comparison-in-classical-fallback)
+
 Bleibt genau eine Papierkante strittig, kann PhoSca ihren Verlauf
 anhand der anderen drei Seiten und der angrenzenden Ecken für
 die Prüfung genauer messen. Vier im Original gestützte Motivkanten,

@@ -3275,6 +3275,55 @@ stocks can reproduce the optical signal. The comparison stays
 a held development prototype. Its
 source and rendered tests are in the `carrier-proof/` subfolder.
 
+#### Render the measured paper comparison in classical fallback
+
+An independent replay with no usable ONNX model finds two active rows
+on each of the JPEG55, JPEG75 and lossless contact-sheet derivatives.
+The print is on the right. The other row follows the negative sleeve.
+The stock measurement already suggested an editable outer quad for the
+print, while the renderer returned only the tight primary crop. The
+new review asset independently rectifies the measured quad at the
+original source resolution and uses the owned bilinear sampler. The
+branch requires both modes to be in review, checks previously included
+protected content and vetoes a competing current or raw claim above
+one square source pixel. It leaves the earlier comparison for an
+explicit paper-grid dispute in place, including the projected cuts.
+
+| Exact source with classical fallback | Primary to comparison footprint IoU | Draft foreign interpolation locations beyond 1 source pixel | Other active claim inside the comparison |
+| --- | ---: | ---: | ---: |
+| JPEG75 | 0.8295 → 0.9870 | 1,928 → 156 | 0 px² |
+| JPEG55 | 0.8363 → 0.9884 | 0 → 220 | 0 px² |
+| Lossless PNG | comparison withheld | comparison withheld | 125.74 px² |
+
+On JPEG75 the comparison preserves 1,938 of 1,938 sampled heading
+pixels and 315 of 315 panel anchors, up from 1,429 and 312. The
+largest corner discrepancy against the draft decreases from 68.56
+to 5.71 native pixels. The 609 × 781 rectification takes about 8.4 ms
+warm CPU time on one thread. The paper and motif references and the
+physical aspect ratio still lack independent release verification.
+
+Paired multipart uploads against `d926d72` leave the two fallback
+counts, source masks, saved warp, motif metadata and primary JPEG
+unchanged. The Q75 model-assisted case retains its existing five rows
+and byte-identical comparison PNG. The three export URLs stay held
+for the contact print. Reprocess reproduces the new JPEG75 comparison
+PNG. Adding a claimed overlap invalidates its URL immediately and a
+later reprocess keeps it unavailable. Eight regression comparisons
+preserve both modes and detection results. The outline-suggestion
+configuration revision is 11.
+
+A separate wider search is still an experiment. Across 16 resizes,
+encodings and rotations of the same real source, nine wider outlines
+pass its material checks, at 0.984–0.991 draft IoU. Eight of these
+overlap an existing proposal. The experiment does not resolve the
+physical ownership, and the original JPEG90 and the JPEG75 quarter
+turns at 90° and 270° still lack a complete supported perimeter.
+Among the 31 real development views and 24 authored joined/separate
+controls, the stricter search only yields complete outlines on
+two encodings of this same contact-sheet source. The prototype stays
+outside the product. Evidence and reproducible scripts are under
+`runs/crop-quality/standalone-paper-comparison/`.
+
 #### Require separate confirmation for an unsupported contrast outline
 
 The normal JPEG55 upload of U039 produced a held `contrast_region`

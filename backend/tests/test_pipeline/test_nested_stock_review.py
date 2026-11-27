@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from app.config import Settings
-from app.pipeline import segmentation
+from app.pipeline import perspective, segmentation
 from app.pipeline.crop_sampling import OWNED_BILINEAR
 from app.pipeline.geometry import normalized_vertices_to_pixels
 from app.pipeline.multipanel_prints import (
@@ -14,6 +14,7 @@ from app.pipeline.multipanel_prints import (
 )
 from app.pipeline.perspective import _proposal_polygon, apply_refined_visibility, correct_photo_crop
 from app.pipeline.print_edges import PRINT_EDGE_CONFIRMATION
+from app.pipeline.print_outline_suggestion import POSSIBLE_OUTER_PRINT_PREVIEW
 
 
 _OUTER = np.float32([[78, 75], [629, 75], [629, 477], [78, 477]])
@@ -196,6 +197,39 @@ def _grid_with_weak_outer_proposal(settings, cut_edge=False, *, top_offset=0):
         item.mask["boundary_evidence"] = {"score": score}
         detections.append(item)
     return page, seed, segmentation.SegmentationResult(detections, {})
+
+
+def test_held_outer_outline_can_render_a_standalone_comparison(monkeypatch):
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    page, seed, proposals = _grid_with_weak_outer_proposal(settings)
+    parent, child = proposals.detections
+    inspect_print = perspective._inspect_print
+
+    def inspect_held(*args, **kwargs):
+        return replace(inspect_print(*args, **kwargs), quad=seed, reasons=["PRINT_BOUNDARY_AMBIGUOUS"])
+
+    monkeypatch.setattr(perspective, "_inspect_print", inspect_held)
+    options = dict(dual_mode=True, auto_orient=False, protected_regions=[])
+    prior = correct_photo_crop(page, parent.bounding_box, parent.mask, **options)
+    result = correct_photo_crop(page, parent.bounding_box, parent.mask, enable_classical_retry=True, **options)
+    full = result.metadata["crop_modes"]["full_print"]
+    preview = full["outline_preview"]
+    assert preview["source"] == POSSIBLE_OUTER_PRINT_PREVIEW
+    assert preview["source_outline"] == full["suggested_warp_quad"]
+    assert preview["sampling"] == OWNED_BILINEAR
+    assert set(result.metadata["crop_modes"]) == {"full_print", "image_only"}
+    assert all(mode["status"] == "review_needed" for mode in result.metadata["crop_modes"].values())
+    assert full["warp_quad"] == prior.metadata["crop_modes"]["full_print"]["warp_quad"]
+    assert np.array_equal(result.rectified_untrimmed, prior.rectified_untrimmed)
+    assert result.full_print_preview is not None and result.image_only_preview is prior.image_only_preview
+
+    height, width = page.shape[:2]
+    strip = np.float32([[58, 340], [73, 340], [73, 430], [58, 430]])
+    claim = segmentation._normalized_polygon(strip, width, height)
+    for neighbor in (child.mask, {"polygon": claim}, {"polygon": child.mask["polygon"], "warp_quad": claim}):
+        held = correct_photo_crop(page, parent.bounding_box, parent.mask, enable_classical_retry=True,
+                                  neighbor_masks=[neighbor], **options)
+        assert held.full_print_preview is None
 
 
 @pytest.mark.parametrize("cut_edge", [False, True])
