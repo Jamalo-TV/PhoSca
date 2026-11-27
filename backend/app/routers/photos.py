@@ -22,6 +22,7 @@ from app.database import get_async_session
 from app.models import AuditLog, ExtractedPhoto, OCRResult, Page, PageStatus, PhotoStatus, ProcessingRun, StageRun
 from app.pipeline.adjacent_stock_review import ADJACENT_STOCK_REVIEW_SOURCE
 from app.pipeline.bowed_edge_review import MEASURED_PRINT_PREVIEW_SOURCES
+from app.pipeline.bowed_scene_preview import BOWED_SCENE_PREVIEW
 from app.pipeline.capture_fabric_review import CAPTURE_FABRIC_PROPOSAL
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
 from app.pipeline.crossing_prints import CONTESTED_TILE_OUTLINE, REVIEWED_CROSSING_OUTLINE, reviewed_outline_covers_traces
@@ -408,8 +409,10 @@ async def _review_overlapping_crops(
         assisted_previews = (GRID_OUTLINE_REVIEW_SOURCE, POSSIBLE_OVEREXTENDED_PRINT_EDGE, INWARD_CORNER_REVIEW_SOURCE)
         measured_preview = preview_source in MEASURED_PRINT_PREVIEW_SOURCES
         fields = ("source_search_band", "source_inset_band") if measured_preview else ("source_outline",)
-        ribbed_scope = preview.get("source_search_band") if preview_source == MEASURED_RIBBED_PRINT_OUTLINE else None
-        if ((ribbed_scope and review_outline_intersects_claim(ribbed_scope, mask, width, height, convex_scope=True))
+        evidence_scope = preview.get("source_search_band") if preview_source in (
+            MEASURED_RIBBED_PRINT_OUTLINE, BOWED_SCENE_PREVIEW,
+        ) else None
+        if ((evidence_scope and review_outline_intersects_claim(evidence_scope, mask, width, height, convex_scope=True))
                 or (preview_source == DISPUTED_GRID_PREVIEW_SOURCE and preview.get("source_outline")
              and review_outline_intersects_claim(preview["source_outline"], mask, width, height))
                 or (quad is not None and (preview_source in assisted_previews or measured_preview) and any(
@@ -418,7 +421,9 @@ async def _review_overlapping_crops(
                 ))):
             full_mode.pop("outline_preview")
             correction.pop("album_page_mark_review", None)
-            if full_mode.get("suggested_edge_source") in (POSSIBLE_OVEREXTENDED_PRINT_EDGE, *MEASURED_PRINT_PREVIEW_SOURCES):
+            if full_mode.get("suggested_edge_source") in (
+                POSSIBLE_OVEREXTENDED_PRINT_EDGE, BOWED_SCENE_PREVIEW, *MEASURED_PRINT_PREVIEW_SOURCES,
+            ):
                 full_mode.pop("suggested_edge_source", None)
                 full_mode.pop("suggested_edge_traces", None)
             if full_mode.get("suggested_outline_source") == INWARD_CORNER_REVIEW_SOURCE:

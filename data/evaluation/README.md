@@ -2805,6 +2805,76 @@ crops. These examples are development evidence. The receipts,
 source comparison and renders are under
 `runs/crop-quality/u039-jpeg55/ribbed-comparison/`.
 
+#### Recover a measured strip along a bowed image edge
+
+An automatic ONNX crop can produce a transparent comparison when
+both modes already need review for an unsupported paper edge.
+The search requires one unsupported side and at least 0.90
+support on the other three. No side may report competing line
+fits. The shortest side must be at least 420 native pixels. An
+existing geometry or preview suggestion takes precedence.
+
+The search samples the original in half-pixel steps along the
+normal. A measured station needs a nearby pale exterior and a
+lightness drop towards the image. A connected path penalizes
+across-edge jumps so that a strong album fold cannot win solely
+by contrast. Verification needs 95% station coverage and 80% in
+each of eight sections. At least 72% of stations must also have a
+darker band farther out.
+The longest supported path must cover at least 87% of the stations,
+with measurements near both ends. Its cubic consistency check
+allows 1.65 pixels of residual at p90 and at most 4 pixels.
+The added area uses the observed stations. The cubic is
+only a consistency check.
+
+The comparison adds the measured image strip where the old edge
+falls inside the image. It keeps a 1.35-pixel allowance inside
+the observed transition and leaves the first and last 12 native
+pixels near the corners as they were. It uses the existing
+homography with an integer output canvas translation and
+premultiplied-alpha sampling. A competing nearby paper claim or
+protected-content violation vetoes the comparison. The API
+retires the PNG and its trace when a later claim intersects its
+measurement scope. Both named outputs stay in review.
+
+On the original 2,560 × 1,920 Golden 12 right-hand print, the
+adjacent pale band is 5–12 pixels wide. Near the bottom, a
+stronger line follows the album fold. An independent optical
+check uses opposed signed bands. The outer line continues above
+the top of the photograph, which leaves physical paper ownership
+unconfirmed.
+
+| Source or sampling measurement | Previous view | Comparison |
+| --- | ---: | ---: |
+| Known scene centres omitted in the measured band | 1,604 | 75 |
+| Additional source centres over the whole outline | 0 | 1,574 |
+| Previously included source centres removed | 0 | 0 |
+| Added centres in the independently classified exterior bands | 0 | 0 |
+| Output sample positions reaching past the entire pale band | 4,770 | 4,828 |
+
+The last row includes sampling at the existing lower overrun
+and a small coverage difference from the transparent output
+canvas. The comparison retains that overrun. It establishes
+neither a physical aspect ratio nor a complete paper or motif
+boundary. Across the pinned original, quarter turns, three JPEG
+re-encodes and three blur strengths with fixed geometry, it adds
+1,570–1,673 source centres and removes none. The measurement
+and render take 79 ms median and 86 ms p95 in 21 warm one-thread
+runs on the original.
+
+The normal upload and reprocess path reproduced the original
+JPEG and held geometry. It served a 703 × 994 comparison PNG,
+which both the desktop and mobile clients displayed with the
+measured source line. The test fixed orientation and disabled
+OCR to isolate crop geometry. The existing download and review
+approval gates held. A later manual claim through the measurement
+scope retired the PNG, including its old asset route. The source
+comparisons, browser examples and receipts are under
+`runs/crop-quality/golden12-bowed-scene/`.
+The eight benchmark pairs retain their detections, crop metrics
+and mode availability. The only output difference is the intended
+new preview metadata on this Golden 12 print. [Original source](../golden_fixtures/page_12.jpg)
+
 #### Review a protection margin outside a manually added print
 
 Off-print advisory revision 2 adds a path for a manually added print

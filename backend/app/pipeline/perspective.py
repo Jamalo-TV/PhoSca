@@ -15,6 +15,7 @@ from app.pipeline.bowed_edge_review import (
     POSSIBLE_ALBUM_LAYER_EDGE, POSSIBLE_BOWED_PRINT_EDGE, POSSIBLE_DISPLACED_PRINT_EDGES, POSSIBLE_LOCAL_PRINT_EDGE,
     POSSIBLE_MOUNTED_EDGE_STRIP, suggest_bowed_print_preview, suggest_displaced_print_preview,
 )
+from app.pipeline.bowed_scene_preview import BOWED_SCENE_PREVIEW, measure_bowed_scene
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
 from app.pipeline.dark_album_review import DARK_BACKING_OUTLINE_REVIEW, DARK_MOUNTED_EDGE_SOURCE
 from app.pipeline.decisions import (
@@ -2517,6 +2518,27 @@ def correct_photo_crop(
                         pixels, evidence = preview
                         full_mode["outline_preview"] = {**evidence, "source_search_band": _vertices_on_page(scope, width, height)}
                         result = replace(result, full_print_preview=pixels)
+        if (enable_classical_retry and not manual and protection["passed"] and mask.get("detector_source") == "yolo_onnx"
+                and "PRINT_BOUNDARY_UNSUPPORTED" in full_reasons
+                and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_ASPECT_UNCERTAIN"}
+                and not any(mask.get(key) for key in ("warp_quad", *_STOCK_REVIEW_CONFLICTS))
+                and not any(full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview"))
+                and all(mode["status"] == "review_needed" for mode in modes.values())):
+            try:
+                bowed = measure_bowed_scene(page_image, src_points, boundary_refinement, neighbor_polygons)
+                if bowed is not None and validate_protected_regions(
+                    cv2.convexHull(bowed.outline)[:, 0], regions, width=width, height=height,
+                )["passed"]:
+                    pixels, evidence = _render_outline_preview(page_image, bowed.outline, np.asarray(full_mode["page_to_output"]))
+                    full_mode["outline_preview"] = {
+                        **evidence, "source": BOWED_SCENE_PREVIEW,
+                        "source_search_band": _vertices_on_page(bowed.scope, width, height),
+                    }
+                    full_mode["suggested_edge_source"] = BOWED_SCENE_PREVIEW
+                    full_mode["suggested_edge_traces"] = [_vertices_on_page(bowed.trace, width, height)]
+                    result = replace(result, full_print_preview=pixels)
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                pass
         if (enable_classical_retry and not manual and mask.get("detector_source") == "yolo_onnx"
                 and "PRINT_BOUNDARY_UNSUPPORTED" in full_reasons
                 and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_ASPECT_UNCERTAIN",

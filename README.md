@@ -1106,6 +1106,18 @@ Ob dort auch das Fotopapier beginnt, muss im Review geklärt werden.
 Ecken, Zuschnitt und Freigabe werden weiterhin separat geprüft.
 [Messung an Scan 66 und Gegenproben](data/evaluation/README.md#show-a-measured-image-transition-inside-a-held-detection)
 
+Liegt ein gekrümmter sichtbarer Bildrand teilweise ausserhalb
+des Zuschnitts, kann PhoSca den belegten Streifen in einer
+transparenten Vergleichsvorschau ergänzen. Dafür müssen der
+Übergang ins Bild und ein schmaler heller Nachbarstreifen in den
+Originalpixeln über eine zusammenhängende Strecke messbar sein.
+Die Vorschau erweitert den Ausschnitt in der bestehenden
+Perspektive. Zu den Ecken bleibt ein Abstand, weil dort mehrere
+Kanten zusammentreffen. Wenn ein Nachbarabzug die Messfläche
+beansprucht, verschwindet der Vergleich. Ob der helle Streifen zum
+Fotopapier gehört, bleibt eine eigene Prüfentscheidung.
+[Messung und Vergleich auf Golden 12](data/evaluation/README.md#recover-a-measured-strip-along-a-bowed-image-edge)
+
 Wenn sich zwei gehaltene Modellvorschläge stark überdecken und
 der grössere zugleich in einen weiteren offenen Vorschlag reicht,
 kann die Prüfung die Originalmasken vergleichen. Violett liegt
