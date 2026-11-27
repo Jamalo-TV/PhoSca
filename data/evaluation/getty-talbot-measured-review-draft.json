@@ -1,10 +1,10 @@
 {
   "schema_version": 2,
-  "name": "Getty Talbot mounted salted-paper photographs with measured physical image geometry",
+  "name": "Getty Talbot mounted salted-paper photographs with catalogued image dimensions",
   "status": "reserved_reference_draft",
   "split_policy": {
     "album_independent": false,
-    "reason": "Source groups and both crop modes await independent review."
+    "reason": "Getty catalogues the image dimensions. The mounted photographs still need independent paper measurements and mode review."
   },
   "pages": [
     {
@@ -22,7 +22,7 @@
       "annotations": "talbot-ladder-labels.txt",
       "annotations_sha256": "3c60c4e815a537ddb07b772543f2889bbdd849a0e6611ec0844e7d9a8a0be14a",
       "expected_count": 1,
-      "annotation_provenance": "measured_stock_and_motif_draft",
+      "annotation_provenance": "catalogued_image_dimensions_draft",
       "expected_final_crops": [
         {
           "full_print": {
@@ -63,11 +63,7 @@
               ]
             ],
             "recoverable": true,
-            "physical_size_mm": {
-              "width": 181,
-              "height": 170
-            },
-            "annotation_provenance": "measured_stock_and_motif_draft"
+            "annotation_provenance": "visible_paper_outline_draft"
           },
           "image_only": {
             "polygon": [
@@ -111,7 +107,7 @@
               "width": 181,
               "height": 170
             },
-            "annotation_provenance": "measured_stock_and_motif_draft"
+            "annotation_provenance": "catalogued_image_dimensions_draft"
           }
         }
       ],
@@ -137,7 +133,7 @@
       "annotations": "talbot-queens-labels.txt",
       "annotations_sha256": "55ab9c3be9eb6b9255b6aeb499ee062715c3fccb17c3b9acf19f2ea25c996676",
       "expected_count": 1,
-      "annotation_provenance": "measured_stock_and_motif_draft",
+      "annotation_provenance": "catalogued_image_dimensions_draft",
       "expected_final_crops": [
         {
           "full_print": {
@@ -178,11 +174,7 @@
               ]
             ],
             "recoverable": true,
-            "physical_size_mm": {
-              "width": 203,
-              "height": 166
-            },
-            "annotation_provenance": "measured_stock_and_motif_draft"
+            "annotation_provenance": "visible_paper_outline_draft"
           },
           "image_only": {
             "polygon": [
@@ -226,7 +218,7 @@
               "width": 203,
               "height": 166
             },
-            "annotation_provenance": "measured_stock_and_motif_draft"
+            "annotation_provenance": "catalogued_image_dimensions_draft"
           }
         }
       ],

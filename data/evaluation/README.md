@@ -1325,12 +1325,14 @@ an overall size of 9 by 7 inches. The draft uses the separate scan as its
 aspect reference. The source images stay local under the museum's usage
 conditions. [Smithsonian catalog](https://www.si.edu/es/object/plate-1-marshal-house-alexandria%3Anmah_1293152)
 
-`getty-talbot-measured-review-draft.json` pins two native Getty images with
-catalogued print dimensions of 181 × 170 mm and 203 × 166 mm. The provisional
-source fits differ from these aspect ratios by 0.26% and 0.06%, respectively.
-The draft requires independent verification of whether the outer stock and
-motif boundaries coincide on each print. Download the two `image_url` assets
-to the paths in the manifest before running `--check-references --visuals`.
+`getty-talbot-measured-review-draft.json` pins two native Getty images. The
+catalogue's Image dimensions are 181 × 170 mm and 203 × 166 mm. The
+provisional source fits differ from those aspect ratios by 0.26% and 0.06%.
+The dimensions are recorded only for the motif drafts. A verified paper
+measurement or separate reference scan is still needed for both whole
+prints. The earlier provisional coincidence of both boundaries remains a
+visual hypothesis. The source preflight needs both pinned `image_url`
+assets at the paths in the manifest.
 [The Ladder](https://www.getty.edu/art/collection/object/107R3B) ·
 [Part of Queen’s College, Oxford](https://www.getty.edu/art/collection/object/108GG5)
 
