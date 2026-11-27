@@ -2,7 +2,7 @@ import { Download } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import {
   albumLeafSourceWindow, captureSplitSourceWindow, competingPhotoRegionPaths, competingPhotoRegionStyles, filmSourceWindow,
-  sourcePixelCenter,
+  sharedMotifGuideStyle, sourcePixelCenter,
   getFilmNeighborEdgeIndex, getPaperGridReview, measuredRibbedPrintOutlineSource, paperGridSourceWindows,
 } from "./cropReviewOutlines.js";
 
@@ -364,9 +364,10 @@ const groupReviewLabels = {
   },
 };
 
-export function CompetingPhotoOutlineLegend({ id, mobile = false }) {
+export function CompetingPhotoOutlineLegend({ id, mobile = false, showMotifGuide = false }) {
   return <div className={`source-region-evidence ${mobile ? "quad-hint" : "crop-editor-hint"}`}>
-    <p id={id}>Die ursprünglichen Vorschläge überschneiden sich. Prüfe die Papierränder und die orange markierten Bilddetails am Original.</p>
+    <p id={id}>Die Vorschläge überschneiden sich. Prüfe im Original die markierten Unterschiede und die Papierränder.</p>
+    {showMotifGuide && <p>Die helle gestrichelte Linie zeigt die gemessene sichtbare Bildkante. Prüfe den Papierabzug separat.</p>}
     <ul>
       {Object.entries(competingPhotoRegionStyles).map(([kind, { label, color, fill }]) => <li key={kind}>
         <svg aria-hidden="true" width="18" height="12" viewBox="0 0 18 12">
@@ -388,6 +389,19 @@ export function CompetingPhotoOutlineOverlay({ outlines }) {
         <path d={path} clipPath={`url(#${id})`} fill={competingPhotoRegionStyles[kind].fill} fillRule={rule} stroke="none" />
       </g>;
     }))}
+  </g>;
+}
+
+export function SharedMotifGuideOverlay({ outlines }) {
+  return <g aria-hidden="true" pointerEvents="none" fill="none">
+    {outlines.filter(outline => outline.motifGuide).map(({ wider_photo_id: id, motifGuide }) => {
+      const points = motifGuide.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ");
+      return <g key={id}>
+        <polygon points={points} stroke={sharedMotifGuideStyle.contrast} strokeWidth="4" vectorEffect="non-scaling-stroke" />
+        <polygon points={points} stroke={sharedMotifGuideStyle.color} strokeWidth="2" vectorEffect="non-scaling-stroke"
+          strokeDasharray={sharedMotifGuideStyle.dash.join(" ")} />
+      </g>;
+    })}
   </g>;
 }
 

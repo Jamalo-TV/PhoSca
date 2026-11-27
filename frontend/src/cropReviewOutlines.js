@@ -115,6 +115,7 @@ export const competingPhotoRegionStyles = {
   wider: { label: "Nur im grösseren Vorschlag", color: "#ea580c", fill: "rgba(249, 115, 22, .34)" },
   narrower: { label: "Nur im kleineren Vorschlag", color: "#0891b2", fill: "rgba(34, 211, 238, .34)" },
 };
+export const sharedMotifGuideStyle = { color: "#f0fdf4", contrast: "#14532d", dash: [5, 4] };
 
 export function getCompetingPhotoOutline(photo) {
   if (!photo || photo.reviewed_non_print || photo.review_reasons?.includes("GEOMETRY_REVIEW_WRONG_OBJECT")) return null;
@@ -126,8 +127,11 @@ export function getCompetingPhotoOutline(photo) {
       || ![wider, narrower].every(points => Array.isArray(points) && points.length >= 3 && points.every(isNormalizedPoint))) return null;
   const member = id === widerId ? wider : id === narrowerId ? narrower : null;
   const raw = photo.segmentation_mask?.polygon;
-  return member && raw?.length === member.length
-    && member.every(({ x, y }, index) => x === raw[index]?.x && y === raw[index]?.y) ? outline : null;
+  if (!member || raw?.length !== member.length
+      || !member.every(({ x, y }, index) => x === raw[index]?.x && y === raw[index]?.y)) return null;
+  const guide = outline.motif_guide;
+  return Array.isArray(guide) && guide.length === 4 && guide.every(isNormalizedPoint)
+    ? { ...outline, motifGuide: guide } : outline;
 }
 
 export function getCompetingPhotoReviewOutlines(photos) {
@@ -136,7 +140,8 @@ export function getCompetingPhotoReviewOutlines(photos) {
     if (id !== outline?.wider_photo_id) return [];
     const peer = current.get(outline.narrower_photo_id);
     return peer?.wider_photo_id === id && peer.narrower_photo_id === outline.narrower_photo_id
-      && JSON.stringify([peer.wider, peer.narrower]) === JSON.stringify([outline.wider, outline.narrower]) ? [outline] : [];
+      && JSON.stringify([peer.wider, peer.narrower, peer.motifGuide])
+        === JSON.stringify([outline.wider, outline.narrower, outline.motifGuide]) ? [outline] : [];
   });
 }
 

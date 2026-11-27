@@ -11,7 +11,7 @@ import {
 import {
   actionableCountGroups, adjacentPrintHint, albumLeafChildStyle, albumLeafTraceStyle, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
   captureSplitReviewHint, CaptureSplitSourceReview, clippedOverlapHint, clippedOverlapReason, CropOrientationField, cropProtectionErrors, CropVariants,
-  CompetingPhotoOutlineLegend, CompetingPhotoOutlineOverlay,
+  CompetingPhotoOutlineLegend, CompetingPhotoOutlineOverlay, SharedMotifGuideOverlay,
   cropModeLabels, crossingFallbackTraceStyles, crossingPrintHint,
   countGroupReviewError, CountGroupReview, crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridRimHint,
   filmGridReason, fragmentCountHint,
@@ -709,6 +709,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
             pointerEvents="none" points={region.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
         ))}
         {Boolean(visibleTraces?.length) && <MeasuredEdgeOverlay traces={visibleTraces} />}
+        {competingPhotoOutlines.some(outline => outline.motifGuide) && <SharedMotifGuideOverlay outlines={competingPhotoOutlines} />}
       </svg>
       {magnifier.visible && <div className="crop-magnifier" style={{
         left: `${lensX}%`, top: `${lensY}%`, backgroundImage: `url(${item.preview_url})`, backgroundPosition: `${lensPosition(magnifier.x)}% ${lensPosition(magnifier.y)}%`,
@@ -736,7 +737,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     )}
     {countOutlines.length > 0 && <p className="quad-hint" id="mobile-fragment-count-review-hint">{fragmentCountHint}</p>}
     {mergedPairs.length > 0 && <p className="quad-hint" id="mobile-merged-print-pair-hint">{mergedPrintPairHint}</p>}
-    {competingPhotoOutlines.length > 0 && <CompetingPhotoOutlineLegend id="mobile-competing-photo-outline-hint" mobile />}
+    {competingPhotoOutlines.length > 0 && <CompetingPhotoOutlineLegend id="mobile-competing-photo-outline-hint" mobile
+      showMotifGuide={competingPhotoOutlines.some(outline => outline.motifGuide)} />}
     {captureSplitGroups.length > 0 && <p className="quad-hint" id="mobile-capture-split-count-hint">{captureSplitReviewHint}</p>}
     {!deferredDraft && <CaptureSplitSourceReview groups={captureSplitGroups} photos={detections} sourceUrl={item.preview_url} />}
     {filmGridGroups.length > 0 && <p className="quad-hint" id="mobile-film-grid-count-hint">
@@ -1113,12 +1115,16 @@ function CropReview({ albumId, goHome }) {
     setAnswerError("");
     setMessage("");
   }
+  function withoutPageOutlineComparison(task) {
+    if (task.page_id !== item.page_id || !task.payload.competing_photo_outline) return task;
+    return { ...task, payload: { ...task.payload, competing_photo_outline: null } };
+  }
   function updateSavedCropModes(saved) {
     setBlockedCropTaskId(null);
     const cropModes = getCropModes(saved);
     if (cropModes) {
       const mask = saved.segmentation_mask;
-      setQueue(current => current?.key === queueKey ? { ...current, rows: current.rows.map(task => {
+      setQueue(current => current?.key === queueKey ? { ...current, rows: current.rows.map(withoutPageOutlineComparison).map(task => {
         if (task.id !== item.id) return task;
         const variantUrls = { ...task.payload.variant_urls, ...saved.crop_download_urls };
         if (!cropModes.full_print?.outline_preview) delete variantUrls.full_print_preview;
@@ -1153,7 +1159,7 @@ function CropReview({ albumId, goHome }) {
       const currentReview = reviews.find(review => review.payload.photo_id === photoId);
       const refreshed = currentReview && { ...currentReview, reprocessKey: crypto.randomUUID() };
       setQueue(current => current?.key === queueKey ? { ...current, rows: current.rows.flatMap(review => (
-        review.id === item.id ? (refreshed ? [refreshed] : []) : [review]
+        review.id === item.id ? (refreshed ? [refreshed] : []) : [withoutPageOutlineComparison(review)]
       )) } : current);
       setBlockedCropTaskId(null);
       setMessage("Abzug neu berechnet.");
@@ -1180,6 +1186,10 @@ function CropReview({ albumId, goHome }) {
       });
       if (focusedPhotoId) switchTask("segmentation");
       else {
+        if (type === "geometry" && value === "wrong_object") {
+          setQueue(current => current?.key === queueKey
+            ? { ...current, rows: current.rows.map(withoutPageOutlineComparison) } : current);
+        }
         setMessage("Antwort gespeichert");
         setIndex((current) => current + 1);
       }

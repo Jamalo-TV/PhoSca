@@ -76,7 +76,7 @@ import {
   SavedPrintReview,
 } from "./CropVariants.jsx";
 import {
-  competingPhotoRegionPaths, competingPhotoRegionStyles, getCompetingPhotoReviewOutlines,
+  competingPhotoRegionPaths, competingPhotoRegionStyles, getCompetingPhotoReviewOutlines, sharedMotifGuideStyle,
   contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor, getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
@@ -1992,6 +1992,22 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       context.restore();
     }
+    for (const outline of competingPhotoOutlines) {
+      if (outline.motifGuide) {
+        const points = outline.motifGuide.map(({ x, y }) => `${x * canvas.width} ${y * canvas.height}`);
+        const guide = new Path2D(`M ${points.join(" L ")} Z`);
+        const { color, contrast, dash } = sharedMotifGuideStyle;
+        context.save();
+        context.strokeStyle = contrast;
+        context.lineWidth = 4;
+        context.stroke(guide);
+        context.strokeStyle = color;
+        context.lineWidth = 2;
+        context.setLineDash(dash);
+        context.stroke(guide);
+        context.restore();
+      }
+    }
   }, [alternateOutline, blockedRegions, captureSplitGroups, competingPhotoOutlines, contrastCrossingTraces, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges, extentEdges, mergedPairs,
     filmEdgeIndex, filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
     printSuggestion, ribbedReviewOutline,
@@ -2442,7 +2458,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             : editingImage && motifMarginMarks.length && !crossingReview && !needsPrintReview && "motif-margin-marks-hint",
         ].filter(Boolean).join(" ") || undefined}
       />
-      {competingPhotoOutlines.length > 0 && <CompetingPhotoOutlineLegend id="competing-photo-outline-hint" />}
+      {competingPhotoOutlines.length > 0 && <CompetingPhotoOutlineLegend id="competing-photo-outline-hint"
+        showMotifGuide={competingPhotoOutlines.some(outline => outline.motifGuide)} />}
       {contrastCrossingTraces.length > 0 && <p className="crop-editor-hint" id="contrast-crossing-review-hint">{contrastCrossingTraceHint}</p>}
       {ribbedReviewOutline && <p className="crop-editor-hint" id="ribbed-print-outline-hint">{ribbedPrintOutlineHint}</p>}
       {!newPrint && detectionReviewHint && !rejectedDetection && (

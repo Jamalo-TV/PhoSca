@@ -11,6 +11,7 @@ import numpy as np
 from app.models import ExtractedPhoto
 from app.pipeline.decisions import photo_is_reviewed_non_print
 from app.pipeline.geometry import normalized_polygon_overlap
+from app.pipeline.shared_motif_review import SHARED_MOTIF_REVIEW, motif_review_id
 from app.schemas.pipeline import CompetingPhotoOutline, PhotoRead
 
 
@@ -23,6 +24,7 @@ class _Candidate:
     low: np.ndarray
     high: np.ndarray
     area: float
+    motif_evidence: dict | None
 
 
 def _candidate(photo: ExtractedPhoto | PhotoRead) -> _Candidate | None:
@@ -52,7 +54,9 @@ def _candidate(photo: ExtractedPhoto | PhotoRead) -> _Candidate | None:
     if area <= 0:
         return None
     outline = [{"x": x, "y": y} for x, y in coordinates]
-    return _Candidate(photo.id, outline, vertices, photo.geometry_valid, vertices.min(axis=0), vertices.max(axis=0), area)
+    motif_evidence = mask.get(SHARED_MOTIF_REVIEW)
+    return _Candidate(photo.id, outline, vertices, photo.geometry_valid, vertices.min(axis=0), vertices.max(axis=0), area,
+                      motif_evidence if isinstance(motif_evidence, dict) else None)
 
 
 def _overlap_bound(first: _Candidate, second: _Candidate) -> float:
@@ -97,18 +101,65 @@ def photo_outline_comparisons(
     """Build request-local comparisons from the current rows on each page."""
     pages = defaultdict(list)
     for photo in photos:
-        if (candidate := _candidate(photo)) is not None:
-            pages[photo.page_id].append(candidate)
+        if not photo_is_reviewed_non_print(photo):
+            pages[photo.page_id].append(photo)
     result = {}
-    for candidates in pages.values():
+    for current in pages.values():
+        candidates = [candidate for photo in current if (candidate := _candidate(photo)) is not None]
         matches = _find_comparisons(candidates)
+        legacy_pairs = {(wider.id, narrower.id) for wider, narrower, _ in matches}
+        measured = _measured_motif_pairs(candidates, current)
+        motifs = {(wider.id, narrower.id): guide for wider, narrower, guide in measured}
+        matches = [*matches, *((wider, narrower) for wider, narrower, _ in measured
+                               if (wider.id, narrower.id) not in legacy_pairs)]
         counts = Counter(candidate.id for overlap in matches for candidate in overlap)
-        for wider, narrower, extension in matches:
-            if any(counts[item.id] > 1 for item in (wider, narrower, extension)):
+        for wider, narrower, *extension in matches:
+            if any(counts[item.id] > 1 for item in (wider, narrower, *extension)):
                 continue
             comparison = CompetingPhotoOutline(
                 wider_photo_id=wider.id, narrower_photo_id=narrower.id,
                 wider=wider.outline, narrower=narrower.outline,
+                motif_guide=motifs.get((wider.id, narrower.id)),
             )
             result[wider.id] = result[narrower.id] = comparison
     return result
+
+
+def _measured_motif_pairs(
+    candidates: list[_Candidate], photos: list[ExtractedPhoto | PhotoRead],
+) -> list[tuple[_Candidate, _Candidate, list[dict]]]:
+    groups = defaultdict(list)
+    for item in candidates:
+        evidence = item.motif_evidence or {}
+        key = evidence.get("id")
+        if item.valid_geometry and isinstance(key, str):
+            groups[key].append(item)
+    pairs = []
+    for key, group in groups.items():
+        if len(group) != 2:
+            continue
+        wider, narrower = sorted(group, key=lambda item: item.area, reverse=True)
+        evidence = wider.motif_evidence
+        outline = evidence.get("outline")
+        if (evidence != narrower.motif_evidence or not isinstance(outline, list) or len(outline) != 4
+                or key != motif_review_id(outline, [wider.outline, narrower.outline])):
+            continue
+        try:
+            vertices = [(float(point["x"]), float(point["y"])) for point in outline]
+        except (KeyError, TypeError, ValueError):
+            continue
+        if any(not 0 <= value <= 1 for point in vertices for value in point):
+            continue
+        other_claims = [claim for photo in photos if photo.id not in (wider.id, narrower.id)
+                        for claim in ((photo.segmentation_mask or {}).get(field)
+                                      for field in ("polygon", "warp_quad", "visible_polygon")) if claim]
+        try:
+            conflict = any(normalized_polygon_overlap(vertices, [(point["x"], point["y"]) for point in claim],
+                                                      raster_size=1024).first_containment > .001
+                           for claim in other_claims)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if conflict:
+            continue
+        pairs.append((wider, narrower, outline))
+    return pairs

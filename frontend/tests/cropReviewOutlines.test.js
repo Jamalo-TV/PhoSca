@@ -179,6 +179,15 @@ test("a competing outline requires both current held proposals in count review",
   assert.deepEqual(getCompetingPhotoReviewOutlines([desktop, { ...mobile, crop_modes: { ...modes, image_only: { status: "ready" } } }]), []);
   const changedPair = { ...mobile, competing_photo_outline: { ...outline, wider: quad.slice(1) } };
   assert.deepEqual(getCompetingPhotoReviewOutlines([desktop, changedPair]), []);
+
+  const motifGuide = quad.map(({ x, y }) => ({ x: .03 + .90 * x, y: .03 + .90 * y }));
+  const measured = { ...outline, motif_guide: motifGuide };
+  const withGuide = [desktop, mobile].map(row => ({ ...row, competing_photo_outline: structuredClone(measured) }));
+  assert.deepEqual(getCompetingPhotoReviewOutlines(withGuide), [{ ...measured, motifGuide }]);
+  assert.deepEqual(getCompetingPhotoReviewOutlines([withGuide[0], mobile]), []);
+  assert.deepEqual(getCompetingPhotoOutline({ ...mobile, segmentation_mask: {
+    ...mobile.segmentation_mask, shared_motif_review: { outline: motifGuide },
+  } }), outline);
 });
 
 test("competing outline paths share the exact source clip and leave exclusive regions unquantized", () => {

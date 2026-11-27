@@ -1,7 +1,7 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_serializer, model_validator
 
 from app.models import OCRTextType, PageStatus, PhotoStatus
 from app.pipeline.decisions import motif_geometry_requires_review, photo_is_reviewed_non_print
@@ -103,6 +103,14 @@ class CompetingPhotoOutline(BaseModel):
     narrower_photo_id: UUID
     wider: list[NormalizedPoint]
     narrower: list[NormalizedPoint]
+    motif_guide: list[NormalizedPoint] | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_guide(self, handler):
+        fields = handler(self)
+        if self.motif_guide is None:
+            fields.pop("motif_guide", None)
+        return fields
 
 
 class AlbumPhotoRead(PhotoRead):

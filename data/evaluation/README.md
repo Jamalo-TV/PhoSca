@@ -1509,13 +1509,20 @@ measurements and independent confirmation.
 | `7REDA.JPG` `2883f364a0640f4bbb215b3495e9875b21c3642fe1f55db335be63698dfca3e8` | `REDA9.jpg` `edfdd4627fa131a4d6d99ae7735b78785befb6e39b82e2dc0f97f0b41373df84` |
 
 The Coble Album is a separate physical album in the same repository.
-`calbum3.JPG` matches `ca12twogirls.jpg`. The available page is 360 × 270
-pixels and the mount obscures the print edges. The Willett album archive
+The 360 × 270 pixel `calbum3.JPG` shows a dark gold studio mark on the
+left that matches the separately captured reverse of item 11. It is
+the unique matching mark in the 26 available back scans. The right
+window matches `ca12twogirls.jpg`, which the catalogue identifies as
+a tintype. The album windows obscure physical edges and part of the
+right motif. Git object IDs and SHA-256 hashes pin the public files.
+A higher-resolution mounted original and compatible rights are open.
+[Coble Album](https://rudged.github.io/home/coblealbum1.html)
+
+The Willett album archive
 provides 107 native JPEGs with inventory descriptions, photo corners,
 crowded mounts and pages without photos. Its published usage is educational and
 research use, subject to copyright restrictions. Verified paired print
 scans, metric dimensions and usage for product calibration remain open.
-[Coble Album](https://rudged.github.io/home/coblealbum.html) ·
 [Willett archive](https://historycenter.mld.org/willett_album/) ·
 [Willett files](https://github.com/historycenter-mld/willett_album/tree/f02315fbb8ab62f491c1003ce06614daf30cf617)
 
@@ -9712,6 +9719,78 @@ previous milestone on detection, crop quality and mode availability.
 
 Source measurements, upload receipts and both review views are
 available under `runs/crop-quality/scan-66/competing-outlines/`.
+
+### Compare two held proposals against a measured motif edge
+
+The wedding album development view U065 is 1,047 × 719 pixels.
+Its original WebP has SHA-256
+`23687f91d6148601f8606edcc9840c213099cc7e1ade14fb1ef6b058e353f1c3`.
+The registered mixed model `1e95a1a9…`, thresholds 0.25 and 0.70 and
+classical fallback produce eight proposals for five visually discernible
+prints. The two lower-right proposals have confidence 0.271 and 0.514.
+Their raw mask IoU is 0.794 on the current 256-square NMS raster and
+0.808 at 1,024. Their neighboring upper print overlaps the lower
+proposals by at most 0.011. The independent close-up U031 shows the
+same right leaf and gives 136 paired scene landmarks with a median
+held-fold registration error of 0.47 native U065 pixels. The source
+does not establish the pale paper's physical dimensions.
+
+| Actual untrimmed whole-print review output | 0.271 wider | 0.514 narrower |
+| --- | ---: | ---: |
+| Definite motif centres retained of 41,771 | 41,771 | 41,370 |
+| Footprint IoU against approximate paper outline | 0.7965 | 0.8528 |
+| Missing paper centres outside a boundary tolerance | 2,258 | 6,542 |
+| Foreign interpolation samples outside a boundary tolerance | 10,229 | 0 |
+| Maximum corner error against approximate paper outline | 54.33 px | 18.39 px |
+
+The higher-confidence candidate still loses 401 definite motif centres
+when the other row is rejected and the survivor is reprocessed. The
+ordinary motif output is held without a rendered transform or raster.
+A higher-resolution NMS experiment removes one physically distinct
+print in each of eight overlapping two-stock controls. The detector
+therefore retains both proposals and offers a source comparison.
+
+The visual guide requires two eligible unedited model masks. Their raw
+area ratio is 0.79–0.89, their overlap is 0.79–0.84 IoU at 1,024 and
+at least 96% of the smaller mask lies in the larger. Pairings must be
+unambiguous and there must be no deferred count offer on the page.
+Two local edge searches must both find the same four-sided boundary.
+Every fitted side requires at least 0.91 line support, 0.82 near-corner
+support and a consistent signed transition from a pale collar into the
+visible image. An intersecting third print claim suppresses the guide.
+The API verifies the guide and both current masks before returning it.
+
+The measured quadrilateral has 0.986 IoU against a separately measured
+motif outline and differs by at most 1.56 native pixels at the corners.
+It includes all 42,055 centres obtained by rasterizing and then
+eroding that draft by three pixels. The retention table uses the
+continuous footprint sampler with a three-pixel interior margin.
+The guide acts as an overlay and supplies no crop or physical
+aspect estimate. Four fixed-mask quarter turns and four JPEG qualities
+plus the unencoded input give a maximum remapped corner shift of 0.184
+native pixels across 20 cases. All eight original two-stock controls
+abstain. Thin-margin stacked and registered-source counterexamples can
+show the same front motif with distinct exposed rear image content.
+The interface keeps the count decision separate from this visible edge.
+
+Normal multipart upload and both browser layouts highlight the exact
+shared and exclusive regions with the optical guide on top. The 8
+active results, raw contour geometry, both crop-mode records and all
+working preview bytes match the baseline. The named exports and the
+trimmed alias return 404. An explicit wrong-object decision in a
+disposable album takes the count from 8 to 7, retires the guide in
+both layouts and preserves the surviving preview bytes. A disjoint
+manual print leaves the guide visible. A manual claim through the
+guide removes it on the next read. Warm native measurement took a
+median of 184 ms over twelve one-thread runs on the development machine.
+All eight fixed and development comparison reports retain the same
+detection, mode availability and geometry measurements. They include
+18/18 frozen detections and 23/23 seeded recoverable crops across both
+modes. The guide adds no new held crops on U065.
+
+Original measurements, normal upload receipts and screenshots are
+stored under `runs/crop-quality/u065-shared-motif-review/`. The physical
+album and its derived cases stay in development.
 
 ### Review a fallback outline crossing the album edge
 

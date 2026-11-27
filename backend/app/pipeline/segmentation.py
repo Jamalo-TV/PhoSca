@@ -92,6 +92,9 @@ from app.pipeline.segmentation_filter import (
     paper_and_edge_rejection_reasons,
     paper_around_nested_print,
 )
+from app.pipeline.shared_motif_review import (
+    SHARED_MOTIF_REVIEW, measure_shared_motif, motif_review_id, near_nested_model_masks,
+)
 from app.pipeline.source_fragment_review import source_fragment_role, suggest_source_fragment_group
 from app.pipeline.tile_print_review import (
     TILED_PRINT_PROPOSAL, measured_adjacent_tile_outline, measured_grid_tile_outline, measured_recentered_ribbed_outline,
@@ -3882,6 +3885,41 @@ def _flag_printed_illustration(image: np.ndarray, result: SegmentationResult) ->
     return SegmentationResult(detections, result.metadata)
 
 
+def _flag_shared_motif(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    detections = result.detections
+    fusion = result.metadata.get("fusion") or {}
+    if not result.metadata.get("fallback_used") or fusion.get("deferred_print_proposals"):
+        return result
+    candidates = [index for index, item in enumerate(detections) if item.geometry_valid and not item.review_reasons
+                  and item.mask.get("source") == "yolo_seg_mask" and item.mask.get("detector_source") == "yolo_onnx"
+                  and not any(item.mask.get(name) for name in ("warp_quad", "visible_polygon", MERGED_PRINT_PAIR))]
+    if len(candidates) < 2:
+        return result
+    polygons = [_detection_polygon(item) for item in detections]
+    pairs = [(first, second) for first, second in combinations(candidates, 2)
+             if _normalized_box_overlap(detections[first].bounding_box, detections[second].bounding_box)[0] >= .65
+             and near_nested_model_masks(polygons[first], polygons[second])]
+    counts = Counter(index for pair in pairs for index in pair)
+    height, width = image.shape[:2]
+    updated = detections.copy()
+    for first, second in pairs:
+        if counts[first] != 1 or counts[second] != 1:
+            continue
+        others = [polygon for index, polygon in enumerate(polygons) if index not in (first, second)]
+        try:
+            outline = measure_shared_motif(image, (polygons[first], polygons[second]), others)
+        except (cv2.error, ValueError):
+            continue
+        if outline is None:
+            continue
+        guide = _normalized_polygon(outline, width, height)
+        evidence = {"outline": guide, "id": motif_review_id(guide, [detections[i].mask["polygon"] for i in (first, second)])}
+        for index in (first, second):
+            item = detections[index]
+            updated[index] = replace(item, mask={**item.mask, SHARED_MOTIF_REVIEW: evidence})
+    return SegmentationResult(updated, result.metadata)
+
+
 def _flag_disputed_paper_joins(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
     detections = result.detections
     if not result.metadata.get("fallback_used") or not 2 <= len(detections) <= _MULTIPANEL_GROUP_LIMIT:
@@ -4635,6 +4673,7 @@ def segment_album_page(
             result = _flag_partial_film_grid(evidence_source, result)
             if source is not None:
                 result = _flag_printed_illustration(source, result)
+                result = _flag_shared_motif(source, result)
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership

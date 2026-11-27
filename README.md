@@ -1345,6 +1345,18 @@ freigegeben, entfällt dieser Vergleich. Zuschnitte, Anzahl und
 Freigabe werden weiterhin über die bestehenden Schritte geprüft.
 [Überlappende Vorschläge auf Scan 66](data/evaluation/README.md#compare-overlapping-held-model-outlines)
 
+Bei zwei stark überlappenden Modellmasken kann PhoSca zusätzlich
+eine sichtbare Bildkante direkt in den Originalpixeln messen. Die
+helle gestrichelte Linie erscheint in der Anzahl- und Geometrieprüfung,
+wenn zwei Kantensuchen dieselbe Form finden und alle vier Seiten
+einen deutlichen Übergang zum hellen Umfeld zeigen. Vergleiche die
+orange und türkis markierten Bereiche mit dieser Linie. Ein Bereich
+ausserhalb der Linie kann Papier, Albumuntergrund oder Bildinhalt
+eines zweiten Abzugs zeigen. Prüfe die physische Papierkante separat.
+Die Linie ist eine Orientierung für die Korrektur. Speichere die
+Ecken des Abzugs und des Motivs über die jeweiligen Modi.
+[Beispiel am Hochzeitsalbum](data/evaluation/README.md#compare-two-held-proposals-against-a-measured-motif-edge)
+
 | Aktion | Verhalten |
 | --- | --- |
 | Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |

@@ -2122,9 +2122,11 @@ async def test_saving_coordinates_cannot_release_a_photo_hidden_by_an_album_wind
         assert (await client.get(f"{url}/image?variant={name}")).status_code == 404
 
 
-async def test_competing_outline_comparison_tracks_current_page_candidates(client):
+@pytest.mark.parametrize("with_motif", [False, True], ids=["partial-extension", "measured-motif"])
+async def test_competing_outline_comparison_tracks_current_page_candidates(client, with_motif):
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, PhotoStatus
+    from app.pipeline.shared_motif_review import SHARED_MOTIF_REVIEW, motif_review_id
 
     album_id, page_id, wider_id = await _seed_review_data()
 
@@ -2134,12 +2136,15 @@ async def test_competing_outline_comparison_tracks_current_page_candidates(clien
     wider = outline(.15, .35, .85, .83)
     narrower = outline(.145, .36, .85, .72)
     partial = outline(.15, .745, .85, .875)
+    guide = outline(.19, .40, .80, .68)
+    evidence = {"id": motif_review_id(guide, [wider, narrower]), "outline": guide}
     modes = {"correction": {"crop_modes": {mode: {
         "status": "review_needed", "reason_codes": ["PRINT_BOUNDARY_UNSUPPORTED"],
     } for mode in ("full_print", "image_only")}}}
 
     def mask(polygon):
-        return {"source": "yolo_seg_mask", "detector_source": "yolo_onnx", "polygon": polygon}
+        return {"source": "yolo_seg_mask", "detector_source": "yolo_onnx", "polygon": polygon,
+                **({SHARED_MOTIF_REVIEW: evidence} if with_motif and polygon in (wider, narrower) else {})}
 
     def box(polygon):
         return {f"{axis}{index}": bound(point[axis] for point in polygon)
@@ -2154,7 +2159,7 @@ async def test_competing_outline_comparison_tracks_current_page_candidates(clien
             ExtractedPhoto(album_id=album_id, page_id=page_id, segmentation_mask=mask(polygon),
                            bounding_box=box(polygon), segmentation_confidence=.48, geometry_valid=valid,
                            status=PhotoStatus.review_needed, storage_path=photo.storage_path, enhancement_applied=modes)
-            for polygon, valid in ((narrower, True), (partial, False))
+            for polygon, valid in ((narrower, True), (partial, with_motif))
         ]
         session.add_all([close, extension])
         await session.flush()
@@ -2166,6 +2171,8 @@ async def test_competing_outline_comparison_tracks_current_page_candidates(clien
     album_photos = f"/api/v1/albums/{album_id}/photos"
     expected = {"wider_photo_id": str(wider_id), "narrower_photo_id": str(narrower_id),
                 "wider": wider, "narrower": narrower}
+    if with_motif:
+        expected["motif_guide"] = guide
     count, = (await client.get(page_queue)).json()
     assert count["payload"]["detection_count"] == 3
     member_ids = {str(wider_id), str(narrower_id)}
@@ -2180,8 +2187,23 @@ async def test_competing_outline_comparison_tracks_current_page_candidates(clien
     for mode in ("full_print", "image_only"):
         assert (await client.get(f"/api/v1/photos/{narrower_id}/image?variant={mode}")).status_code == 404
 
+    if with_motif:
+        # An independently claimed overlapping print can appear after the guide has been stored.
+        async with get_session_factory()() as session:
+            other = await session.get(ExtractedPhoto, extension_id)
+            other.segmentation_confidence = None
+            other.segmentation_mask = {"source": "manual_quad", "polygon": partial, "warp_quad": guide}
+            await session.commit()
+        for entry in (await client.get(album_photos)).json():
+            assert entry["competing_photo_outline"] is None
+        async with get_session_factory()() as session:
+            other = await session.get(ExtractedPhoto, extension_id)
+            other.segmentation_mask = {"source": "manual_quad", "polygon": partial}
+            await session.commit()
+
     removed = await client.post("/api/v1/review/events", json={
-        "task_type": "geometry", "task_id": str(extension_id), "answer": "wrong_object", "idempotency_key": uuid4().hex,
+        "task_type": "geometry", "task_id": str(wider_id if with_motif else extension_id),
+        "answer": "wrong_object", "idempotency_key": uuid4().hex,
     })
     assert removed.status_code == 201, removed.text
     count, = (await client.get(page_queue)).json()
