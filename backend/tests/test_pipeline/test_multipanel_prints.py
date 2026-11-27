@@ -220,6 +220,67 @@ def test_strong_film_carrier_rim_adds_only_reversible_source_evidence(material):
     assert result.detections[3:] == detections[3:]
 
 
+@pytest.mark.parametrize("material", ["clear_lip", "bare", "positive_ink", "narrow_gap", "pending_claim", "pending_source"])
+def test_partial_film_group_reconstructs_divider_from_the_carrier(material):
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+    page, _ = conflicting_film_grid(settings)
+    height, width = page.shape[:2]
+    rows = np.arange(height, dtype=np.float32)
+    grain = 13 * np.sin(rows / 3.2) + 7 * np.cos(rows / 5.8) + 4 * np.sin(rows / 2.3)
+    wood = np.float32([94, 145, 176])
+    backing = np.uint8(np.clip(wood + grain[:, None], 0, 255))
+    source = np.broadcast_to(backing[:, None], page.shape).copy()
+    source[120:907, 71:668] = page[120:907, 71:668]
+    for index in range(7):
+        top = 176 + 104 * index
+        source[top + 17:top + 80, 116:643] = (114, 117, 123) if material == "positive_ink" else (12, 14, 16)
+    if material != "bare":
+        lip = np.uint8(np.clip(wood - 5 + .77 * grain[120:907, None], 0, 255))
+        source[120:907, 54:71] = lip[:, None]
+    if material == "narrow_gap":
+        source[379:381, 71:668] = (165, 171, 175)
+
+    quads = ([[79, 128], [658, 128], [658, 778], [79, 778]],
+             [[116, 176], [642, 176], [642, 375], [116, 375]],
+             [[116, 384], [642, 384], [642, 583], [116, 583]],
+             [[703, 150], [915, 150], [915, 886], [703, 886]])
+    detections = []
+    for index, quad in enumerate(quads):
+        fragment = index in (1, 2)
+        item = segmentation._make_detection(
+            box={}, points=np.float32(quad), confidence=.8, image_width=width, image_height=height, settings=settings,
+            source="yolo_seg_mask" if fragment else "classical_border_quad",
+            detector_source="yolo_onnx" if fragment else "contrast_region",
+        )
+        detections.append(replace(item, geometry_valid=not fragment,
+                                  review_reasons=["aspect_ratio_too_tall"] if fragment else [],
+                                  mask={**item.mask, "boundary_evidence": {"score": .8 if fragment else .59}}))
+    metadata = {"fallback_used": True}
+    if material in {"pending_claim", "pending_source"}:
+        # The pending claim begins outside the old contour and is inside the measured carrier.
+        inside = np.float32([[180, 790], [320, 790], [320, 860], [180, 860]])
+        claim = {"polygon": segmentation._normalized_polygon(inside, width, height)}
+        if material == "pending_source":
+            outside = np.float32(quads[-1])
+            claim = {"polygon": segmentation._normalized_polygon(outside, width, height), "source_mask": claim}
+        metadata["fusion"] = {"deferred_print_proposals": [claim]}
+    before = segmentation.SegmentationResult(detections, metadata)
+    result = segmentation._flag_partial_film_grid(source, before)
+    if material != "clear_lip":
+        assert result is before
+        return
+    assert result.metadata == before.metadata and result.detections[-1] is detections[-1]
+    first = result.detections[0].mask
+    for old, new in zip(detections[:3], result.detections[:3], strict=True):
+        assert len(first["film_grid_review_seam"]) == len(first["film_grid_review_rim"]) == 2
+        assert new.mask == {**old.mask, "film_grid_review_seam": first["film_grid_review_seam"],
+                            "film_grid_review_rim": first["film_grid_review_rim"]}
+        assert new.review_reasons == [FILM_GRID_REVIEW, *old.review_reasons]
+        assert new.geometry_valid is old.geometry_valid and new.bounding_box == old.bounding_box
+    seam = segmentation.normalized_vertices_to_pixels([(p["x"], p["y"]) for p in first["film_grid_review_seam"]], width, height)
+    np.testing.assert_allclose(seam[:, 1], 380., atol=2)
+
+
 def test_valid_paper_separator_does_not_absorb_a_third_separate_print():
     settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
     original, _, proposals = page_and_proposals(settings, 4, 0, mixed=True)

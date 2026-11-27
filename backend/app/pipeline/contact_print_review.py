@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 from app.pipeline.geometry import normalized_polygon_overlap
-from app.pipeline.multipanel_prints import _native_perforations_supported, _perforation_rows
+from app.pipeline.multipanel_prints import _native_perforations_supported, regular_perforation_grid
 from app.pipeline.print_edges import _edge_band
 from app.pipeline.print_outline_suggestion import _outline_at_distance
 
@@ -115,31 +115,20 @@ def _positive_grid_on_stock(image: np.ndarray, outline: np.ndarray) -> bool:
     matrix = cv2.getPerspectiveTransform(outline, target)
     aligned = cv2.warpPerspective(image, matrix, (width, height))
     light = cv2.cvtColor(aligned[:, start:end], cv2.COLOR_BGR2LAB)[..., 0]
-    bands, pitch, scores = _perforation_rows(light)
-    if len(bands) < 10 or len(bands) % 2:
-        return False
-    centers = bands.mean(axis=1).astype(int)
-    gaps = np.diff(centers)
-    body, inter_strip = gaps[::2], gaps[1::2]
-    if (np.ptp(pitch[centers]) > 1 or scores[centers].min() < .65 or body.min() < 83 or body.max() > 147
-            or body.max() > 1.25 * body.min() or inter_strip.min() < 12 or inter_strip.max() > 55
-            or inter_strip.max() > 1.30 * inter_strip.min() or body.min() < 2 * inter_strip.max()):
+    grid = regular_perforation_grid(light)
+    if grid is None:
         return False
     # A sleeve can have exactly the same perforations. Its grille alone is not a print cue.
-    polarities = []
-    for (upper, lower), (a, b) in zip(bands.reshape(-1, 2, 2), centers.reshape(-1, 2), strict=True):
-        inset = round(.22 * (b - a))
-        rails = np.concatenate((light[slice(*upper)], light[slice(*lower)]))
-        body_light = np.median(light[a + inset:b - inset], axis=0)
-        polarities.append(float(np.median(body_light - np.median(rails, axis=0))))
-    if np.mean(np.asarray(polarities) >= 8) < .80 or np.median(polarities) < 18 or min(polarities) < -10:
+    centers, pitches, polarities = grid
+    if np.mean(polarities >= 8) < .80 or np.median(polarities) < 18 or min(polarities) < -10:
         return False
     from_grid = np.linalg.inv(matrix)
-    return all(_native_perforations_supported(image, from_grid, start, end, row, int(pitch[row])) for row in centers)
+    return all(_native_perforations_supported(image, from_grid, start, end, row, int(pitch))
+               for row, pitch in zip(centers, pitches, strict=True))
 
 
-def contact_print_review_outline(image: np.ndarray, seed: np.ndarray, current: np.ndarray) -> np.ndarray | None:
-    """Return a source comparison scope for a held crop, with no ownership decision."""
+def measure_chroma_outer_outline(image: np.ndarray, seed: np.ndarray, current: np.ndarray) -> np.ndarray | None:
+    """Refit a larger color-supported contour in the source, independent of its material."""
     proposal = _stable_chroma_outline(image, seed)
     if proposal is None:
         return None
@@ -156,7 +145,13 @@ def contact_print_review_outline(image: np.ndarray, seed: np.ndarray, current: n
             or np.max(np.linalg.norm(outline - proposal, axis=1)) > 8):
         return None
     match = normalized_polygon_overlap(current / scale, outline / scale, raster_size=1024)
-    if not (.74 <= match.iou <= .94 and match.first_containment >= .985):
+    return outline if .74 <= match.iou <= .94 and match.first_containment >= .985 else None
+
+
+def contact_print_review_outline(image: np.ndarray, seed: np.ndarray, current: np.ndarray) -> np.ndarray | None:
+    """Return a source comparison scope for a held crop, with no ownership decision."""
+    outline = measure_chroma_outer_outline(image, seed, current)
+    if outline is None:
         return None
     if not _continuous_pale_perimeter(image, outline) or not _positive_grid_on_stock(image, outline):
         return None

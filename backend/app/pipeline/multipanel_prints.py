@@ -11,7 +11,7 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic,
 from app.pipeline.print_edges import _edge_band, _is_pale_stock, refine_print_boundary
 
 
-MULTIPANEL_PRINT_REVISION = 11
+MULTIPANEL_PRINT_REVISION = 12
 MULTIPANEL_PRINT_REVIEW = "MULTIPANEL_PRINT_REVIEW"
 FILM_GRID_REVIEW = "FILM_GRID_REVIEW"
 PAPER_GRID_REVIEW = "PAPER_GRID_REVIEW"
@@ -310,6 +310,27 @@ def _perforation_witness(luminance: np.ndarray, split: int, nearby_rows: int = 0
     return None
 
 
+def regular_perforation_grid(light: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """Measure a regular set of paired film rails and their image-to-rail lightness."""
+    bands, pitch, scores = _perforation_rows(light)
+    if len(bands) < 10 or len(bands) % 2:
+        return None
+    centers = bands.mean(axis=1).astype(int)
+    gaps = np.diff(centers)
+    body, inter_strip = gaps[::2], gaps[1::2]
+    if (np.ptp(pitch[centers]) > 1 or scores[centers].min() < .65 or body.min() < 83 or body.max() > 147
+            or body.max() > 1.25 * body.min() or inter_strip.min() < 12 or inter_strip.max() > 55
+            or inter_strip.max() > 1.30 * inter_strip.min() or body.min() < 2 * inter_strip.max()):
+        return None
+    polarities = []
+    for (upper, lower), (a, b) in zip(bands.reshape(-1, 2, 2), centers.reshape(-1, 2), strict=True):
+        inset = round(.22 * (b - a))
+        rails = np.concatenate((light[slice(*upper)], light[slice(*lower)]))
+        body_light = np.median(light[a + inset:b - inset], axis=0)
+        polarities.append(float(np.median(body_light - np.median(rails, axis=0))))
+    return centers, pitch[centers], np.asarray(polarities)
+
+
 def _native_perforations_supported(
     image: np.ndarray, from_grid: np.ndarray, start: int, end: int, row: int, pitch: int,
 ) -> bool:
@@ -421,8 +442,46 @@ def _exposed_backing_at_film_divider(
     return bool(np.any(middle[:-1] & middle[1:]))
 
 
+def _narrow_film_divider_break(
+    image: np.ndarray, seam: np.ndarray, normal: np.ndarray, backing: np.ndarray, stock: np.ndarray,
+) -> bool:
+    fractions = np.linspace(.04, .96, 180, dtype=np.float32)
+    span = seam[0] + fractions[:, None] * (seam[1] - seam[0])
+    widths = np.arange(-6, 6.01, .25, dtype=np.float32)
+    stripe = _sample_lab(image, span[:, None] + widths[None, :, None] * normal)
+    if stripe is None:
+        return True
+    # A real gap can retain only a mixture of stock and backing chroma after resampling.
+    change = backing[1:] - stock[1:]
+    chroma = stripe[..., 1:] - stock[1:]
+    mixture = chroma @ change / max(1., float(change @ change))
+    residual = np.linalg.norm(chroma - mixture[..., None] * change, axis=2)
+    light = stripe[..., 0]
+    deficit = stock[0] - light
+    centered = np.abs(widths) <= 3.25
+    mixed = (mixture >= .14) & (mixture <= 1.25) & (residual <= 9) & (deficit >= 12)
+    common = centered & np.all([part.mean(axis=0) >= .72 for part in np.array_split(mixed, 6)], axis=0)
+    if np.any(common[:-2] & common[1:-1] & common[2:]):
+        return True
+    # A neutral lane can be uniform even where a neighbouring rail obscures one shoulder.
+    dark_lane = centered & (np.ptp(np.percentile(light, [10, 90], axis=0), axis=0) <= 16)
+    dark_lane &= np.all([np.percentile(part, 20, axis=0) >= 10 for part in np.array_split(deficit, 6)], axis=0)
+    plateau = np.abs(np.diff(np.median(light, axis=0))) <= 5
+    if np.any(dark_lane[:-1] & dark_lane[1:] & plateau):
+        return True
+    # A narrow dip between two bright shoulders is a second neutral gap witness.
+    troughs = []
+    for index in np.flatnonzero(centered):
+        shoulders = np.minimum(np.median(light[:, index - 9:index - 3], axis=1),
+                               np.median(light[:, index + 4:index + 10], axis=1))
+        dark = (shoulders - light[:, index] >= 7) & (deficit[:, index] >= 13)
+        consistent = min(part.mean() for part in np.array_split(dark, 6)) >= .67
+        troughs.append(consistent and np.ptp(np.percentile(light[:, index], [10, 90])) <= 16)
+    return any(a and b for a, b in zip(troughs, troughs[1:]))
+
+
 def transparent_film_rim(
-    image: np.ndarray, parent: np.ndarray, seam: np.ndarray, peers: list[np.ndarray],
+    image: np.ndarray, parent: np.ndarray, seam: np.ndarray, peers: list[np.ndarray], *, check_narrow_divider: bool = False,
 ) -> np.ndarray | None:
     """Find a transparent lip outside the pale carrier of a disputed film grid."""
     edges = np.roll(parent, -1, axis=0) - parent
@@ -477,8 +536,9 @@ def transparent_film_rim(
         # the rim. Distant wood or page material can have a different color.
         corner = np.argmin(np.abs((span - seam.mean(axis=0)) @ normal))
         local = slice(max(0, corner - 14), corner + 15)
-        if _exposed_backing_at_film_divider(image, seam, normal, np.median(clear_outside[local], axis=(0, 1)),
-                                           np.median(stock_side[local], axis=(0, 1))):
+        backing, paper = (np.median(samples[local], axis=(0, 1)) for samples in (clear_outside, stock_side))
+        if (_exposed_backing_at_film_divider(image, seam, normal, backing, paper)
+                or (check_narrow_divider and _narrow_film_divider_break(image, seam, normal, backing, paper))):
             continue
         found.append(rim)
     return found[0] if len(found) == 1 else None

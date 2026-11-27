@@ -6901,6 +6901,77 @@ alias stay held for the survivors. The existing source preview
 bytes, masks, transforms and deferred proposals reproduce their
 previous values. The paired captures describe this development case.
 
+### Review partial film groups on the rotated contact page
+
+The 1014 × 1346 SteveKM development view is the 33% capture rotated
+270° and encoded at JPEG quality 75. The JPEG SHA-256 is
+`a3582cdda8f0c3dc0b5d17b528b6f4035d30b07ad293f36f2080a274b7e3501f`.
+The mixed-legacy checkpoint SHA-256 is
+`1e95a1a90ff897df7099ff80675186ec1d8145f7bb07559fe918b3dd3a6db748`.
+It returns four proposals. The two narrow ONNX strip masks are invalid
+solely because of their aspect ratios. Together they cover 51.2% of the
+broad contrast proposal and 45.5% of the measured carrier. They omit too
+much of the physical sleeve for the earlier strip-union or
+strong-carrier paths.
+
+Multipanel revision 12 tests for one convex contrast proposal around
+exactly two disjoint aspect-only model claims. Each claim needs model
+confidence ≥0.45 and boundary score ≥0.67. The contrast proposal needs a
+boundary score from 0.40 up to 0.70 exclusive, at least 85% containment
+of each claim and combined coverage from 46% up to 77% exclusive.
+A four-side chroma refit must contain at least 98% of each claim. The
+evidence is measured across the full refitted carrier. The children must
+span a common width of at least 76% of the carrier and face one another
+near a single repeating pale divider. The grid test requires at least five
+regular rail pairs. At least 80% must have negative film polarity and
+every rail is checked again in the original pixels. The nearby rim must
+preserve backing texture with reduced contrast. Visible backing or a
+consistent dark lane at the divider vetoes the cue. The narrow-lane test
+uses quarter-pixel sampling across the divider and agreement along six
+sections. Overlap of more than one square pixel with any other active or
+deferred outline vetoes the cue as well, including the deferred raw mask
+and its visible or warp outline.
+
+This view supplies seven periodic rail pairs and a divider measuring
+5.75 source pixels across. The measured divider endpoints are
+approximately `(628.4, 138.1)` and `(629.2, 609.8)`. The rim endpoints
+are approximately `(152.6, 50.7)` and `(839.4, 58.7)`. A separate
+source measurement finds a median gap of 11.12 pixels between the
+carrier and the paper print. The stage takes a median 141 ms CPU time
+over nine warm calls with one OpenCV thread on this qualifying source.
+Through normal segmentation of 16 development views, only this JPEG
+gets a new group. The lossless 270° twin passes the proposal checks
+but fails source support at one side of the chroma refit. The 90°
+and 180° JPEG75 views each contain only one qualifying strip mask.
+
+In 90 same-source optical controls with fixed detector records, the
+marker is withheld for all 12 wood gaps of 1–5 pixels and all 18
+neutral and muted-grey gaps of 2–5 pixels across three offsets. It
+appears in 49 controls, including all pale and near-stock lanes and
+all half-pixel treatments. An opaque negative-tone print under a clear
+protector can also produce the cue. These cases require an assessment
+of the physical objects in the original. The divider and rim guide the
+inspection and do not decide the count.
+
+The ordinary multipart JPEG upload, processing worker, review API and
+image download path retain four active proposals before confirmation.
+The count changes from four to one only when the reviewer
+confirms the exact three sleeve rows. Missing confirmation, a substitute
+row and a stale count are rejected. The rejected rows remain in review
+history and replaying the event is idempotent. The separate paper's mask,
+two crop modes and untrimmed preview stay identical through the decision
+and reprocessing. Both named exports and the legacy trimmed alias stay
+held. The initial detector result remains one true positive, three
+false proposals and zero missed prints. All crops stay at their original
+geometries, so the group itself changes review availability alone.
+All eight paired evaluation reports match `31df6d1` in their
+non-timing results apart from the multipanel revision. This includes
+18/18 frozen detections, 11/11 seeded full-print recoveries and 12/12
+seeded motif recoveries. None of these views adds an independent
+release reference.
+The source comparison and paired local receipts are under
+`runs/crop-quality/rotated-film-group/`.
+
 ### Compare the whole contact print with its counted fragments
 
 Multipanel revision 9 keeps the right paper outline, the original crop

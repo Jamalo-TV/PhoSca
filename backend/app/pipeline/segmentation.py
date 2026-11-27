@@ -33,6 +33,7 @@ from app.pipeline.edge_prints import (
 from app.pipeline.embossed_album_pockets import (
     EMBOSSED_CARRIER_PROPOSAL, EMBOSSED_POCKET_PROPOSAL, embossed_outer_carrier_traces, embossed_pocket_traces,
 )
+from app.pipeline.film_carrier_review import refitted_film_carrier_traces
 from app.pipeline.frame_backing_review import FRAME_BACKING_COUNT_REVIEW, FRAME_BACKING_PROPOSAL, frame_backing_trace
 from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
@@ -44,7 +45,7 @@ from app.pipeline.fragmented_prints import (
 from app.pipeline.fusion_ownership import (
     BORROWED_FALLBACK_EDGE, NESTED_EDGE_CONTOUR, NESTED_EDGE_CONTOUR_REVIEW,
     NESTED_FALLBACK_CONTOUR, NESTED_FALLBACK_CONTOUR_REVIEW, _covered_area,
-    borrowed_fallback_edge_traces, nested_fallback_contour_spans, unsupported_fallback_ownership,
+    borrowed_fallback_edge_traces, deferred_neighbor_masks, nested_fallback_contour_spans, unsupported_fallback_ownership,
 )
 from app.pipeline.geometry import (
     PolygonOverlap,
@@ -3781,6 +3782,63 @@ def _flag_conflicting_film_grids(
     return SegmentationResult(updated, result.metadata)
 
 
+def _flag_partial_film_grid(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    detections = result.detections
+    if not result.metadata.get("fallback_used") or not 3 <= len(detections) <= _MULTIPANEL_GROUP_LIMIT:
+        return result
+    fragments = [index for index, item in enumerate(detections)
+                 if not item.geometry_valid and item.review_reasons in (["aspect_ratio_too_tall"], ["aspect_ratio_too_wide"])
+                 and item.mask.get("source") == "yolo_seg_mask" and item.mask.get("detector_source") == "yolo_onnx"
+                 and not item.mask.get("warp_quad") and item.confidence >= .45
+                 and (item.mask.get("boundary_evidence") or {}).get("score", 0) >= .67]
+    if len(fragments) != 2:
+        return result
+    outlines = [_detection_polygon(item) for item in detections]
+    first, second = (outlines[index] for index in fragments)
+    if normalized_polygon_overlap(first, second).iou > .005:
+        return result
+    carriers = []
+    for index, (item, outline) in enumerate(zip(detections, outlines, strict=True)):
+        if (not item.geometry_valid or item.review_reasons or item.mask.get("warp_quad")
+                or item.mask.get("source") != "classical_border_quad" or item.mask.get("detector_source") != "contrast_region"
+                or not .40 <= (item.mask.get("boundary_evidence") or {}).get("score", 0) < .70
+                or len(outline) != 4 or not cv2.isContourConvex(outline)):
+            continue
+        overlaps = [normalized_polygon_overlap(outline, child) for child in (first, second)]
+        if (min(match.second_containment for match in overlaps) >= .85
+                and min(match.first_containment for match in overlaps) >= .12
+                and .46 <= sum(match.first_containment for match in overlaps) < .77):
+            carriers.append(index)
+    if len(carriers) != 1:
+        return result
+    carrier, = carriers
+    members = {carrier, *fragments}
+    height, width = image.shape[:2]
+    peers = []
+    claims = _tiled_review_claims(result) + deferred_neighbor_masks(result.metadata)
+    for index, claim in enumerate(claims):
+        if index in members:
+            continue
+        for key in ("polygon", "visible_polygon", "warp_quad"):
+            points = claim.get(key) or []
+            if len(points) >= 3:
+                peers.append(normalized_vertices_to_pixels([(p["x"], p["y"]) for p in points], width, height))
+    try:
+        seed = order_quad_cyclic(normalized_vertices_to_pixels(outlines[carrier], width, height))
+        children = [normalized_vertices_to_pixels(child, width, height) for child in (first, second)]
+        traces = refitted_film_carrier_traces(image, seed, children, peers)
+    except (cv2.error, ValueError, np.linalg.LinAlgError):
+        return result
+    if traces is None:
+        return result
+    seam, rim = (_normalized_polygon(trace, width, height) for trace in traces)
+    return SegmentationResult([
+        replace(item, mask={**item.mask, "film_grid_review_seam": seam, "film_grid_review_rim": rim},
+                review_reasons=[FILM_GRID_REVIEW, *item.review_reasons]) if index in members else item
+        for index, item in enumerate(detections)
+    ], result.metadata)
+
+
 def _flag_disputed_paper_joins(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
     detections = result.detections
     if not result.metadata.get("fallback_used") or not 2 <= len(detections) <= _MULTIPANEL_GROUP_LIMIT:
@@ -4530,7 +4588,7 @@ def segment_album_page(
                     **item.mask, CONTRAST_CROSSING_TRACES: [_normalized_polygon(span, width, height) for span in traces],
                 })
                 result = SegmentationResult(detections, result.metadata)
-        return result
+        return _flag_partial_film_grid(evidence_source, result) if settings.enable_classical_segmentation_fallback else result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
 
@@ -4576,6 +4634,7 @@ def segment_album_page(
         })
     if settings.enable_classical_segmentation_fallback:
         result = _flag_conflicting_film_grids(evidence_source, result, require_clear_rim=True)
+        result = _flag_partial_film_grid(evidence_source, result)
     return result
 
 

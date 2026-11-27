@@ -1000,6 +1000,21 @@ Die Bestätigungspflicht gilt auch nach erneuter Verarbeitung, wenn die
 türkisen Linien durch einen Nachbarabzug ausgeblendet wurden.
 [Gemessene Kanten am gedrehten Kontaktbogen](data/evaluation/README.md#locate-paper-edges-around-a-held-contact-grid)
 
+Eine Negativhülle auf derselben Aufnahme kann mehrere Vorschläge
+erzeugen. Bei zwei schmalen Modellmasken, die nur am Seitenverhältnis
+scheitern, sucht PhoSca nach einem gemeinsamen Kontrastumriss. Es misst
+dessen vier Seiten in den Originalpixeln nach, prüft den Streifen
+zwischen den Masken auf ein regelmässiges Negativraster und sucht
+ausserhalb des Umrisses nach einem lichtdurchlässigen Saum. Sichtbarer
+Untergrund an der Trennstelle oder ein weiterer Vorschlag, der den
+gemessenen Bereich beansprucht, sperrt den Gruppenhinweis. Die App
+zeigt den Trennstreifen und den Saum als zwei offene Linien. Alle
+Vorschläge behalten ihre Konturen und bleiben einzeln sichtbar, bis die
+Person die Hülle als zusammengehörigen Gegenstand bestätigt. Ein
+benachbarter Papierabzug behält seine eigene Prüfung in beiden
+Zuschnittmodi.
+[Negativhülle auf der gedrehten Aufnahme](data/evaluation/README.md#review-partial-film-groups-on-the-rotated-contact-page)
+
 Bleibt genau eine Papierkante strittig, kann PhoSca ihren Verlauf
 anhand der anderen drei Seiten und der angrenzenden Ecken für
 die Prüfung genauer messen. Vier im Original gestützte Motivkanten,
