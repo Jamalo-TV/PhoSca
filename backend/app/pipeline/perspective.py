@@ -58,6 +58,7 @@ from app.pipeline.manual_paper_boundary import (
 )
 from app.pipeline.orientation import correct_photo_orientation, rotate_image
 from app.pipeline.overlap_edge_review import suggest_exposed_overlap_edges
+from app.pipeline.ribbed_outline_review import MEASURED_RIBBED_PRINT_OUTLINE, measure_ribbed_outline_comparison
 from app.pipeline.page_plane import (
     PRINT_ASPECT_REFERENCE_REVIEW,
     MeasuredPrintReference,
@@ -979,6 +980,7 @@ def _render_review_quad_preview(
     page: np.ndarray, quad: np.ndarray, rotation: int, neighbors: list[np.ndarray], regions: list[dict],
     camera_matrix: np.ndarray | None, page_plane: PrintPagePlane | None, *, source: str,
     prior_protection: dict | None = None,
+    print_aspect_ratio: float | None = None,
 ) -> tuple[np.ndarray, dict] | None:
     """Straighten the proposed print outline independently of the primary crop."""
     height, width = page.shape[:2]
@@ -992,7 +994,8 @@ def _render_review_quad_preview(
                     or any(violation not in (previous.get("violations") or []) for violation in protection["violations"])):
                 return None
         out_width, out_height, aspect, reasons = _crop_dimensions(
-            quad, width, height, metric=True, camera_matrix=camera_matrix, print_aspect_ratio=None, page_plane=page_plane,
+            quad, width, height, metric=True, camera_matrix=camera_matrix, print_aspect_ratio=print_aspect_ratio,
+            page_plane=page_plane,
         )
         if min(out_width, out_height) < 2 or out_width * out_height > 2 * width * height:
             return None
@@ -1067,10 +1070,16 @@ def _linked_grid_cut(
 
 def review_outline_intersects_claim(
     source_outline: list[dict], claim: dict, width: int, height: int,
+    *, convex_scope: bool = False,
 ) -> bool:
     """Check a current reviewer claim against a stored source outline."""
     try:
-        outline = _explicit_quad({"outline": source_outline}, "outline", width, height)
+        if convex_scope:
+            outline = _proposal_polygon({"polygon": source_outline}, width, height)
+            if outline is None or not cv2.isContourConvex(outline):
+                return False
+        else:
+            outline = _explicit_quad({"outline": source_outline}, "outline", width, height)
         quad = _explicit_quad(claim, "warp_quad", width, height)
         points = quad if quad is not None else _proposal_polygon(claim, width, height)
         return outline is not None and points is not None and cv2.intersectConvexConvex(outline, cv2.convexHull(points))[0] > 1
@@ -2486,6 +2495,27 @@ def correct_photo_crop(
             review_traces_intersect_claim(extent_traces, neighbor, width, height) for neighbor in neighbor_masks or []
         ):
             full_mode[PARTIAL_PRINT_EXTENT_TRACES] = extent_traces
+        if (checked_contrast_outline and protection["passed"] and "PRINT_BOUNDARY_AMBIGUOUS" in full_reasons
+                and set(full_reasons) <= {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
+                and not full_mode.get("outline_preview") and not full_mode.get("suggested_warp_quad")
+                and all(mode["status"] == "review_needed" for mode in modes.values())):
+            try:
+                measured = measure_ribbed_outline_comparison(page_image, src_points, neighbor_polygons)
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                measured = None
+            if measured is not None:
+                outline, scope = measured
+                if (_keeps_protected_preview_content(page_image, src_points, outline, regions, protection)
+                        and not removed_protected_regions(src_points, outline, regions, width=width, height=height)):
+                    preview = _render_review_quad_preview(
+                        page_image, outline, int(result.metadata["orientation"].get("rotation_degrees") or 0) % 360,
+                        neighbor_polygons, regions, camera_matrix, page_plane,
+                        source=MEASURED_RIBBED_PRINT_OUTLINE, print_aspect_ratio=print_aspect_ratio,
+                    )
+                    if preview is not None:
+                        pixels, evidence = preview
+                        full_mode["outline_preview"] = {**evidence, "source_search_band": _vertices_on_page(scope, width, height)}
+                        result = replace(result, full_print_preview=pixels)
         return result
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:

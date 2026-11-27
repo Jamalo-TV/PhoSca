@@ -58,6 +58,7 @@ from app.pipeline.protected_regions import (
     OFF_PRINT_ADVISORY, ProtectedRegionRemoval, album_mark_correction_matches, album_mark_matches_quad,
     album_mark_source_matches,
 )
+from app.pipeline.ribbed_outline_review import MEASURED_RIBBED_PRINT_OUTLINE
 from app.pipeline.rounded_corner_review import ROUNDED_CORNER_SOURCE, ROUNDED_CORNER_WEDGES
 from app.pipeline.tile_print_review import TILED_PRINT_PROPOSAL, tiled_outline_conflicts
 from app.pipeline.variants import (
@@ -401,7 +402,9 @@ async def _review_overlapping_crops(
         assisted_previews = (GRID_OUTLINE_REVIEW_SOURCE, POSSIBLE_OVEREXTENDED_PRINT_EDGE, INWARD_CORNER_REVIEW_SOURCE)
         measured_preview = preview_source in MEASURED_PRINT_PREVIEW_SOURCES
         fields = ("source_search_band", "source_inset_band") if measured_preview else ("source_outline",)
-        if ((preview_source == DISPUTED_GRID_PREVIEW_SOURCE and preview.get("source_outline")
+        ribbed_scope = preview.get("source_search_band") if preview_source == MEASURED_RIBBED_PRINT_OUTLINE else None
+        if ((ribbed_scope and review_outline_intersects_claim(ribbed_scope, mask, width, height, convex_scope=True))
+                or (preview_source == DISPUTED_GRID_PREVIEW_SOURCE and preview.get("source_outline")
              and review_outline_intersects_claim(preview["source_outline"], mask, width, height))
                 or (quad is not None and (preview_source in assisted_previews or measured_preview) and any(
                     manual_print_intersects(preview[key], quad, width, height, minimum_overlap_px=1. if measured_preview else None)

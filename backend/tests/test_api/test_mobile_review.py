@@ -2122,6 +2122,73 @@ async def test_saving_coordinates_cannot_release_a_photo_hidden_by_an_album_wind
         assert (await client.get(f"{url}/image?variant={name}")).status_code == 404
 
 
+async def test_ribbed_outline_comparison_is_held_and_retires_with_an_adjacent_claim(client, monkeypatch, rounded_corner_page):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.ribbed_outline_review import MEASURED_RIBBED_PRINT_OUTLINE
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    _, paper, _, rectangle, backing = rounded_corner_page
+    lab = backing.copy()
+    lab[rectangle] = (121, 151, 119)
+    lab[411, 75:404, 0] = 95  # A second plausible straight rail in the album.
+    raster = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+    _, page_id, photo_id = await _seed_review_data(raster)
+
+    def points(native):
+        return [{"x": float(x) / 484, "y": float(y) / 484} for x, y in native]
+
+    quad = points(paper + np.float32([[2, 2], [-2, 2], [-2, -2], [2, -2]]))
+    box = {f"{axis}{index}": bound(point[axis] for point in quad)
+           for axis in "xy" for index, bound in ((1, min), (2, max))}
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {"source": "classical_min_area_rect", "detector_source": "contrast_region", "polygon": quad}
+        photo.bounding_box = box
+        photo.enhancement_applied = {"correction": {"crop_modes": {
+            name: {"status": "review_needed", "warp_quad": quad, "reason_codes": ["PRINT_BOUNDARY_UNSUPPORTED"]}
+            for name in ("full_print", "image_only")
+        }}}
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    saved = await client.patch(f"{url}/bounding-box", json={
+        "bounding_box": box, "confirm_print_outline": True,
+        "segmentation_mask": {"source": "manual_quad", "polygon": quad, "warp_quad": quad},
+    })
+    assert saved.status_code == 200, saved.text
+    data = saved.json()
+    assert data["segmentation_mask"]["warp_quad"] == quad
+    modes = data["enhancement_applied"]["correction"]["crop_modes"]
+    assert all(mode["status"] == "review_needed" for mode in modes.values())
+    full = modes["full_print"]
+    assert full["outline_preview"]["source"] == MEASURED_RIBBED_PRINT_OUTLINE
+    assert len(full["outline_preview"]["source_outline"]) == 4
+    assert len(full["suggested_edge_traces"]) == 2 and "suggested_warp_quad" not in full
+
+    async def crop(name):
+        return await client.get(f"{url}/image", params={"variant": name})
+
+    preview = await crop("full_print_preview")
+    assert preview.status_code == 200 and preview.headers["content-type"] == "image/png"
+    assert (await client.post(f"{url}/reprocess")).status_code == 200
+    assert (await crop("full_print_preview")).content == preview.content
+
+    claim = points([(413, 180), (454, 180), (454, 300), (413, 300)])
+    added = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={"request_id": str(uuid4()), "warp_quad": claim})
+    assert added.status_code == 201, added.text
+    assert (await crop("full_print_preview")).status_code == 404
+    details = (await client.get(url)).json()["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+    assert details["suggested_edge_traces"] == full["suggested_edge_traces"]
+    assert (await client.post(f"{url}/reprocess")).status_code == 200
+    for name in ("full_print_preview", "full_print", "image_only", "source_corrected_trimmed"):
+        assert (await crop(name)).status_code == 404
+    assert (await crop("source_corrected_untrimmed")).status_code == 200
+
+
 async def test_unsupported_contrast_outline_requires_separate_paper_confirmation(client, monkeypatch):
     from copy import deepcopy
 

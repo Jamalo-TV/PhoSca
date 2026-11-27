@@ -1,6 +1,6 @@
 import { Download } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
-import { albumLeafSourceWindow, filmSourceWindow, getPaperGridReview } from "./cropReviewOutlines.js";
+import { albumLeafSourceWindow, filmSourceWindow, getPaperGridReview, measuredRibbedPrintOutlineSource } from "./cropReviewOutlines.js";
 
 export const cropModeLabels = {
   full_print: "Ganzer Abzug",
@@ -583,6 +583,9 @@ export function getMotifMarginMarks(motif) {
 
 export function getPrintOutlinePreviewHint(fullPrint) {
   const preview = fullPrint?.outline_preview;
+  if (preview?.source === measuredRibbedPrintOutlineSource) {
+    return "Vergleiche beide Vorschauen mit dem Original und prüfe die Bilddetails am Papierrand. Die vier Ecken bleiben in Prüfung.";
+  }
   if (preview?.source === roundedCornerSource) {
     return "Die transparenten Eckbereiche folgen den gemessenen Stellen. Vergleiche die markierten Ecken und alle Seiten mit dem Original.";
   }
@@ -629,11 +632,13 @@ export function getPrintOutlinePreviewHint(fullPrint) {
 export function showsPaperEdgeComparison(fullPrint) {
   return [possibleOverextendedPrintEdge, possibleInwardPrintCorner, possibleBowedPrintEdge,
     possibleDisplacedPrintEdges, possibleAlbumLayerEdge, possibleLocalPrintEdge,
-    "possible_mounted_edge_strip", disputedGridPreview, roundedCornerSource].includes(fullPrint?.outline_preview?.source);
+    "possible_mounted_edge_strip", disputedGridPreview, roundedCornerSource, measuredRibbedPrintOutlineSource]
+    .includes(fullPrint?.outline_preview?.source);
 }
 
 export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outlinePreview }) {
   const wholeGrid = outlinePreview?.source === disputedGridPreview;
+  const wholeOutline = wholeGrid || outlinePreview?.source === measuredRibbedPrintOutlineSource;
   const { width, height } = outlinePreview?.shape || {};
   const cuts = wholeGrid && width > 1 && height > 1
     ? getSourceEdgeTraces(outlinePreview.projected_grid_cuts).filter((trace) => trace.length === 2) : [];
@@ -644,7 +649,7 @@ export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outl
     </figure>
     <figure>
       <div className="paper-edge-preview-image">
-        <img src={possibleUrl} alt={wholeGrid ? "Prüfvorschau des gesamten möglichen Abzugs" : "Prüfvorschau entlang der möglichen Papierkante"} />
+        <img src={possibleUrl} alt={wholeOutline ? "Prüfvorschau des gesamten möglichen Abzugs" : "Prüfvorschau entlang der möglichen Papierkante"} />
         {cuts.length > 0 && <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Mögliche Trennkanten der Teilvorschläge">
           {cuts.map((trace) => {
             const points = trace.map(({ x, y }) => `${x * (width - 1) + .5},${y * (height - 1) + .5}`).join(" ");
@@ -655,7 +660,7 @@ export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outl
           })}
         </svg>}
       </div>
-      <figcaption>{wholeGrid ? "Möglicher Aussenumriss" : "Mögliche Papierkante"}</figcaption>
+      <figcaption>{wholeOutline ? "Möglicher Aussenumriss" : "Mögliche Papierkante"}</figcaption>
     </figure>
     {hint && <p>{hint}</p>}
   </div>;

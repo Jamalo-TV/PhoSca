@@ -33,6 +33,7 @@ import {
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getMergedPrintPairs, getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
+  getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
@@ -280,8 +281,14 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const albumMarkReview = useAlbumPageMarkReview(albumMark, item.payload?.photo_id);
   const displayedQuad = editingMotif ? motifQuad || savedQuad : quad;
   const paperAlignedMotif = editingMotif && motifUsesPaperAxes(savedQuad, displayedQuad);
+  const paperPreviewUrl = item.payload?.variant_urls?.full_print_preview;
+  const ribbedPreview = fullPrintMode?.outline_preview?.source === measuredRibbedPrintOutlineSource;
+  const ribbedReviewOutline = ribbedPreview && editable && !deferredDraft && !editingMotif && item.payload?.untrimmed_url
+    && motifMode?.status === "review_needed"
+    ? getRibbedPrintReviewOutline(fullPrintMode, paperPreviewUrl, initialOuter(), quad) : null;
+  const fullPrintPreview = ribbedPreview && !ribbedReviewOutline ? null : paperPreviewUrl;
   const comparePaperEdge = !editingMotif && showsPaperEdgeComparison(fullPrintMode)
-    && item.payload?.untrimmed_url && item.payload?.variant_urls?.full_print_preview;
+    && item.payload?.untrimmed_url && fullPrintPreview;
   const [usingOutlineSuggestion, setUsingOutlineSuggestion] = useState(Boolean(initialPaperOutline));
   const [editingPreview, setEditingPreview] = useState(Boolean(initialPaperOutline && !outlinePreviewHint));
   const [measurementFields, setMeasurementFields] = useState(() => printSizeInputs(storedMeasurement));
@@ -575,12 +582,14 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     editable && motifTraces.length && "mobile-motif-seam-hint",
     editable && preliminaryMotifMarks && "mobile-motif-review-hint",
     contrastCrossingTraces.length && "mobile-contrast-crossing-review-hint",
+    ribbedReviewOutline && "mobile-ribbed-print-outline-hint",
     sourceStrip && "mobile-source-strip-review-hint",
   ].filter(Boolean).join(" ");
   const paperTraceOverlay = printEdgeTraces.map((trace, index) => (
     <polyline key={index} points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
       fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />
   ));
+  const ribbedOutlinePoints = ribbedReviewOutline?.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ");
   const [neighborOutline] = getSourceEdgeTraces([fullPrintMode?.neighbor_overlap_outline]);
   const missingPaperOutlines = getSourceEdgeTraces(fullPrintMode?.neighbor_content_loss_outlines);
   return <>
@@ -606,6 +615,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           {visiblePolygon && <polygon points={visiblePolygon.map(point => `${point.x * 1000},${point.y * 1000}`).join(" ")}
             fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9" />}
           <polygon className="editable-quad" points={displayedQuad.map(point => `${point.x * 1000},${point.y * 1000}`).join(" ")} />
+          {ribbedOutlinePoints && <g aria-hidden="true" fill="none" pointerEvents="none">
+            <polygon points={ribbedOutlinePoints} stroke={ribbedPrintOutlineStyle.contrast} strokeWidth="4" vectorEffect="non-scaling-stroke" />
+            <polygon points={ribbedOutlinePoints} stroke={ribbedPrintOutlineStyle.color} strokeWidth="2" vectorEffect="non-scaling-stroke"
+              strokeDasharray={ribbedPrintOutlineStyle.dash.join(" ")} />
+          </g>}
           {!editingMotif && <>{uncertainLine}{alternateOverlay}{paperTraceOverlay}</>}
           {contrastCrossingTraces.length > 0 && <g aria-hidden="true" fill="none" pointerEvents="none">
             {contrastCrossingTraces.map(([start, end], index) => {
@@ -729,6 +743,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
       {contrastCrossingTraces.length > 0 && <p className="quad-hint" id="mobile-contrast-crossing-review-hint">{contrastCrossingTraceHint}</p>}
+      {ribbedReviewOutline && <p className="quad-hint" id="mobile-ribbed-print-outline-hint">{ribbedPrintOutlineHint}</p>}
       {contrastOutlineReview && <p className="quad-hint">{contrastOutlineReviewHint}</p>}
       {!reviewedNonPrint && getDeferredParentCropHints(item.payload?.review_reasons).map(({ id, text }) => (
         <p key={id} className="quad-hint" id={`mobile-${id}`}>{text}</p>
@@ -847,7 +862,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         ? <PaperEdgePreviewComparison currentUrl={item.payload.untrimmed_url} possibleUrl={comparePaperEdge}
             hint={outlinePreviewHint} outlinePreview={fullPrintMode?.outline_preview} />
         : <LiveCropPreview src={item.preview_url} quad={displayedQuad} savedCropUrl={visibleSavedCropUrl}
-            outlinePreviewUrl={editingPreview ? null : item.payload?.variant_urls?.[editingMotif ? "image_only_preview" : "full_print_preview"]}
+            outlinePreviewUrl={editingPreview ? null : editingMotif ? item.payload?.variant_urls?.image_only_preview : fullPrintPreview}
             outlinePreviewHint={editingMotif ? motifBoundaryReviewHint : outlinePreviewHint}
             measuredAspect={!editingMotif && size ? size.width / size.height : null}
             referenceMatrix={editingMotif ? fullPrintMode.page_to_output : null}

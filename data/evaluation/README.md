@@ -2739,12 +2739,71 @@ renderer runs. Across nine warm single-thread runs, the median was
 126 ms before and 38 ms after. The ambiguous boundary holds the case
 before the renderer starts motif inference.
 
-A separate development experiment found a more consistent signed
-paper transition for U039 and reduced definite backing taps along its
-straight sides. A strong local shadow can still shift an endpoint by
-about one native pixel. That experiment provides comparison evidence
-for a later change. The source report, normal upload receipts and
-review renders are under `runs/crop-quality/u039-jpeg55/manual-boundary/`.
+The source report, normal upload receipts and review renders are under
+`runs/crop-quality/u039-jpeg55/manual-boundary/`.
+
+#### Compare a measured outline on ribbed backing
+
+After the native recheck of a confirmed contrast outline, a comparison
+can be measured while both crop modes are held for an ambiguous
+paper boundary. It requires a passed protected-content check, no other
+outline preview or loadable outline, and no other reason apart from
+possible corner or aspect uncertainty. Each saved side must be at
+least 180 native pixels long. Two or more fits per side at search
+radii of 3, 5 and 7 pixels must agree within 0.85 pixels of their median
+endpoints. Each fit requires at least 0.73 edge support and 0.52
+near its corners.
+
+The fit uses the midpoint of the local Lab transition between paper
+and the warm backing. It samples at quarter-pixel offsets through
+the transition. The middle 82% of the edge supplies the measurements.
+At least 88% of the edge stations and 58% of each of eight sections
+must support the transition. The robust line's absolute residual is
+at most 1.2 pixels at p90. On two opposite sides across the ribs, the
+near exterior pattern must repeat and match the more distant backing
+in phase and amplitude. The measured outline must move at least one
+corner by more than 0.75 pixels and all corners by at most 6 pixels.
+Claimed neighbouring paper, removed protected content, incomplete
+source bounds and evidence of a larger closed perimeter veto the
+comparison. The closing check is bounded to a 64-pixel band around
+the measured bounding box and a 1.2-megapixel region of interest.
+
+The desktop and mobile editors draw the measured outline in blue on
+the original and put an opaque rectification alongside the existing
+untrimmed view. The saved geometry and any measured competing lines
+stay available. Moving a corner hides the comparison until the next
+save. A subsequent manual claim intersecting the recorded convex
+measurement scope retires the preview and its image route. The
+comparison supplies no edit action, rounded corner mask or export.
+
+The U039 JPEG55 lower-car example used the exact saved P1.7 geometry.
+With straight-edge agreement across encodings of the same capture,
+excluding a half-pixel band and the corner neighbourhoods, the
+comparison reduced omitted clearly inward source centres from 423 to
+0 and retained clearly exterior centres from 8 to 0. Output pixels
+receiving a clearly exterior interpolation contribution fell from
+28 to 0. Output pixels sampling the uncertain band rose from 936 to
+1,104. The complete physical corner shape and aspect remain
+unverified. The normal upload, edit and reprocess path produced the
+same 275 × 275 preview on reprocess and kept the original untrimmed
+JPEG byte-identical. Both export modes and the cropped alias stayed
+held, as did the geometry approval. The three active detections and
+one deferred choice stayed the same. Across 25 warm single-thread
+measurements on this source, the outline measurement took 49 ms
+at the median and 74 ms at p95.
+
+The development controls included 68 source variants with lighting,
+compression and nearby prints. Known claims blocked all 30 close
+neighbour placements. All seven visibly larger reprints blocked the
+comparison, as did both protected-text losses of 12 and 14 source
+centres. A larger sheet with no visible perimeter and no claim can
+have the same local pixels. This evidence cannot establish its
+physical identity. The eight benchmark runs matched the preceding
+milestone on detections, metrics and mode availability. The frozen
+synthetic counts stayed at 18/18 detections and 23/23 recoverable
+crops. These examples are development evidence. The receipts,
+source comparison and renders are under
+`runs/crop-quality/u039-jpeg55/ribbed-comparison/`.
 
 #### Review a protection margin outside a manually added print
 

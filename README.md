@@ -1085,6 +1085,17 @@ Vorschau mit dem bisherigen Zuschnitt vergleichen. Ältere bestätigte
 Zuschnitte dieses Typs werden vor dem Download erneut geprüft.
 [Nachprüfung bestätigter Kontrastkonturen](data/evaluation/README.md#recheck-a-confirmed-contrast-outline-in-native-pixels)
 
+Auf geripptem Albumkarton kann PhoSca einen möglichen Papierrand
+blau gestrichelt ins Original einzeichnen und den ganzen Abzug entlang
+dieser Kontur als Vergleichsvorschau entzerren. Vier stabile Kanten und
+ein durchgehendes Rippenmuster auf dem Karton beidseits des Abzugs sind
+Voraussetzung. Die gespeicherten Ecken bleiben massgebend. Die
+Vergleichsvorschau enthält keine Aussage über die Form der Ecken,
+und beide Ausschnitte bleiben in Prüfung. Sobald du eine Ecke
+verschiebst oder ein neuer Abzug die Messfläche beansprucht, blendet
+PhoSca die Vergleichsvorschau aus.
+[Messung und Gegenproben auf geripptem Albumkarton](data/evaluation/README.md#compare-a-measured-outline-on-ribbed-backing)
+
 | Aktion | Verhalten |
 | --- | --- |
 | Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |

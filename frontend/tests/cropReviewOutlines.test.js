@@ -6,6 +6,7 @@ import {
   getFilmGridReviewSeams, getFragmentReviewOutlines, getMergedPrintPairs,
   getPaperGridOutlineParents, getPaperGridReviewGroups,
   getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
+  getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource,
 } from "../src/cropReviewOutlines.js";
 
 const quad = [{ x: .1, y: .2 }, { x: .7, y: .2 }, { x: .7, y: .8 }, { x: .1, y: .8 }];
@@ -94,6 +95,27 @@ test("two valid contrast crossing spans are shown only on unchanged held automat
       ...mobile, segmentation_mask: { ...segmentationMask, contrast_crossing_traces },
     })),
   ]) assert.deepEqual(getContrastCrossingTraces(photo, quad, unchanged), []);
+});
+
+test("a ribbed-paper preview exposes its own contour only on the unchanged held draft", () => {
+  const sourceOutline = quad.map(({ x, y }) => ({ x: x + .01, y }));
+  const mode = { status: "review_needed", outline_preview: {
+    source: measuredRibbedPrintOutlineSource, source_outline: sourceOutline,
+  } };
+  const url = "/api/v1/photos/photo/image?variant=full_print_preview";
+  assert.deepEqual(getRibbedPrintReviewOutline(mode, url, quad, structuredClone(quad)), sourceOutline);
+  assert.equal(mode.suggested_warp_quad, undefined);
+
+  const edited = quad.map((point, index) => index === 0 ? { ...point, x: point.x + .0001 } : point);
+  assert.equal(getRibbedPrintReviewOutline(mode, url, quad, edited), null);
+  assert.equal(getRibbedPrintReviewOutline(mode, null, quad, quad), null);
+  assert.equal(getRibbedPrintReviewOutline({ ...mode, status: "ready" }, url, quad, quad), null);
+  assert.equal(getRibbedPrintReviewOutline({ ...mode, outline_preview: {
+    ...mode.outline_preview, source_outline: sourceOutline.slice(0, 3),
+  } }, url, quad, quad), null);
+  assert.equal(getRibbedPrintReviewOutline({ ...mode, outline_preview: {
+    ...mode.outline_preview, source: "another_source",
+  } }, url, quad, quad), null);
 });
 
 test("an album leaf can be excluded only while exactly one active matched child remains", () => {

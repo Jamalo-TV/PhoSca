@@ -74,6 +74,7 @@ import {
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getMergedPrintPairs, getPaperJoinReviewGroups, getStoredMotifQuad,
+  getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
@@ -1527,8 +1528,14 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const edgeTraces = useMemo(() => [...getSourceEdgeTraces(traces), ...getSourceEdgeTraces([neighborOutline]),
     ...getSourceEdgeTraces(missingPaperOutlines)], [traces, neighborOutline, missingPaperOutlines]);
   const motifPreview = selected?.variant_urls?.image_only_preview || selected?.urls?.image_only_preview;
-  const fullPrintPreview = selected?.variant_urls?.full_print_preview || selected?.urls?.full_print_preview;
-  const untrimmedPrint = selected?.untrimmed_url || selected?.variant_urls?.source_corrected_untrimmed;
+  const paperPreviewUrl = selected?.variant_urls?.full_print_preview || selected?.urls?.full_print_preview;
+  const untrimmedPrint = selected?.untrimmed_url || selected?.variant_urls?.source_corrected_untrimmed
+    || selected?.urls?.source_corrected_untrimmed;
+  const ribbedReviewOutline = reviewingGeometry && !newPrint && !editingImage && untrimmedPrint
+    && selectedModes?.image_only?.status === "review_needed"
+    ? getRibbedPrintReviewOutline(fullPrintMode, paperPreviewUrl, savedShape?.warpQuad, selectedShape?.warpQuad) : null;
+  const fullPrintPreview = fullPrintMode?.outline_preview?.source === measuredRibbedPrintOutlineSource && !ribbedReviewOutline
+    ? null : paperPreviewUrl;
   const comparePaperEdge = untrimmedPrint && showsPaperEdgeComparison(fullPrintMode);
   const albumMark = !newPrint && !editingImage && !rejectedDetection ? selected?.correction?.album_page_mark_review : null;
   const albumMarkReview = useAlbumPageMarkReview(albumMark, selectedPhotoId);
@@ -1635,6 +1642,23 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         handles.slice(1).forEach((point) => context.lineTo(point.x, point.y));
         context.closePath();
         context.stroke();
+      }
+      if (photo.id === selectedPhotoId && ribbedReviewOutline) {
+        const { color, contrast, dash } = ribbedPrintOutlineStyle;
+        const [first, ...rest] = ribbedReviewOutline;
+        context.save();
+        context.beginPath();
+        context.moveTo(first.x * canvas.width, first.y * canvas.height);
+        rest.forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
+        context.closePath();
+        context.strokeStyle = contrast;
+        context.lineWidth = 4;
+        context.stroke();
+        context.strokeStyle = color;
+        context.lineWidth = 2;
+        context.setLineDash(dash);
+        context.stroke();
+        context.restore();
       }
       if (photo.id === selectedPhotoId && !newPrint && (edgeTraces.length || exposedOverlapEdges?.length || extentEdges?.length)) {
         context.save();
@@ -1931,7 +1955,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     }
   }, [alternateOutline, blockedRegions, captureSplitGroups, contrastCrossingTraces, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges, extentEdges, mergedPairs,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
-    printSuggestion,
+    printSuggestion, ribbedReviewOutline,
     markBounds, missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, preliminaryMotifMarks, selectedCountGroup, selectedPhotoId, showMissingEdges, sourceStrip]);
 
   useEffect(() => {
@@ -2353,12 +2377,14 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           captureSplitGroups.length && "capture-split-count-hint",
           mergedPairs.length && "merged-print-pair-hint",
           contrastCrossingTraces.length && "contrast-crossing-review-hint",
+          ribbedReviewOutline && "ribbed-print-outline-hint",
           sourceStrip && "source-strip-review-hint",
           preliminaryMotifMarks ? "held-motif-margin-hint"
             : editingImage && motifMarginMarks.length && !crossingReview && !needsPrintReview && "motif-margin-marks-hint",
         ].filter(Boolean).join(" ") || undefined}
       />
       {contrastCrossingTraces.length > 0 && <p className="crop-editor-hint" id="contrast-crossing-review-hint">{contrastCrossingTraceHint}</p>}
+      {ribbedReviewOutline && <p className="crop-editor-hint" id="ribbed-print-outline-hint">{ribbedPrintOutlineHint}</p>}
       {!newPrint && detectionReviewHint && !rejectedDetection && (
         <div className="manual-print-actions">
           <p className="crop-editor-hint">{detectionReviewHint}</p>
