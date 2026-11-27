@@ -66,9 +66,11 @@ from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertice
 from app.pipeline.manual_paper_extent import MANUAL_PAPER_EXTENT_SOURCE
 from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, save_png, sha256_file
 from app.pipeline.manual_paper_boundary import (
-    MANUAL_PAPER_BOUNDARY_REVISION, PAPER_GRID_OVERLAP_REVIEW, confirmed_contrast_outline, contrast_outline_check_pending,
+    MANUAL_PAPER_BOUNDARY_REVISION, MEASURED_PRINT_OUTLINE_RECHECK, PAPER_GRID_OVERLAP_REVIEW,
+    confirmed_contrast_outline, contrast_outline_check_pending,
     hold_overlapping_paper_claim_modes,
-    manual_paper_download_needs_review, manual_paper_reference, manual_scalloped_outline, original_prediction_mask,
+    manual_paper_download_needs_review, manual_paper_reference, manual_scalloped_outline,
+    measured_print_outline_needs_review, original_prediction_mask,
     overlapping_paper_claims, paper_claim_groups, paper_claim_overlap_checks, paper_claims_need_overlap_check,
     paper_curve_review_reference,
     shared_rim_cut_reference,
@@ -152,35 +154,43 @@ def _album_mark_review_offer(
             "bounds": {"x1": x1 / (width - 1), "y1": y1 / (height - 1), "x2": x2 / (width - 1), "y2": y2 / (height - 1)}}
 
 
-async def photo_views_for_current_album_marks(
+async def photo_views_for_current_crop_checks(
     session: AsyncSession, photos: list[ExtractedPhoto],
 ) -> list[ExtractedPhoto | PhotoRead]:
     marks = {photo.id: mark for photo in photos
              if (mark := ((photo.enhancement_applied or {}).get("review_provenance") or {}).get("reviewed_album_mark"))}
-    if not marks:
-        return photos
     page_ids = {photo.page_id for photo in photos if photo.id in marks}
-    pages = {page.id: page for page in await session.scalars(select(Page).where(Page.id.in_(page_ids)))}
+    pages = {page.id: page for page in await session.scalars(select(Page).where(Page.id.in_(page_ids)))} if page_ids else {}
     guard_enabled = get_settings().enable_protected_region_guard
     views = []
     for photo in photos:
         page = pages.get(photo.page_id)
         mark = marks.get(photo.id)
-        correction = (photo.enhancement_applied or {}).get("correction") or {}
-        if not mark or (guard_enabled and page is not None
-                        and album_mark_correction_matches(mark, photo.segmentation_mask or {}, correction)
-                        and album_mark_source_matches(mark, page.file_hash_sha256, page.processing_metadata)):
+        metadata = photo.enhancement_applied or {}
+        correction = metadata.get("correction") or {}
+        mask = photo.segmentation_mask or {}
+        stale_mark = mark and not (guard_enabled and page is not None and album_mark_correction_matches(mark, mask, correction)
+                                   and album_mark_source_matches(mark, page.file_hash_sha256, page.processing_metadata))
+        stale_outline = (photo.segmentation_confidence is None
+                         and any(mode.get("status") == "ready" for mode in (correction.get("crop_modes") or {}).values())
+                         and measured_print_outline_needs_review(metadata, mask.get("warp_quad") or mask.get("polygon")))
+        if not stale_mark and not stale_outline:
             views.append(photo)
             continue
         view = PhotoRead.model_validate(photo)
         view.status = PhotoStatus.review_needed
         metadata = deepcopy(view.enhancement_applied)
         correction = metadata.get("correction") or {}
-        retire_album_mark_previews(correction)
-        (correction.get("protected_regions") or {}).pop("reviewed_album_mark_id", None)
+        reasons = []
+        if stale_mark:
+            retire_album_mark_previews(correction)
+            (correction.get("protected_regions") or {}).pop("reviewed_album_mark_id", None)
+            reasons.append("album_page_mark_review_stale")
+        if stale_outline:
+            reasons.append(MEASURED_PRINT_OUTLINE_RECHECK)
         for mode in (correction.get("crop_modes") or {}).values():
             mode["status"] = "review_needed"
-            mode["reason_codes"] = list(dict.fromkeys(["album_page_mark_review_stale", *(mode.get("reason_codes") or [])]))
+            mode["reason_codes"] = list(dict.fromkeys([*reasons, *(mode.get("reason_codes") or [])]))
         for variant in ("full_print", "image_only", "source_corrected_trimmed"):
             (metadata.get("variants") or {}).pop(variant, None)
         view.enhancement_applied = metadata

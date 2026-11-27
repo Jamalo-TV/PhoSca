@@ -3673,6 +3673,55 @@ download therefore needs a source-contour check before it can rely on
 manual dimensions. The API receipt and loss overlay are in the same
 private folder.
 
+#### Retain measured paper extent through manual edits
+
+The source check follows the original YOLO `contested_tile` outline from
+server-owned prediction provenance. It applies to the additional print
+measured inside an invalid combined proposal. Classical frame crossings
+continue through their existing manual correction path.
+
+The check samples 128 stations along the central 80% of each guide side.
+Each station tests a witness 1.5 native pixels inside the guide. A run of
+at least eight witnesses more than 0.75 pixels outside the edited crop
+starts a local original-pixel check. A three-pixel line refit may move the
+reference only within 1.25 pixels, with support of at least 0.85 and no
+ambiguous line. The adjacent Lab samples must support the transition at
+80% of the stations before the fitted line replaces the earlier witness.
+Otherwise the earlier measured extent remains under review. The resulting
+source spans appear as dashed lines. A sharp new edge farther inside the
+photograph cannot serve as support for replacing the outer reference.
+
+On the actual U040 counterprobe with the same 42.52-pixel shift and the
+same hypothetical measurements, saving keeps the draft and gives both
+modes `PRINT_MEASURED_OUTLINE_CUTOFF`. The right trace covers 227.79
+native pixels and agrees with the original guide within 0.07 pixels.
+The normal API leaves the untrimmed revision available as a review image.
+Both named modes and `source_corrected_trimmed` return HTTP 404. A fresh
+multipart workflow and reprocessing preserve this state, the page's
+four active rows and three deferred outlines, and the neighbours' assets.
+Submitting explicit motif corners within the shortened paper also holds
+both exports.
+Trying to save the measured U040 contour still reaches its independent
+protected-region check. The exact source fit stays available for review.
+
+Each successful check binds its revision to the original guide, the saved
+outer quad and the rendered outer quad. Resizing the output or reprocessing
+checks the same source evidence. A fresh read of a legacy ready record
+without that receipt withholds the old named URL and exposes both modes as
+`PRINT_MEASURED_OUTLINE_RECHECK`. A new render can then record the actual
+cutoff and the affected segments. The regression includes a ready record
+with an older geometry approval, an artificial high-contrast interior
+line, and a restoration test on a separate authored source.
+
+Nine warm single-thread U040 checks measure median 0.94 ms for the source
+outline and 9.35 ms for the shortened outline, with no detector call.
+All eight reproducible benchmark comparisons preserve both modes' crop
+and review results. The frozen detector counts 18/18 and the seeded
+geometry checks pass 11/11 whole prints and 12/12 motifs.
+
+Private ordinary upload, browser and upgrade receipts are under
+`runs/crop-quality/u040-measured-outline-guard/`.
+
 #### Separate native crop ambiguity from missed detection
 
 The crowd-trained camera-tilt failure keeps the same detected print.

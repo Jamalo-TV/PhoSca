@@ -219,6 +219,16 @@ behält seinen eigenen Eintrag. Für beide Exporte gelten die üblichen
 Zuschnittprüfungen.
 [Beispiel U040](data/evaluation/README.md#recover-a-held-outline-from-a-proposal-covering-an-existing-print)
 
+Beim Speichern einer Korrektur zu so einem Sammelvorschlag prüft
+PhoSca auch die ursprüngliche gemessene Papierkontur. Schneidet der
+Entwurf belegte Bereiche entlang dieser Kante ab, bleiben **Ganzer
+Abzug** und **Nur Bildmotiv** zur Prüfung vorgemerkt. Violett gestrichelte
+Abschnitte markieren die betroffene Aussenkante im Original. Eingegebene
+Masse bestimmen das Seitenverhältnis. Die Prüfung der sichtbaren Fläche
+erfolgt separat. Ein älterer Zuschnitt mit fehlendem Prüfnachweis erscheint
+ebenfalls zur Prüfung. Speichere die am Original geprüften Ecken erneut.
+[Prüfung der ursprünglichen Papierkontur](data/evaluation/README.md#retain-measured-paper-extent-through-manual-edits)
+
 Erfasst ein Vorschlag nur den oberen Teil eines möglichen Abzugs,
 kann PhoSca unter **Ganzer Abzug** zwei gemessene seitliche
 Fortsetzungen und zwei mögliche Endkanten zeigen. Dafür müssen

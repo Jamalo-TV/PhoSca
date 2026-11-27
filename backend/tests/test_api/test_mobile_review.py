@@ -2790,6 +2790,108 @@ async def test_contested_tile_cannot_be_added_separately_or_saved_over_a_new_cla
         assert len((await client.get(f"/api/v1/albums/{album}/photos")).json()) == 1
 
 
+async def test_measured_print_extent_holds_both_modes_after_manual_dimensions_and_stale_reads(client, monkeypatch):
+    from copy import deepcopy
+
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, PhotoStatus, ReviewEvent
+    from app.pipeline.crossing_prints import CONTESTED_TILE_OUTLINE
+    from app.pipeline.manual_paper_boundary import (
+        MEASURED_PRINT_OUTLINE_CUTOFF, MEASURED_PRINT_OUTLINE_RECHECK, MEASURED_PRINT_OUTLINE_SOURCE,
+    )
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    image = np.full((641, 801, 3), (106, 163, 194), np.uint8)
+    image[100:541, 150:651] = (55, 68, 106)
+    image[100:541, 597:633] = (238, 246, 235)  # Strong inside line, with more print beyond it.
+    album_id, _, photo_id = await _seed_review_data(image)
+
+    def rectangle(left, top, right, bottom):
+        return [{"x": x / 800, "y": y / 640}
+                for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
+
+    guide = rectangle(150, 100, 650, 540)
+    wrong = rectangle(150, 100, 597, 540)
+    parent = rectangle(150, 76, 653, 580)
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {"polygon": parent, "source": "yolo_seg_mask", "detector_source": "yolo_onnx",
+                                   "crossing_print_suggestion_source": CONTESTED_TILE_OUTLINE,
+                                   "crossing_print_suggestion": guide}
+        await session.commit()
+    url = f"/api/v1/photos/{photo_id}"
+    names = ("full_print", "image_only", "source_corrected_trimmed")
+
+    async def codes():
+        return [(await client.get(f"{url}/image", params={"variant": name})).status_code for name in names]
+
+    async def save(quad, width=100):
+        return await client.patch(f"{url}/bounding-box", json={
+            "bounding_box": {"x1": quad[0]["x"], "x2": quad[2]["x"], "y1": quad[0]["y"], "y2": quad[2]["y"]},
+            "segmentation_mask": {"source": "manual_quad", "warp_quad": quad, "polygon": quad,
+                                  "print_size_mm": {"width": width, "height": 88}},
+        })
+
+    def held(response):
+        assert response.status_code == 200, response.text
+        photo = response.json()
+        correction = photo["enhancement_applied"]["correction"]
+        assert all(mode["status"] == "review_needed" and MEASURED_PRINT_OUTLINE_CUTOFF in mode["reason_codes"]
+                   for mode in correction["crop_modes"].values())
+        whole = correction["crop_modes"]["full_print"]
+        assert whole["suggested_edge_source"] == MEASURED_PRINT_OUTLINE_SOURCE
+        assert any(all(point["x"] > .80 for point in trace) for trace in whole["suggested_edge_traces"])
+        assert photo["crop_download_urls"] == {"full_print": None, "image_only": None}
+        return correction
+
+    held(await save(wrong))
+    held(await save(wrong, width=112))
+    assert await codes() == [404] * 3
+    assert (await client.get(f"{url}/image", params={"variant": "source_corrected_untrimmed"})).status_code == 200
+
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        metadata = deepcopy(photo.enhancement_applied)
+        correction = metadata["correction"]
+        for name in names:
+            metadata["variants"][name] = {"path": correction["untrimmed_path"]}
+        for mode in correction["crop_modes"].values():
+            mode.update(status="ready", reason_codes=[])
+        correction["manual_paper_boundary"] = {"revision": 2, "requires_review": False}
+        photo.enhancement_applied = metadata
+        photo.status = PhotoStatus.completed
+        session.add(ReviewEvent(task_type="geometry", task_id=photo_id, answer="correct", idempotency_key=uuid4().hex,
+                                event_metadata={"snapshot": {
+            "photos": [{"photo_id": str(photo_id), "current_geometry": {"bounding_box": photo.bounding_box,
+                        "segmentation_mask": photo.segmentation_mask}}],
+        }}))
+        await session.commit()
+    assert await codes() == [404] * 3
+    stale = (await client.get(url)).json()
+    assert stale["status"] == "review_needed"
+    assert all(mode["status"] == "review_needed" and MEASURED_PRINT_OUTLINE_RECHECK in mode["reason_codes"]
+               for mode in stale["enhancement_applied"]["correction"]["crop_modes"].values())
+    review = await client.get("/api/v1/review/queue", params={"type": "geometry", "photo_id": str(photo_id)})
+    entry, = review.json()
+    assert entry["status"] == "review_needed"
+    assert MEASURED_PRINT_OUTLINE_RECHECK in entry["payload"]["crop_modes"]["full_print"]["reason_codes"]
+    count = await client.get("/api/v1/review/queue", params={"type": "segmentation", "album_id": str(album_id)})
+    page, = count.json()
+    item, = page["payload"]["detections"]
+    assert MEASURED_PRINT_OUTLINE_RECHECK in item["crop_modes"]["full_print"]["reason_codes"]
+    held(await client.post(f"{url}/reprocess"))
+    assert await codes() == [404] * 3
+
+    restored = await save(guide)
+    assert restored.status_code == 200, restored.text
+    correction = restored.json()["enhancement_applied"]["correction"]
+    assert correction["manual_paper_boundary"]["measured_outline_check"]["requires_review"] is False
+    assert (await codes())[0] == 200
+
+
 async def test_crossing_outline_requires_outer_correction_before_a_motif_edit(client, monkeypatch) -> None:
     from app.config import get_settings
     from app.database import get_session_factory

@@ -13,7 +13,7 @@ from app.schemas import AlbumCreate, AlbumRead, AlbumStats, AnalyzeRequest, JobQ
 from app.schemas.pipeline import AlbumPhotoRead
 from app.services.deletion import delete_album_with_assets
 from app.services.photo_outline_comparison import photo_outline_comparisons
-from app.services.pipeline import photo_views_for_current_album_marks, process_pages_serialized
+from app.services.pipeline import photo_views_for_current_crop_checks, process_pages_serialized
 from app.tasks.pipeline import process_pages_task
 
 router = APIRouter(prefix="/api/v1/albums", tags=["albums"])
@@ -217,7 +217,7 @@ async def list_album_photos(
         query = query.where(caption_exists if has_caption else ~caption_exists)
     photos = (await session.scalars(query.order_by(ExtractedPhoto.created_at.asc()))).all()
     visible = list(photos) if include_rejected else [photo for photo in photos if not photo_is_reviewed_non_print(photo)]
-    views = await photo_views_for_current_album_marks(session, visible)
+    views = await photo_views_for_current_crop_checks(session, visible)
     comparisons = photo_outline_comparisons(views)
     return [
         AlbumPhotoRead.model_validate(view).model_copy(update={"competing_photo_outline": comparisons[view.id]})

@@ -1,6 +1,10 @@
 import { Download } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import {
+  measuredOutlineCutoffHint, measuredOutlineCutoffRequiresReview, measuredOutlineCutoffSource,
+  measuredOutlineRecheckHint, measuredOutlineRecheckRequiresReview,
+} from "./cropReviewApproval.js";
+import {
   albumLeafSourceWindow, captureSplitSourceWindow, competingPhotoRegionPaths, competingPhotoRegionStyles, filmSourceWindow,
   sharedMotifGuideStyle, sourcePixelCenter,
   getFilmNeighborEdgeIndex, getPaperGridReview, measuredRibbedPrintOutlineSource, paperGridSourceWindows,
@@ -601,6 +605,8 @@ function hasMeasuredEdgeReview(fullPrint, source) {
 
 export function paperOutlineRequiresReview(fullPrint) {
   return fullPrint?.status === "review_needed" && (fullPrint.suggested_warp_quad?.length === 4
+    || measuredOutlineCutoffRequiresReview(fullPrint)
+    || measuredOutlineRecheckRequiresReview(fullPrint)
     || fullPrint.suggested_edge_source === competingPrintEdges
     || getSourceEdgeTraces(fullPrint.partial_print_extent_traces).length > 0
     || fullPrint.suggested_edge_source === possibleBackedPaperEdge
@@ -624,6 +630,13 @@ export function paperOutlineNeedsConfirmation(fullPrint) {
 }
 
 export function getPrintEdgeReviewHint(fullPrint) {
+  if (measuredOutlineCutoffRequiresReview(fullPrint)) {
+    const measuredTraces = fullPrint.suggested_edge_source === measuredOutlineCutoffSource
+      && getSourceEdgeTraces(fullPrint.suggested_edge_traces).length > 0;
+    return measuredTraces ? `${measuredOutlineCutoffHint} Die violett gestrichelten Abschnitte markieren gemessene Kanten im Original.`
+      : measuredOutlineCutoffHint;
+  }
+  if (measuredOutlineRecheckRequiresReview(fullPrint)) return measuredOutlineRecheckHint;
   if (fullPrint?.suggested_edge_source === "dark_mounted_paper_edges") {
     return "Die gestrichelten Abschnitte zeigen sichtbare Papierkanten ausserhalb und entlang des bisherigen Zuschnitts. Prüfe den Rand am Original. Die Fotoecken verdecken die Papierspitzen. Für den vollständigen Zuschnitt hilft eine Aufnahme mit frei sichtbarem Papierrand.";
   }
@@ -726,6 +739,8 @@ export function getPrintEdgeReviewHint(fullPrint) {
 
 export function getMotifBoundaryReviewHint(motif) {
   if (motif?.status !== "review_needed") return null;
+  if (measuredOutlineCutoffRequiresReview(motif)) return measuredOutlineCutoffHint;
+  if (measuredOutlineRecheckRequiresReview(motif)) return measuredOutlineRecheckHint;
   if (motif.margin_mark_source === heldPrintMotifMargin) {
     return "Orange markiert mögliche Beschriftung auf dem Abzug. Prüfe zuerst die Aussenkante. Berücksichtige danach die gesamte zum Bild gehörende Beschriftung beim Motivzuschnitt.";
   }
@@ -1104,6 +1119,8 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
   const label = cropModeLabels[mode];
   const result = getCropModes(photo)?.[mode];
   const url = result?.status === "ready" ? photo.urls?.[mode] : null;
+  const measuredOutlineCutoff = measuredOutlineCutoffRequiresReview(result);
+  const measuredOutlineRecheck = measuredOutlineRecheckRequiresReview(result);
   const possibleMultipanel = photo.enhancement_applied?.segmentation_review_reasons?.includes("MULTIPANEL_PRINT_REVIEW");
   const possiblePrintRegions = photo.enhancement_applied?.segmentation_review_reasons?.includes(possiblePrintRegionsReason)
     || result?.reason_codes?.includes(possiblePrintRegionsReason);
@@ -1148,6 +1165,8 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
   const reviewMessage = (captureEdgeClipped
     && "Der vorgeschlagene Abzug reicht bis an den Aufnahmerand. Lade für den Zuschnitt eine Aufnahme hoch, die ihn ganz zeigt.")
     || (captureSplit && captureSplitReviewHint)
+    || (measuredOutlineCutoff && measuredOutlineCutoffHint)
+    || (measuredOutlineRecheck && measuredOutlineRecheckHint)
     || (possiblePrintRegions && reviewMessages[possiblePrintRegionsReason])
     || (possibleNestedPrint && nestedPrintHint)
     || (possibleMultipanel && reviewMessages.MULTIPANEL_PRINT_REVIEW)
@@ -1187,7 +1206,8 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
       ) : (
         <>
           <p className="crop-mode-status" role="status">{reviewMessage}</p>
-          {mobile && mode === "image_only" && !contextualMotif && getMotifBoundaryReviewHint(result) && (
+          {mobile && mode === "image_only" && !contextualMotif && !measuredOutlineCutoff && !measuredOutlineRecheck
+            && getMotifBoundaryReviewHint(result) && (
             <p className="crop-mode-status">{canEditMobileMotif(photo, getCropModes(photo))
               ? "Öffne «Cropping prüfen» und wähle beim Abzug «Nur Bildmotiv»."
               : "Die Motivecken kannst du im Desktop-Editor setzen."}</p>

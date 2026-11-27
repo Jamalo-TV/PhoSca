@@ -61,6 +61,7 @@ from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OU
 from app.pipeline.manual_paper_boundary import (
     MANUAL_CAPTURE_OUTLINE_REVIEW, MANUAL_CONTRAST_OUTLINE_CHECK, MANUAL_CONTRAST_OUTLINE_REVISION,
     MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION,
+    MEASURED_PRINT_OUTLINE_CUTOFF, MEASURED_PRINT_OUTLINE_REVISION, MEASURED_PRINT_OUTLINE_SOURCE,
     check_manual_paper_boundary, shared_rim_cut_segments,
 )
 from app.pipeline.orientation import correct_photo_orientation, rotate_image
@@ -1963,10 +1964,13 @@ def correct_photo_crop(
     checked_manual_boundary = dual_mode and manual and manual_boundary_reference is not None
     capture_outline = checked_manual_boundary and manual_boundary_reference.get("capture_outline")
     backed_edge = checked_manual_boundary and bool(manual_boundary_reference.get("backed_edge_review"))
+    measured_outline = manual_boundary_reference.get("measured_print_outline") if checked_manual_boundary else None
     if checked_manual_boundary:
         manual_boundary_hold, print_edge_traces = check_manual_paper_boundary(page_image, src_points, manual_boundary_reference)
         if manual_boundary_hold:
-            if backed_edge:
+            if measured_outline:
+                full_reasons.append(MEASURED_PRINT_OUTLINE_CUTOFF)
+            elif backed_edge:
                 full_reasons.append(PRINT_EDGE_CONFIRMATION)
             else:
                 full_reasons.append(MANUAL_CAPTURE_OUTLINE_REVIEW if capture_outline else MANUAL_PAPER_BOUNDARY_REVIEW)
@@ -2115,6 +2119,11 @@ def correct_photo_crop(
                 metadata["manual_paper_boundary"]["capture_outline_verified"] = not manual_boundary_hold
             if backed_edge:
                 metadata["manual_paper_boundary"]["backed_edge_verified"] = not manual_boundary_hold
+            if measured_outline:
+                metadata["manual_paper_boundary"]["measured_outline_check"] = {
+                    "revision": MEASURED_PRINT_OUTLINE_REVISION,
+                    "outline": measured_outline, "warp_quad": normalized_quad, "requires_review": manual_boundary_hold,
+                }
         observed = _source_visible_outline(
             page_image, mask, inspection, visible, neighbor_polygons, neighbor_masks or [],
         )
@@ -2242,6 +2251,8 @@ def correct_photo_crop(
             modes["full_print"]["neighbor_review_source_size"] = {"width": width, "height": height}
             if backing_match_pixels:
                 modes["full_print"]["neighbor_backing_color_match_pixels"] = backing_match_pixels
+        if measured_outline and manual_boundary_hold:
+            modes["full_print"]["suggested_edge_source"] = MEASURED_PRINT_OUTLINE_SOURCE
         if backed_edge and manual_boundary_hold:
             modes["full_print"]["suggested_edge_source"] = POSSIBLE_BACKED_PAPER_EDGE
         split_traces = mask.get("capture_split_review_traces")

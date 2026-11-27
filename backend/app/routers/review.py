@@ -28,6 +28,7 @@ from app.pipeline.crossing_fallback_review import CROSSING_FALLBACK_COUNT_REVIEW
 from app.pipeline.decisions import is_reviewed_non_print, motif_geometry_requires_review
 from app.pipeline.manual_paper_boundary import (
     PAPER_CLAIM_OVERLAP_CHECKS, contrast_outline_check_pending, manual_paper_grid_count_review, paper_claims_need_overlap_check,
+    measured_print_outline_needs_review,
 )
 from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
 from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES
@@ -43,7 +44,7 @@ from app.schemas import PhotoRead, ReviewItem
 from app.schemas.pipeline import CompetingPhotoOutline
 from app.services.photo_outline_comparison import photo_outline_comparisons
 from app.services.pipeline import (
-    page_fusion_evidence, photo_views_for_current_album_marks, resolve_nested_edge_parent_reviews,
+    page_fusion_evidence, photo_views_for_current_crop_checks, resolve_nested_edge_parent_reviews,
     retire_source_fragment_proposals,
 )
 
@@ -704,8 +705,11 @@ def _completed_review_exists(task_type: str, task_id_column):
 
 async def _geometry_review_is_current(session: AsyncSession, photo: ExtractedPhoto) -> bool:
     metadata = photo.enhancement_applied or {}
-    if photo.segmentation_confidence is None and contrast_outline_check_pending(metadata):
-        return False
+    if photo.segmentation_confidence is None:
+        mask = photo.segmentation_mask or {}
+        if (contrast_outline_check_pending(metadata)
+                or measured_print_outline_needs_review(metadata, mask.get("warp_quad") or mask.get("polygon"))):
+            return False
     correction = metadata.get("correction") or {}
     full_mode = (correction.get("crop_modes") or {}).get("full_print") or {}
     if (((photo.segmentation_mask or {}).get(MANUAL_MARGIN_CONTEXT) and full_mode.get("status") != "ready")
@@ -849,9 +853,10 @@ async def get_review_queue(
                     .order_by(ExtractedPhoto.created_at.asc())
                 )
             ).all()
-            comparisons = photo_outline_comparisons(list(photos))
+            views = await photo_views_for_current_crop_checks(session, list(photos))
+            comparisons = photo_outline_comparisons(views)
             detections = [_photo_review_payload(photo, comparisons.get(photo.id))
-                          for photo in photos if not _rejected_detection(photo)]
+                          for photo in views if not _rejected_detection(photo)]
             segmentation = ((page.processing_metadata or {}).get("steps") or {}).get("segmentation") or {}
             items.append(
                 ReviewItem(
@@ -893,7 +898,7 @@ async def get_review_queue(
                 )
             )
         ).all()
-        views = await photo_views_for_current_album_marks(session, list(candidate_photos))
+        views = await photo_views_for_current_crop_checks(session, list(candidate_photos))
         comparisons = photo_outline_comparisons(views)
         for photo, view in zip(candidate_photos, views, strict=True):
             if photo_id and photo.id != photo_id:
@@ -903,8 +908,13 @@ async def get_review_queue(
             if view is photo and await _geometry_review_is_current(session, photo):
                 continue
             payload = _photo_review_payload(view, comparisons.get(photo.id))
-            pending_contrast = photo.segmentation_confidence is None and contrast_outline_check_pending(photo.enhancement_applied or {})
-            review_status = PhotoStatus.review_needed if pending_contrast or payload["motif_review_pending"] else view.status
+            metadata = photo.enhancement_applied or {}
+            mask = photo.segmentation_mask or {}
+            pending_paper_check = photo.segmentation_confidence is None and (
+                contrast_outline_check_pending(metadata)
+                or measured_print_outline_needs_review(metadata, mask.get("warp_quad") or mask.get("polygon"))
+            )
+            review_status = PhotoStatus.review_needed if pending_paper_check or payload["motif_review_pending"] else view.status
             items.append(
                 ReviewItem(
                     item_type="geometry",
@@ -953,7 +963,8 @@ async def get_review_queue(
         if principal is not None:
             query = query.where(ExtractedPhoto.album.has(tenant_id=principal.tenant_id))
         photos = (await session.scalars(query.order_by(ExtractedPhoto.created_at.asc()).limit(limit * 4))).all()
-        for photo in photos:
+        views = await photo_views_for_current_crop_checks(session, list(photos))
+        for photo in views:
             if _rejected_detection(photo):
                 continue
             payload = _photo_review_payload(photo)

@@ -48,7 +48,7 @@ import { captureCameraImage } from "./cameraCapture.js";
 import { motifUsesPaperAxes, resizeMotifInPaperPlane } from "./cropPreview.js";
 import {
   contactEdgesNeedRefresh, contrastOutlineConfirmation, contrastOutlineNeedsConfirmation, contrastOutlineReviewHint,
-  measuredMotifPaperEditHint,
+  measuredMotifPaperEditHint, measuredOutlineCutoffRequiresReview, measuredOutlineCutoffSource, measuredOutlineRecheckRequiresReview,
 } from "./cropReviewApproval.js";
 import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
@@ -1573,11 +1573,13 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const sourceStrip = useMemo(() => reviewingGeometry && !newPrint && !editingImage ? getSourceStripReview(fullPrintMode) : null,
     [reviewingGeometry, newPrint, editingImage, fullPrintMode]);
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
+  const measuredOutlineCutoff = measuredOutlineCutoffRequiresReview(fullPrintMode);
+  const measuredOutlineReview = measuredOutlineCutoff || measuredOutlineRecheckRequiresReview(fullPrintMode);
   const proposedPrintQuad = fullPrintMode?.suggested_warp_quad;
   const printSuggestion = useMemo(() => cyclicQuad(sanitizePolygon(proposedPrintQuad)), [proposedPrintQuad]);
   const confirmOuter = contrastOutlineReview ? contrastOutlineConfirmed
     : Boolean(printSuggestion) || paperOutlineNeedsConfirmation(fullPrintMode);
-  const needsPrintReview = editingImage && (contrastOutlineReview || confirmOuter);
+  const needsPrintReview = editingImage && (contrastOutlineReview || confirmOuter || measuredOutlineReview);
   const motifReview = selectedModes?.image_only;
   const motifBoundaryReviewHint = getMotifBoundaryReviewHint(motifReview);
   const motifMarginMarks = useMemo(() => getMotifMarginMarks(motifReview), [motifReview]);
@@ -1592,7 +1594,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   [reviewingGeometry, newPrint, rejectedDetection, sameMotifDraft, selectedModes, previewMotifUrl,
     savedShape?.warpQuad, selectedShape?.warpQuad]);
   const imageSuggestion = advisoryMotif ? null : cyclicQuad(sanitizePolygon(motifReview?.suggested_warp_quad));
-  const traces = editingImage && !advisoryMotif ? motifReview?.suggested_seam_traces : fullPrintMode?.suggested_edge_traces;
+  const cutoffPaperTraces = measuredOutlineCutoff && fullPrintMode.suggested_edge_source === measuredOutlineCutoffSource;
+  const traces = editingImage && !advisoryMotif && !cutoffPaperTraces
+    ? motifReview?.suggested_seam_traces : fullPrintMode?.suggested_edge_traces;
   const neighborOutline = editingImage ? null : fullPrintMode?.neighbor_overlap_outline;
   const missingPaperOutlines = editingImage ? null : fullPrintMode?.neighbor_content_loss_outlines;
   const exposedOverlapEdges = editingImage ? null : fullPrintMode?.exposed_overlap_edge_traces;
@@ -2468,14 +2472,17 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           </button>
         </>
       )}
-      {!newPrint && !editingImage && printEdgeReviewHint && <p className="crop-editor-hint">{printEdgeReviewHint}</p>}
+      {!newPrint && !editingImage && printEdgeReviewHint &&
+        <p className="crop-editor-hint" id={measuredOutlineReview ? "measured-outline-cutoff-hint" : undefined}>{printEdgeReviewHint}</p>}
       {sourceStrip && <SourceStripReview strip={sourceStrip} sourceUrl={`/api/v1/pages/${pageId}/image`} hintId="source-strip-review-hint" />}
       {!newPrint && deferredParentHints.map(({ id, text }) => <p key={id} className="crop-editor-hint">{text}</p>)}
       {!newPrint && !editingImage && <NeighborContentReview fullPrint={fullPrintMode} sourceUrl={`/api/v1/pages/${pageId}/image`} />}
       {markBounds.length > 0 && <AlbumPageMarkReview mark={albumMark} review={albumMarkReview}
         sourceUrl={`/api/v1/pages/${pageId}/image`} disabled={saveState?.saving} />}
       {editingImage && crossingReview && <p className="crop-editor-hint">{crossingPrintSaveHint}</p>}
-      {needsPrintReview && !crossingReview && <p className="crop-editor-hint">{printOutlineSaveHint}</p>}
+      {needsPrintReview && !crossingReview && <p className="crop-editor-hint" id={measuredOutlineReview ? "measured-outline-cutoff-hint" : undefined}>
+        {measuredOutlineReview ? printEdgeReviewHint : printOutlineSaveHint}
+      </p>}
       {preliminaryMotifMarks && <p className="crop-editor-hint" id="held-motif-margin-hint">{motifBoundaryReviewHint}</p>}
       {editingImage && selected && !crossingReview && !needsPrintReview && (
         <>
@@ -2527,6 +2534,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           possiblePrintRegions.length && "possible-print-regions-hint",
           newPrint?.protection?.regions.length && "print-addition-protection-error",
           cutFeedback?.regions.length && "crop-protection-error",
+          measuredOutlineReview && !newPrint && (!editingImage || !crossingReview) && "measured-outline-cutoff-hint",
           competingPhotoOutlines.length && "competing-photo-outline-hint",
           contrastCrossingTraces.length && "contrast-crossing-review-hint",
           captureBackgroundTraces.length && "capture-background-review-hint",

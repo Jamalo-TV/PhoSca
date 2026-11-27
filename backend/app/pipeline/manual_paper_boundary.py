@@ -4,11 +4,12 @@ import cv2
 import numpy as np
 
 from app.pipeline.bowed_edge_review import POSSIBLE_BOWED_PRINT_EDGE
+from app.pipeline.crossing_prints import CONTESTED_TILE_OUTLINE
 from app.pipeline.edge_prints import CAPTURE_EDGE_HOLD
-from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels, order_quad_cyclic
+from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels, order_quad_cyclic, pixel_vertices_to_normalized
 from app.pipeline.print_edges import (
     POSSIBLE_BACKED_PAPER_EDGE, PRINT_SHARED_RIM_UNCERTAIN, SHARED_PRINT_RIM_SOURCE,
-    _backing_color, _edge_band, _side_line, _stock_ring, bowed_print_sides,
+    _backing_color, _edge_band, _line_endpoints, _side_line, _stock_ring, bowed_print_sides,
     refine_print_boundary,
 )
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_CONFLICT
@@ -17,6 +18,10 @@ from app.pipeline.scalloped_prints import SCALLOPED_PRINT_CONFLICT
 MANUAL_PAPER_BOUNDARY_REVISION = 2
 MANUAL_PAPER_BOUNDARY_REVIEW = "PRINT_CURVED_OUTLINE_REVIEW"
 MANUAL_CAPTURE_OUTLINE_REVIEW = "PRINT_CAPTURE_OUTLINE_REVIEW"
+MEASURED_PRINT_OUTLINE_CUTOFF = "PRINT_MEASURED_OUTLINE_CUTOFF"
+MEASURED_PRINT_OUTLINE_RECHECK = "PRINT_MEASURED_OUTLINE_RECHECK"
+MEASURED_PRINT_OUTLINE_SOURCE = "measured_print_outline_cutoff"
+MEASURED_PRINT_OUTLINE_REVISION = 1
 MANUAL_CONTRAST_OUTLINE_CHECK = "manual_contrast_outline_check"
 MANUAL_CONTRAST_OUTLINE_REVISION = 1
 PAPER_GRID_OVERLAP_REVIEW = "PAPER_GRID_OVERLAP_REVIEW"
@@ -52,6 +57,27 @@ def review_source_quads_match(reference: list[dict] | None, *claims: list[dict] 
         return False
     orders = [np.roll(cycle, turn, axis=0) for cycle in (outline, outline[::-1]) for turn in range(4)]
     return all(any(np.allclose(quad, order, atol=1e-6, rtol=0) for order in orders) for quad in compared)
+
+
+def _measured_print_outline(metadata: dict) -> list[dict] | None:
+    mask = original_prediction_mask(metadata) or {}
+    if (mask.get("detector_source") != "yolo_onnx"
+            or mask.get("crossing_print_suggestion_source") != CONTESTED_TILE_OUTLINE):
+        return None
+    outline = mask.get("crossing_print_suggestion")
+    return outline if review_source_quads_match(outline) else None
+
+
+def measured_print_outline_needs_review(metadata: dict, crop_quad: list[dict] | None) -> bool:
+    outline = _measured_print_outline(metadata)
+    if outline is None:
+        return False
+    correction = metadata.get("correction") or {}
+    paper = (correction.get("crop_modes") or {}).get("full_print") or {}
+    check = (correction.get("manual_paper_boundary") or {}).get("measured_outline_check") or {}
+    return (check.get("revision") != MEASURED_PRINT_OUTLINE_REVISION or check.get("requires_review") is not False
+            or not review_source_quads_match(outline, check.get("outline"))
+            or not review_source_quads_match(crop_quad, check.get("warp_quad"), paper.get("warp_quad")))
 
 
 def manual_paper_grid_count_review(mask: dict | None, metadata: dict) -> dict | None:
@@ -206,6 +232,8 @@ def shared_rim_cut_reference(correction: dict) -> list[list[dict]]:
 
 
 def manual_paper_reference(metadata: dict, crop_quad: list[dict] | None) -> dict | None:
+    if measured_outline := _measured_print_outline(metadata):
+        return {"measured_print_outline": measured_outline}
     review = metadata.get("review_provenance") or {}
     trace_curve = review.get("paper_trace_review")
     if trace_curve and len(crop_quad or []) == 4:
@@ -293,6 +321,8 @@ def manual_paper_download_needs_review(metadata: dict, crop_quad: list[dict] | N
     reference = manual_paper_reference(metadata, crop_quad)
     if reference is None:
         return False
+    if reference.get("measured_print_outline"):
+        return measured_print_outline_needs_review(metadata, crop_quad)
     check = (metadata.get("correction") or {}).get("manual_paper_boundary") or {}
     if reference.get("backed_edge_review"):
         return (check.get("revision") != MANUAL_PAPER_BOUNDARY_REVISION
@@ -637,7 +667,57 @@ def _confirmed_capture_outline(image: np.ndarray, quad: np.ndarray, previous: np
     return not (_competing_inner_stock(image, quad, radius) or _unexplained_capture_material(image, quad, previous, backing))
 
 
+def _measured_print_cutoff_traces(image: np.ndarray, current: np.ndarray, outline: list[dict]) -> list:
+    """Locate dropped source-side witnesses on the previously measured paper edge."""
+    width, height = image.shape[1::-1]
+    guide = order_quad_cyclic(normalized_vertices_to_pixels(
+        [(point["x"], point["y"]) for point in outline], width, height,
+    ))
+    fractions = np.linspace(.10, .90, 128, dtype=np.float32)
+    traces = []
+
+    def missing(start, stop, inward):
+        stations = start + fractions[:, None] * (stop - start)
+        return np.array([cv2.pointPolygonTest(current, tuple(point), True) < -.75
+                         for point in stations + 1.5 * inward])
+
+    def runs(omitted):
+        return [(a, b - 1) for a, b in np.flatnonzero(np.diff(np.r_[False, omitted, False])).reshape(-1, 2)
+                if b - a >= 8]
+
+    for start, stop in zip(guide, np.roll(guide, -1, axis=0), strict=True):
+        direction = stop - start
+        length = np.linalg.norm(direction)
+        if length < 3:
+            return [[*outline, outline[0]]]
+        inward = np.float32([-direction[1], direction[0]]) / length
+        boundaries = runs(missing(start, stop, inward))
+        if not boundaries:
+            continue
+        first, last = start, stop
+        line, evidence = _side_line(image, start, stop, 3)
+        if line is not None and not evidence["ambiguous"] and evidence["support"] >= .85:
+            refined = np.float32(_line_endpoints(start, stop, line))
+            if np.linalg.norm(refined - [start, stop], axis=1).max() <= 1.25:
+                band = _edge_band(image, *refined, [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5], fractions=fractions)
+                if band is not None:
+                    difference = np.linalg.norm(np.median(band[:, 6:], axis=1) - np.median(band[:, :4], axis=1), axis=1)
+                    step = np.linalg.norm(np.median(band[:, 5:7], axis=1) - np.median(band[:, 3:5], axis=1), axis=1)
+                    support = (difference >= 16) & (step >= 9)
+                    if support.mean() >= .80:
+                        first, last = refined
+                        boundaries = runs(missing(first, last, inward))
+        # If the original evidence cannot be remeasured, keep its prior extent in review.
+        for a, b in boundaries:
+            segment = first + fractions[[a, b], None] * (last - first)
+            traces.append([{"x": float(x), "y": float(y)} for x, y in pixel_vertices_to_normalized(segment, width, height)])
+    return traces
+
+
 def check_manual_paper_boundary(image: np.ndarray, current: np.ndarray, reference: dict) -> tuple[bool, list]:
+    if outline := reference.get("measured_print_outline"):
+        traces = _measured_print_cutoff_traces(image, current, outline)
+        return bool(traces), traces
     if backed_traces := reference.get("backed_edge_review"):
         points = normalized_vertices_to_pixels(
             [(point["x"], point["y"]) for trace in backed_traces for point in trace], *image.shape[1::-1],

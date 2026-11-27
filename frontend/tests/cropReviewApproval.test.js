@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  contactEdgesNeedRefresh, contrastOutlineNeedsConfirmation, heldPrintCorrectionHint, wholePrintApprovalHeld,
+  contactEdgesNeedRefresh, contrastOutlineNeedsConfirmation, heldPrintCorrectionHint,
+  measuredOutlineCutoffRequiresReview, measuredOutlineRecheckRequiresReview, wholePrintApprovalHeld,
 } from "../src/cropReviewApproval.js";
 
 test("automatically detected contrast outlines with source boundary review need confirmation", () => {
@@ -94,6 +95,21 @@ test("the current whole-print URL controls geometry approval even when a mode sa
   assert.equal(wholePrintApprovalHeld({ full_print: { status: "review_needed" } }, urls), true);
   assert.equal(wholePrintApprovalHeld({ full_print: { status: "ready" } }, urls), true);
   assert.equal(wholePrintApprovalHeld({ full_print: { status: "ready" } }, { ...urls, full_print: "/print" }), false);
+});
+
+test("a measured outline cutoff is a hold for either crop mode", () => {
+  const hold = { status: "review_needed", reason_codes: ["PRINT_ASPECT_UNCERTAIN", "PRINT_MEASURED_OUTLINE_CUTOFF"] };
+  const modes = { full_print: hold, image_only: hold };
+  for (const mode of Object.values(modes)) assert.equal(measuredOutlineCutoffRequiresReview(mode), true);
+  assert.equal(measuredOutlineCutoffRequiresReview({ ...hold, status: "ready" }), false);
+  assert.equal(measuredOutlineCutoffRequiresReview({ ...hold, reason_codes: ["PRINT_ASPECT_UNCERTAIN"] }), false);
+  assert.equal(measuredOutlineCutoffRequiresReview({ status: "review_needed" }), false);
+  assert.equal(measuredOutlineCutoffRequiresReview(null), false);
+  assert.match(heldPrintCorrectionHint(hold), /gemessenen Papierkontur aus/);
+  const stale = { status: "review_needed", reason_codes: ["PRINT_MEASURED_OUTLINE_RECHECK"] };
+  assert.equal(measuredOutlineRecheckRequiresReview(stale), true);
+  assert.equal(measuredOutlineRecheckRequiresReview({ ...stale, status: "ready" }), false);
+  assert.match(heldPrintCorrectionHint(stale), /erneut geprüft/);
 });
 
 test("legacy crops and optional motif holds keep their existing geometry approval", () => {

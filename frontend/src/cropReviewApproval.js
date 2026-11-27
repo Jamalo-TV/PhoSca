@@ -1,6 +1,17 @@
 export const contrastOutlineReviewHint = "Prüfe, ob alle vier Ecken zum selben Papierabzug gehören. Markiert die Kontur keinen eigenen Abzug, wähle «Falsches Objekt».";
 export const contrastOutlineConfirmation = "Die vier Ecken liegen am sichtbaren Rand desselben Papierabzugs.";
 export const measuredMotifPaperEditHint = "Setze vor dem Speichern alle vier Ecken an den sichtbaren Papierrand des Abzugs.";
+export const measuredOutlineCutoffSource = "measured_print_outline_cutoff";
+export const measuredOutlineCutoffHint = "Der Zuschnitt lässt sichtbare Bereiche innerhalb der gemessenen Papierkontur aus. Setze die Ecken an den sichtbaren Papierrand im Original. Ist der Rand verdeckt oder bleibt er unklar, fotografiere den Abzug einzeln mit sichtbarem Rand.";
+export const measuredOutlineRecheckHint = "Die gemessene Papierkontur muss erneut geprüft werden. Öffne den Zuschnitt, prüfe die Ecken am Original und speichere sie erneut.";
+
+export function measuredOutlineCutoffRequiresReview(mode) {
+  return mode?.status === "review_needed" && Boolean(mode.reason_codes?.includes("PRINT_MEASURED_OUTLINE_CUTOFF"));
+}
+
+export function measuredOutlineRecheckRequiresReview(mode) {
+  return mode?.status === "review_needed" && Boolean(mode.reason_codes?.includes("PRINT_MEASURED_OUTLINE_RECHECK"));
+}
 
 export function contrastOutlineNeedsConfirmation(photo, fullPrint) {
   const confidence = photo?.segmentation_confidence ?? photo?.confidence;
@@ -36,6 +47,8 @@ export function wholePrintApprovalHeld(cropModes, variantUrls) {
 }
 
 export function heldPrintCorrectionHint(fullPrint) {
+  if (measuredOutlineCutoffRequiresReview(fullPrint)) return measuredOutlineCutoffHint;
+  if (measuredOutlineRecheckRequiresReview(fullPrint)) return measuredOutlineRecheckHint;
   const reasons = fullPrint?.reason_codes || [];
   if (reasons.includes("PRINT_POSSIBLY_OCCLUDED") || reasons.includes("ALBUM_WINDOW_OCCLUDED")) {
     return "Prüfe am Original, ob alle vier Papierkanten sichtbar sind. Ist eine Kante verdeckt, fotografiere den Abzug einzeln mit sichtbarem Rand rundum.";

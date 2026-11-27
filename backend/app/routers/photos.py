@@ -93,7 +93,7 @@ from app.services.pipeline import (
     page_fusion_evidence,
     persistence_task_logic,
     perspective_correction_task_logic,
-    photo_views_for_current_album_marks,
+    photo_views_for_current_crop_checks,
     resolve_nested_edge_parent_reviews,
     retire_album_mark_previews,
     retire_rounded_corner_preview,
@@ -661,7 +661,7 @@ async def get_photo(
 ) -> PhotoDetail:
     photo = await _photo_for_principal(session, photo_id, principal)
     await session.refresh(photo, attribute_names=["ocr_results"])
-    view, = await photo_views_for_current_album_marks(session, [photo])
+    view, = await photo_views_for_current_crop_checks(session, [photo])
     data = PhotoDetail.model_validate(view)
     data.ocr_results = [OCRRead.model_validate(result) for result in photo.ocr_results]
     data.urls = _photo_urls(view)
@@ -720,7 +720,7 @@ async def get_photo_variants(
     principal: Principal | None = Depends(get_principal),
 ) -> dict:
     photo = await _photo_for_principal(session, photo_id, principal)
-    view, = await photo_views_for_current_album_marks(session, [photo])
+    view, = await photo_views_for_current_crop_checks(session, [photo])
     return {
         "selected_variant": released_variant_from_photo(view),
         "variants": variants_from_metadata(view.enhancement_applied),

@@ -6,7 +6,7 @@ import { motifUsesPaperAxes, projectedCropAspect, resizeMotifInPaperPlane, resam
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import {
   contactEdgesNeedRefresh, contrastOutlineConfirmation, contrastOutlineNeedsConfirmation, contrastOutlineReviewHint,
-  heldPrintCorrectionHint, measuredMotifPaperEditHint, wholePrintApprovalHeld,
+  heldPrintCorrectionHint, measuredMotifPaperEditHint, measuredOutlineCutoffRequiresReview, measuredOutlineCutoffSource, wholePrintApprovalHeld,
 } from "./cropReviewApproval.js";
 import {
   actionableCountGroups, adjacentPrintHint, albumLeafChildStyle, albumLeafTraceStyle, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
@@ -636,6 +636,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     mergedPairs.length && "mobile-merged-print-pair-hint",
     possiblePrintRegions.length && "mobile-possible-print-regions-hint",
     cutFeedback?.regions.length && cutFeedbackId,
+    editable && !editingMotif && measuredOutlineCutoffRequiresReview(fullPrintMode)
+      && fullPrintMode.suggested_edge_source === measuredOutlineCutoffSource && printEdgeTraces.length && "mobile-print-edge-review-hint",
     competingPhotoOutlines.length && "mobile-competing-photo-outline-hint",
     captureSplitGroups.length && "mobile-capture-split-count-hint",
     filmGridGroups.length && "mobile-film-grid-count-hint", paperGridGroups.length && "mobile-paper-grid-count-hint",
