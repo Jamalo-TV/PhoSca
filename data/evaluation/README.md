@@ -2390,10 +2390,66 @@ adding the lower outline as a new print, the API returned
 on the next print and starts at native y=706. Its 19.8-pixel
 protection margin reaches into the proposed print. The development
 draft for the same print triggers the same guard. That correction
-sequence remains blocked.
+sequence was blocked at this revision. The follow-up adds an explicit
+[margin review](#review-a-protection-margin-outside-a-manually-added-print).
 
 The annotated source and receipts are under
 `runs/crop-quality/merged-print-pair-review/`.
+
+#### Review a protection margin outside a manually added print
+
+Off-print advisory revision 2 adds a path for a manually added print
+with one uniquely matched, unverified page-level face or head detection.
+The raw detector rectangle must be completely outside one side of the
+quad, by at least 6 native pixels and 10% of the detector rectangle's
+longer dimension. At most 6% of the expanded rectangle may intersect
+the quad. A second crossing region prevents the advisory. The existing
+content-removal check also applies when editing a previously saved crop.
+
+The source check requires at least 90% line support across the
+affected edge section and at each end, an opposing signed color
+transition and a continuous rib in the intervening backing. A current
+paper claim crossing the measured strip prevents the offer. At most
+5.5 native pixels of disagreement may be shown for comparison. A
+reviewer can confirm the mark after the measured section and the
+submitted quad agree within 2 pixels. The saved quad stays as drawn
+throughout. The check runs again on confirmation and reprocessing.
+Only the extra margin of that particular detector hit is suspended for
+that exact quad after manual confirmation. The source protection list
+and raw detected rectangle stay in force. The decision is bound to
+the source hash, protection digest, count revision and reviewed quad.
+The original padded footprint stays attached to an unresolved crop.
+If the protection entry disappears, reprocessing and changes to
+unrelated corners keep any crop intersecting that footprint held.
+
+On U008, the raw rectangle covers foliage in the next print and does
+not overlap the proposed print. The first guide differs from the
+locally measured edge by approximately 4.4–4.9 native pixels. A plain
+manual add through the normal upload path now saves that lower guide
+with both crop modes held. The active count changes from 3 to 4 after
+the reviewer narrows the upper print and separately marks the lower
+print. The existing pending offer remains. Confirmation of the first
+guide returns 422. After separately aligning the edge and confirming
+the mark, both modes still report `PRINT_ASPECT_UNCERTAIN`. Their
+downloads and the cropped legacy alias return 404. The untrimmed
+source returns 200 with the same results after reprocessing. The
+measured edge is local evidence. A precise physical paper aspect
+ratio remains unverified for this print. The projected preview is
+294 × 298 pixels. The source-only pinhole check abstains. The page-plane
+fit also abstains using all eleven development outlines, of which
+one meets the existing source edge and corner requirements.
+
+A flat separator, a contested gap, a core crossing and manual or
+pinned protection remain blocked. A same-stock reproduction can copy
+the local signals. The original and six of eight JPEG controls at
+fixed geometry produced the advisory. The two white and dark
+exact-pixel reproductions had the same result on those encodings.
+The reviewer still checks physical count. The native optical check
+took 10.2 ms median and 14.8 ms p95 over 20 warm samples.
+Eight benchmark comparisons retained the preceding detection,
+geometry and crop availability results.
+The API receipts and comparison are under
+`runs/crop-quality/manual-outside-margin-review/`.
 
 #### Review fabric along the capture frame
 

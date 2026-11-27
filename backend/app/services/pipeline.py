@@ -70,6 +70,7 @@ from app.pipeline.manual_paper_boundary import (
 )
 from app.pipeline.merged_print_review import MERGED_PRINT_PAIR
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
+from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
 from app.pipeline.page_plane import MeasuredPrintReference, PrintPagePlane
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_TRACES
 from app.pipeline.perspective import apply_refined_visibility, correct_photo_crop, page_plane_from_prints
@@ -109,9 +110,11 @@ def _album_mark_review_offer(
     preview = full.get("outline_preview") or {}
     protection = correction.get("protected_regions") or {}
     violations = protection.get("violations") or []
-    if (marks := correction.get("off_print_advisory_regions")) and full.get("status") == "review_needed":
+    manual_marks = protection.get("manual_margin_marks")
+    if (marks := manual_marks or correction.get("off_print_advisory_regions")) and full.get("status") == "review_needed":
         width, height = source.shape[1::-1]
         return {"id": str(stage_id), "source": OFF_PRINT_ADVISORY, "page_sha256": page.file_hash_sha256,
+                **({"context": MANUAL_MARGIN_CONTEXT} if manual_marks else {}),
                 "photo_count_revision": (page.processing_metadata or {}).get("photo_count_revision"),
                 "protected_regions_sha256": protected_region_digest(regions), "regions": marks,
                 "source_size": {"width": width, "height": height}}
@@ -521,6 +524,7 @@ async def perspective_correction_task_logic(
     if automatic_detection:
         paper_claims.pop(PAPER_GRID_OVERLAP_REVIEW, None)
     current_quad = mask.get("warp_quad") or mask.get("polygon")
+    manual_margin_state = mask.get(MANUAL_MARGIN_CONTEXT)
     review_provenance = metadata.get("review_provenance") or {}
     reviewed_mark = None if automatic_detection else review_provenance.get("reviewed_album_mark")
     original = review_provenance.get("original_prediction") or {}
@@ -653,7 +657,7 @@ async def perspective_correction_task_logic(
             trim_border=settings.enable_border_trim,
             auto_orient=settings.enable_photo_orientation_correction,
             orientation_model_path=settings.photo_orientation_model_path,
-            protect_regions=settings.enable_protected_region_guard,
+            protect_regions=settings.enable_protected_region_guard or bool(manual_margin_state),
             protected_regions=protected_regions,
             allow_page_face_overlap=photo.geometry_valid and (
                 automatic_detection or (manual_boundary or {}).get("trace_review") is True
@@ -676,6 +680,15 @@ async def perspective_correction_task_logic(
         )
         corrected = crop_result.image
         correction_metadata = crop_result.metadata
+        manual_margin = correction_metadata["protected_regions"].get("manual_margin_marks")
+        current_marks = manual_margin or (reviewed_mark or {}).get("regions") or []
+        if manual_margin_state and not any(mark["region"] == manual_margin_state["region"] for mark in current_marks):
+            width, height = page_image.shape[1::-1]
+            padded, paper = [normalized_vertices_to_pixels([(p["x"], p["y"]) for p in outline], width, height)
+                             for outline in (manual_margin_state["padded_outline"], current_quad)]
+            overlap = cv2.intersectConvexConvex(padded, paper)[0]
+            if overlap > .01:
+                raise ValueError("album_page_mark_review_stale")
     except (ValueError, cv2.error) as exc:
         reason = str(exc) if isinstance(exc, ValueError) else "perspective_opencv_error"
         if reject_invalid_edit:
@@ -826,7 +839,12 @@ async def perspective_correction_task_logic(
         "untrimmed_asset_id": str(untrimmed_asset.id),
         "trimmed_asset_id": str(trimmed_asset.id) if trimmed_asset else None,
     }
-    if automatic_detection and isinstance(protected_regions, list):
+    if manual_margin:
+        mark, = manual_margin
+        photo.segmentation_mask = {**mask, MANUAL_MARGIN_CONTEXT: {
+            "region": mark["region"], "padded_outline": mark["padded_outline"],
+        }}
+    if (automatic_detection or manual_margin) and isinstance(protected_regions, list):
         offer = _album_mark_review_offer(photo.page, page_image, stage.id, correction_metadata, protected_regions)
         if offer is not None:
             correction_metadata["album_page_mark_review"] = offer

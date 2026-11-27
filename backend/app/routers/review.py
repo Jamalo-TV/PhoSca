@@ -28,6 +28,7 @@ from app.pipeline.crossing_fallback_review import CROSSING_FALLBACK_COUNT_REVIEW
 from app.pipeline.decisions import is_reviewed_non_print, motif_geometry_requires_review
 from app.pipeline.manual_paper_boundary import PAPER_CLAIM_OVERLAP_CHECKS, paper_claims_need_overlap_check
 from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
+from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
 from app.pipeline.protected_regions import album_mark_source_matches
 from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import PhotoRead, ReviewItem
@@ -670,7 +671,8 @@ async def _geometry_review_is_current(session: AsyncSession, photo: ExtractedPho
     metadata = photo.enhancement_applied or {}
     correction = metadata.get("correction") or {}
     full_mode = (correction.get("crop_modes") or {}).get("full_print") or {}
-    if (any(reason in PAPER_CLAIM_OVERLAP_CHECKS for reason in (full_mode.get("reason_codes") or []))
+    if (((photo.segmentation_mask or {}).get(MANUAL_MARGIN_CONTEXT) and full_mode.get("status") != "ready")
+            or any(reason in PAPER_CLAIM_OVERLAP_CHECKS for reason in (full_mode.get("reason_codes") or []))
             or motif_geometry_requires_review(correction)):
         return False
     if paper_claims_need_overlap_check(photo.segmentation_mask or {}, metadata, automatic=photo.segmentation_confidence is not None):

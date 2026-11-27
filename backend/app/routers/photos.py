@@ -45,6 +45,7 @@ from app.pipeline.merged_print_review import MERGED_PRINT_PAIR
 from app.pipeline.motif_boundary import PARTIAL_MOTIF_SEAMS
 from app.pipeline.motif_margin import HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
+from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_TRACES
 from app.pipeline.perspective import (
     manual_print_intersects, review_outline_intersects_claim, review_traces_intersect_claim, validate_review_quads,
@@ -989,6 +990,8 @@ async def update_photo_bounding_box(
         for flag in ("album_window_occluded", "manual_added", "capture_edge_clipped", REVIEWED_CROSSING_OUTLINE):
             if (photo.segmentation_mask or {}).get(flag) is True:
                 segmentation_mask[flag] = True
+        if margin_state := original_mask.get(MANUAL_MARGIN_CONTEXT):
+            segmentation_mask[MANUAL_MARGIN_CONTEXT] = deepcopy(margin_state)
         # A paper edit does not settle a separate mark in the proposed motif margin.
         motif_mode = (correction.get("crop_modes") or {}).get("image_only") or {}
         margin_regions = original_mask.get("paper_stock_margin_regions")

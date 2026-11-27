@@ -684,6 +684,26 @@ Anspruch hält die betroffenen Downloads erneut zurück. Ein ungeklärtes
 Papierformat und eine strittige Motivgrenze bleiben eigene Prüfungen.
 [Beispiel mit zwei Markierungen](data/evaluation/README.md#review-multiple-advisory-marks-at-a-measured-paper-edge)
 
+Beim manuellen Ergänzen eines Abzugs prüft PhoSca einen einzelnen
+automatischen Gesicht- oder Kopftreffer, dessen erkannter Bereich
+vollständig jenseits der Papierkante liegt. Ragt nur sein
+Sicherheitsabstand in den vorgeschlagenen Zuschnitt, sucht PhoSca im
+Original nach zwei gegenüberliegenden Kanten und der dazwischen
+durchgehenden Prägung. Die vier Ecken lassen sich zur Prüfung speichern.
+Das gelbe Rechteck zeigt den erkannten Bereich und die türkise Linie
+den gemessenen Kantenabschnitt. Weichen die Ecken dort um mehr als
+zwei native Pixel ab, müssen sie vor der Bestätigung korrigiert werden.
+
+Der Reviewer bestätigt für die gespeicherten Ecken, dass die gesamte
+gelbe Markierung ausserhalb dieses Abzugs liegt. PhoSca prüft dabei
+die Originalpixel, die Markierung und die Ansprüche der Nachbarabzüge
+erneut. Für diesen Zuschnitt entfällt nur der zusätzliche Abstand.
+Der erkannte Bereich bleibt geschützt. Die Entscheidung ist an die
+Aufnahme, die Ecken und den Stand der Schutz- und Anzahlprüfung gebunden.
+«Ganzer Abzug» und «Nur Bildmotiv» durchlaufen weiter ihre jeweiligen
+Geometrie- und Inhaltsprüfungen.
+[Beispiel U008](data/evaluation/README.md#review-a-protection-margin-outside-a-manually-added-print)
+
 Bei einem zur Prüfung zurückgehaltenen Abzug kann PhoSca einen
 weiteren sichtbaren Bildstreifen ausserhalb des bisherigen Umrisses
 türkis markieren. Es sucht von einer gut belegten Seite aus, prüft

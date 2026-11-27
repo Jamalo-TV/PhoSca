@@ -48,7 +48,7 @@ from app.pipeline.motif_margin import (
     HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE, held_print_motif_margin_marks, motif_margin_marks,
 )
 from app.pipeline.mounted_edge_preview import suggest_mounted_strip_preview
-from app.pipeline.off_print_advisory import off_print_advisory_regions
+from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT, manual_margin_advisory, off_print_advisory_regions
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.manual_paper_boundary import (
     MANUAL_CAPTURE_OUTLINE_REVIEW, MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION,
@@ -1175,12 +1175,19 @@ def _regions_after_album_mark_review(
         if corner_offsets.min(axis=1).max() > 1.:
             raise ValueError("album_page_mark_outline_changed")
         protection = validate_protected_regions(quad, regions, width=width, height=height)
-        current = off_print_advisory_regions(page, quad, regions, protection["violations"], neighbors)
+        manual_margin = review.get("context") == MANUAL_MARGIN_CONTEXT
+        current = (manual_margin_advisory(page, quad, regions, protection["violations"], neighbors)
+                   if manual_margin
+                   else off_print_advisory_regions(page, quad, regions, protection["violations"], neighbors))
         targets = [region["region"] for region in review.get("regions") or []]
         if (not current or [region["region"] for region in current] != targets
                 or review.get("confirmed_indices") != list(range(len(targets)))):
             raise ValueError("album_page_mark_review_stale")
+        if manual_margin and any(region["requires_edge_alignment"] for region in current):
+            raise ValueError("outside_manual_print_edge_unresolved")
         remaining = [region for region in regions if protected_region_key(region) not in targets]
+        if manual_margin:
+            remaining.extend({**region, "margin_ratio": 0.} for region in regions if protected_region_key(region) in targets)
         if not _keeps_protected_preview_content(page, original, quad, remaining, {}):
             raise ValueError("protected_region_cut")
         return remaining
@@ -1720,8 +1727,12 @@ def _inspect_print(
         if protect_regions else {"passed": True, "regions_checked": 0, "violations": []}
     )
     if not protection["passed"]:
-        if not _advisory_face_overlap(protection, allow_page_face_overlap):
+        margin_marks = (manual_margin_advisory(page, quad, regions, protection["violations"], neighbors)
+                        if dual_mode and manual and mask.get("manual_added") is True else [])
+        if not margin_marks and not _advisory_face_overlap(protection, allow_page_face_overlap):
             raise ValueError("protected_region_cut")
+        if margin_marks:
+            protection["manual_margin_marks"] = margin_marks
         protection["review_untrimmed"] = True
         reasons.append("POSSIBLE_CONTENT_CUTOFF")
     if edge_confirmation and not reasons:
