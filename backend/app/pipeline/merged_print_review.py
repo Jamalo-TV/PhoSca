@@ -7,7 +7,8 @@ import numpy as np
 
 from app.pipeline.album_backing import measure_backing_transitions, ribbed_lane
 from app.pipeline.multipanel_prints import recover_shared_stock_outline
-from app.pipeline.print_edges import _edge_band
+from app.pipeline.print_edges import _edge_band, refine_print_boundary
+from app.pipeline.visible_scene_edge import has_enclosing_perimeter
 
 MERGED_PRINT_PAIR_REVIEW = "MERGED_PRINT_PAIR_REVIEW"
 MERGED_PRINT_PAIR = "merged_print_pair"
@@ -118,6 +119,51 @@ def measured_merged_print_pair(image: np.ndarray, seeds: list[np.ndarray]) -> tu
     if lane is None or recover_shared_stock_outline(image, fits) is not None:
         return None
     return fits, lane
+
+
+def measured_contained_print_outline(image: np.ndarray, seed: np.ndarray, peer_seed: np.ndarray) -> np.ndarray | None:
+    """Measure a candidate beside an already detected print inside the same proposal."""
+    outline, sides, reasons = refine_print_boundary(image, seed)
+    if (outline is None or reasons or len(sides) != 4
+            or any(side["support"] < .85 or side["ambiguous"] for side in sides.values())):
+        return None
+    facing = _facing_sides(outline, peer_seed)
+    if facing is None:
+        return None
+    palette = _stock_palette(image, _lane_center([outline, peer_seed], facing))
+    if palette is None:
+        return None
+    peer = _fit_print(image, peer_seed, palette)
+    if (peer is None or _facing_sides(outline, peer) != facing
+            or cv2.intersectConvexConvex(outline, peer)[0] > 1):
+        return None
+    # Sample only the exposed strip between the measured faces.
+    start, stop = outline[[facing[0], (facing[0] + 1) % 4]]
+    peer_side = peer[[facing[1], (facing[1] + 1) % 4]][::-1]
+    step = stop - start
+    length = np.linalg.norm(step)
+    tangent = step / length
+    normal = np.float32([-tangent[1], tangent[0]])
+    stations = np.linspace(.08, .92, 96, dtype=np.float32) * length
+    projection = (peer_side - start) @ tangent
+    if projection[0] > stations[0] or projection[1] < stations[-1]:
+        return None
+    gap = -np.interp(stations, projection, (peer_side - start) @ normal)
+    if gap.min() < 4 or gap.max() > 18:
+        return None
+    centers = start + stations[:, None] * tangent
+    offsets = gap[:, None] * np.float32([.25, .50, .75])
+    points = np.float32(centers[:, None, :] - offsets[..., None] * normal)
+    pixels = cv2.remap(image, points[..., 0], points[..., 1], cv2.INTER_LINEAR)
+    band = cv2.cvtColor(pixels, cv2.COLOR_BGR2LAB)
+    stock = (band[..., 0] >= 145) & (np.linalg.norm(band[..., 1:] - palette, axis=2) <= 7)
+    if min(part.mean() for part in np.array_split(stock.all(axis=1), 8)) < .83:
+        return None
+    short = min(np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min() for quad in (outline, peer))
+    pair = cv2.convexHull(np.vstack((outline, peer)))[:, 0]
+    if has_enclosing_perimeter(image, pair, pair, float(short), search_margin=1.65, maximum_area_ratio=3.):
+        return None
+    return outline
 
 
 def _ribs_across_parent(image: np.ndarray, parent: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:

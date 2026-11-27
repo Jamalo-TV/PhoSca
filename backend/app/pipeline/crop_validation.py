@@ -176,7 +176,7 @@ def crop_validation_profile(settings: Settings) -> dict:
             and settings.enable_classical_segmentation_fallback and visible_model is None else None
         ),
         "dense_tile_inference": (
-            17 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+            18 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "possible_print_regions_review": (
             POSSIBLE_PRINT_REGIONS_REVISION if settings.enable_precise_photo_crops

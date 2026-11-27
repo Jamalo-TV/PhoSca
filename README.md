@@ -206,6 +206,19 @@ Eine Neuberechnung des einzelnen Zuschnitts nutzt die gespeicherte
 Kontur dieses Eintrags.
 [Vergleich auf der Spiralalbumseite](data/evaluation/README.md#review-a-tile-outline-blocked-by-a-capture-frame-contour)
 
+Ein zu hoher oder zu breiter Modellvorschlag kann einen fehlenden und
+einen bereits erkannten Abzug umfassen. Zwei starke Kachelmasken müssen
+die Teilflächen einzeln finden. PhoSca prüft am Original die vier Kanten
+des fehlenden Abzugs und den schmalen Streifen zwischen den beiden
+Konturen. Ist ein gemeinsamer Aussenrand messbar oder beansprucht ein
+anderer Eintrag die Fläche, bleibt die Vergleichskontur aus. Andernfalls
+zeigt **Ganzer Abzug** die gestrichelte Kontur am Sammelvorschlag. Prüfe
+am Original, ob sie einen eigenen Papierabzug zeigt, bevor du die vier
+Ecken im bestehenden Eintrag speicherst. Der bereits erkannte Abzug
+behält seinen eigenen Eintrag. Für beide Exporte gelten die üblichen
+Zuschnittprüfungen.
+[Beispiel U040](data/evaluation/README.md#recover-a-held-outline-from-a-proposal-covering-an-existing-print)
+
 Erfasst ein Vorschlag nur den oberen Teil eines möglichen Abzugs,
 kann PhoSca unter **Ganzer Abzug** zwei gemessene seitliche
 Fortsetzungen und zwei mögliche Endkanten zeigen. Dafür müssen

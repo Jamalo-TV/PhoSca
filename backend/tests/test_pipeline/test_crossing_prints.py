@@ -61,6 +61,59 @@ def test_tile_outline_is_an_exclusive_alternative_to_unsupported_frame_claim(cas
         assert result.detections == original.detections
 
 
+@pytest.mark.parametrize("case", ["separate", "enclosing_stock", "pending", "already_detected", "weak_tile"])
+def test_contained_tile_compares_only_missing_print_on_existing_parent(case):
+    height, width = 1101, 1301
+    image = np.full((height, width, 3), (112, 172, 208), np.uint8)
+    upper = np.float32([[210, 102], [475, 108], [478, 359], [205, 365]])
+    lower = np.float32([[197, 374], [485, 368], [478, 650], [190, 653]])
+    parent_outline = np.float32([[186, 98], [490, 98], [490, 657], [186, 657]])
+    cv2.fillConvexPoly(image, upper.astype(np.int32), (64, 80, 120))
+    cv2.fillConvexPoly(image, lower.astype(np.int32), (197, 175, 169))
+    if case == "enclosing_stock":
+        cv2.rectangle(image, (161, 70), (518, 684), (92, 73, 55), 7)
+
+    def detection(outline, detector_source, confidence, valid=True):
+        polygon = [{"x": float(x / (width - 1)), "y": float(y / (height - 1))} for x, y in outline]
+        box = {"x1": min(p["x"] for p in polygon), "y1": min(p["y"] for p in polygon),
+               "x2": max(p["x"] for p in polygon), "y2": max(p["y"] for p in polygon)}
+        return segmentation.SegmentationDetection(
+            bounding_box=box, mask={"polygon": polygon, "detector_source": detector_source,
+                                    "scores": {"area_ratio": cv2.contourArea(outline) / (width * height)}},
+            confidence=confidence, aspect_ratio=1., geometry_valid=valid,
+            review_reasons=[] if valid else ["aspect_ratio_too_tall"],
+        )
+
+    parent = detection(parent_outline, "yolo_onnx", .40, False)
+    peer = detection(lower, "yolo_onnx", .49)
+    upper_tile = detection(upper, "yolo_onnx_tiled", .79 if case == "weak_tile" else .82)
+    lower_tile = detection(lower, "yolo_onnx_tiled", .84)
+    nominations = segmentation._nominate_contained_tile_pairs([parent, peer], [upper_tile, lower_tile], {
+        0: {"score": .84}, 1: {"score": .81},
+    })
+    if case == "weak_tile":
+        assert nominations == []
+        return
+    nomination, = nominations
+    pending = [{"id": 0, "polygon": upper_tile.mask["polygon"]}] if case == "pending" else []
+    detections = [parent, peer]
+    if case == "already_detected":
+        detections.append(detection(upper, "yolo_onnx", .70))
+    original = segmentation.SegmentationResult(detections, {"fusion": {"deferred_print_proposals": pending}})
+    reviewed = segmentation._review_contained_tile_pair(image, original, *nomination)
+    if case != "separate":
+        assert reviewed is original
+        return
+    edited, untouched = reviewed.detections
+    assert untouched is peer and reviewed.metadata is original.metadata
+    assert edited.bounding_box == parent.bounding_box and edited.mask["polygon"] == parent.mask["polygon"]
+    assert edited.review_reasons == ["aspect_ratio_too_tall", CROSSING_PRINT_REVIEW]
+    assert edited.mask["crossing_print_suggestion_source"] == CONTESTED_TILE_OUTLINE
+    comparison = [(point["x"], point["y"]) for point in edited.mask["crossing_print_suggestion"]]
+    assert normalized_polygon_overlap(comparison, upper / [width - 1, height - 1]).iou > .98
+    assert normalized_polygon_overlap(comparison, lower / [width - 1, height - 1]).iou == 0
+
+
 def test_crossing_proposal_suggests_native_outline_without_claiming_a_print(tmp_path, monkeypatch):
     fixtures = Path(__file__).resolve().parents[3] / "data" / "golden_fixtures"
     image = load_image(fixtures / "page_04.jpg")

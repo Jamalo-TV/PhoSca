@@ -2713,6 +2713,71 @@ and development comparisons keep their previous crop and detection
 metrics in both modes. The annotated source and local receipts are
 under `runs/crop-quality/contested-tile-review/`.
 
+#### Recover a held outline from a proposal covering an existing print
+
+On native U040, an invalid full-page mask covers the middle and
+lower prints on the outer left. The lower print also has its own
+full-page model instance. The middle tile mask scores 0.822 with
+prepared boundary support 0.8055. It reaches 0.9543 IoU against
+the development draft. The ordinary count admission correctly refuses
+to add it through an existing claim. This failure happens before
+the renderer. On U039 the lower outer-right print is absent from
+the usual detector views. Four enlarged views can nominate it, but
+their masks intrude on the pending peacock print. The best disjoint
+refit reaches only 0.8417 draft IoU with two ambiguous sides.
+
+Dense tile revision 18 can measure one alternative on an invalid
+whole-page model row with confidence in `[0.25, 0.50)` and a mask
+covering 7–16% of the page. Each of exactly two available tile masks
+needs model confidence and prepared boundary support of at least
+0.80. At least 94% of each tile must lie within the parent. Each
+covers 34–58% of that parent, and their combined coverage is 83–97%
+with mutual IoU at most 0.01. One tile must uniquely match one active
+model row at IoU 0.85 or higher. At least 94% of that row must also
+lie within the parent. The other tile's raw and fitted shapes must
+both clear current and pending claims. This path runs no additional
+model inference.
+
+All four candidate sides must have native support of at least 0.85
+without ambiguity. The backing colour measured beyond both ends of
+the seam must recur across the measured 4–18 native pixel gap. All
+three samples through the gap must match for at least 83% of stations
+in each eighth of the sampled span. The fitted shape must agree with
+the raw tile at IoU 0.85 or higher and remain at least 95% inside the
+parent. A measurable enclosing perimeter around both outlines vetoes
+the comparison. On U040 the source fit reaches 0.98647 draft IoU and
+intersects zero source centres of the independently active lower
+print. The measured separation runs from 8.75 to 9.42 native pixels
+over the sampled span. The nine warm single-thread source checks took
+110 ms median and 121 ms at p95. The normal pipeline provides a new
+outline on the native input and abstains on three JPEG derivatives
+and twenty authored common-sheet variants. One faint reproduction
+of the scene and backing passes the local optical check when its
+candidate masks are supplied. The UI therefore shows the alternative
+on the existing row in review, with no automatic count or export.
+
+The normal multipart replay keeps four active rows, three deferred
+outlines and the lower print's existing preview bytes. Reanalysis
+and photo reprocessing retain the comparison. The API refuses a
+generic approval, a separate addition matching the comparison and
+an edit over the existing lower print. An exact manual save of the
+new contour still reaches the protected-content veto. The detected
+face rectangle at `(357, 547)–(654, 844)` begins beyond the new
+outline, while its 53.46-pixel margin crosses it. The page remains
+available for review and both named crop downloads stay held.
+
+The exact five-view Spiral comparison preserves the 6/38 active draft
+matches and 11 extras. Its only non-timing evaluator change is the
+explicit outline review reason on the previously held U040 row. All
+eight additional comparisons preserve count, mask and crop metrics,
+including both modes' landmark, aspect and content-loss measurements.
+No previously usable crop enters review. The frozen detector remains
+at 18/18. Seeded geometry remains at 11/11 whole prints and 12/12
+motifs. The separate album reference and calibration gates still apply.
+
+Private source traces, registered-model controls and normal workflow
+receipts are under `runs/crop-quality/u040-contained-print-review/`.
+
 #### Show open extent guides on a partial print
 
 Dense tile revision 7 can retain one secondary tile nomination for
