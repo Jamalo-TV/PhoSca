@@ -61,9 +61,9 @@ def _divider_between_claims(image: np.ndarray, outline: np.ndarray, children: li
     return cv2.perspectiveTransform(stripe, from_grid)[0]
 
 
-def refitted_film_carrier_traces(
+def refitted_film_carrier(
     image: np.ndarray, seed: np.ndarray, children: list[np.ndarray], peers: list[np.ndarray],
-) -> tuple[np.ndarray, np.ndarray] | None:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
     """Use the refit for measurement and abstain when another claim overlaps it."""
     peer_hulls = [cv2.convexHull(peer) for peer in peers]
     # A disputed raw carrier may use the four-side fit but cannot retry a missing side.
@@ -82,4 +82,4 @@ def refitted_film_carrier_traces(
     if seam is None:
         return None
     rim = transparent_film_rim(image, outline, seam, peers, check_narrow_divider=True)
-    return None if rim is None else (seam, rim)
+    return None if rim is None else (outline, seam, rim)

@@ -18,6 +18,16 @@ function sourceReviewLine(line) {
   return Array.isArray(line) && line.length === 2 && line.every(isNormalizedPoint) ? line : null;
 }
 
+export const filmNeighborEdgeColor = "#f59e0b";
+
+export function getFilmNeighborEdgeIndex(fullPrint) {
+  const index = fullPrint?.film_neighbor_edge?.trace_index;
+  const traces = fullPrint?.suggested_edge_traces;
+  return fullPrint?.status === "review_needed" && fullPrint.suggested_edge_source === "competing_print_edges"
+    && (index === 0 || index === 1) && Array.isArray(traces) && traces.length === 2 && traces.every(sourceReviewLine)
+    ? index : null;
+}
+
 export function filmSourceWindow(line, width, height) {
   if (!sourceReviewLine(line) || !Number.isFinite(width) || !Number.isFinite(height) || width < 2 || height < 2) return null;
   const boxWidth = Math.min(width, Math.max(48, .13 * Math.min(width, height)));

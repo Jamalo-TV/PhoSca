@@ -1042,6 +1042,17 @@ Prüfung des manuell gesetzten Umrisses in den Originalpixeln.
 Bleibt eine Kante mehrdeutig, bleiben beide Zuschnittmodi in Prüfung.
 [Kantenhinweise für den verlustfreien Papierabzug](data/evaluation/README.md#show-native-paper-edges-after-the-lossless-sleeve-review)
 
+Erkennt die native Prüfung nach dem Speichern zwei konkurrierende
+Linien, kann PhoSca den Übergang auf der Seite der zuvor geprüften
+Filmhülle orange hervorheben. Dafür müssen alle drei Hüllenvorschläge
+im selben Prüfschritt als Filmhülle bestätigt worden sein. PhoSca
+vermisst die Hülle nochmals am Original. Es prüft, ob zwischen den
+beiden Linien ein durchgehender Untergrundstreifen sichtbar ist und
+ob weitere Vorschläge den Bereich beanspruchen. Violett bleibt die
+Linie am Papier. Der Hinweis hilft beim Vergleich und beide
+Zuschnittmodi bleiben in Prüfung.
+[Vergleich der Papier- und Hüllenkante](data/evaluation/README.md#distinguish-the-previously-reviewed-sleeve-edge)
+
 Bleibt genau eine Papierkante strittig, kann PhoSca ihren Verlauf
 anhand der anderen drei Seiten und der angrenzenden Ecken für
 die Prüfung genauer messen. Vier im Original gestützte Motivkanten,

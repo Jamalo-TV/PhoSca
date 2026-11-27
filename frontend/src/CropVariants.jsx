@@ -2,7 +2,7 @@ import { Download } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import {
   albumLeafSourceWindow, competingPhotoRegionPaths, competingPhotoRegionStyles, filmSourceWindow,
-  getPaperGridReview, measuredRibbedPrintOutlineSource,
+  getFilmNeighborEdgeIndex, getPaperGridReview, measuredRibbedPrintOutlineSource,
 } from "./cropReviewOutlines.js";
 
 export const cropModeLabels = {
@@ -574,6 +574,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
       return "Die gestrichelte Markierung zeigt die fragliche Zuschnittkante. Vergleiche sie am Original mit dem Rand des benachbarten Abzugs. Bleibt die Zuordnung unklar, fotografiere die Abzüge getrennt.";
     }
     if (fullPrint.suggested_edge_source === competingPrintEdges) {
+      if (getFilmNeighborEdgeIndex(fullPrint) !== null) {
+        return "Orange markiert den Übergang auf der Seite der geprüften Filmhülle. Violett markiert den Übergang zum Papier auf der anderen Seite des sichtbaren Untergrundstreifens. Prüfe die übrigen Papierkanten am Original.";
+      }
       return "Die gestrichelten Linien zeigen mögliche Kanten im Original. Prüfe, welche das Fotopapier begrenzt.";
     }
     if (fullPrint.suggested_edge_source === possibleBackedPaperEdge) {

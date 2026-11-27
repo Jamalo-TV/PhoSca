@@ -33,7 +33,7 @@ from app.pipeline.edge_prints import (
 from app.pipeline.embossed_album_pockets import (
     EMBOSSED_CARRIER_PROPOSAL, EMBOSSED_POCKET_PROPOSAL, embossed_outer_carrier_traces, embossed_pocket_traces,
 )
-from app.pipeline.film_carrier_review import refitted_film_carrier_traces
+from app.pipeline.film_carrier_review import refitted_film_carrier
 from app.pipeline.frame_backing_review import FRAME_BACKING_COUNT_REVIEW, FRAME_BACKING_PROPOSAL, frame_backing_trace
 from app.pipeline.fragmented_prints import (
     EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
@@ -3826,11 +3826,12 @@ def _flag_partial_film_grid(image: np.ndarray, result: SegmentationResult) -> Se
     try:
         seed = order_quad_cyclic(normalized_vertices_to_pixels(outlines[carrier], width, height))
         children = [normalized_vertices_to_pixels(child, width, height) for child in (first, second)]
-        traces = refitted_film_carrier_traces(image, seed, children, peers)
+        carrier_geometry = refitted_film_carrier(image, seed, children, peers)
     except (cv2.error, ValueError, np.linalg.LinAlgError):
         return result
-    if traces is None:
+    if carrier_geometry is None:
         return result
+    _, *traces = carrier_geometry
     seam, rim = (_normalized_polygon(trace, width, height) for trace in traces)
     return SegmentationResult([
         replace(item, mask={**item.mask, "film_grid_review_seam": seam, "film_grid_review_rim": rim},

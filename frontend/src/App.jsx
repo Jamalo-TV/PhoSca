@@ -75,7 +75,7 @@ import {
 } from "./CropVariants.jsx";
 import {
   competingPhotoRegionPaths, competingPhotoRegionStyles, getCompetingPhotoReviewOutlines,
-  contrastCrossingTraceHint, contrastCrossingTraceStyle, getContrastCrossingTraces,
+  contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor, getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getMergedPrintPairs, getPaperJoinReviewGroups, getStoredMotifQuad,
@@ -1545,6 +1545,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const extentEdges = editingImage ? null : fullPrintMode?.partial_print_extent_traces;
   const edgeTraces = useMemo(() => [...getSourceEdgeTraces(traces), ...getSourceEdgeTraces([neighborOutline]),
     ...getSourceEdgeTraces(missingPaperOutlines)], [traces, neighborOutline, missingPaperOutlines]);
+  const filmEdgeIndex = editingImage ? null : getFilmNeighborEdgeIndex(fullPrintMode);
   const motifPreview = selected?.variant_urls?.image_only_preview || selected?.urls?.image_only_preview;
   const paperPreviewUrl = selected?.variant_urls?.full_print_preview || selected?.urls?.full_print_preview;
   const untrimmedPrint = selected?.untrimmed_url || selected?.variant_urls?.source_corrected_untrimmed
@@ -1690,7 +1691,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       if (photo.id === selectedPhotoId && !newPrint && (edgeTraces.length || exposedOverlapEdges?.length || extentEdges?.length)) {
         context.save();
         context.setLineDash([5, 3]);
-        for (const [lines, color, strokeWidth] of [[edgeTraces, "#a21caf", 2],
+        const paperTraces = filmEdgeIndex === null ? edgeTraces : edgeTraces.filter((_, index) => index !== filmEdgeIndex);
+        const filmTrace = filmEdgeIndex === null ? [] : [edgeTraces[filmEdgeIndex]];
+        for (const [lines, color, strokeWidth] of [[paperTraces, "#a21caf", 2], [filmTrace, filmNeighborEdgeColor, 2],
           [getSourceEdgeTraces(exposedOverlapEdges), "#0e7490", 2], [getSourceEdgeTraces(extentEdges), "#0891b2", 1]]) {
           context.strokeStyle = color;
           context.lineWidth = strokeWidth;
@@ -1981,7 +1984,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       context.restore();
     }
   }, [alternateOutline, blockedRegions, captureSplitGroups, competingPhotoOutlines, contrastCrossingTraces, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges, extentEdges, mergedPairs,
-    filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
+    filmEdgeIndex, filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
     printSuggestion, ribbedReviewOutline,
     markBounds, missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, preliminaryMotifMarks, selectedCountGroup, selectedPhotoId, showMissingEdges, sourceStrip]);
 

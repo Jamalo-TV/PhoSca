@@ -7123,6 +7123,66 @@ Physical ownership remains a review decision. The raw proposals,
 original and local comparison receipts are under
 `runs/crop-quality/lossless-paper-guidance/`.
 
+### Distinguish the previously reviewed sleeve edge
+
+The current native manual verifier reports two parallel lines at the
+top of the separately saved paper contact print. On the genuine
+lossless 270° view the outer line's endpoints are within 0.66 native
+pixels of the independent sleeve refit. The counterpart JPEG75 line
+is within 1.19 pixels. The sleeve remains visible in the source after
+the count decision. Narrowing the original search to five pixels
+would also remove ambiguity on the 4.5-pixel neutral split controls,
+a pale layer and an opaque common-mat reproduction. It does not
+establish physical ownership.
+
+Print outline revision 14 can identify the far line in this held pair.
+It requires a recent matching rejection snapshot on each of three
+automatic proposals. Their latest decisions must share one server
+event and explicitly record a film carrier. The base contrast
+proposal and its two strip masks must still share the measured
+divider and rim. Refit the carrier from the original pixels and
+compare those traces with the recorded lines. The paper quad and
+carrier must occupy separate areas. Exactly one alternative line
+must align with the refitted sleeve, and its companion must align
+with the submitted paper side.
+
+The shared backing strip is measured in 256 native cross-sections
+along 85% of the paper side. The strip must be between 7 and 18
+pixels wide. Both adjacent stocks must differ in chroma from the
+middle of the strip, with a native half-height crossing within
+1.5 pixels at each side. At least 90% of the stations and 75% of
+each eighth must agree. Four consecutive failed stations veto
+the hint. All current active and deferred claims are checked against
+the measured strip and the sleeve. A new overlapping claim clears
+the distinction when the existing pair is displayed.
+
+The independent native profiles pass all 256 stations for both
+formats. Full and partial bridges across the strip, a short 10-pixel
+bridge, a darkened strip and a two-pixel misregistration fail at
+least one required check. Pale tape on the sleeve side can preserve
+the two transitions, so the editor identifies the side of the
+reviewed sleeve. It leaves an independent question about the
+physical material at that line. Neither the corridor nor the
+existence of an adjacent sleeve resolves possible splits within
+the paper contact print.
+
+In both multipart upload tests, the orange line appears after
+explicit grouped exclusion and saving the measured paper. Three
+independent wrong-object decisions, even with the same reason,
+leave both lines in their ordinary style. A late active crossing
+claim withdraws the distinction before and after reprocessing.
+An added claim anywhere inside the measured sleeve also withdraws it,
+including a claim that touches neither line nor the backing strip.
+The two native traces, saved warp, crop reasons, protection state
+and untrimmed JPEG are identical to `f2731d8`. Both named modes
+and the trimmed alias continue to be held. Rechecking the witness
+takes median CPU time of 157.0 ms for PNG and 129.5 ms for JPEG75,
+over nine warm calls per format with one OpenCV thread. All eight
+paired benchmarks preserve their prior detection and two-mode crop
+metrics, including the 18 frozen detections and 23 seeded geometry
+recoveries. Local evidence and the comparison are under
+`runs/crop-quality/film-neighbor-edge/`.
+
 ### Compare the whole contact print with its counted fragments
 
 Multipanel revision 9 keeps the right paper outline, the original crop

@@ -32,7 +32,7 @@ import {
 } from "./CropVariants.jsx";
 import {
   getCompetingPhotoOutline, getCompetingPhotoReviewOutlines,
-  contrastCrossingTraceHint, contrastCrossingTraceStyle, getContrastCrossingTraces,
+  contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor, getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getMergedPrintPairs, getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
@@ -243,6 +243,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
   const initialPaperOutline = deferredDraft?.polygon || (openPaperOutline && paperGrid?.cut === null && printSuggestion);
   const printEdgeTraces = getSourceEdgeTraces(fullPrintMode?.suggested_edge_traces);
+  const filmEdgeIndex = getFilmNeighborEdgeIndex(fullPrintMode);
   const adjacentOutline = item.payload?.confidence != null
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.adjacent_print_suggestion));
   const nestedOutlines = (sourceBox ? [item.payload] : detections)
@@ -596,7 +597,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   ].filter(Boolean).join(" ");
   const paperTraceOverlay = printEdgeTraces.map((trace, index) => (
     <polyline key={index} points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
-      fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />
+      fill="none" stroke={index === filmEdgeIndex ? filmNeighborEdgeColor : "#a21caf"}
+      strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />
   ));
   const ribbedOutlinePoints = ribbedReviewOutline?.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ");
   const [neighborOutline] = getSourceEdgeTraces([fullPrintMode?.neighbor_overlap_outline]);

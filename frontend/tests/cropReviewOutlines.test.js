@@ -4,7 +4,7 @@ import {
   albumLeafSourceWindow, getAlbumLeafReviewGroups, getContrastCrossingTraces,
   competingPhotoRegionPaths, getCompetingPhotoOutline, getCompetingPhotoReviewOutlines,
   filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
-  getFilmGridReviewSeams, getFragmentReviewOutlines, getMergedPrintPairs,
+  getFilmGridReviewSeams, getFilmNeighborEdgeIndex, getFragmentReviewOutlines, getMergedPrintPairs,
   getPaperGridOutlineParents, getPaperGridReviewGroups,
   getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource,
@@ -12,6 +12,17 @@ import {
 
 const quad = [{ x: .1, y: .2 }, { x: .7, y: .2 }, { x: .7, y: .8 }, { x: .1, y: .8 }];
 const mask = { fragment_outline_suggestion: { quad, uncertain_edge: 1 } };
+
+test("a film-neighbor distinction only applies to its two active held lines", () => {
+  const mode = { status: "review_needed", suggested_edge_source: "competing_print_edges",
+    suggested_edge_traces: [quad.slice(0, 2), quad.slice(2)],
+    film_neighbor_edge: { trace_index: 1 } };
+  assert.equal(getFilmNeighborEdgeIndex(mode), 1);
+  assert.equal(getFilmNeighborEdgeIndex({ ...mode, film_neighbor_edge: { trace_index: 0 } }), 0);
+  assert.equal(getFilmNeighborEdgeIndex({ ...mode, status: "ready" }), null);
+  assert.equal(getFilmNeighborEdgeIndex({ ...mode, film_neighbor_edge: { trace_index: 2 } }), null);
+  assert.equal(getFilmNeighborEdgeIndex({ ...mode, suggested_edge_traces: [null, quad.slice(2)] }), null);
+});
 
 test("held motif geometry requires selection while a saved or ready motif can be edited", () => {
   const held = { status: "review_needed", warp_quad: quad, suggested_warp_quad: quad };

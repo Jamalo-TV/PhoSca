@@ -59,6 +59,7 @@ from app.pipeline.edge_prints import capture_edge_requires_review
 from app.pipeline.enhancement import conservative_enhance_photo, prepare_for_cutout
 from app.pipeline.exif import write_caption_exif
 from app.pipeline.fragmented_prints import SOURCE_FRAGMENT_PROPOSAL
+from app.pipeline.film_neighbor_edge import FILM_NEIGHBOR_EDGE, film_neighbor_edge
 from app.pipeline.fusion_ownership import NESTED_EDGE_CONTOUR, NESTED_EDGE_CONTOUR_REVIEW, deferred_neighbor_masks
 from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels
 from app.pipeline.manual_paper_extent import MANUAL_PAPER_EXTENT_SOURCE
@@ -78,7 +79,7 @@ from app.pipeline.page_plane import MeasuredPrintReference, PrintPagePlane
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_TRACES
 from app.pipeline.perspective import apply_refined_visibility, correct_photo_crop, page_plane_from_prints
 from app.pipeline.presets import get_enhancement_config
-from app.pipeline.print_edges import PRINT_EDGE_CONFIRMATION
+from app.pipeline.print_edges import COMPETING_PRINT_EDGES, PRINT_EDGE_CONFIRMATION
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.protected_regions import (
@@ -623,6 +624,7 @@ async def perspective_correction_task_logic(
             settings.camera_calibration_path if precise_crops else None,
         )
     neighbor_masks = []
+    rejected_film_groups = {}
     measured_references = []
     paper_claim_conflicts: set[str] = set()
     if precise_crops:
@@ -636,6 +638,7 @@ async def perspective_correction_task_logic(
                 ExtractedPhoto.enhancement_applied["correction"],
                 ExtractedPhoto.enhancement_applied["review_provenance"]["original_prediction"]["segmentation_mask"],
                 ExtractedPhoto.enhancement_applied["review_provenance"]["ready_before_neighbor_overlap"]["print_warp_quad"],
+                ExtractedPhoto.enhancement_applied["review_decisions"]["geometry"],
             ).where(
                 ExtractedPhoto.page_id == photo.page_id,
                 ExtractedPhoto.id != photo.id,
@@ -643,8 +646,15 @@ async def perspective_correction_task_logic(
             )
         )
         width, height = page_image.shape[1::-1]
-        for other_id, other_mask, box, rejection, confidence, correction, original_mask, prior_quad in rows:
-            if not other_mask or is_reviewed_non_print(rejection, box, other_mask):
+        for other_id, other_mask, box, rejection, confidence, correction, original_mask, prior_quad, decisions in rows:
+            if not other_mask:
+                continue
+            if is_reviewed_non_print(rejection, box, other_mask):
+                if contrast_outline and confidence is not None and other_mask.get("film_grid_review_rim") and decisions:
+                    decision = decisions[-1]
+                    if (decision.get("reason_code") == "film_carrier" and decision.get("answer") == "wrong_object"
+                            and decision.get("state") == "rejected" and (event_id := decision.get("event_id"))):
+                        rejected_film_groups.setdefault(event_id, []).append(other_mask)
                 continue
             if not automatic_detection and confidence is None and other_mask.get("warp_quad"):
                 # A reviewer can narrow the physical outline while keeping the old
@@ -763,6 +773,19 @@ async def perspective_correction_task_logic(
         output_directories.add(output_dir.parent)
     untrimmed_path = output_dir / f"{photo.id}_source_corrected_untrimmed.jpg"
     crop_modes = correction_metadata.get("crop_modes") or {}
+    whole_print = crop_modes.get("full_print") or {}
+    film_groups = [group for group in rejected_film_groups.values() if len(group) == 3]
+    if (len(film_groups) == 1 and whole_print.get("suggested_edge_source") == COMPETING_PRINT_EDGES
+            and all((crop_modes.get(name) or {}).get("status") == "review_needed" for name in ("full_print", "image_only"))):
+        try:
+            evidence = await asyncio.to_thread(
+                film_neighbor_edge, page_image, whole_print.get("warp_quad") or [], whole_print["suggested_edge_traces"],
+                film_groups[0], [*neighbor_masks, *pending_neighbors],
+            )
+        except (KeyError, TypeError, ValueError, cv2.error, np.linalg.LinAlgError):
+            evidence = None
+        if evidence is not None:
+            whole_print[FILM_NEIGHBOR_EDGE] = evidence
     if crop_modes and prior_contact_check:
         crop_modes["full_print"][CONTACT_PRINT_EDGE_CHECK] = True
         route_ready_crop_modes_to_review(crop_modes, [PRINT_EDGE_CONFIRMATION])
