@@ -3,6 +3,44 @@ from __future__ import annotations
 import pytest
 
 
+def test_crop_report_comparison_shows_geometry_changes_and_new_review_cases() -> None:
+    from scripts.compare_crop_evaluations import compare
+
+    def mode_row(index, *, corner_error, held=False, geometry_passes=True):
+        return {
+            "mode": "full_print", "truth_index": index, "verified": True, "recoverable": True,
+            "difficulty": "real", "status": "review_needed" if held else "ready",
+            "passes": geometry_passes and not held, "geometry_passes": geometry_passes,
+            "automatic_release_passes": False, "reason_codes": ["GEOMETRY_REVIEW"] if held else [],
+            "corner_error_max_px": corner_error,
+        }
+
+    def report(rows):
+        return {
+            "split": {}, "dataset_manifest_sha256": "same-manifest", "iou_threshold": .85,
+            "model_sha256": "model-hash", "metrics": {"totals": {}}, "runtime": {},
+            "crop_modes": {"full_print": {}}, "crop_mode_availability": {"full_print": {}},
+            "fixtures": [{"source_group": "album-a", "fixture": "page-1", "expected": len(rows),
+                          "annotation_provenance": "manually_verified", "crop_modes": rows}],
+        }
+
+    baseline = report([mode_row(i, corner_error=.5) for i in range(3)])
+    candidate = report([mode_row(0, corner_error=1.5), mode_row(1, corner_error=.5, held=True),
+                        mode_row(2, corner_error=None, held=True, geometry_passes=False)])
+    whole_print = compare(baseline, candidate)["crop_modes"]["full_print"]
+
+    assert [row["truth_index"] for row in whole_print["changed_cases"]] == [1, 2]
+    assert [(row["truth_index"], row["metrics"]["corner_error_max_px"])
+            for row in whole_print["geometry_changes"]] == [
+        (0, {"baseline": .5, "candidate": 1.5}),
+        (2, {"baseline": .5, "candidate": None}),
+    ]
+    assert whole_print["newly_held_passing_geometry"] == {
+        "count": 1, "cases": [{"source_group": "album-a", "fixture": "page-1", "truth_index": 1,
+                               "verified": True, "reason_codes": ["GEOMETRY_REVIEW"]}],
+    }
+
+
 def test_orientation_evaluation_applies_the_reference_correction_after_each_rotation(tmp_path, monkeypatch) -> None:
     from hashlib import sha256
     import json

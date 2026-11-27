@@ -10,12 +10,13 @@ from statistics import mean
 
 
 DETECTION_METRICS = (
-    "detection_precision", "detection_recall", "polygon_iou", "mask_iou",
+    "detection_precision", "detection_recall", "polygon_iou", "mask_iou", "boundary_f_score",
 )
 MODE_METRICS = (
     "footprint_iou", "corner_error_max_px", "aspect_ratio_relative_error",
-    "landmark_error_p95_px", "content_cutoff", "foreign_source_samples",
-    "cutoff_beyond_1px", "foreign_beyond_1px",
+    "landmark_error_p95_px", "content_cutoff", "foreign_fraction", "foreign_source_samples",
+    "cutoff_beyond_1px", "foreign_beyond_1px", "outside_source_samples", "sampling_shortfall_px",
+    "warp_metadata_error_max_px", "orientation_matches_reference",
 )
 MODE_STATE = ("status", "passes", "automatic_release_passes", "reason_codes")
 
@@ -52,21 +53,10 @@ def compare(baseline: dict, candidate: dict) -> dict:
     )):
         raise ValueError("Per-mode reference rows differ")
 
-    transitions: dict[str, list] = {mode: [] for mode in baseline["crop_modes"]}
-    for key, before in previous.items():
-        after = current[key]
-        group, fixture, index, mode = key
-        if all(before[field] == after[field] for field in MODE_STATE):
-            continue
-        transitions[mode].append({
-            "source_group": group, "fixture": fixture, "truth_index": index,
-            "baseline": {field: before.get(field) for field in (*MODE_STATE, *MODE_METRICS)},
-            "candidate": {field: after.get(field) for field in (*MODE_STATE, *MODE_METRICS)},
-        })
-
     modes = {}
-    for mode in transitions:
-        pairs = [(row, current[key]) for key, row in previous.items() if key[-1] == mode]
+    for mode in baseline["crop_modes"]:
+        indexed_pairs = [(key, row, current[key]) for key, row in previous.items() if key[-1] == mode]
+        pairs = [(before, after) for _, before, after in indexed_pairs]
         common_geometry = {}
         for metric in MODE_METRICS:
             values = [(a[metric], b[metric]) for a, b in pairs
@@ -74,6 +64,21 @@ def compare(baseline: dict, candidate: dict) -> dict:
             if values:
                 a, b = zip(*values, strict=True)
                 common_geometry[metric] = {"samples": len(values), "baseline_mean": mean(a), "candidate_mean": mean(b)}
+        changed_cases, geometry_changes, newly_held = [], [], []
+        for (group, fixture, index, _), before, after in indexed_pairs:
+            reference = {"source_group": group, "fixture": fixture, "truth_index": index}
+            if any(before[field] != after[field] for field in MODE_STATE):
+                changed_cases.append({
+                    **reference,
+                    "baseline": {field: before.get(field) for field in (*MODE_STATE, *MODE_METRICS)},
+                    "candidate": {field: after.get(field) for field in (*MODE_STATE, *MODE_METRICS)},
+                })
+            metrics = {metric: {"baseline": before.get(metric), "candidate": after.get(metric)}
+                       for metric in MODE_METRICS if before.get(metric) != after.get(metric)}
+            if metrics:
+                geometry_changes.append({**reference, "metrics": metrics})
+            if before["passes"] and after["status"] == "review_needed" and after.get("geometry_passes") is True:
+                newly_held.append({**reference, "verified": after["verified"], "reason_codes": after["reason_codes"]})
         modes[mode] = {
             "baseline": baseline["crop_modes"][mode],
             "candidate": candidate["crop_modes"][mode],
@@ -82,13 +87,16 @@ def compare(baseline: dict, candidate: dict) -> dict:
                 for (before, after), count in sorted(Counter((a["status"], b["status"]) for a, b in pairs).items())
             ],
             "common_geometry": common_geometry,
-            "changed_cases": transitions[mode],
+            "changed_cases": changed_cases,
+            "geometry_changes": geometry_changes,
+            "newly_held_passing_geometry": {"count": len(newly_held), "cases": newly_held},
         }
 
     def summary(report):
         return {
             "model_sha256": report["model_sha256"],
-            "detection": report["metrics"]["totals"] | {name: report["metrics"][name] for name in DETECTION_METRICS},
+            "detection": report["metrics"]["totals"] | {name: report["metrics"].get(name) for name in DETECTION_METRICS},
+            "validation_profile": report.get("validation_profile"),
             "crop_mode_availability": report["crop_mode_availability"],
             "runtime": report["runtime"],
         }
