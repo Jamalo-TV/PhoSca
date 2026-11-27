@@ -2842,6 +2842,104 @@ The four complete normal-pipeline reports, local manifests and
 audit and training source counts are in its `independent/` folder.
 The experiment uses no reserved calibration or release references.
 
+#### Check high-resolution nominations against existing physical claims
+
+The 768 input has more small masks, but some describe a print already
+represented by a pending contour or a count correction. The native replay
+compares them with 512 active, pending, crossing and merged-outline claims.
+On U008, the polar bear fit reaches 0.9723 IoU against the development
+outline and is already offered by revision 14. The glare-heavy upper
+candidate has 0.834 detector confidence, but its four native boundaries
+cannot be resolved. The elongated right proposal also yields two child
+masks. The lower child reaches 0.9753 draft IoU after an ordinary fit.
+The upper child does not have a verifiable perimeter. Sixteen contextual
+layouts per child, with duplicate windows removed, produce 9 upper and
+15 lower observations. The existing stock and separation checks do not
+confirm any of the 25 tested pairs, including the two original seeds.
+
+On U039, a 768 nomination leads to two independent 512 views centred on
+the measured backing. Their raw masks agree at 0.9611 IoU and their fitted
+corners differ by at most 1.997 native pixels. The two fits score 0.9816 and
+0.9853 against the development outline. The unchanged 512 pipeline already
+claims the target on two rotated inputs. JPEG quality 55 and 75 do not
+reproduce the native nomination and fit. An optically similar wider
+single-sheet control also passes the local rails when its outer boundary
+falls beyond the search window. The outline stays a development finding.
+The original-pixel checks, outline and seeded preview are under
+`runs/crop-quality/resolution-review/`.
+
+In the frozen comparison, all nine final active 768 extras touch an
+existing 512 claim. With one real peer deliberately withheld in a
+same-stock stress test, the unclaimed 768 confidence gate admits 8 real
+individual-print outlines and 24 false inner outlines from single carriers.
+Adding the existing four-side native fit and enclosure checks leaves 4
+real and 10 false outlines. An offline enclosing-perimeter check over
+the union with the known peer rejects 6 of those 10 false candidates
+and preserves all 4 real ones. The four remaining false candidates have
+open ends. The diagnostic uses known peer correspondence. It supplies
+no general peer selection and is not enabled in the app.
+
+#### Isolate print density in a matched fine-tuning trial
+
+At `7ee38fc`, two 512-input candidates start from mixed checkpoint
+`8fa869a3fbafbac6217b8d99ed6e39f8a0c78fdd87d4128716d09851b80a0d86`.
+Each arm sees 96 training views. The 40 pinned legacy derivatives,
+24 inherited procedural views and 8 stock and cover controls are common.
+Only 24 paired training views differ. The sparse views contain two to
+four focal prints. Dense views keep the same focal artwork and exact
+owner pixels and place other prints around them. The median generated
+training footprint is 4.197% of the frame in the sparse arm and 4.265%
+in the dense arm. Both train for three epochs with seed 0 and geometry
+and compositing augmentation disabled. Selection uses 20 shared
+views. The 32 shared challenge views use separate roots and a different
+procedural rendering variant. Reconstruction verifies all recorded
+image, owner-mask and label hashes and no cross-split reuse of root
+groups, image hashes or procedural artwork IDs. The real Spiral
+development views are evaluation only. Reserved calibration and release
+material are unused.
+
+| Measure | Mixed parent | Sparse arm | Dense arm |
+| --- | ---: | ---: | ---: |
+| Raw dense challenge matches / extras at 0.25 | 51/139 + 10 | 99/139 + 12 | 139/139 + 4 |
+| Raw dense challenge matches / extras at 0.70 | 4/139 + 1 | 41/139 + 2 | 137/139 + 0 |
+| Raw non-photo cover extras at 0.25 | 24 | 2 | 25 |
+| Raw enclosing-sheet matches / internal fragments at 0.25 | 0/4 + 23 | 0/4 + 0 | 0/4 + 22 |
+| Frozen hybrid matches / extras | 17/18 + 4 | 18/18 + 3 | 18/18 + 4 |
+| Frozen hybrid passing whole prints | 9/11 | 6/11 | 8/11 |
+| Frozen hybrid passing motifs | 10/12 | 7/12 | 9/12 |
+| Spiral hybrid matches / extras | 6/38 + 11 | 13/38 + 18 | 30/38 + 18 |
+
+All hybrid rows use the normal classical and source checks, proposal
+threshold 0.25, acceptance threshold 0.70 and scoring IoU 0.85. Both
+fine-tuned weights lose the camera-tilt example in both crop modes.
+The dense arm swaps which of the two touching prints passes. The sparse
+arm also loses the glare case in both modes. On Spiral the dense arm
+reduces mean whole-print footprint cutoff against the development outlines
+from 0.1581 to 0.0677. Three locally ready whole-print candidates and one
+locally ready motif lack verified crop references. Local readiness provides
+no release evidence. Neither checkpoint is adopted.
+
+The sparse ONNX SHA-256 is
+`690162aa452ddf77ab0ad2348fdc1a09757ae56ab639f60910c699d9c15b3495`.
+The dense ONNX SHA-256 is
+`32cfb0e3cb24b042e63a014f6437e844a844ab372dc161a983ca3272d73278ff`.
+The corresponding training receipts, source inventories with roots,
+splits and hashes, raw challenge results and hybrid reports are under
+`runs/crop-quality/crowded-print-training/`. To reproduce the comparison
+from two matching evaluator reports, run:
+
+```bash
+python scripts/compare_crop_evaluations.py \
+  runs/crop-quality/detector-resolution-pilot/locked-512.json \
+  runs/crop-quality/crowded-print-training/dense-locked-hybrid.json \
+  --output /tmp/phosca-dense-locked-comparison.json
+```
+
+The comparison records per-reference changes in crop state, reasons and
+automatic eligibility. Geometry summaries use the same reference rows
+with measurements from both runs. It also includes native corner and
+landmark error, aspect, cutoff, foreign interpolation counts and timing.
+
 #### Require separate confirmation for an unsupported contrast outline
 
 The normal JPEG55 upload of U039 produced a held `contrast_region`
