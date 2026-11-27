@@ -4577,15 +4577,14 @@ def _offer_unclaimed_tiled_prints(
     })
 
 
-def _centered_tile_print_offer(
-    source: np.ndarray, image: np.ndarray, seed: SegmentationDetection, original_outline: np.ndarray,
+def _centered_tile_print_mask(
+    image: np.ndarray, original: np.ndarray,
     claims: list[dict], infer: Callable[[np.ndarray], list[SegmentationDetection]],
     inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
-) -> list[dict] | None:
-    """Try one closer view of an unclaimed print with an existing native fit."""
-    height, width = source.shape[:2]
-    tile_width, tile_height = round(.56 * width), round(.60 * height)
-    original = _detection_polygon(seed)
+    *, window: tuple[float, float] = (.56, .60),
+) -> np.ndarray | None:
+    height, width = image.shape[:2]
+    tile_width, tile_height = round(window[0] * width), round(window[1] * height)
     center = (original.min(axis=0) + original.max(axis=0)) / 2 * [width - 1, height - 1]
     left = min(max(round(center[0] - tile_width / 2), 0), width - tile_width)
     top = min(max(round(center[1] - tile_height / 2), 0), height - tile_height)
@@ -4603,6 +4602,20 @@ def _centered_tile_print_offer(
     if (candidate.confidence < .80 or agreement < .90 or _detection_boundary_evidence(candidate, *inputs)["score"] < .80
             or tiled_outline_conflicts(candidate.mask["polygon"], claims, width, height)):
         return None
+    return polygon
+
+
+def _centered_tile_print_offer(
+    source: np.ndarray, image: np.ndarray, seed: SegmentationDetection, original_outline: np.ndarray,
+    claims: list[dict], infer: Callable[[np.ndarray], list[SegmentationDetection]],
+    inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
+) -> list[dict] | None:
+    """Try one closer view of an unclaimed print with an existing native fit."""
+    height, width = source.shape[:2]
+    original = _detection_polygon(seed)
+    polygon = _centered_tile_print_mask(image, original, claims, infer, inputs)
+    if polygon is None:
+        return None
     outline = tile_print_outline(source, polygon, require_clear_sides=True)
     if outline is None:
         return None
@@ -4614,6 +4627,36 @@ def _centered_tile_print_offer(
         return None
     normalized = _normalized_polygon(outline, width, height)
     return None if tiled_outline_conflicts(normalized, claims, width, height) else normalized
+
+
+def _recover_unfitted_tile_print_offer(
+    source: np.ndarray, image: np.ndarray, seed: SegmentationDetection, claims: list[dict],
+    infer: Callable[[np.ndarray], list[SegmentationDetection]],
+    inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
+) -> list[dict] | None:
+    """Require two close views with matching original-pixel fits when the first fit failed."""
+    height, width = source.shape[:2]
+    original = _detection_polygon(seed)
+    fitted = []
+    observed = [original]
+    for window in ((.56, .60), (.48, .53)):
+        polygon = _centered_tile_print_mask(image, original, claims, infer, inputs, window=window)
+        if polygon is None:
+            return None
+        outline = tile_print_outline(source, polygon, minimum_side_support=.90)
+        if outline is None:
+            return None
+        observed.append(polygon)
+        fitted.append(order_quad_cyclic(outline))
+    if (normalized_polygon_overlap(observed[1], observed[2], raster_size=512).iou < .90
+            or np.max(np.linalg.norm(fitted[0] - fitted[1], axis=1)) > 4):
+        return None
+    for outline in fitted:
+        vertices = pixel_vertices_to_normalized(outline, width, height)
+        if (any(normalized_polygon_overlap(vertices, polygon, raster_size=512).iou < .85 for polygon in observed)
+                or tiled_outline_conflicts(_normalized_polygon(outline, width, height), claims, width, height)):
+            return None
+    return _normalized_polygon(fitted[0], width, height)
 
 
 def _review_partial_tile_extent(source: np.ndarray, result: SegmentationResult, seeds: list[list[dict]]) -> SegmentationResult:
@@ -4725,7 +4768,7 @@ def _collect_tiled_print_offers(
     inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
     partial_tile_seeds: list[list[dict]] | None,
     merged_tile_pairs: list[tuple[np.ndarray, list[np.ndarray]]] | None,
-) -> tuple[list[list[dict]], tuple[SegmentationDetection, np.ndarray] | None]:
+) -> tuple[list[list[dict]], tuple[SegmentationDetection, np.ndarray] | None, SegmentationDetection | None]:
     candidates, evidence, _ = _recover_dense_prints(image, detections, model_evidence, infer, inputs)
     if merged_tile_pairs is not None:
         try:
@@ -4736,6 +4779,7 @@ def _collect_tiled_print_offers(
     claims = [item.mask for item in detections]
     offers = []
     retry_seed = None
+    unfitted_seed = None
     for index, candidate in enumerate(candidates):
         strong = candidate.confidence >= .80
         if (candidate.mask.get("detector_source") != "yolo_onnx_tiled"
@@ -4760,6 +4804,8 @@ def _collect_tiled_print_offers(
         except (cv2.error, ValueError, np.linalg.LinAlgError):
             continue
         if outline is None:
+            if not strong and not conflicted and (unfitted_seed is None or candidate.confidence > unfitted_seed.confidence):
+                unfitted_seed = candidate
             continue
         normalized = _normalized_polygon(outline, width, height)
         if tiled_outline_conflicts(normalized, claims, width, height):
@@ -4772,7 +4818,7 @@ def _collect_tiled_print_offers(
             offers.append(normalized)
         else:
             retry_seed = (candidate, outline)
-    return offers, retry_seed
+    return offers, retry_seed, unfitted_seed
 
 
 def _collect_rotated_print_offers(
@@ -4937,7 +4983,7 @@ def _segment_album_page(
                     review_started = perf_counter()
                     tile_review = {}
                     try:
-                        direct, retry_seed = _collect_tiled_print_offers(
+                        direct, retry_seed, unfitted_seed = _collect_tiled_print_offers(
                             source, image, detections, model_evidence, lambda frame: infer(frame)[0], inputs,
                             partial_tile_seeds, merged_tile_pairs,
                         )
@@ -4962,6 +5008,13 @@ def _segment_album_page(
                             if centered is not None:
                                 tile_offers.append(centered)
                                 tile_review["centered_candidate"] = True
+                        if not tile_offers and unfitted_seed is not None:
+                            recovered = _recover_unfitted_tile_print_offer(
+                                source, image, unfitted_seed, [item.mask for item in detections], lambda frame: infer(frame)[0], inputs,
+                            )
+                            if recovered is not None:
+                                tile_offers.append(recovered)
+                                tile_review["recovered_from_centered_pair"] = True
                     except Exception as exc:  # Keep earlier proposals if an optional view fails.
                         tile_review["error"] = str(exc)
                     metadata["tiled_print_review"] = {

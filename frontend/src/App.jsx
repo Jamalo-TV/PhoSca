@@ -2062,7 +2062,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     } catch (error) {
       if (error.message === "album_page_mark_review_stale") albumMarkReview.reset();
       const message = error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
-        : error.message === "print_outline_review_required" ? printOutlineSaveHint : cropProtectionErrors[error.message] || error.message;
+        : error.message === "print_outline_review_required" ? printOutlineSaveHint
+          : standalonePrintReviewErrors[error.message] || cropProtectionErrors[error.message] || error.message;
       setBlockedCrop(error.message === "protected_region_removed" ? { ...error.detail, photoId: selected.id } : null);
       setSaveState({ photoId: selected.id, mode: editMode, error: message });
     }

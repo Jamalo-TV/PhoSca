@@ -85,10 +85,22 @@ zentriert einen engeren Ausschnitt um diesen Vorschlag. Für einen
 neuen Eintrag in der Anzahlprüfung müssen beide Masken und ihre
 nachgemessenen Papierecken übereinstimmen. Die zweite Ansicht muss
 vier eindeutige Kanten im Original bestätigen.
+
+Scheitert die erste Kantenmessung eines schwächeren Kachelvorschlags
+und liefern die bisherigen Prüfungen keinen weiteren Abzug, versucht
+PhoSca bis zu zwei unterschiedlich grosse Teilbilder. Beide Ansichten
+müssen dieselbe Maske stützen. PhoSca misst die Ecken für jede Maske
+separat an den Originalpixeln. Die vier Seiten brauchen starke
+Unterstützung. Drei davon müssen eindeutig sein. Eine mehrdeutige
+Kante bleibt Teil der Geometrieprüfung.
 Die Anzahl erhöht sich erst, wenn du den eigenen Papierabzug am
-Original bestätigst. Danach prüfst du seine Ecken und beide Zuschnitte.
+Original bestätigst. Deckt eine manuell gesetzte Kontur mindestens 55 %
+des offenen Kachelvorschlags ab und liegen mindestens 75 % ihrer Fläche
+darin, verweist PhoSca beim Hinzufügen oder Verschieben eines Abzugs
+auf die Anzahlprüfung. Danach prüfst du seine Ecken und beide Zuschnitte.
 [Kachelprüfung](data/evaluation/README.md#missing-prints-in-count-review) ·
-[Zweite Kachelansicht](data/evaluation/README.md#confirm-a-weak-tile-mask-from-a-centered-view)
+[Zweite Kachelansicht](data/evaluation/README.md#confirm-a-weak-tile-mask-from-a-centered-view) ·
+[Wiederholte Kantenmessung](data/evaluation/README.md#refit-an-unmeasured-tile-from-two-closer-views)
 
 Blockiert eine einzelne, am Aufnahmerand abgestützte Kontrastkontur
 einen gemessenen Kachelumriss, prüft PhoSca beide am Original. Ist

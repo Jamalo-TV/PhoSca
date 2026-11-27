@@ -64,6 +64,7 @@ export const embossedPocketReviewErrors = {
 export const standalonePrintConfirmation = "Hier liegt ein eigener Papierabzug.";
 export const standalonePrintReviewErrors = {
   standalone_print_confirmation_required: "Bestätige, dass hier ein eigener Papierabzug aufliegt.",
+  pending_tiled_print_confirmation_required: "Für diesen Umriss gibt es einen offenen Vorschlag. Prüfe ihn zuerst in der Anzahlprüfung.",
   standalone_print_confirmation_stale: "Dieser Vorschlag hat sich geändert. Prüfe die aktualisierte Albumseite.",
   standalone_print_outline_outside_proposal: "Setze die vier Ecken an den sichtbaren Papierrand des Vorschlags.",
   standalone_print_matches_detected_print: "Dieser Abzug ist bereits erfasst. Setze die Ecken an das Papier des weiteren Abzugs.",

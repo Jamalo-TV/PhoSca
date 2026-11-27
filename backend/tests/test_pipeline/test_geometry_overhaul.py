@@ -142,6 +142,49 @@ def test_centered_tile_retry_requires_unique_native_agreement(case) -> None:
         assert found is None
 
 
+@pytest.mark.parametrize("case", ["confirmed", "competing_second_mask", "second_fit_drift", "missing_source_edge"])
+def test_unfitted_tile_requires_two_consistent_native_fits(case, monkeypatch) -> None:
+    from app.pipeline import segmentation
+
+    page = np.full((1001, 1001, 3), (120, 68, 41), np.uint8)
+    page[400:601, 400:601] = (207, 230, 232)
+    page[416:585, 416:585] = (69, 60, 101)
+    if case == "missing_source_edge":
+        page[370:451, 370:631] = (120, 68, 41)
+    seed = _detection({"x1": .4, "y1": .4, "x2": .6, "y2": .6}, .77, family="model")
+    calls = []
+
+    def infer(frame):
+        height, width = frame.shape[:2]
+        calls.append((height, width))
+        x0, y0 = round(500 - width / 2), round(500 - height / 2)
+        observation = _detection({"x1": (400 - x0) / (width - 1), "x2": (600 - x0) / (width - 1),
+                                  "y1": (400 - y0) / (height - 1), "y2": (600 - y0) / (height - 1)},
+                                 .91, family="model")
+        if case == "competing_second_mask" and len(calls) == 2:
+            return [observation, _detection({**observation.bounding_box, "x1": (420 - x0) / (width - 1)},
+                                            .84, family="model")]
+        return [observation]
+
+    if case == "second_fit_drift":
+        original = segmentation.tile_print_outline
+
+        def drifting_fit(*args, **kwargs):
+            outline = original(*args, **kwargs)
+            return outline + [0, 5] if len(calls) == 2 and outline is not None else outline
+
+        monkeypatch.setattr(segmentation, "tile_print_outline", drifting_fit)
+    found = segmentation._recover_unfitted_tile_print_offer(
+        page, page, seed, [], infer, segmentation._boundary_inputs(page),
+    )
+    if case == "confirmed":
+        assert calls == [(601, 561), (531, 480)]
+        assert found is not None
+        assert np.allclose([(p["x"], p["y"]) for p in found], [(0.4, 0.4), (0.6, 0.4), (0.6, 0.6), (0.4, 0.6)])
+    else:
+        assert found is None
+
+
 def test_album_deskew_requires_page_level_orientation() -> None:
     from app.pipeline.page_deskew import album_rotation
 

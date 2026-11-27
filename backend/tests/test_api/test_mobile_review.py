@@ -182,6 +182,23 @@ async def test_tiled_print_requires_own_paper_confirmation_and_keeps_crops_held(
     for request in (base, linked):
         missing = await client.post(url, json=request)
         assert (missing.status_code, missing.json()["detail"]) == (409, "standalone_print_confirmation_required")
+    # This smaller outline still qualifies when linked to the offer, even though its IoU is below 0.90.
+    inset = rect(.61, .26, .86, .62)
+    size = {"width": 96, "height": 100}
+    unlinked = await client.post(url, json={**base, "warp_quad": inset, "print_size_mm": size})
+    assert (unlinked.status_code, unlinked.json()["detail"]) == (409, "pending_tiled_print_confirmation_required")
+    replaced = await client.patch(f"/api/v1/photos/{photo_id}/bounding-box", json={
+        "bounding_box": {"x1": .61, "y1": .26, "x2": .86, "y2": .62},
+        "segmentation_mask": {"source": "manual_quad", "polygon": inset, "warp_quad": inset, "print_size_mm": size},
+    })
+    assert (replaced.status_code, replaced.json()["detail"]) == (409, "pending_tiled_print_confirmation_required")
+    fitted = await client.patch(f"/api/v1/photos/{photo_id}/bounding-box", json={
+        "bounding_box": {"x1": .61, "y1": .26, "x2": .86, "y2": .62},
+        "segmentation_mask": {"polygon": [inset[0], {"x": .70, "y": .26}, *inset[1:]], "visible_polygon": own},
+    })
+    assert (fitted.status_code, fitted.json()["detail"]) == (409, "pending_tiled_print_confirmation_required")
+    unchanged, = (await client.get(f"/api/v1/albums/{album_id}/photos")).json()
+    assert unchanged["id"] == str(photo_id) and unchanged["segmentation_mask"]["polygon"] == own
     confirmed = {**linked, "confirm_standalone_print": True}
     overlapping = await client.post(url, json=confirmed)
     assert (overlapping.status_code, overlapping.json()["detail"]) == (409, "tiled_print_claim_conflict")
@@ -190,6 +207,7 @@ async def test_tiled_print_requires_own_paper_confirmation_and_keeps_crops_held(
         parent = await session.get(ExtractedPhoto, photo_id)
         parent.enhancement_applied = {**parent.enhancement_applied, "correction": {}}
         await session.commit()
+    confirmed = {**confirmed, "warp_quad": inset, "print_size_mm": size}
     saved = await client.post(url, json=confirmed)
     assert saved.status_code == 201, saved.text
     added = saved.json()

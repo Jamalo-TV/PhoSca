@@ -35,7 +35,7 @@ def tiled_outline_conflicts(outline: list[dict], claims: list[dict], width: int,
 
 
 def tile_print_outline(
-    image: np.ndarray, polygon: np.ndarray, *, require_clear_sides: bool = False,
+    image: np.ndarray, polygon: np.ndarray, *, require_clear_sides: bool = False, minimum_side_support: float = .70,
 ) -> np.ndarray | None:
     """Check the four sides in the unenhanced source before offering a draft."""
     height, width = image.shape[:2]
@@ -44,7 +44,7 @@ def tile_print_outline(
         return None
     outline, sides, reasons = refine_print_boundary(image, seed)
     if (outline is None or len(sides) != 4
-            or min(side["support"] for side in sides.values()) < .70
+            or min(side["support"] for side in sides.values()) < minimum_side_support
             or sum(side["support"] >= .85 and not side["ambiguous"] for side in sides.values()) < 3):
         return None
     # A curved paper edge can still identify a missing print for count review.

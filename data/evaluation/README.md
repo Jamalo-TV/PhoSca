@@ -2252,6 +2252,61 @@ both modes. These measurements use the registered development
 checkpoint and draft annotations.
 Local receipts are under `runs/crop-quality/centered-tile-review/`.
 
+#### Refit an unmeasured tile from two closer views
+
+Dense tile revision 9 reserves the first successful ordinary review
+path. If those paths yield no offer, it can retry one weak tile winner
+whose original source fit failed. The raw seed must be unclaimed, have
+model confidence in `[0.65, 0.80)` and a boundary score of at least 0.80.
+The retry uses centered windows of 56% × 60% and 48% × 53% of the page.
+Both follow the normal margin check at an artificial tile boundary.
+Each must return exactly one plausible match to the seed at mask IoU
+0.65 or greater. Acceptance requires confidence and boundary score at
+least 0.80, 0.90 IoU to the seed and 0.90 IoU between the new masks.
+
+Both views must yield original-pixel fits with at least 0.90 support
+on every side and at least three unambiguous sides. The fitted corners
+must agree within four native pixels. Each fit must overlap all three
+masks at 0.85 IoU or higher. The final fusion checks current and pending
+paper claims again. The result uses the existing standalone print
+confirmation and remains a count suggestion until that confirmation.
+
+On U040 the registered development model first returns a 0.779 seed
+on the lower inner print of the right leaf, which fails the ordinary
+source fit. The two centered views raise the model scores to 0.868
+and 0.914. Their fitted corners differ by at most 3.11 native pixels.
+The lower rail remains ambiguous. The new suggestion reaches 0.96410
+mask IoU against the development draft on a 1024-cell comparison
+raster. All five existing spiral captures keep their active detections
+and previous count suggestions. U040 adds this one suggestion.
+At native dimensions JPEG quality 90 also produces the suggestion
+with 0.96585 draft IoU. JPEG qualities 55 and 75, JPEG 75 at 75% scale
+and the two quarter-turn derivatives produce no new suggestion. The
+recorded active masks match the baseline for all seven U040 inputs.
+In five warm native runs on a shared test host, median time in the
+tile stage was 0.74 s at `619ad65` and 1.09 s with the retry.
+
+The exact decoded U040 pixels were uploaded through the ordinary
+PNG upload path. Repeat analysis retained four active rows and one
+pending offer. The current count revision and explicit confirmation
+were needed to save it as the fifth row. The baseline review image
+was available. The full-print and motif downloads and cropped alias
+remained held after save and reprocessing. Both creating a manual crop
+without linking the offer and moving an active row to its contour now
+return HTTP 409. The check uses the same 55% proposal coverage and 75%
+submitted outline coverage as explicit acceptance. Both attempts on a
+three-native-pixel inset left the active rows and count revision intact.
+The independent native probe also finds a plausible reproduction on one
+paper carrier. The paper count remains a reviewer decision. The draft
+supplies a visible paper outline. Independent aspect and motif references
+are still outstanding for this print.
+
+The eight frozen and development comparisons preserve detection and
+both crop metrics, including 18/18 locked synthetic detections and
+11/11 whole-print plus 12/12 image-only recoverable synthetic crops.
+The local receipts are under
+`runs/crop-quality/recovered-centered-tile-review/`.
+
 #### Review a tile outline blocked by a capture frame contour
 
 Crossing outline revision 4 compares a previously verified tile

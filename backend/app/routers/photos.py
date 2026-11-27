@@ -152,6 +152,14 @@ def _matches_review_outline(outline: list[dict], claimed: list[dict] | None) -> 
     ).iou >= .90)
 
 
+def _matches_standalone_print_outline(outline: list[dict], proposed: list[dict]) -> bool:
+    match = normalized_polygon_overlap(
+        [(point["x"], point["y"]) for point in proposed], [(point["x"], point["y"]) for point in outline],
+        raster_size=512,
+    )
+    return match.first_containment >= .55 and match.second_containment >= .75
+
+
 def _matches_contested_tile(photo: ExtractedPhoto, outline: list[dict]) -> bool:
     mask = photo.segmentation_mask or {}
     if mask.get("crossing_print_suggestion_source") == CONTESTED_TILE_OUTLINE:
@@ -744,11 +752,7 @@ async def create_manual_photo(
     if standalone_offer:
         if not payload.confirm_standalone_print:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="standalone_print_confirmation_required")
-        match = normalized_polygon_overlap(
-            [(point["x"], point["y"]) for point in deferred["polygon"]],
-            [(point["x"], point["y"]) for point in quad], raster_size=512,
-        )
-        if match.first_containment < .55 or match.second_containment < .75:
+        if not _matches_standalone_print_outline(quad, deferred["polygon"]):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                                 detail="standalone_print_outline_outside_proposal")
         mask["projective_outline_review"] = True
@@ -808,6 +812,12 @@ async def create_manual_photo(
         validate_review_quads(mask, width, height, require_cyclic=True)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    if not tiled_offer and any(
+        candidate.get("reason") == TILED_PRINT_PROPOSAL
+        and _matches_standalone_print_outline(quad, candidate["polygon"])
+        for candidate in pending
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="pending_tiled_print_confirmation_required")
     neighbors = list(await session.scalars(
         select(ExtractedPhoto).where(ExtractedPhoto.page_id == page_id)
         .with_for_update().execution_options(populate_existing=True)
@@ -1064,13 +1074,22 @@ async def update_photo_bounding_box(
             segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask["warp_quad"])
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    pending = page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals") or []
+    if any(
+        candidate.get("reason") == TILED_PRINT_PROPOSAL
+        and any(_matches_standalone_print_outline(outline, candidate["polygon"]) for outline in (
+            segmentation_mask.get("warp_quad"), segmentation_mask.get("visible_polygon"), segmentation_mask.get("polygon"),
+        ) if outline)
+        for candidate in pending
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="pending_tiled_print_confirmation_required")
     if original_mask.get("crossing_print_suggestion_source") == CONTESTED_TILE_OUTLINE:
         neighbors = await session.scalars(
             select(ExtractedPhoto).where(ExtractedPhoto.page_id == page.id, ExtractedPhoto.id != photo.id)
             .with_for_update().execution_options(populate_existing=True)
         )
         claims = _current_paper_claims([neighbor for neighbor in neighbors if not photo_is_reviewed_non_print(neighbor)])
-        claims.extend(page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals") or [])
+        claims.extend(pending)
         if tiled_outline_conflicts(segmentation_mask["warp_quad"], claims, width, height):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="contested_tile_claim_conflict")
     prediction_provenance = await _prediction_provenance(session, photo)
