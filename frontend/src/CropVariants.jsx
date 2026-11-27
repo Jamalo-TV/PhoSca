@@ -330,6 +330,9 @@ export function DarkBackingEvidenceLegend({ proposals, mobile = false }) {
 }
 
 export const printedIllustrationReviewHint = "Prüfe am Original, ob die Kontur einen eigenen Papierabzug zeigt oder zur gemeinsamen Abbildung gehört.";
+export const captureBackgroundReviewAction = "Kante am Aufnahmerand prüfen";
+export const captureBackgroundReviewHint = "Die türkisen Striche markieren den roten Albumrand. Prüfe am Original, ob jenseits davon ein eigener Papierabzug liegt.";
+export const captureBackgroundWrongObjectHint = "Wenn der Vorschlag nur Aufnahmehintergrund zeigt, markiere ihn als «Falsches Objekt».";
 
 const groupReviewLabels = {
   film: {

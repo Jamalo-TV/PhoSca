@@ -171,6 +171,18 @@ export function savedFullPrintReviewUrl(photo, savedQuad, editedQuad, sizeFields
 
 export const contrastCrossingTraceHint = "An den orange markierten Stellen ist Bildstruktur auf beiden Seiten der vorgeschlagenen Linie sichtbar. Prüfe dort den Papierrand am Original.";
 export const contrastCrossingTraceStyle = { color: "#f59e0b", contrast: "#78350f", dash: [8, 5] };
+export const captureBackgroundTraceStyle = { color: "#67e8f9", contrast: "#164e63", dash: [8, 4] };
+
+export function getCaptureBackgroundReviewTraces(photo) {
+  if (!photo || photo.reviewed_non_print || photo.review_reasons?.includes("GEOMETRY_REVIEW_WRONG_OBJECT")) return [];
+  const { segmentation_confidence: confidence = photo.confidence, segmentation_mask: mask } = photo;
+  const reasons = photo.enhancement_applied?.segmentation_review_reasons ?? photo.review_reasons;
+  if (confidence == null || !bothModesHeld(cropModes(photo)) || mask?.warp_quad
+      || !reasons?.includes("CAPTURE_BACKGROUND_COUNT_REVIEW")) return [];
+  const traces = mask?.album_boundary_traces;
+  return Array.isArray(traces) ? traces.filter(line => sourceReviewLine(line)
+    && (line[0].x !== line[1].x || line[0].y !== line[1].y)) : [];
+}
 
 export function getContrastCrossingTraces(photo, savedQuad, editedQuad) {
   if (!photo || photo.reviewed_non_print || photo.review_reasons?.includes("GEOMETRY_REVIEW_WRONG_OBJECT")) return [];

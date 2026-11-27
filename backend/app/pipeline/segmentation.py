@@ -15,6 +15,7 @@ from app.pipeline.album_leaf_review import (
     ALBUM_LEAF_COUNT_REVIEW, ALBUM_LEAF_REVIEW_CHILD, ALBUM_LEAF_REVIEW_TRACES, album_leaf_review_traces,
 )
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves
+from app.pipeline.capture_background_review import ALBUM_BOUNDARY_TRACES, CAPTURE_BACKGROUND_COUNT_REVIEW, album_binding_traces
 from app.pipeline.capture_fabric_review import CAPTURE_FABRIC_PROPOSAL, capture_fabric_traces
 from app.pipeline.contrast_crossing_review import CONTRAST_CROSSING_TRACES, contrast_crossing_traces, contrast_review_windows
 from app.pipeline.crossing_prints import (
@@ -4515,9 +4516,8 @@ def _offer_dark_mounted_print(image: np.ndarray, result: SegmentationResult) -> 
     })
 
 
-def _defer_capture_fabric_claims(source: np.ndarray, result: SegmentationResult) -> SegmentationResult:
-    height, width = source.shape[:2]
-    candidates = [
+def _unverified_frame_proposals(result: SegmentationResult) -> list[int]:
+    return [
         index for index, item in enumerate(result.detections)
         if item.mask.get("detector_source") == "yolo_onnx" and not item.geometry_valid
         and set(item.review_reasons) <= {"aspect_ratio_too_wide", "aspect_ratio_too_tall"}
@@ -4526,6 +4526,30 @@ def _defer_capture_fabric_claims(source: np.ndarray, result: SegmentationResult)
         and not item.mask.get("visible_polygon")
         and (item.mask.get("fusion") or {}).get("proposal_families") == ["model"]
     ]
+
+
+def _flag_capture_background(source: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    candidates = _unverified_frame_proposals(result)
+    if len(candidates) != 1:
+        return result
+    index, = candidates
+    item = result.detections[index]
+    peers = [_detection_polygon(peer) for peer in result.detections if peer.geometry_valid]
+    try:
+        traces = album_binding_traces(source, _detection_polygon(item), peers)
+    except (cv2.error, ValueError, np.linalg.LinAlgError):
+        return result
+    if not traces:
+        return result
+    updated = result.detections.copy()
+    updated[index] = replace(item, mask={**item.mask, ALBUM_BOUNDARY_TRACES: [_normalized_polygon(span, 1, 1) for span in traces]},
+                             review_reasons=[*item.review_reasons, CAPTURE_BACKGROUND_COUNT_REVIEW])
+    return SegmentationResult(updated, result.metadata)
+
+
+def _defer_capture_fabric_claims(source: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    height, width = source.shape[:2]
+    candidates = _unverified_frame_proposals(result)
     contours = [normalized_vertices_to_pixels(_detection_polygon(result.detections[index]), width, height)
                 for index in candidates]
     try:
@@ -4654,6 +4678,7 @@ def segment_album_page(
                 result = _flag_album_leaf_count_review(source, result)
                 result = _offer_dark_mounted_print(source, result)
                 result = _defer_capture_fabric_claims(source, result)
+                result = _flag_capture_background(source, result)
         if tile_offers:
             result = _offer_unclaimed_tiled_prints(evidence_source, result, tile_offers)
         if partial_tile_seeds:

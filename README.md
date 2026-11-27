@@ -1383,6 +1383,15 @@ bei einer Grössen- oder Drehänderung. PhoSca prüft den bestätigten Umriss be
 Rendern erneut. Ein Motivzuschnitt wird separat geprüft.
 [Zwei Aufnahmen desselben Hochzeitsabzugs](data/evaluation/README.md#hold-a-print-when-opposing-outer-lines-remain-ambiguous)
 
+«Kante am Aufnahmerand prüfen» erscheint in der Anzahlprüfung, wenn ein
+Modellvorschlag fast vollständig jenseits einer im Original gemessenen
+Albumkante liegt. Die Linie zeigt den Materialwechsel an der Bindung. Prüfe
+am Original, ob jenseits der Linie ein eigener Papierabzug liegt. Mit
+«Falsches Objekt» entfernst du einen Vorschlag, der zum Hintergrund gehört.
+Bis zu diesem Entscheid bleibt er mit seiner ursprünglichen Kontur in der
+Anzahlprüfung. Die Markierung legt keine Zuschnittkante fest.
+[Aufnahme hinter der Albumbindung](data/evaluation/README.md#show-the-album-boundary-next-to-a-frame-wide-proposal)
+
 | Aktion | Verhalten |
 | --- | --- |
 | Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |

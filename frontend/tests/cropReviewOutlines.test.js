@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  albumLeafSourceWindow, captureSplitSourceWindow, getAlbumLeafReviewGroups, getCompactSceneCrossingTraces, getContrastCrossingTraces,
+  albumLeafSourceWindow, captureSplitSourceWindow, getAlbumLeafReviewGroups, getCaptureBackgroundReviewTraces,
+  getCompactSceneCrossingTraces, getContrastCrossingTraces,
   competingPhotoRegionPaths, getCompetingPhotoOutline, getCompetingPhotoReviewOutlines,
   filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
   getFilmGridReviewSeams, getFilmNeighborEdgeIndex, getFragmentReviewOutlines, getMergedPrintPairs,
@@ -13,6 +14,28 @@ import {
 
 const quad = [{ x: .1, y: .2 }, { x: .7, y: .2 }, { x: .7, y: .8 }, { x: .1, y: .8 }];
 const mask = { fragment_outline_suggestion: { quad, uncertain_edge: 1 } };
+
+test("capture background guidance follows a held active proposal and its measured album edge", () => {
+  const held = { status: "review_needed" };
+  const trace = [{ x: .05, y: .16 }, { x: .92, y: .14 }];
+  const reason = "CAPTURE_BACKGROUND_COUNT_REVIEW";
+  const photo = {
+    confidence: .91, review_reasons: [reason], crop_modes: { full_print: held, image_only: held },
+    segmentation_mask: { album_boundary_traces: [trace, [trace[0], trace[0]], [trace[0], { x: 2, y: .14 }]] },
+  };
+  assert.deepEqual(getCaptureBackgroundReviewTraces(photo), [trace]);
+  const { confidence, review_reasons, crop_modes, ...fields } = photo;
+  assert.deepEqual(getCaptureBackgroundReviewTraces({ ...fields, segmentation_confidence: confidence,
+    enhancement_applied: { segmentation_review_reasons: review_reasons, correction: { crop_modes } } }), [trace]);
+  for (const changed of [
+    { confidence: null }, { reviewed_non_print: true }, { review_reasons: [] },
+    { review_reasons: [reason, "GEOMETRY_REVIEW_WRONG_OBJECT"] },
+    { crop_modes: { ...crop_modes, full_print: { status: "ready" } } },
+    { segmentation_mask: { ...photo.segmentation_mask, warp_quad: quad } },
+  ]) {
+    assert.deepEqual(getCaptureBackgroundReviewTraces({ ...photo, ...changed }), []);
+  }
+});
 
 test("a printed illustration group requires all four current automatic held proposals", () => {
   const frame = Array.from({ length: 24 }, (_, index) => ({

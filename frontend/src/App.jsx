@@ -53,7 +53,8 @@ import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
 import EdgeMeasurement from "./EdgeMeasurement.jsx";
 import {
-  actionableCountGroups, adjacentPrintHint, AlbumPageMarkReview, captureSplitReviewHint, CaptureSplitSourceReview,
+  actionableCountGroups, adjacentPrintHint, AlbumPageMarkReview, captureBackgroundReviewAction, captureBackgroundReviewHint,
+  captureBackgroundWrongObjectHint, captureSplitReviewHint, CaptureSplitSourceReview,
   clippedOverlapHint, clippedOverlapReason, cropProtectionErrors,
   CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   albumLeafChildStyle, albumLeafTraceStyle,
@@ -77,7 +78,8 @@ import {
 } from "./CropVariants.jsx";
 import {
   competingPhotoRegionPaths, competingPhotoRegionStyles, getCompetingPhotoReviewOutlines, sharedMotifGuideStyle,
-  contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor, getCompactSceneCrossingTraces,
+  captureBackgroundTraceStyle, contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor,
+  getCaptureBackgroundReviewTraces, getCompactSceneCrossingTraces,
   getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
@@ -1398,7 +1400,7 @@ const printAdditionErrors = {
   deferred_print_proposal_stale: "Dieser Vorschlag wurde bereits geprüft. Die Ansicht wurde aktualisiert.",
 };
 
-function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onConfirmCount, onResolveCountGroup, onReprocess,
+function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onConfirmCount, onResolveCountGroup, onReprocess, onInspectPhoto,
   selectedPhotoId, onSelectPhoto, reviewingCount, countPending, reviewingGeometry }) {
   const canvasRef = useRef(null);
   const [measurementPage, setMeasurementPage] = useState(null);
@@ -1493,6 +1495,16 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     [reviewingCount, newPrint, editingImage, photos]);
   const captureSplitReview = selected?.segmentation_confidence != null && !rejectedDetection
     && selected.segmentation_mask?.capture_split_review_traces?.length === 2;
+  const selectedCaptureBackground = useMemo(() => getCaptureBackgroundReviewTraces(selected), [selected]);
+  const captureBackgroundReviews = useMemo(() => reviewingCount && !newPrint && !editingImage && !selectedCountGroup
+    ? photos.flatMap(photo => {
+      const traces = getCaptureBackgroundReviewTraces(photo);
+      return traces.length ? [{ photoId: photo.id, traces }] : [];
+    }) : [], [reviewingCount, newPrint, editingImage, selectedCountGroup, photos]);
+  const captureBackgroundTraces = useMemo(() => {
+    if (reviewingCount) return captureBackgroundReviews.flatMap(({ traces }) => traces);
+    return reviewingGeometry && !newPrint && !editingImage ? selectedCaptureBackground : [];
+  }, [reviewingCount, reviewingGeometry, newPrint, editingImage, captureBackgroundReviews, selectedCaptureBackground]);
   const deferredParentHints = rejectedDetection ? []
     : getDeferredParentCropHints(selected?.enhancement_applied?.segmentation_review_reasons);
   const detectionReviewHint = (crossingReview && crossingPrintHint) || (scannerReview && scannerBackingHint)
@@ -1502,6 +1514,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     || (paperGrid && (paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint)) || (fragmentReview && fragmentOutlineHint)
     || ((captureSplitReview || getCompactSceneCrossingTraces(selected).length > 0)
       && "Prüfe, ob dieser Vorschlag einen eigenen Papierabzug zeigt.")
+    || (reviewingGeometry && selectedCaptureBackground.length > 0 && captureBackgroundWrongObjectHint)
     || (contrastOutlineReview && contrastOutlineReviewHint);
   const fragmentMask = fragmentReview && !rejectedDetection ? selected.segmentation_mask : null;
   const fragmentOutline = useMemo(() => getFragmentOutline(fragmentMask), [fragmentMask]);
@@ -2000,11 +2013,12 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         context.restore();
       }
     }
-    if (contrastCrossingTraces.length) {
-      const { color, contrast, dash } = contrastCrossingTraceStyle;
+    for (const [traces, { color, contrast, dash }] of [[contrastCrossingTraces, contrastCrossingTraceStyle],
+      [captureBackgroundTraces, captureBackgroundTraceStyle]]) {
+      if (!traces.length) continue;
       context.save();
       context.beginPath();
-      for (const [start, end] of contrastCrossingTraces) {
+      for (const [start, end] of traces) {
         context.moveTo(start.x * canvas.width, start.y * canvas.height);
         context.lineTo(end.x * canvas.width, end.y * canvas.height);
       }
@@ -2017,7 +2031,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       context.stroke();
       context.restore();
     }
-  }, [alternateOutline, blockedRegions, captureSplitGroups, competingPhotoOutlines, contrastCrossingTraces, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges, extentEdges, mergedPairs,
+  }, [alternateOutline, blockedRegions, captureBackgroundTraces, captureSplitGroups, competingPhotoOutlines, contrastCrossingTraces, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges, extentEdges, mergedPairs,
     filmEdgeIndex, filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
     printSuggestion, ribbedReviewOutline,
     markBounds, missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, preliminaryMotifMarks, selectedCountGroup, selectedPhotoId, showMissingEdges, sourceStrip]);
@@ -2351,6 +2365,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         </div>
       )}
       {currentCountReview?.error && <p role="alert">{currentCountReview.error}</p>}
+      {captureBackgroundReviews.map(({ photoId }, index) => <button type="button" key={photoId}
+        className="text-button compact" aria-describedby="capture-background-review-hint" onClick={() => onInspectPhoto(photoId)}>
+        {captureBackgroundReviewAction}{captureBackgroundReviews.length > 1 ? ` (${index + 1})` : ""}
+      </button>)}
       {paperGridConfirmed && <p className="crop-editor-hint" role="status"
         id="paper-grid-count-result">{paperGridCountSaved}</p>}
       {countOutlines.length > 0 && <p className="crop-editor-hint" id="fragment-count-review-hint">{fragmentCountHint}</p>}
@@ -2465,6 +2483,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           mergedPairs.length && "merged-print-pair-hint",
           competingPhotoOutlines.length && "competing-photo-outline-hint",
           contrastCrossingTraces.length && "contrast-crossing-review-hint",
+          captureBackgroundTraces.length && "capture-background-review-hint",
           ribbedReviewOutline && "ribbed-print-outline-hint",
           sourceStrip && "source-strip-review-hint",
           preliminaryMotifMarks ? "held-motif-margin-hint"
@@ -2474,6 +2493,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {competingPhotoOutlines.length > 0 && <CompetingPhotoOutlineLegend id="competing-photo-outline-hint"
         showMotifGuide={competingPhotoOutlines.some(outline => outline.motifGuide)} />}
       {contrastCrossingTraces.length > 0 && <p className="crop-editor-hint" id="contrast-crossing-review-hint">{contrastCrossingTraceHint}</p>}
+      {captureBackgroundTraces.length > 0 && <p className="crop-editor-hint" id="capture-background-review-hint">{captureBackgroundReviewHint}</p>}
       {ribbedReviewOutline && <p className="crop-editor-hint" id="ribbed-print-outline-hint">{ribbedPrintOutlineHint}</p>}
       {!newPrint && detectionReviewHint && !rejectedDetection && (
         <div className="manual-print-actions">
@@ -2734,6 +2754,7 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
           onSaveBox={saveBox}
           onAddPhoto={addPhoto}
           onRejectPhoto={rejectPhoto}
+          onInspectPhoto={photoId => { setSelectedPhotoId(photoId); setReviewType("geometry"); }}
           onConfirmCount={confirmCount}
           onResolveCountGroup={resolveCountGroup}
           onReprocess={reprocessSelected}

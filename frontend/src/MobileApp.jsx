@@ -10,6 +10,7 @@ import {
 } from "./cropReviewApproval.js";
 import {
   actionableCountGroups, adjacentPrintHint, albumLeafChildStyle, albumLeafTraceStyle, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
+  captureBackgroundReviewAction, captureBackgroundReviewHint, captureBackgroundWrongObjectHint,
   captureSplitReviewHint, CaptureSplitSourceReview, clippedOverlapHint, clippedOverlapReason, CropOrientationField, cropProtectionErrors, CropVariants,
   CompetingPhotoOutlineLegend, CompetingPhotoOutlineOverlay, SharedMotifGuideOverlay,
   cropModeLabels, crossingFallbackTraceStyles, crossingPrintHint,
@@ -33,7 +34,8 @@ import {
 } from "./CropVariants.jsx";
 import {
   getCompetingPhotoOutline, getCompetingPhotoReviewOutlines,
-  contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor, getCompactSceneCrossingTraces,
+  captureBackgroundTraceStyle, contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor,
+  getCaptureBackgroundReviewTraces, getCompactSceneCrossingTraces,
   getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
@@ -289,6 +291,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       ...(contrastOutlineReview ? getContrastCrossingTraces(item.payload, initialOuter(), quad) : []),
       ...(!draftTouched ? getCompactSceneCrossingTraces(item.payload) : []),
     ] : detections.flatMap(getCompactSceneCrossingTraces);
+  const captureBackgroundTraces = deferredDraft || editingMotif || selectedCountGroup ? [] : editable
+    ? getCaptureBackgroundReviewTraces(item.payload) : detections.flatMap(getCaptureBackgroundReviewTraces);
   const selectedMergedPair = !reviewedNonPrint && getMergedPrintPairs([item.payload || {}])[0];
   const sourceStrip = editable && !deferredDraft && !editingMotif ? getSourceStripReview(fullPrintMode) : null;
   const albumMark = editable && !editingMotif && !reviewedNonPrint ? markOffer : null;
@@ -610,6 +614,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     editable && motifTraces.length && "mobile-motif-seam-hint",
     editable && preliminaryMotifMarks && "mobile-motif-review-hint",
     contrastCrossingTraces.length && "mobile-contrast-crossing-review-hint",
+    captureBackgroundTraces.length && "mobile-capture-background-review-hint",
     ribbedReviewOutline && "mobile-ribbed-print-outline-hint",
     sourceStrip && "mobile-source-strip-review-hint",
   ].filter(Boolean).join(" ");
@@ -703,16 +708,16 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
             pointerEvents="none" points={region.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
         ))}
         {Boolean(visibleTraces?.length) && <MeasuredEdgeOverlay traces={visibleTraces} />}
-        {contrastCrossingTraces.length > 0 && <g aria-hidden="true" fill="none" pointerEvents="none">
-          {contrastCrossingTraces.map(([start, end], index) => {
+        {[[contrastCrossingTraces, contrastCrossingTraceStyle], [captureBackgroundTraces, captureBackgroundTraceStyle]].map(
+          ([traces, { color, contrast, dash }]) => traces.length > 0 && <g key={color} aria-hidden="true" fill="none" pointerEvents="none">
+          {traces.map(([start, end], index) => {
             const points = `${start.x * 1000},${start.y * 1000} ${end.x * 1000},${end.y * 1000}`;
             return <g key={index}>
-              <polyline points={points} stroke={contrastCrossingTraceStyle.contrast} strokeWidth="4" vectorEffect="non-scaling-stroke" />
-              <polyline points={points} stroke={contrastCrossingTraceStyle.color} strokeWidth="2" vectorEffect="non-scaling-stroke"
-                strokeDasharray={contrastCrossingTraceStyle.dash.join(" ")} />
+              <polyline points={points} stroke={contrast} strokeWidth="4" vectorEffect="non-scaling-stroke" />
+              <polyline points={points} stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray={dash.join(" ")} />
             </g>;
           })}
-        </g>}
+        </g>)}
         {competingPhotoOutlines.some(outline => outline.motifGuide) && <SharedMotifGuideOverlay outlines={competingPhotoOutlines} />}
       </svg>
       {magnifier.visible && <div className="crop-magnifier" style={{
@@ -742,6 +747,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     {countOutlines.length > 0 && <p className="quad-hint" id="mobile-fragment-count-review-hint">{fragmentCountHint}</p>}
     {mergedPairs.length > 0 && <p className="quad-hint" id="mobile-merged-print-pair-hint">{mergedPrintPairHint}</p>}
     {contrastCrossingTraces.length > 0 && <p className="quad-hint" id="mobile-contrast-crossing-review-hint">{contrastCrossingTraceHint}</p>}
+    {captureBackgroundTraces.length > 0 && <p className="quad-hint" id="mobile-capture-background-review-hint">
+      {captureBackgroundReviewHint}{editable && ` ${captureBackgroundWrongObjectHint}`}
+    </p>}
     {competingPhotoOutlines.length > 0 && <CompetingPhotoOutlineLegend id="mobile-competing-photo-outline-hint" mobile
       showMotifGuide={competingPhotoOutlines.some(outline => outline.motifGuide)} />}
     {captureSplitGroups.length > 0 && <p className="quad-hint" id="mobile-capture-split-count-hint">{captureSplitReviewHint}</p>}
@@ -1047,8 +1055,9 @@ function CropReview({ albumId, goHome }) {
     const rows = await getReviewQueue(albumId || undefined, type, { includeRejected: false, photoId: focusedPhotoId, signal });
     if (signal?.aborted) return;
     const target = focusedPhotoId && rows[0]?.payload;
-    const validTarget = !focusedPhotoId || (getPaperGridReview(target?.segmentation_mask)?.cut === null
-      && cyclicReviewQuad(sanitizeReviewPolygon(target?.crop_modes?.full_print?.suggested_warp_quad)));
+    const validTarget = !focusedPhotoId || getCaptureBackgroundReviewTraces(target).length > 0
+      || (getPaperGridReview(target?.segmentation_mask)?.cut === null
+        && cyclicReviewQuad(sanitizeReviewPolygon(target?.crop_modes?.full_print?.suggested_warp_quad)));
     const countIndex = type === "segmentation" ? rows.findIndex(row => row.id === returnCountId.current) : -1;
     if (type === "segmentation") returnCountId.current = null;
     setQueue({ key: queueKey, rows: validTarget ? rows : [] });
@@ -1081,6 +1090,7 @@ function CropReview({ albumId, goHome }) {
   const filmGridGroups = type === "segmentation" ? getFilmGridReviewSeams(item?.payload?.detections || []) : [];
   const paperJoinGroups = type === "segmentation" ? getPaperJoinReviewGroups(item?.payload?.detections || []) : [];
   const countDetections = type === "segmentation" ? item?.payload?.detections || [] : [];
+  const captureBackgroundReviews = countDetections.filter(photo => getCaptureBackgroundReviewTraces(photo).length > 0);
   const paperGridGroups = getPaperGridReviewGroups(countDetections);
   const paperGridOutlineParents = getPaperGridOutlineParents(countDetections).filter(parent =>
     cyclicReviewQuad(sanitizeReviewPolygon(parent.crop_modes?.full_print?.suggested_warp_quad)));
@@ -1254,6 +1264,12 @@ function CropReview({ albumId, goHome }) {
         deferredDraft={activeDeferredDraft} onDeferredDraftClose={closeDeferredDraft}
         onProtectionBlocked={setBlockedCropTaskId} />
       {!activeDeferredDraft && <>
+      {!selectedCountGroup && captureBackgroundReviews.map(({ photo_id: photoId }, index) => (
+        <button key={photoId} className="magnifier-toggle" type="button" disabled={submitting}
+          aria-describedby="mobile-capture-background-review-hint" onClick={() => switchTask("geometry", photoId)}>
+          {captureBackgroundReviewAction}{captureBackgroundReviews.length > 1 ? ` (${index + 1})` : ""}
+        </button>
+      ))}
       {deferredProposals.map((proposal, index) => {
         if (proposal.reason !== sourceFragmentProposal && !standalonePrintNeedsConfirmation(proposal.reason)) return null;
         return <button key={proposal.id} className="magnifier-toggle" type="button"

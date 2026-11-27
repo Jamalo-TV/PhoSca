@@ -9930,6 +9930,54 @@ including 18/18 frozen detections and 23/23 seeded recoverable crops.
 Evidence, screenshots and crop receipts are stored under
 `runs/crop-quality/u093-opposing-outer-edge-review/`.
 
+### Show the album boundary next to a frame-wide proposal
+
+On the same U093 capture, the fourth proposal is cluster 0, confidence 0.907.
+It comes from a single primary model prediction. It contains room lights and
+reflections above the red album binding. A source-only fit through the red
+edge reaches 973 of 978 columns with a 1.52-pixel p95 fit residual. About
+97.18% of the proposed mask lies on the room side. All three other masks lie
+on the album side. Registration of the wider U065 capture has 186 inliers
+with 2.72-pixel p95 error in U093. The wider original confirms the three
+separate wedding prints and the scene outside the album.
+
+The candidate must be the only unresolved, frame-wide model strip of its
+type. PhoSca samples the transition from the dark exterior through the narrow
+red band to the brighter lower material. The signed colour and brightness
+measurements must repeat across the width. Nearby, a regular row of dark
+binding holes must begin close to the top rail. Two separated inboard claims
+must each have two adjacent supported native edge segments. The check abstains
+when it measures a second coherent band or edge on the exterior side, such
+as visible paper from a separate cropped panorama. The line shown in the
+original uses observed endpoints and leaves appreciable gaps between spans.
+
+An initial proposal to move the strip out of the active count was discarded.
+It marked 227 of 273 fixed-mask variants with a separate bordered panorama
+and all 60 near-flush photo variants. An optically identical case can show the
+same scene printed on paper behind the album. Even where the tested additional
+evidence can verify the album edge, ownership of the area outside the edge
+requires a review decision. The current pipeline only adds a count hint to an
+already held, active proposal. It preserves its source mask and all existing
+warp inputs. The action opens that proposal in geometry review, where the
+existing wrong-object decision can remove it from the active count.
+
+The normal upload keeps four candidates until review and preserves the
+untrimmed preview and held export status for each. In desktop and mobile
+replays, opening the marked proposal is read-only. An explicit wrong-object
+decision takes the count from four to three while preserving the review
+history and the other crops. The final check marks all eight variants of
+the exact source, none of 40 book or table controls, 59 of 273 bordered
+panorama variants and all 60 near-flush panorama variants. It also marks
+the eight optically identical aliases. The white 6-pixel rim with 11 pixels
+of gap suppresses the mark in all ten variants. Across the 494 fixed-mask
+cases the one-thread median and p95 were about 27 and 142 ms. The warm
+native case had a 131 ms median. These tests measure guidance on fixed
+proposals. Model redetection requires a separate replay.
+All eight frozen and development reports retain the detection and crop
+metrics, including 18/18 detections and 23/23 seeded recoverable crops.
+Replay measurements and private source overlays are under
+`runs/crop-quality/u093-capture-background-review/`.
+
 ### Review a fallback outline crossing the album edge
 
 The same Golden 26 180° JPEG75 development raster has a third false
@@ -11442,3 +11490,27 @@ for the registered production detector remain outstanding. The exact-hash
 comparison detects duplicate files. Album identity requires further source
 records even when the hashes are distinct. The private receipts are under
 `runs/crop-quality/nac-czarnecki-source-intake/source-crosscheck-0923a29/`.
+
+A source-only registration search across all 99 pinned user originals found
+no alternate capture for any of the six proposed prints on U005 and U042.
+Three known duplicate-view controls returned 210, 256 and 224 independent
+projective inliers. U005 has no draft recoverable mode. U042 has two motif
+drafts for which an independent aspect measurement is still needed. This
+evidence comes from registration against the six existing source annotations.
+The clean architecture-only training inventory was replayed separately.
+All 144 image and label pairs matched its manifest. That checkpoint still
+falls short of the documented development baseline. Receipts are under
+`runs/crop-quality/u093-capture-background-review/release-intake/`.
+
+The 458 RAAF digitization project documents separate camera captures of
+mounted pages and of individual original prints. It reports 273 pages and
+866 print photographs for album `P07251`, which the Australian War Memorial
+catalogues as public domain. The project advertises a high-resolution DVD.
+The individual public file links, permission for those exact digitizations and
+visibility of all paper edges remain unverified. The second volume `P11547`
+has unlicensed copyright status. Both remain intake leads. The new probe of
+the already catalogued Library of Congress pairs again reached HTTP 403 at
+the workspace proxy and returned no native scan bytes.
+[Digitization project](https://www.458raafsquadron.org/official-squadron-albums) ·
+[P07251 catalogue](https://collection.awm.gov.au/C1223181) ·
+[P11547 catalogue](https://collection.awm.gov.au/C1223182)
