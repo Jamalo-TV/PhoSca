@@ -2586,11 +2586,20 @@ def correct_photo_crop(
                 if not any(motif_seams_intersect_claim(spans, box) for box in boxes):
                     full_mode["suggested_edge_traces"] = [_vertices_on_page(span, width, height) for span in spans]
                     full_mode["suggested_edge_source"] = VISIBLE_SCENE_EDGE
-        if (enable_classical_retry and not manual and protection["passed"]
-                and mask.get("source") == "classical_border_quad" and mask.get("detector_source") == "contrast_region"
+        classical_contact = (
+            mask.get("source") == "classical_border_quad" and mask.get("detector_source") == "contrast_region"
+            and {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN"} <= uncertain_edges
+            and uncertain_edges <= {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
+        )
+        fusion = mask.get("fusion") or {}
+        mixed_contact = (
+            mask.get("source") == "yolo_seg_mask" and mask.get("detector_source") == "yolo_onnx"
+            and fusion.get("selected_family") == "model" and fusion.get("proposal_count") == 2
+            and fusion.get("proposal_families") == ["classical", "model"]
+            and uncertain_edges == {"PRINT_OUTER_RIM_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
+        )
+        if (enable_classical_retry and not manual and protection["passed"] and (classical_contact or mixed_contact)
                 and (mask.get("boundary_evidence") or {}).get("score", 0) >= .78
-                and {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN"} <= uncertain_edges
-                and uncertain_edges <= {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
                 and all(mode["status"] == "review_needed" for mode in modes.values())
                 and not any(mask.get(key) for key in ("warp_quad", *_STOCK_REVIEW_CONFLICTS))
                 and full_mode.get("suggested_edge_source") in (None, COMPETING_PRINT_EDGES)

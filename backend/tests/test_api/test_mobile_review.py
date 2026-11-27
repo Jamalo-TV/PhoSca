@@ -2310,8 +2310,10 @@ async def test_ribbed_outline_comparison_is_held_and_retires_with_an_adjacent_cl
     assert (await crop("source_corrected_untrimmed")).status_code == 200
 
 
-@pytest.mark.parametrize("contact_edge_guide", [False, True])
-async def test_held_contrast_outline_requires_separate_paper_confirmation(client, monkeypatch, contact_edge_guide):
+@pytest.mark.parametrize(("detector_source", "contact_edge_guide"), [
+    ("contrast_region", False), ("contrast_region", True), ("yolo_onnx", True),
+])
+async def test_held_contrast_outline_requires_separate_paper_confirmation(client, monkeypatch, detector_source, contact_edge_guide):
     from copy import deepcopy
 
     from app.config import get_settings
@@ -2330,12 +2332,16 @@ async def test_held_contrast_outline_requires_separate_paper_confirmation(client
         photo = await session.get(ExtractedPhoto, photo_id)
         box = photo.bounding_box
         quad = photo.segmentation_mask["warp_quad"]
-        photo.segmentation_mask = {**photo.segmentation_mask, "detector_source": "contrast_region", "polygon": quad}
-        reason = "PRINT_BOUNDARY_AMBIGUOUS" if contact_edge_guide else "PRINT_BOUNDARY_UNSUPPORTED"
+        photo.segmentation_mask = {**photo.segmentation_mask, "detector_source": detector_source, "polygon": quad}
+        reasons = {
+            ("contrast_region", False): ["PRINT_BOUNDARY_UNSUPPORTED"],
+            ("contrast_region", True): ["PRINT_BOUNDARY_AMBIGUOUS"],
+            ("yolo_onnx", True): ["PRINT_OUTER_RIM_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"],
+        }[detector_source, contact_edge_guide]
         photo.enhancement_applied = {
             **photo.enhancement_applied,
             "correction": {"crop_modes": {
-                name: {"status": "review_needed", "warp_quad": quad, "reason_codes": [reason],
+                name: {"status": "review_needed", "warp_quad": quad, "reason_codes": reasons,
                        **({CONTACT_PRINT_EDGE_CHECK: True} if contact_edge_guide and name == "full_print" else {})}
                 for name in ("full_print", "image_only")
             }},

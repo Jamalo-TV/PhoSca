@@ -42,7 +42,7 @@ def original_prediction_mask(metadata: dict) -> dict | None:
 
 def confirmed_contrast_outline(metadata: dict) -> bool:
     mask = original_prediction_mask(metadata) or {}
-    if mask.get("detector_source") != "contrast_region":
+    if mask.get("detector_source") not in {"contrast_region", "yolo_onnx"}:
         return False
     revisions = (metadata.get("review_provenance") or {}).get("correction_revisions") or []
     return any(revision.get("contrast_print_outline_confirmed") is True for revision in revisions)

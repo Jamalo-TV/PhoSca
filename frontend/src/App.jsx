@@ -46,7 +46,9 @@ import {
 } from "./api.js";
 import { captureCameraImage } from "./cameraCapture.js";
 import { motifUsesPaperAxes, resizeMotifInPaperPlane } from "./cropPreview.js";
-import { contrastOutlineConfirmation, contrastOutlineNeedsConfirmation, contrastOutlineReviewHint } from "./cropReviewApproval.js";
+import {
+  contactEdgesNeedRefresh, contrastOutlineConfirmation, contrastOutlineNeedsConfirmation, contrastOutlineReviewHint,
+} from "./cropReviewApproval.js";
 import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
 import EdgeMeasurement from "./EdgeMeasurement.jsx";
@@ -1392,7 +1394,7 @@ const printAdditionErrors = {
   deferred_print_proposal_stale: "Dieser Vorschlag wurde bereits geprüft. Die Ansicht wurde aktualisiert.",
 };
 
-function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onConfirmCount, onResolveCountGroup,
+function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onConfirmCount, onResolveCountGroup, onReprocess,
   selectedPhotoId, onSelectPhoto, reviewingCount, reviewingGeometry }) {
   const canvasRef = useRef(null);
   const [measurementPage, setMeasurementPage] = useState(null);
@@ -1435,6 +1437,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const selected = photos.find((photo) => photo.id === selectedPhotoId);
   const selectedModes = selected?.crop_modes || getCropModes(selected);
   const contrastOutlineReview = contrastOutlineNeedsConfirmation(selected, selectedModes?.full_print);
+  const refreshContactEdges = reviewingGeometry && contactEdgesNeedRefresh(selected, selectedModes?.full_print)
+    && !newPrint && !editingImage && !draftShapes[selectedPhotoId] && !selected?.reviewed_non_print;
   const overlapReview = selected?.segmentation_confidence != null
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
   const scannerReview = selected?.segmentation_confidence != null
@@ -2148,6 +2152,18 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     }
   }
 
+  async function recheckContactEdges() {
+    if (!refreshContactEdges || saveState?.saving) return;
+    const target = { photoId: selected.id, mode: editMode };
+    setSaveState({ ...target, saving: true, checkingEdges: true });
+    try {
+      await onReprocess(selected.id);
+      setSaveState(null);
+    } catch (error) {
+      setSaveState({ ...target, error: error.message || "Papierkanten konnten nicht erneut geprüft werden." });
+    }
+  }
+
   async function rejectSelected() {
     const target = { pageId, photoId: selected.id, mode: editMode };
     setSaveState({ ...target, saving: true, rejecting: true });
@@ -2478,6 +2494,12 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           </label>
         </div>
       )}
+      {refreshContactEdges && (
+        <button className="text-button compact" type="button" disabled={saveState?.saving} onClick={recheckContactEdges}>
+          <RefreshCw size={16} />
+          {currentSave?.checkingEdges ? "Papierkanten werden geprüft …" : "Papierkanten erneut prüfen"}
+        </button>
+      )}
       {!newPrint && !editingImage && contrastOutlineReview && selectedShape && (
         <label className="mounted-print-fragment-review">
           <input type="checkbox" checked={contrastOutlineConfirmed} disabled={saveState?.saving}
@@ -2508,7 +2530,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           || needsPrintReview || contrastOutlineNeedsCheck}
         onClick={saveSelected}>
         <Save size={16} />
-        {currentSave?.saving && !currentSave.rejecting ? "Ausschnitt wird berechnet …" : "Zuschnitt speichern"}
+        {currentSave?.saving && !currentSave.rejecting && !currentSave.checkingEdges ? "Ausschnitt wird berechnet …" : "Zuschnitt speichern"}
       </button>}
       {currentSave?.error && <p role="alert">{currentSave.error}</p>}
       {(rejectedDetection || (saveState?.rejected && saveState.pageId === pageId))
@@ -2631,9 +2653,9 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
     }
   }
 
-  async function reprocessSelected() {
-    if (!currentPhotoId) return;
-    await reprocessPhoto(currentPhotoId);
+  async function reprocessSelected(photoId) {
+    if (!photoId) return;
+    await reprocessPhoto(photoId);
     await refreshCorrections();
   }
 
@@ -2664,6 +2686,7 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
           onRejectPhoto={rejectPhoto}
           onConfirmCount={confirmCount}
           onResolveCountGroup={resolveCountGroup}
+          onReprocess={reprocessSelected}
           reviewingCount={reviewType === "segmentation"}
           reviewingGeometry={reviewType === "geometry"}
         />
@@ -2671,7 +2694,8 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
       <section className="side-surface">
         <div className="section-title">
           <h2>OCR Text</h2>
-          <button className="icon-button" type="button" disabled={!currentPhotoId} onClick={reprocessSelected} title="Reprocess selected photo">
+          <button className="icon-button" type="button" disabled={!currentPhotoId}
+            onClick={() => reprocessSelected(currentPhotoId)} title="Reprocess selected photo">
             <RefreshCw size={16} />
           </button>
         </div>

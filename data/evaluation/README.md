@@ -352,6 +352,17 @@ The archive provides the source under CC BY-NC 4.0. The scan stays local.
 python scripts/evaluate_onnx_segmentation.py --dataset-manifest data/evaluation/ibcc-denton-calibration-draft.json --check-references --visuals --output runs/crop-quality/dense-real-source-intake/ibcc-denton-tracked-preflight.json
 ```
 
+The local user intake under `runs/crop-quality/local-calibration-source-draft/`
+adds a source-review draft for calibration. It pins six original WebP files
+from the supplied archives with 26 draft paper instances. The provisional
+groups correspond to a white ring binder and a cream magnetic album. All
+six image and label files pass the hash preflight. The byte and decoded
+raster screen found no exact duplicates among 421 documented hashes.
+The source-only review sheet awaits independent count and outline review.
+Canonical album identities, usage rights and separation from the model's
+training sources remain pending. Keep the packet in the calibration lane
+and reserve other physical groups for final release evaluation.
+
 ```powershell
 python scripts/evaluate_onnx_segmentation.py --dataset-manifest path/to/locked-album-manifest.json --include-classical-fallback --require-final-quality --visuals --output runs/crop-quality/real-release.json
 ```
@@ -7046,6 +7057,71 @@ The frozen replay still has 18/18 detections and the seeded geometry
 replay still passes 11/11 whole prints and 12/12 motifs. Timings and
 the multipanel revision are recorded separately. The source comparison
 and local paired receipts are under `runs/crop-quality/lossless-film-group/`.
+
+### Show native paper edges after the lossless sleeve review
+
+The separate paper print in the 1014 × 1346 lossless 270° development
+view is a base YOLO mask with boundary score 0.8105. Fusion selected
+it from a pair containing one model and one classical proposal.
+Both crop modes are held. The whole print reports `PRINT_OUTER_RIM_UNCERTAIN`
+and `PRINT_ASPECT_UNCERTAIN`. Revision 13 of the print outline suggestions
+allows that exact combination to run the positive contact-grid
+check used by the classical contact print. The protected-region
+checks, minimum 0.78 boundary score and existing conflicts still
+govern eligibility.
+
+The full-resolution check measures four chroma transitions and
+verifies pale paper around the perimeter and positive perforation
+contrast in the grid. Native station support is 99.72–100% on these
+four edges. Its scope has mask IoU 0.99145 against the development
+outline, compared with 0.78752 for the stored warp footprint.
+The complete shape contains the previous footprint and preserves
+both protected regions. This is a measurement for review on one
+development capture.
+
+The server sets a required paper-outline check when the source
+agrees. One raw sleeve claim overlaps the paper scope by 338.22
+native square pixels in the initial four-proposal view, so the
+scope and its lines stay hidden. After explicit sleeve exclusion,
+**Papierkanten erneut prüfen** runs the usual crop processing
+on Desktop and Mobile. With the ownership conflict resolved, the
+editor shows four open cyan edge segments. A new print drawn inside
+that scope hides the lines even when it crosses none of the four
+segments. The verification requirement persists when the lines
+are hidden or the crop is processed again.
+
+The ordinary upload and crop endpoints retain the automatic paper
+mask, warp, protected-region checks and untrimmed JPEG compared
+with `4bb1450`. All unconfirmed or implicit geometry writes in
+the replay return HTTP 409. An explicit outer quad and a separate
+confirmation are required before the API accepts an edit. The
+correction revision records the confirmation and runs the existing
+native manual verifier. Confirmed old, measured and oversized
+quads in this replay still leave both named crops and the trimmed
+alias held. The measured quad retains `PRINT_BOUNDARY_AMBIGUOUS`.
+The existing JPEG75 classical guide retains its prior output.
+
+Across 16 same-capture transformations, all 74 successful renders
+retain both core crop modes and the exact arrays. The four protected
+content aborts match. Only the lossless 270° paper proposal gains a
+new check marker with its original neighbors present. The paired
+crop call takes 606 ms median CPU time on the qualifying lossless
+source after exclusion, compared with 426 ms on `4bb1450`, over
+nine warm calls in each arm at one OpenCV thread. All eight
+benchmark reports retain their prior detection statistics and crop
+metrics, including 18/18 frozen detections and 23/23 seeded crop
+recoveries. The measurement adds no release examples.
+
+On 105 source edits, the optical check could also emit a combined
+scope on 31 of 54 separated-paper controls. Some neutral backing
+gaps up to 4.5 native pixels preserve the perimeter and grid tests.
+In a separate paired replay of 13 variants, the source hints leave
+the core crop metadata and image data identical in both modes.
+The unchanged native verifier also holds explicit measured-aspect
+edits on the genuine lossless source and two 4.5-pixel gap aliases.
+Physical ownership remains a review decision. The raw proposals,
+original and local comparison receipts are under
+`runs/crop-quality/lossless-paper-guidance/`.
 
 ### Compare the whole contact print with its counted fragments
 

@@ -1056,12 +1056,13 @@ async def update_photo_bounding_box(
         saved_review = (photo.enhancement_applied or {}).get("review_provenance") or {}
         shared_rim_traces = saved_review.get("shared_rim_cut_traces") or shared_rim_cut_reference(correction)
         explicit = payload.segmentation_mask is not None and payload.segmentation_mask.warp_quad is not None
+        detector_source = original_mask.get("detector_source")
+        contact_outline = detector_source in {"contrast_region", "yolo_onnx"} and full_print.get(CONTACT_PRINT_EDGE_CHECK) is True
+        unsupported_contrast = (detector_source == "contrast_region"
+                                and "PRINT_BOUNDARY_UNSUPPORTED" in (full_print.get("reason_codes") or []))
         confirm_contrast_outline = (
-            photo.segmentation_confidence is not None and original_mask.get("detector_source") == "contrast_region"
-            and full_print.get("status") == "review_needed"
-            and ("PRINT_BOUNDARY_UNSUPPORTED" in (full_print.get("reason_codes") or [])
-                 or full_print.get(CONTACT_PRINT_EDGE_CHECK) is True)
-            and not capture_outline_review_required(full_print)
+            photo.segmentation_confidence is not None and full_print.get("status") == "review_needed"
+            and (contact_outline or unsupported_contrast) and not capture_outline_review_required(full_print)
         )
         if confirm_contrast_outline:
             if not payload.confirm_print_outline or not explicit or segmentation_mask.get("image_quad") is not None:

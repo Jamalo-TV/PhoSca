@@ -5,7 +5,7 @@ import { captureCameraImage } from "./cameraCapture.js";
 import { motifUsesPaperAxes, projectedCropAspect, resizeMotifInPaperPlane, resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import {
-  contrastOutlineConfirmation, contrastOutlineNeedsConfirmation, contrastOutlineReviewHint,
+  contactEdgesNeedRefresh, contrastOutlineConfirmation, contrastOutlineNeedsConfirmation, contrastOutlineReviewHint,
   heldPrintCorrectionHint, wholePrintApprovalHeld,
 } from "./cropReviewApproval.js";
 import {
@@ -331,11 +331,12 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     (point, index) => point.x === quad?.[index]?.x && point.y === quad?.[index]?.y,
   );
   const { size, error: sizeError } = parsePrintSize(measurementFields);
+  const refreshContactEdges = contactEdgesNeedRefresh(item.payload, fullPrintMode);
   const canReprocess = onReprocess && !draftTouched && !editingMotif && !usingOutlineSuggestion
     && !measurementPage && !measuredTraces?.length && fullPrintHeld && !markOffer
     && fullPrintMode?.status === "review_needed"
-    && fullPrintMode.reason_codes?.includes("POSSIBLE_CONTENT_CUTOFF")
-    && fullPrintMode.reason_codes.includes("PRINT_ASPECT_UNCERTAIN");
+    && (refreshContactEdges || (fullPrintMode.reason_codes?.includes("POSSIBLE_CONTENT_CUTOFF")
+      && fullPrintMode.reason_codes.includes("PRINT_ASPECT_UNCERTAIN")));
   function moveCorner(event, cornerIndex) {
     if (!editable || !displayedQuad || saving) return;
     const pointerId = event.pointerId;
@@ -444,7 +445,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     finally { setSaving(false); }
   }
   async function reprocess() {
-    if (!canReprocess || saving) return;
+    if (!canReprocess || saving || reprocessing) return;
     setReprocessing(true);
     setSaveError("");
     try {
@@ -763,8 +764,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       {!editingMotif && <NeighborContentReview fullPrint={fullPrintMode} sourceUrl={item.preview_url} />}
       {albumMarkReview.bounds.length > 0 && <AlbumPageMarkReview mark={albumMark} review={albumMarkReview}
         sourceUrl={item.preview_url} disabled={saving} />}
-      {canReprocess && <button className="magnifier-toggle" type="button" disabled={saving} onClick={reprocess}>
-        <RefreshCw size={18} />{reprocessing ? "Abzug wird neu berechnet …" : "Abzug neu berechnen"}
+      {canReprocess && <button className="magnifier-toggle" type="button" disabled={saving || reprocessing} onClick={reprocess}>
+        <RefreshCw size={18} />{reprocessing ? "Abzug wird neu berechnet …"
+          : refreshContactEdges ? "Papierkanten erneut prüfen" : "Abzug neu berechnen"}
       </button>}
       {motifReviewPending && <p className="quad-hint" id="mobile-motif-review-hint">
         {preliminaryMotifMarks ? motifBoundaryReviewHint : <>

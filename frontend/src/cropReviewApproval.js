@@ -3,11 +3,25 @@ export const contrastOutlineConfirmation = "Die vier Ecken liegen am sichtbaren 
 
 export function contrastOutlineNeedsConfirmation(photo, fullPrint) {
   const confidence = photo?.segmentation_confidence ?? photo?.confidence;
+  const source = photo?.segmentation_mask?.detector_source;
   const reasons = fullPrint?.reason_codes || [];
-  return confidence != null && photo?.segmentation_mask?.detector_source === "contrast_region"
+  const contact = fullPrint?.contact_print_edge_check_required === true && ["contrast_region", "yolo_onnx"].includes(source);
+  const unsupportedContrast = source === "contrast_region" && reasons.includes("PRINT_BOUNDARY_UNSUPPORTED");
+  return confidence != null
     && fullPrint?.status === "review_needed"
-    && (reasons.includes("PRINT_BOUNDARY_UNSUPPORTED") || fullPrint.contact_print_edge_check_required === true)
+    && (contact || unsupportedContrast)
     && !reasons.includes("PRINT_AT_CAPTURE_EDGE");
+}
+
+export function contactEdgesNeedRefresh(photo, fullPrint) {
+  if (fullPrint?.status !== "review_needed" || fullPrint.contact_print_edge_scope) return false;
+  if (contrastOutlineNeedsConfirmation(photo, fullPrint) && fullPrint.contact_print_edge_check_required === true) return true;
+  const mask = photo?.segmentation_mask;
+  const reasons = fullPrint.reason_codes || [];
+  // Existing crops can lack the marker until their first reprocess.
+  return (photo?.segmentation_confidence ?? photo?.confidence) != null && mask?.detector_source === "yolo_onnx"
+    && mask.source === "yolo_seg_mask" && mask.fusion?.selected_family === "model" && mask.fusion.proposal_count === 2
+    && reasons.length === 2 && reasons.includes("PRINT_OUTER_RIM_UNCERTAIN") && reasons.includes("PRINT_ASPECT_UNCERTAIN");
 }
 
 export function wholePrintApprovalHeld(cropModes, variantUrls) {

@@ -1027,6 +1027,21 @@ prüft die rekonstruierte Kontur erneut auf die Lage der Filmstreifen
 und auf konkurrierende Flächen, bevor es einen Gruppenhinweis anbietet.
 [Prüfung der verlustfreien Aufnahme](data/evaluation/README.md#recheck-one-uncertain-sleeve-side-on-the-lossless-contact-page)
 
+Beim Papierabzug kann auch ein Modellvorschlag diese vier
+Kantenhinweise erhalten. PhoSca prüft dafür einen gemeinsamen
+Modell- und Kontrastvorschlag mit unklarem Papierrand und
+Seitenverhältnis mit derselben Messung am Original. Solange ein
+anderer Vorschlag den gemessenen Umriss überlappt, bleiben die
+Linien ausgeblendet. Nach der Stückzahlprüfung lässt sich der
+Abzug auf Desktop und Mobil über **Papierkanten erneut prüfen**
+neu messen. Die vier türkisen Abschnitte helfen dabei, die Ecken
+des Papierabzugs zu setzen. Eine neue überlappende Kontur blendet
+sie wieder aus. Zum Speichern braucht es die ausdrückliche
+Bestätigung der vier Ecken am selben Abzug und die anschliessende
+Prüfung des manuell gesetzten Umrisses in den Originalpixeln.
+Bleibt eine Kante mehrdeutig, bleiben beide Zuschnittmodi in Prüfung.
+[Kantenhinweise für den verlustfreien Papierabzug](data/evaluation/README.md#show-native-paper-edges-after-the-lossless-sleeve-review)
+
 Bleibt genau eine Papierkante strittig, kann PhoSca ihren Verlauf
 anhand der anderen drei Seiten und der angrenzenden Ecken für
 die Prüfung genauer messen. Vier im Original gestützte Motivkanten,

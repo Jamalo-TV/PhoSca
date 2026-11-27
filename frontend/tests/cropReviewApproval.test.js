@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { contrastOutlineNeedsConfirmation, heldPrintCorrectionHint, wholePrintApprovalHeld } from "../src/cropReviewApproval.js";
+import {
+  contactEdgesNeedRefresh, contrastOutlineNeedsConfirmation, heldPrintCorrectionHint, wholePrintApprovalHeld,
+} from "../src/cropReviewApproval.js";
 
 test("automatically detected contrast outlines with source boundary review need confirmation", () => {
   const photo = { segmentation_confidence: 0.71, segmentation_mask: { detector_source: "contrast_region" } };
@@ -15,6 +17,23 @@ test("automatically detected contrast outlines with source boundary review need 
   const contact = { status: "review_needed", reason_codes: ["PRINT_BOUNDARY_AMBIGUOUS"], contact_print_edge_check_required: true };
   assert.equal(contrastOutlineNeedsConfirmation(photo, contact), true);
   assert.equal(contrastOutlineNeedsConfirmation({ ...photo, segmentation_confidence: null }, contact), false);
+});
+
+test("a held model contact outline needs the paper confirmation and can refresh its missing edges", () => {
+  const photo = { confidence: 0.81, segmentation_mask: { detector_source: "yolo_onnx", source: "yolo_seg_mask",
+    fusion: { selected_family: "model", proposal_count: 2 } } };
+  const full = { status: "review_needed", reason_codes: ["PRINT_OUTER_RIM_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"],
+    contact_print_edge_check_required: true };
+  assert.equal(contrastOutlineNeedsConfirmation(photo, full), true);
+  assert.equal(contrastOutlineNeedsConfirmation(photo, { ...full, contact_print_edge_check_required: false,
+    reason_codes: ["PRINT_BOUNDARY_UNSUPPORTED"] }), false);
+  assert.equal(contrastOutlineNeedsConfirmation(photo, { ...full, reason_codes: ["PRINT_AT_CAPTURE_EDGE"] }), false);
+  assert.equal(contrastOutlineNeedsConfirmation({ ...photo, confidence: null }, full), false);
+  assert.equal(contactEdgesNeedRefresh(photo, full), true);
+  assert.equal(contactEdgesNeedRefresh(photo, { ...full, contact_print_edge_scope: [{ x: .1, y: .2 }] }), false);
+  assert.equal(contactEdgesNeedRefresh(photo, { ...full, status: "ready" }), false);
+  assert.equal(contactEdgesNeedRefresh(photo, { ...full, contact_print_edge_check_required: undefined }), true);
+  assert.equal(contactEdgesNeedRefresh({ ...photo, confidence: null }, full), false);
 });
 
 test("the current whole-print URL controls geometry approval even when a mode says ready", () => {
