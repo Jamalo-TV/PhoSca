@@ -1392,6 +1392,19 @@ Bis zu diesem Entscheid bleibt er mit seiner ursprünglichen Kontur in der
 Anzahlprüfung. Die Markierung legt keine Zuschnittkante fest.
 [Aufnahme hinter der Albumbindung](data/evaluation/README.md#show-the-album-boundary-next-to-a-frame-wide-proposal)
 
+Ein verzogener Papierumriss kann rechts und unten zu viel Albumuntergrund
+einschliessen. Wenn zwei Kantensuchen dieselbe Motivform liefern und die
+Übergänge im Original messbar sind, zeigt PhoSca eine separate Motivvorschau
+in der Zuschnittprüfung. Blau markiert Abschnitte am sichtbaren Motiv.
+Türkis markiert gemessene Übergänge daneben, die bei der Suche nach dem
+Papierrand helfen. Vergleiche beide mit dem Original. Achte auf helle
+Bilddetails und auf Beschriftung ausserhalb der blauen Linien.
+Setze zuerst die vier Ecken von «Ganzer Abzug» an den sichtbaren Papierrand
+und bestätige den korrigierten Umriss beim Speichern. Die Motivvorschau
+liefert dafür eine Orientierung. Sie wird ausschliesslich in der Prüfung
+angeboten.
+[Motivvergleich beim unteren Hochzeitsabzug](data/evaluation/README.md#recover-a-held-motif-comparison-when-two-paper-sides-have-the-wrong-slant)
+
 | Aktion | Verhalten |
 | --- | --- |
 | Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |

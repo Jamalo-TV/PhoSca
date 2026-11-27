@@ -49,6 +49,7 @@ from app.pipeline.manual_paper_boundary import (
 )
 from app.pipeline.merged_print_review import MERGED_PRINT_PAIR
 from app.pipeline.motif_boundary import PARTIAL_MOTIF_SEAMS
+from app.pipeline.motif_comparison import MEASURED_MOTIF_COMPARISON, MOTIF_COMPARISON_PAPER_EDIT
 from app.pipeline.motif_margin import HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
@@ -478,10 +479,14 @@ async def _review_overlapping_crops(
             neighbor.enhancement_applied = metadata
         motif_preview = motif_mode.get("outline_preview") or {}
         motif_outline = motif_preview.get("source_outline")
-        if (motif_preview.get("source") == PAPER_STOCK_MOTIF_SOURCE and motif_outline
+        if (motif_preview.get("source") in {PAPER_STOCK_MOTIF_SOURCE, MEASURED_MOTIF_COMPARISON} and motif_outline
                 and review_outline_intersects_claim(motif_outline, mask, width, height)):
             for key in ("outline_preview", "warp_quad", "page_to_output", "shape", "sampling"):
                 motif_mode.pop(key, None)
+            if motif_preview["source"] == MEASURED_MOTIF_COMPARISON:
+                for key in ("suggested_warp_quad", "suggested_seam_traces", "suggested_seam_source"):
+                    motif_mode.pop(key, None)
+                full_mode.pop("motif_paper_edge_traces", None)
             correction.pop(f"{MOTIF_REVIEW_PREVIEW}_path", None)
             correction.pop(f"{MOTIF_REVIEW_PREVIEW}_asset_id", None)
             neighbor.enhancement_applied = metadata
@@ -489,6 +494,11 @@ async def _review_overlapping_crops(
                 entity_type="photo", entity_id=neighbor.id, action="overlapping_crop_preview_invalidated",
                 details={"overlapping_photo_id": str(photo.id), "mode": "image_only"},
             ))
+        elif full_mode.get("motif_paper_edge_traces") and review_traces_intersect_claim(
+            full_mode["motif_paper_edge_traces"], mask, width, height,
+        ):
+            full_mode.pop("motif_paper_edge_traces")
+            neighbor.enhancement_applied = metadata
         if motif_mode.get("margin_mark_source") == HELD_PRINT_MOTIF_MARGIN_SOURCE:
             marks = motif_mode.get("margin_mark_regions") or []
             current_marks = [mark for mark in marks if not review_outline_intersects_claim(mark, mask, width, height)]
@@ -1082,13 +1092,24 @@ async def update_photo_bounding_box(
         shared_rim_traces = saved_review.get("shared_rim_cut_traces") or shared_rim_cut_reference(correction)
         explicit = payload.segmentation_mask is not None and payload.segmentation_mask.warp_quad is not None
         detector_source = original_mask.get("detector_source")
+        motif_comparison = detector_source == "yolo_onnx" and full_print.get(MOTIF_COMPARISON_PAPER_EDIT) is True
+        if photo.segmentation_confidence is not None and motif_comparison:
+            outer = segmentation_mask.get("warp_quad") or []
+            motif_mode = (correction.get("crop_modes") or {}).get("image_only") or {}
+            if (not explicit or segmentation_mask.get("image_quad") is not None
+                    or any(_same_visible_outline(previous, outer, native_size=(width, height)) for previous in (
+                        full_print.get("warp_quad"), original_mask.get("warp_quad") or original_mask.get("polygon"),
+                        motif_mode.get("suggested_warp_quad"),
+                    ))):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="print_outline_review_required")
         contact_outline = detector_source in {"contrast_region", "yolo_onnx"} and full_print.get(CONTACT_PRINT_EDGE_CHECK) is True
         opposing_outline = detector_source == "yolo_onnx" and full_print.get(OPPOSING_OUTER_EDGES_CHECK) is True
         unsupported_contrast = (detector_source == "contrast_region"
                                 and "PRINT_BOUNDARY_UNSUPPORTED" in (full_print.get("reason_codes") or []))
         confirm_contrast_outline = (
             photo.segmentation_confidence is not None and full_print.get("status") == "review_needed"
-            and (contact_outline or opposing_outline or unsupported_contrast) and not capture_outline_review_required(full_print)
+            and (contact_outline or opposing_outline or unsupported_contrast or motif_comparison)
+            and not capture_outline_review_required(full_print)
         )
         if confirm_contrast_outline:
             if not payload.confirm_print_outline or not explicit or segmentation_mask.get("image_quad") is not None:

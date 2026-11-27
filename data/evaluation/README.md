@@ -9978,6 +9978,77 @@ metrics, including 18/18 detections and 23/23 seeded recoverable crops.
 Replay measurements and private source overlays are under
 `runs/crop-quality/u093-capture-background-review/`.
 
+### Recover a held motif comparison when two paper sides have the wrong slant
+
+Cluster 3 on U093 is the lower wedding print on the left album leaf. It
+corresponds to cluster 3 in the wider U065 capture. Forty-eight interior scene
+landmarks gave 0.374-pixel median and 1.530-pixel p95 residual in U093,
+and 0.203 and 0.827 pixels in U065. Held-quadrant p95 residuals for the
+RANSAC-admitted landmarks reach 2.44 native U093 pixels. The model mask's
+lower-right corner lies at about `(959, 1223)`. Its right rail slopes out
+and its bottom is almost horizontal. Both rails exceed the existing local
+line fit's change in slope relative to the source evidence. Expanding that
+search window still misses the angle correction and can acquire the woven
+decorative stripe and glare near the album binding.
+
+The old 305 × 396 whole-print work raster omits 228 of 80,546 source
+centres in one directly measured motif draft. It includes album backing at
+right and below. Even a provisional paper draft expanded outward by 12
+native pixels leaves 10.04% of the original crop's interpolation weight
+outside that envelope. Independent observations support the open right
+and lower paper transitions. The upper/left corner and alternate bottom
+rail leave the closed stock perimeter and physical aspect unresolved.
+
+For an eligible model proposal already held both ways for ambiguous paper,
+two local Canny and contour-closure searches must identify a common motif.
+PhoSca refits each of four edges on the original pixels and checks the signed
+colour and brightness transition from a quiet pale collar into the motif.
+The displayed blue spans follow repeated source observations. Independently
+measured transitions on a sufficiently displaced side can be shown as open
+paper context when they are separated from the motif and current neighboring
+claims. The comparison raster encloses both scene fits with a two-source-
+pixel allowance. Its geometry and owned bilinear sampling are confined to
+the held motif PNG. The previous whole-print raster remains available in the
+same review.
+
+The regular upload produces a 262 × 383 motif preview in U093. Against the
+projected and the directly measured development drafts, the preview has
+footprint IoU 0.9914 and 0.9842, zero cutoff beyond one native pixel and
+zero omitted three-pixel core centres. Measured source corner errors max out
+at 2.36 and 4.23 native pixels. The evaluator counts 122 and 577 preview output
+positions more than one pixel outside the respective motif drafts. The
+older work raster yields IoU 0.7542 and 0.7448, with 63 and 61 missing
+three-pixel core centres and 27,212 and 28,355 output positions beyond the
+same outside tolerance. These comparisons use motif draft geometry. A
+matching physical ratio is still pending independent measurement.
+
+The native collar check looks for small darker shapes on pale material.
+It suppresses all 56 prior candidate previews in the 96 authored pale
+mark cases that had clipped a planted inscription. Six of twelve separate
+localized tests with very faint added texture on the actual surroundings
+still produce a held preview that excludes the tested marks. An explicit
+protected text region vetoes all six. The independent optical bank has 493
+cases including separate adjacent prints, shadows, nested printed frames,
+patterned albums and optically identical larger-print aliases. Of 20 fixed
+actual-source variants, twelve received the comparison and kept all of
+the measured core. Per-case one-thread CPU median and p95 over this bank
+were about 52 and 114 ms. These are diagnostics of the comparison stage on
+fixed masks and include cases that abstain in normal processing.
+
+Desktop and mobile show the comparison next to the original and retain the
+prior purple paper evidence. Both named JPEG exports and the legacy trimmed
+alias stay unavailable for the disputed proposal. Copying the old paper
+quad or the scene comparison into the paper edit returns 409. A distinct
+explicit paper edit and reviewer confirmation are required before the
+native manual recheck. In the disposable U093 replay the API accepts the
+edited paper draft. The native recheck still flags ambiguous boundaries and
+uncertain corners and both exports stay held. A subsequently claimed
+overlapping print retires the preview and its editing guides. All eight
+frozen and development comparison reports preserve the scored detection,
+geometry and review results, including 18/18 detections and 23/23 seeded
+recoverable crops. Evidence, replays and source graphics are under
+`runs/crop-quality/u093-measured-motif-comparison/`.
+
 ### Review a fallback outline crossing the album edge
 
 The same Golden 26 180° JPEG75 development raster has a third false
@@ -11514,3 +11585,11 @@ the workspace proxy and returned no native scan bytes.
 [Digitization project](https://www.458raafsquadron.org/official-squadron-albums) ·
 [P07251 catalogue](https://collection.awm.gov.au/C1223181) ·
 [P11547 catalogue](https://collection.awm.gov.au/C1223182)
+
+Album `P07251` chapter 3 identifies the 1943 Protville group portrait on
+page 62 and points to the association's enlarged individual web view.
+The source-only recheck confirms the catalogue linkage. The acquisition
+path of that individual web view could be a separate capture or a derivative.
+The workspace proxy returns HTTP 403 for the tested web JPEGs. This lead
+still needs the paired native files, acquisition proof and reuse terms.
+[Page 62 correspondence](https://www.458raafsquadron.org/official-squadron-albums/album-1-chapters/chapter-3)

@@ -2332,6 +2332,68 @@ async def test_ribbed_outline_comparison_is_held_and_retires_with_an_adjacent_cl
     assert (await crop("source_corrected_untrimmed")).status_code == 200
 
 
+async def test_measured_motif_comparison_requires_a_distinct_confirmed_paper_outline(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.motif_comparison import MEASURED_MOTIF_COMPARISON, MOTIF_COMPARISON_PAPER_EDIT
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    _, page_id, photo_id = await _seed_review_data()
+
+    def quad(left, top, right, bottom):
+        return [{"x": x, "y": y} for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
+
+    original = quad(.1, .2, .8, .9)
+    motif = quad(.23, .33, .7, .78)
+    edited = quad(.18, .26, .74, .86)
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {"source": "yolo_seg_mask", "detector_source": "yolo_onnx", "polygon": original}
+        modes = {name: {"status": "review_needed", "reason_codes": ["PRINT_BOUNDARY_AMBIGUOUS"]}
+                 for name in ("full_print", "image_only")}
+        modes["full_print"].update({"warp_quad": original, MOTIF_COMPARISON_PAPER_EDIT: True,
+                                    "motif_paper_edge_traces": [[edited[1], edited[2]]]})
+        modes["image_only"].update({
+            "suggested_warp_quad": motif, "suggested_seam_source": MEASURED_MOTIF_COMPARISON,
+            "suggested_seam_traces": [[motif[1], motif[2]]],
+            "outline_preview": {"source": MEASURED_MOTIF_COMPARISON, "source_outline": motif},
+        })
+        photo.enhancement_applied = {**photo.enhancement_applied, "correction": {"crop_modes": modes}}
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    initial = (await client.get(url)).json()
+    for corners, confirm, inner, reason in (
+        (original, False, None, "print_outline_review_required"),
+        (original, True, None, "print_outline_review_required"),
+        (motif, True, None, "print_outline_review_required"),
+        (edited, True, motif, "print_outline_review_required"),
+        (edited, False, None, "contrast_print_outline_review_required"),
+    ):
+        update = {"source": "manual_quad", "warp_quad": corners, "polygon": corners}
+        if inner is not None:
+            update["image_quad"] = inner
+        rejected = await client.patch(f"{url}/bounding-box", json={"bounding_box": initial["bounding_box"],
+                                     "segmentation_mask": update, "confirm_print_outline": confirm})
+        assert rejected.status_code == 409 and rejected.json()["detail"] == reason, rejected.text
+    assert (await client.get(url)).json() == initial
+
+    added = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": quad(.60, .47, .95, .72),
+    })
+    assert added.status_code == 201, added.text
+    current = (await client.get(url)).json()["enhancement_applied"]["correction"]["crop_modes"]
+    assert current["full_print"][MOTIF_COMPARISON_PAPER_EDIT] is True
+    assert "motif_paper_edge_traces" not in current["full_print"]
+    assert not {"outline_preview", "suggested_warp_quad", "suggested_seam_source", "suggested_seam_traces"} & current["image_only"].keys()
+    for variant in ("image_only_preview", "full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image", params={"variant": variant})).status_code == 404
+
+
 @pytest.mark.parametrize(("detector_source", "edge_guide"), [
     ("contrast_region", None), ("contrast_region", "contact"), ("yolo_onnx", "contact"), ("yolo_onnx", "opposing"),
 ])

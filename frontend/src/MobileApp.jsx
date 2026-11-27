@@ -6,7 +6,7 @@ import { motifUsesPaperAxes, projectedCropAspect, resizeMotifInPaperPlane, resam
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import {
   contactEdgesNeedRefresh, contrastOutlineConfirmation, contrastOutlineNeedsConfirmation, contrastOutlineReviewHint,
-  heldPrintCorrectionHint, wholePrintApprovalHeld,
+  heldPrintCorrectionHint, measuredMotifPaperEditHint, wholePrintApprovalHeld,
 } from "./cropReviewApproval.js";
 import {
   actionableCountGroups, adjacentPrintHint, albumLeafChildStyle, albumLeafTraceStyle, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
@@ -19,7 +19,8 @@ import {
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   borrowedFallbackProposal, captureFabricProposal, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints, frameBackingProposal,
   getDeferredParentCropHints, getDeferredPrintEvidence, getDeferredPrintProposals, getSourceEdgeTraces,
-  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, mergedPrintAsOneLabel, mergedPrintPairHint, missingPrintEdgeHint,
+  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin,
+  MeasuredMotifReview, MeasuredMotifReviewOverlay, mergedPrintAsOneLabel, mergedPrintPairHint, missingPrintEdgeHint,
   nearCapturePrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
@@ -41,7 +42,8 @@ import {
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getMergedPrintPairs, getPaperJoinReviewGroups, getPrintedIllustrationReviewGroups, getStoredMotifQuad, motifFitsPaper,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
-  savedFullPrintReviewUrl,
+  getMeasuredMotifComparison, isMeasuredMotifComparison,
+  sameReviewQuad, savedFullPrintReviewUrl,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
@@ -236,6 +238,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const motifMode = item.payload?.crop_modes?.image_only;
   const motifReviewPending = !reviewedNonPrint && item.payload?.motif_review_pending;
   const motifBoundaryReviewHint = getMotifBoundaryReviewHint(motifMode);
+  const advisoryMotif = isMeasuredMotifComparison(motifMode);
   const stockMotifPreview = !reviewedNonPrint && motifMode?.status === "review_needed"
     && motifMode?.outline_preview?.source === "paper_stock_motif"
     && item.payload?.variant_urls?.image_only_preview;
@@ -243,7 +246,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const preliminaryMotifMarks = motifMode?.margin_mark_source === heldPrintMotifMargin && motifMarginMarks.length > 0;
   const openMotifGuides = !reviewedNonPrint && motifMode?.status === "review_needed"
     && motifMode.suggested_seam_source === partialMotifSeams;
-  const motifTraces = motifReviewPending || openMotifGuides ? getSourceEdgeTraces(motifMode?.suggested_seam_traces) : [];
+  const motifTraces = !advisoryMotif && (motifReviewPending || openMotifGuides)
+    ? getSourceEdgeTraces(motifMode?.suggested_seam_traces) : [];
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
   const initialPaperOutline = deferredDraft?.polygon || (openPaperOutline && paperGrid?.cut === null && printSuggestion);
@@ -264,7 +268,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const canEditMotif = editable && !reviewedNonPrint && !contrastOutlineReview && isValidQuad(savedQuad)
     && canEditMobileMotif(item.payload, item.payload?.crop_modes);
   const storedMotif = cyclicReviewQuad(sanitizeReviewPolygon(getStoredMotifQuad(item.payload || {}, motifMode)));
-  const suggestedMotif = cyclicReviewQuad(sanitizeReviewPolygon(motifMode?.suggested_warp_quad));
+  const suggestedMotif = advisoryMotif ? null : cyclicReviewQuad(sanitizeReviewPolygon(motifMode?.suggested_warp_quad));
   const initialOuter = () => (isValidQuad(protectedOutline) && protectedOutline) || initialPaperOutline
     || (isValidQuad(measuredQuad) ? measuredQuad : initialQuad(
     item.payload?.confidence === null && savedQuad ? savedQuad : item.payload?.warp_quad,
@@ -280,9 +284,13 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const [confirmedContrastOutline, setConfirmedContrastOutline] = useState(null);
   const contrastOutlineConfirmed = quad != null && confirmedContrastOutline === quad;
   const contrastOutlineNeedsCheck = contrastOutlineReview && !contrastOutlineConfirmed;
+  const motifPaperNeedsMovement = contrastOutlineReview && fullPrintMode?.motif_comparison_requires_paper_edit === true
+    && sameReviewQuad(initialOuter(), quad);
   const [editMode, setEditMode] = useState("full_print");
   const [motifQuad, setMotifQuad] = useState(storedMotif);
   const editingMotif = canEditMotif && editMode === "image_only";
+  const motifComparison = editable && !deferredDraft && !reviewedNonPrint && !editingMotif
+    ? getMeasuredMotifComparison(item.payload?.crop_modes, item.payload?.variant_urls?.image_only_preview, initialOuter(), quad) : null;
   const selectedCompetingOutline = editable && getCompetingPhotoOutline(item.payload);
   const competingPhotoOutlines = deferredDraft || editingMotif || selectedCountGroup ? [] : editable
     ? selectedCompetingOutline ? [selectedCompetingOutline] : [] : getCompetingPhotoReviewOutlines(detections);
@@ -392,7 +400,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     addEventListener("pointermove", move); addEventListener("pointerup", up); addEventListener("pointercancel", up);
   }
   async function save() {
-    if (contrastOutlineNeedsCheck) return;
+    if (contrastOutlineNeedsCheck || motifPaperNeedsMovement) return;
     if (editingMotif ? !validMotif : (!validQuad || sizeError || crossingNeedsCorrection)) return;
     if (deferredDraft && !confirmDeferredDraft) return;
     setSaving(true); setSaveError("");
@@ -612,6 +620,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     filmGridGroups.length && "mobile-film-grid-count-hint", paperGridGroups.length && "mobile-paper-grid-count-hint",
     paperJoinGroups.length && "mobile-paper-join-count-hint",
     editable && motifTraces.length && "mobile-motif-seam-hint",
+    motifComparison && "mobile-measured-motif-review-hint",
     editable && preliminaryMotifMarks && "mobile-motif-review-hint",
     contrastCrossingTraces.length && "mobile-contrast-crossing-review-hint",
     captureBackgroundTraces.length && "mobile-capture-background-review-hint",
@@ -681,6 +690,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
             {motifTraces.map((trace, index) => <polyline key={index}
               points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />)}
           </g>}
+          {motifComparison && <MeasuredMotifReviewOverlay review={motifComparison} />}
           {displayedQuad.map((point, index) => <g key={index}>
             <circle className="drag-handle" cx={point.x * 1000} cy={point.y * 1000} r="25" onPointerDown={event => moveCorner(event, index)} />
             <text className="corner-label" x={point.x * 1000 + 28} y={point.y * 1000 - 22}>{index + 1}</text>
@@ -799,11 +809,13 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         <RefreshCw size={18} />{reprocessing ? "Abzug wird neu berechnet …"
           : refreshContactEdges ? "Papierkanten erneut prüfen" : "Abzug neu berechnen"}
       </button>}
-      {motifReviewPending && <p className="quad-hint" id="mobile-motif-review-hint">
+      {motifReviewPending && !advisoryMotif && <p className="quad-hint" id="mobile-motif-review-hint">
         {preliminaryMotifMarks ? motifBoundaryReviewHint : <>
           {motifBoundaryReviewHint && `${motifBoundaryReviewHint} `}{canEditMotif ? motifReviewHint : motifDesktopReviewHint}
         </>}
       </p>}
+      {motifComparison && <MeasuredMotifReview review={motifComparison} hint={motifBoundaryReviewHint}
+        hintId="mobile-measured-motif-review-hint" mobile />}
       {stockMotifPreview && !editingMotif && <details className="quad-hint">
         <summary>Motivvorschau ansehen</summary>
         <p>{motifBoundaryReviewHint}</p>
@@ -891,10 +903,13 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           {contrastOutlineConfirmation}
         </label>
       )}
+      {!deferredDraft && !editingMotif && motifPaperNeedsMovement &&
+        <p className="quad-hint" id="mobile-measured-motif-paper-edit-hint">{measuredMotifPaperEditHint}</p>}
       <button className="save-crop" onClick={save} disabled={saving
         || (deferredDraft && !confirmDeferredDraft)
-        || contrastOutlineNeedsCheck
-        || (editingMotif ? !validMotif : (!validQuad || Boolean(sizeError) || crossingNeedsCorrection))}>
+        || contrastOutlineNeedsCheck || motifPaperNeedsMovement
+        || (editingMotif ? !validMotif : (!validQuad || Boolean(sizeError) || crossingNeedsCorrection))}
+        aria-describedby={motifPaperNeedsMovement ? "mobile-measured-motif-paper-edit-hint" : undefined}>
         <Save size={18}/>{geometrySaving ? "Richtet das Bild …" : standaloneDraft ? "Als Abzug erfassen" : sourceFragmentDraft ? "Als einen Abzug speichern"
           : editingMotif ? "Motivzuschnitt speichern" : "Viereck speichern & geraderichten"}
       </button>

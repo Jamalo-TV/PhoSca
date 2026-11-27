@@ -1,5 +1,6 @@
 export const contrastOutlineReviewHint = "Prüfe, ob alle vier Ecken zum selben Papierabzug gehören. Markiert die Kontur keinen eigenen Abzug, wähle «Falsches Objekt».";
 export const contrastOutlineConfirmation = "Die vier Ecken liegen am sichtbaren Rand desselben Papierabzugs.";
+export const measuredMotifPaperEditHint = "Setze vor dem Speichern alle vier Ecken an den sichtbaren Papierrand des Abzugs.";
 
 export function contrastOutlineNeedsConfirmation(photo, fullPrint) {
   const confidence = photo?.segmentation_confidence ?? photo?.confidence;
@@ -7,10 +8,11 @@ export function contrastOutlineNeedsConfirmation(photo, fullPrint) {
   const reasons = fullPrint?.reason_codes || [];
   const contact = fullPrint?.contact_print_edge_check_required === true && ["contrast_region", "yolo_onnx"].includes(source);
   const opposingEdges = fullPrint?.opposing_outer_edges_check_required === true && source === "yolo_onnx";
+  const motifComparison = fullPrint?.motif_comparison_requires_paper_edit === true && source === "yolo_onnx";
   const unsupportedContrast = source === "contrast_region" && reasons.includes("PRINT_BOUNDARY_UNSUPPORTED");
   return confidence != null
     && fullPrint?.status === "review_needed"
-    && (contact || opposingEdges || unsupportedContrast)
+    && (contact || opposingEdges || motifComparison || unsupportedContrast)
     && !reasons.includes("PRINT_AT_CAPTURE_EDGE");
 }
 

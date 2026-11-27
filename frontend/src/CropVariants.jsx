@@ -4,6 +4,7 @@ import {
   albumLeafSourceWindow, captureSplitSourceWindow, competingPhotoRegionPaths, competingPhotoRegionStyles, filmSourceWindow,
   sharedMotifGuideStyle, sourcePixelCenter,
   getFilmNeighborEdgeIndex, getPaperGridReview, measuredRibbedPrintOutlineSource, paperGridSourceWindows,
+  isMeasuredMotifComparison, measuredMotifComparisonSource, measuredMotifOutlineStyle, measuredMotifPaperStyle, measuredMotifSeamStyle,
 } from "./cropReviewOutlines.js";
 
 export const cropModeLabels = {
@@ -725,6 +726,9 @@ export function getMotifBoundaryReviewHint(motif) {
   if (motif.suggested_seam_source === partialMotifSeams) {
     return "Eine Motivkante bleibt offen. Prüfe auch ausserhalb der gemessenen Linien, ob dort Bildinhalt oder zugehörige Beschriftung liegt.";
   }
+  if (motif.outline_preview?.source === measuredMotifComparisonSource) {
+    return "Prüfe zuerst den vollständigen Papierrand am Original. Vergleiche danach die Motivvorschau mit dem Original und achte auf Bilddetails und Beschriftungen ausserhalb der blauen Kontur.";
+  }
   if (motif.outline_preview?.source === "paper_stock_motif") {
     return "Die Vorschau folgt der gemessenen Motivgrenze. Prüfe zuerst den Aussenumriss am Original.";
   }
@@ -733,6 +737,40 @@ export function getMotifBoundaryReviewHint(motif) {
   }
   if (motif.reason_codes?.includes(curvedMotifReviewReason)) return curvedMotifReviewHint;
   return motif.reason_codes?.includes("IMAGE_RECTANGLE_INCONSISTENT") ? reviewMessages.IMAGE_RECTANGLE_INCONSISTENT : null;
+}
+
+export function MeasuredMotifReview({ review, hint, hintId, mobile = false }) {
+  return <div className="measured-motif-review">
+    <p id={hintId} className={mobile ? "quad-hint" : "crop-editor-hint"}>
+      {hint}{review.seamTraces.length > 0 && " Blaue Striche markieren gemessene Abschnitte einer möglichen Motivkante."}
+      {review.paperTraces.length > 0 && " Türkis markiert weitere gemessene Übergänge ausserhalb des Motivs."}
+    </p>
+    <details className={mobile ? "quad-hint" : "crop-editor-hint"}>
+      <summary>Motivvorschau vergleichen</summary>
+      <img className="review-crop-preview" src={review.previewUrl} alt="Motivvorschau zur Prüfung"
+        loading="lazy" aria-describedby={hintId} />
+    </details>
+  </div>;
+}
+
+export function MeasuredMotifReviewOverlay({ review }) {
+  return <g className="measured-motif-overlay" aria-hidden="true" fill="none" pointerEvents="none">
+    {[
+      [review.paperTraces, measuredMotifPaperStyle, "polyline", "paper"],
+      [[review.outline], measuredMotifOutlineStyle, "polygon", "outline"],
+      [review.seamTraces, measuredMotifSeamStyle, "polyline", "seam"],
+    ].map(([paths, { color, contrast, dash }, Path, name]) => (
+      <g className={`measured-motif-${name}`} key={name}>
+        {paths.map((path, index) => {
+          const points = path.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ");
+          return <g key={index}>
+            <Path points={points} stroke={contrast} strokeWidth="4" vectorEffect="non-scaling-stroke" />
+            <Path points={points} stroke={color} strokeWidth="2" strokeDasharray={dash.join(" ")} vectorEffect="non-scaling-stroke" />
+          </g>;
+        })}
+      </g>
+    ))}
+  </g>;
 }
 
 export function getMotifMarginMarks(motif) {
@@ -1085,7 +1123,8 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
   const printOutline = showsPaperEdgeComparison(getCropModes(photo)?.full_print)
     ? null : photo.urls?.full_print_preview;
   const fullPreview = printOutline || photo.urls?.source_corrected_untrimmed || photo.urls?.original;
-  const motifPreview = photo.urls?.image_only_preview;
+  const contextualMotif = mode === "image_only" && isMeasuredMotifComparison(result);
+  const motifPreview = contextualMotif ? null : photo.urls?.image_only_preview;
   const preview = mode === "image_only"
     ? motifPreview || ((possibleMultipanel || possibleFragmentedPrint || possibleFragmentOutline || scannerBackingUncertain || clippedOverlapUncertain || possibleFilmGrid || possiblePaperJoin
         || paperGrid || captureEdgeClipped || captureSplit || pendingPaperEdge || result?.reason_codes?.includes(markedMotifMarginReason)) && fullPreview)
@@ -1111,6 +1150,7 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
     || (possibleFilmGrid && filmGridHint)
     || (paperGrid && (paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint))
     || (scallopedOutline && scallopedOutlineReviewHint)
+    || (contextualMotif && "Öffne die Zuschnittprüfung, um die Motivvorschau am Original zu vergleichen.")
     || (mode === "image_only" && result?.outline_preview?.source === "paper_stock_motif" && getMotifBoundaryReviewHint(result))
     || result?.reason_codes?.map((code) => reviewMessages[code]).find(Boolean)
     || (result?.status === "ready" && !url && reviewMessages.CROP_VALIDATION_UNAVAILABLE)
@@ -1137,7 +1177,7 @@ export function CropVariants({ photo, hidden = false, mobile = false }) {
       ) : (
         <>
           <p className="crop-mode-status" role="status">{reviewMessage}</p>
-          {mobile && mode === "image_only" && getMotifBoundaryReviewHint(result) && (
+          {mobile && mode === "image_only" && !contextualMotif && getMotifBoundaryReviewHint(result) && (
             <p className="crop-mode-status">{canEditMobileMotif(photo, getCropModes(photo))
               ? "Öffne «Cropping prüfen» und wähle beim Abzug «Nur Bildmotiv»."
               : "Die Motivecken kannst du im Desktop-Editor setzen."}</p>

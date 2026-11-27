@@ -25,6 +25,7 @@ from app.pipeline.fragmented_prints import COMPACT_SCENE_CROSSING_REVISION, FRAG
 from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_REVISION
 from app.pipeline.fusion_ownership import FUSION_OWNERSHIP_REVISION
 from app.pipeline.model_registry import sha256
+from app.pipeline.motif_comparison import MOTIF_COMPARISON_REVISION
 from app.pipeline.motif_margin import MOTIF_MARGIN_REVIEW_REVISION
 from app.pipeline.off_print_advisory import OFF_PRINT_ADVISORY_REVISION
 from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVISION
@@ -180,6 +181,10 @@ def crop_validation_profile(settings: Settings) -> dict:
         "border_analysis": settings.enable_border_trim,
         "curved_motif_check": 7 if settings.enable_precise_photo_crops and settings.enable_border_trim else None,
         "paper_stock_motif_preview": 1 if settings.enable_precise_photo_crops and settings.enable_border_trim else None,
+        "measured_motif_comparison": (
+            MOTIF_COMPARISON_REVISION if settings.enable_precise_photo_crops and settings.enable_border_trim
+            and settings.enable_classical_segmentation_fallback else None
+        ),
         "motif_margin_review": (
             MOTIF_MARGIN_REVIEW_REVISION if settings.enable_precise_photo_crops and settings.enable_border_trim else None
         ),

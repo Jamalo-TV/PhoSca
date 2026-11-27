@@ -51,6 +51,7 @@ from app.pipeline.motif_boundary import (
 from app.pipeline.motif_margin import (
     HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE, held_print_motif_margin_marks, motif_margin_marks,
 )
+from app.pipeline.motif_comparison import MEASURED_MOTIF_COMPARISON, MOTIF_COMPARISON_PAPER_EDIT, measured_motif_comparison
 from app.pipeline.mounted_edge_preview import suggest_mounted_strip_preview
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT, manual_margin_advisory, off_print_advisory_regions
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
@@ -2666,6 +2667,41 @@ def correct_photo_crop(
                         ]
             except (ValueError, cv2.error, np.linalg.LinAlgError):
                 pass  # This source guide does not change the crop or its availability.
+        image_mode = modes["image_only"]
+        if (trim_border and enable_classical_retry and not manual and protection["passed"] and visible is not None
+                and mask.get("source") == "yolo_seg_mask" and mask.get("detector_source") == "yolo_onnx"
+                and not any(mask.get(key) for key in ("warp_quad", *_STOCK_REVIEW_CONFLICTS))
+                and uncertain_edges == {"PRINT_BOUNDARY_AMBIGUOUS"}
+                and full_mode.get("suggested_edge_source") == COMPETING_PRINT_EDGES
+                and full_mode["status"] == image_mode["status"] == "review_needed"
+                and not any(image_mode.get(key) for key in ("outline_preview", "suggested_warp_quad", "margin_mark_regions"))):
+            try:
+                probe = measured_motif_comparison(page_image, visible / np.float32([width - 1, height - 1]), src_points)
+                if probe is not None:
+                    scope = _vertices_on_page(probe.outline, width, height)
+                    claims = [*(neighbor_masks or []), *(deferred_print_proposals or [])]
+                    motif = cv2.perspectiveTransform(probe.outline[None], matrix)[0]
+                    marks = motif_margin_marks(page_image, corrected, motif, np.linalg.inv(matrix), preview_guard=True)
+                    clear = not any(review_outline_intersects_claim(scope, claim, width, height) for claim in claims)
+                    if (clear and not marks
+                            and _keeps_protected_preview_content(page_image, src_points, probe.outline, regions, protection)):
+                        rotation = int(result.metadata["orientation"].get("rotation_degrees") or 0) % 360
+                        preview = _render_review_quad_preview(
+                            page_image, probe.outline, rotation, neighbor_polygons, regions, camera_matrix, page_plane,
+                            source=MEASURED_MOTIF_COMPARISON,
+                        )
+                        if preview is not None:
+                            pixels, image_mode["outline_preview"] = preview
+                            full_mode[MOTIF_COMPARISON_PAPER_EDIT] = True
+                            image_mode["suggested_warp_quad"] = scope
+                            image_mode["suggested_seam_source"] = MEASURED_MOTIF_COMPARISON
+                            image_mode["suggested_seam_traces"] = [_vertices_on_page(trace, width, height) for trace in probe.motif_traces]
+                            paper = [_vertices_on_page(trace, width, height) for trace in probe.paper_traces]
+                            if paper and not any(review_traces_intersect_claim(paper, claim, width, height) for claim in claims):
+                                full_mode["motif_paper_edge_traces"] = paper
+                            result = replace(result, image_only_preview=pixels)
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                pass  # The measured comparison is optional when the original remains unresolved.
         return result
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:

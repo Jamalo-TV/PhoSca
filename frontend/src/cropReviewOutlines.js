@@ -215,6 +215,31 @@ export function getRibbedPrintReviewOutline(fullPrint, previewUrl, savedQuad, ed
   return Array.isArray(outline) && outline.length === 4 && outline.every(isNormalizedPoint) ? outline : null;
 }
 
+export const measuredMotifComparisonSource = "measured_motif_comparison";
+export const measuredMotifOutlineStyle = { color: "#93c5fd", contrast: "#172554", dash: [2, 5] };
+export const measuredMotifSeamStyle = { color: "#93c5fd", contrast: "#172554", dash: [8, 4] };
+export const measuredMotifPaperStyle = { color: "#67e8f9", contrast: "#164e63", dash: [12, 5] };
+
+export function isMeasuredMotifComparison(motif) {
+  return motif?.outline_preview?.source === measuredMotifComparisonSource || motif?.suggested_seam_source === measuredMotifComparisonSource;
+}
+
+export function getMeasuredMotifComparison(modes, previewUrl, savedQuad, editedQuad) {
+  const motif = modes?.image_only;
+  if (!bothModesHeld(modes) || motif.outline_preview?.source !== measuredMotifComparisonSource
+      || !previewUrl || !sameReviewQuad(savedQuad, editedQuad)) return null;
+  const outline = motif.suggested_warp_quad;
+  if (!Array.isArray(outline) || outline.length !== 4 || !outline.every(isNormalizedPoint)
+      || new Set(outline.map(({ x, y }) => `${x},${y}`)).size !== 4) return null;
+  const segments = (lines) => Array.isArray(lines) ? lines.filter(line => sourceReviewLine(line)
+    && (line[0].x !== line[1].x || line[0].y !== line[1].y)) : [];
+  return {
+    previewUrl, outline,
+    seamTraces: motif.suggested_seam_source === measuredMotifComparisonSource ? segments(motif.suggested_seam_traces) : [],
+    paperTraces: segments(modes.full_print.motif_paper_edge_traces),
+  };
+}
+
 export function getFilmGridSeam(mask) {
   return sourceReviewLine(mask?.film_grid_review_seam);
 }

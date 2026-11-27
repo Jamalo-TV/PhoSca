@@ -10,10 +10,44 @@ import {
   getPaperJoinReviewGroups, getPrintedIllustrationReviewGroups, getStoredMotifQuad, motifFitsPaper, paperGridSourceWindows,
   savedFullPrintReviewUrl,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource,
+  getMeasuredMotifComparison, isMeasuredMotifComparison, measuredMotifComparisonSource,
 } from "../src/cropReviewOutlines.js";
 
 const quad = [{ x: .1, y: .2 }, { x: .7, y: .2 }, { x: .7, y: .8 }, { x: .1, y: .8 }];
 const mask = { fragment_outline_suggestion: { quad, uncertain_edge: 1 } };
+
+test("a measured motif comparison follows the held source without changing its geometry", () => {
+  const status = "review_needed";
+  const seam = [{ x: .3, y: .4 }, { x: .6, y: .4 }];
+  const paper = [{ x: .72, y: .37 }, { x: .75, y: .69 }];
+  const modes = {
+    full_print: { status, motif_paper_edge_traces: [paper, [paper[0], paper[0]]] },
+    image_only: { status, outline_preview: { source: measuredMotifComparisonSource },
+      suggested_seam_source: measuredMotifComparisonSource, suggested_warp_quad: quad,
+      suggested_seam_traces: [seam, [seam[0], { x: 2, y: .6 }]] },
+  };
+  const previewUrl = "/motif-preview";
+  const expected = { previewUrl, outline: quad, seamTraces: [seam], paperTraces: [paper] };
+  assert.equal(isMeasuredMotifComparison(modes.image_only), true);
+  assert.equal(isMeasuredMotifComparison({ outline_preview: { source: "paper_stock_motif" } }), false);
+  assert.equal(isMeasuredMotifComparison({ suggested_seam_source: measuredMotifComparisonSource }), true);
+  assert.deepEqual(getMeasuredMotifComparison(modes, previewUrl, quad, structuredClone(quad)), expected);
+  assert.deepEqual(getMeasuredMotifComparison({ ...modes, full_print: { status } }, previewUrl, quad, quad),
+    { ...expected, paperTraces: [] });
+  assert.deepEqual(getMeasuredMotifComparison({ ...modes, image_only: {
+    ...modes.image_only, suggested_seam_source: "partial_motif_seams",
+  } }, previewUrl, quad, quad), { ...expected, seamTraces: [] });
+  assert.equal(getMeasuredMotifComparison(modes, null, quad, quad), null);
+  assert.equal(getMeasuredMotifComparison(modes, previewUrl, quad, [{ x: .11, y: .2 }, ...quad.slice(1)]), null);
+  for (const [mode, change] of [
+    ["full_print", { status: "ready" }],
+    ["image_only", { status: "ready" }],
+    ["image_only", { outline_preview: { source: "paper_stock_motif" } }],
+    ["image_only", { suggested_warp_quad: [quad[1], ...quad.slice(1)] }],
+  ]) {
+    assert.equal(getMeasuredMotifComparison({ ...modes, [mode]: { ...modes[mode], ...change } }, previewUrl, quad, quad), null);
+  }
+});
 
 test("capture background guidance follows a held active proposal and its measured album edge", () => {
   const held = { status: "review_needed" };
