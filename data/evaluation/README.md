@@ -2341,6 +2341,60 @@ the precise crop setting disabled still retains the stored hold.
 Measurements and the annotated example are under
 `runs/crop-quality/partial-print-extent-review/`.
 
+#### Compare two possible prints within one count proposal
+
+Dense tile revision 8 examines one unique whole-page proposal with
+model confidence in `[0.40, 0.65)` and exactly two contained
+tile winners. Both tile scores must be at least 0.65 and both edge
+scores at least 0.80. At least one tile score must reach 0.80.
+At least 94% of each raw mask must lie within the parent. The two
+masks must have IoU at most 0.01 to each other and together cover
+80% to 97% of the existing proposal at nomination.
+
+The original raster must support both perimeters. The side search
+uses exposed backing color from the ends of the gap and checks
+signed color differences, local edge strength and distribution
+along each side. The two fitted outlines must remain disjoint.
+At least 96% of each fitted outline must lie inside the original
+claim and their combined coverage must be 78% to 95% of it.
+PhoSca then follows a measured rib through the gap at the phase
+observed independently at its ends. Overlapping active or pending
+paper claims veto the outlines and the separator.
+
+The left proposal on U008, SHA-256
+`e0f64096b018b54fcd3827d2a13c9eeed40b02f499bf890f924da2bd34ce7eb6`,
+keeps one active row. Its upper and
+lower guides reach 0.94313 and 0.97679 IoU against the development
+drafts on a 1024-cell comparison raster. Eight fixed-geometry
+quarter-turn JPEG controls retain the source cue. A copied scene,
+a flat separator in the same color and a shifted rib pattern
+fail the source check. Reproductions on white and dark single
+paper stock can preserve both perimeter and rib evidence. The
+source cue therefore offers a visual comparison while the physical
+count remains a reviewer decision.
+The source check took 176 ms median and 220 ms at p95 over
+12 warm single-thread samples during concurrent tests.
+
+The normal upload and reprocessing replay shows the pair alongside
+the original parent outline, preserves three active records and
+keeps the separate pending offer. Both crop downloads stay held.
+The API rejects adding either shown outline as a standalone print
+while the shared proposal is open. A new conflicting paper claim
+hides the comparison and leaves the hold in place. Reprocessing
+with precise crops disabled retains that hold. The end-to-end
+JPEG55 and JPEG75 re-encodes of U008 did not show the comparison.
+
+An explicit manual save of the upper outline succeeded. When
+adding the lower outline as a new print, the API returned
+`protected_region_cut`. A face detector candidate covers foliage
+on the next print and starts at native y=706. Its 19.8-pixel
+protection margin reaches into the proposed print. The development
+draft for the same print triggers the same guard. That correction
+sequence remains blocked.
+
+The annotated source and receipts are under
+`runs/crop-quality/merged-print-pair-review/`.
+
 #### Review fabric along the capture frame
 
 Fusion ownership revision 7 measures otherwise unresolved, aspect-invalid

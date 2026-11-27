@@ -14,7 +14,7 @@ import {
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   borrowedFallbackProposal, captureFabricProposal, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints, frameBackingProposal,
   getDeferredParentCropHints, getDeferredPrintEvidence, getDeferredPrintProposals, getSourceEdgeTraces,
-  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, missingPrintEdgeHint,
+  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, mergedPrintPairHint, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview, partialMotifSeams,
@@ -28,7 +28,7 @@ import {
 import {
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
-  getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
+  getMergedPrintPairs, getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
@@ -180,7 +180,7 @@ function heldDeferredParentCropHints(fullPrint, reviewReasons) {
   return fullPrint?.status === "review_needed" ? getDeferredParentCropHints(reviewReasons) : [];
 }
 
-function DetectionOverlay({ item, editable = false, openPaperOutline, countOutlines, captureSplitGroups, filmGridGroups,
+function DetectionOverlay({ item, editable = false, openPaperOutline, countOutlines, captureSplitGroups, mergedPairs, filmGridGroups,
   selectedCountGroup, paperGridGroups, paperJoinGroups, onSaved, onReprocess, onProtectionBlocked, deferredDraft, onDeferredDraftClose }) {
   const sourceFragmentDraft = deferredDraft?.reason === sourceFragmentProposal;
   const darkBackingDraft = deferredDraft?.reason === darkBackingProposal;
@@ -481,6 +481,14 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       {traces.map((line, index) => <polyline key={index} points={line.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />)}
     </g>
   ));
+  const mergedPairOverlay = mergedPairs.map(({ id, outlines, separator }) => (
+    <g key={id} aria-label="Zwei mögliche Umrisse am selben Vorschlag" fill="none" stroke="#2563eb"
+      strokeWidth="5" pointerEvents="none">
+      {outlines.map((outline, index) => <polygon key={index} strokeDasharray="16 10"
+        points={outline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />)}
+      <polyline strokeDasharray="4 10" points={separator.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
+    </g>
+  ));
   const filmGridOverlay = (filmGrid ? [{ key: "selected-grid", line: filmGrid }] : filmGridGroups).map(({ key, line, rim }) => (
     <g key={key} fill="none" stroke="#0e7490" strokeWidth="7" pointerEvents="none">
       <polyline aria-label="Zwischenraum im Raster" strokeDasharray="14 8"
@@ -539,6 +547,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     </g>
   ));
   const overlayHints = [countOutlines.length && "mobile-fragment-count-review-hint",
+    mergedPairs.length && "mobile-merged-print-pair-hint",
     captureSplitGroups.length && "mobile-capture-split-count-hint",
     filmGridGroups.length && "mobile-film-grid-count-hint", paperGridGroups.length && "mobile-paper-grid-count-hint",
     paperJoinGroups.length && "mobile-paper-join-count-hint",
@@ -611,7 +620,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           )}
           <text x={box.x1 * 1000 + 12} y={box.y1 * 1000 + 38}>{index + 1}</text>
         </g>)}
-        {nestedOverlay}{deferredOverlay}{deferredEvidenceOverlay}{fragmentCountOverlay}{captureSplitOverlay}{countGroupOverlay}
+        {nestedOverlay}{deferredOverlay}{deferredEvidenceOverlay}{fragmentCountOverlay}{captureSplitOverlay}{mergedPairOverlay}{countGroupOverlay}
         {filmGridOverlay}{paperGridOverlay}{paperJoinOverlay}
         {albumMarkReview.bounds.map(({ x1, y1, x2, y2 }, index) => <rect key={index} x={x1 * 1000} y={y1 * 1000}
           width={(x2 - x1) * 1000} height={(y2 - y1) * 1000}
@@ -653,6 +662,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       </p>
     )}
     {countOutlines.length > 0 && <p className="quad-hint" id="mobile-fragment-count-review-hint">{fragmentCountHint}</p>}
+    {mergedPairs.length > 0 && <p className="quad-hint" id="mobile-merged-print-pair-hint">{mergedPrintPairHint}</p>}
     {captureSplitGroups.length > 0 && <p className="quad-hint" id="mobile-capture-split-count-hint">{captureSplitReviewHint}</p>}
     {filmGridGroups.length > 0 && <p className="quad-hint" id="mobile-film-grid-count-hint">
       {filmGridCountHint}{filmGridGroups.some(({ rim }) => rim) && ` ${filmGridRimHint}`}
@@ -942,6 +952,7 @@ function CropReview({ albumId, goHome }) {
   const deferredProposals = getDeferredPrintProposals(item?.payload?.deferred_print_proposals);
   const activeDeferredDraft = deferredDraft?.pageId === item?.id ? deferredDraft : null;
   const countOutlines = type === "segmentation" ? getFragmentReviewOutlines(item?.payload?.detections || []) : [];
+  const mergedPairs = type === "segmentation" ? getMergedPrintPairs(item?.payload?.detections || []) : [];
   const captureSplitGroups = type === "segmentation" ? getCaptureSplitReviewGroups(item?.payload?.detections || []) : [];
   const filmGridGroups = type === "segmentation" ? getFilmGridReviewSeams(item?.payload?.detections || []) : [];
   const paperJoinGroups = type === "segmentation" ? getPaperJoinReviewGroups(item?.payload?.detections || []) : [];
@@ -1102,7 +1113,7 @@ function CropReview({ albumId, goHome }) {
       {item.reprocessKey && <p role="status">Abzug neu berechnet. Prüfe die aktualisierte Ansicht.</p>}
       <DetectionOverlay key={activeDeferredDraft?.requestId || item.reprocessKey || "review"} item={item}
         editable={type === "geometry" || Boolean(activeDeferredDraft)} openPaperOutline={Boolean(focusedPhotoId)}
-        countOutlines={countOutlines} captureSplitGroups={captureSplitGroups}
+        countOutlines={countOutlines} captureSplitGroups={captureSplitGroups} mergedPairs={activeDeferredDraft ? [] : mergedPairs}
         filmGridGroups={filmGridGroups} selectedCountGroup={selectedCountGroup} paperGridGroups={paperGridGroups}
         paperJoinGroups={paperJoinGroups} onSaved={updateSavedCropModes}
         onReprocess={type === "geometry" ? reprocessHeldPhoto : undefined}
@@ -1150,7 +1161,7 @@ function CropReview({ albumId, goHome }) {
             onClick={() => record(value)}>
             {value === "correct" && (deferredProposals.length || item.payload?.missing_print_edge_traces?.length
               || countOutlines.length || captureSplitGroups.length || filmGridGroups.length || paperGridGroups.length || paperJoinGroups.length
-              || albumLeafGroups.length)
+              || albumLeafGroups.length || mergedPairs.length)
               ? "Anzahl bestätigen" : label}
           </button>
         ))}

@@ -68,6 +68,7 @@ from app.pipeline.manual_paper_boundary import (
     paper_curve_review_reference,
     shared_rim_cut_reference,
 )
+from app.pipeline.merged_print_review import MERGED_PRINT_PAIR
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
 from app.pipeline.page_plane import MeasuredPrintReference, PrintPagePlane
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_TRACES
@@ -576,6 +577,7 @@ async def perspective_correction_task_logic(
     precise_crops = (settings.enable_precise_photo_crops or mask.get("manual_added") is True
                      or mask.get(REVIEWED_CROSSING_OUTLINE) is True or bool(mask.get("crossing_print_suggestion"))
                      or bool(mask.get(PARTIAL_PRINT_EXTENT_TRACES))
+                     or MERGED_PRINT_PAIR in mask
                      or capture_edge_requires_review(mask) or boundary_needs_review or bool(paper_claims)
                      or scalloped_outline is not None
                      or reviewed_mark is not None

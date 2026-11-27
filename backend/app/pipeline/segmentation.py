@@ -54,6 +54,7 @@ from app.pipeline.geometry import (
     quad_from_polygon,
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, pixel_box_to_normalized
+from app.pipeline.merged_print_review import MERGED_PRINT_PAIR, MERGED_PRINT_PAIR_REVIEW, measured_merged_print_pair
 from app.pipeline.mounted_prints import mounted_print_evidence
 from app.pipeline.multipanel_prints import (
     FILM_GRID_REVIEW, GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW,
@@ -4406,7 +4407,8 @@ def segment_album_page(
     evidence_source = source if source is not None else image
     tile_offers = []
     partial_tile_seeds = []
-    result = _segment_album_page(image, settings, source, tile_offers, partial_tile_seeds)
+    merged_tile_pairs = []
+    result = _segment_album_page(image, settings, source, tile_offers, partial_tile_seeds, merged_tile_pairs)
     if settings.enable_classical_segmentation_fallback:
         if settings.enable_precise_photo_crops and (
             result.metadata.get("fallback_used") or (result.metadata.get("model_set_risk") or {}).get("risky")
@@ -4450,6 +4452,8 @@ def segment_album_page(
             result = _offer_unclaimed_tiled_prints(evidence_source, result, tile_offers)
         if partial_tile_seeds:
             result = _review_partial_tile_extent(evidence_source, result, partial_tile_seeds)
+        if len(merged_tile_pairs) == 1:
+            result = _review_merged_tile_pair(evidence_source, result, *merged_tile_pairs[0])
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
@@ -4649,13 +4653,85 @@ def _review_partial_tile_extent(source: np.ndarray, result: SegmentationResult, 
     return SegmentationResult(updated, result.metadata)
 
 
+def _nominate_merged_tile_pair(
+    parents: list[SegmentationDetection], candidates: list[SegmentationDetection], evidence: dict[int, dict[str, float]],
+) -> list[tuple[np.ndarray, list[np.ndarray]]]:
+    tiles = [(item, _detection_polygon(item)) for i, item in enumerate(candidates)
+             if item.mask.get("detector_source") == "yolo_onnx_tiled" and item.confidence >= .65 and evidence[i]["score"] >= .80]
+    nominees = []
+    for parent in parents:
+        if (not parent.geometry_valid or not .40 <= parent.confidence < .65
+                or parent.mask.get("detector_source") != "yolo_onnx" or parent.mask.get("warp_quad")):
+            continue
+        original = _detection_polygon(parent)
+        matching = []
+        for tile, polygon in tiles:
+            overlap = normalized_polygon_overlap(polygon, original, raster_size=512)
+            if overlap.first_containment >= .94 and .30 <= overlap.second_containment <= .65:
+                matching.append((tile, polygon, overlap.second_containment))
+        if len(matching) != 2:
+            continue
+        (first, a, part_a), (second, b, part_b) = matching
+        if (.80 <= part_a + part_b <= .97 and max(first.confidence, second.confidence) >= .80
+                and normalized_polygon_overlap(a, b, raster_size=512).iou <= .01):
+            nominees.append((original, [a, b]))
+    return nominees
+
+
+def _review_merged_tile_pair(
+    source: np.ndarray, result: SegmentationResult, parent: np.ndarray, polygons: list[np.ndarray],
+) -> SegmentationResult:
+    owners = [i for i, item in enumerate(result.detections) if np.array_equal(_detection_polygon(item), parent)]
+    if len(owners) != 1:
+        return result
+    index, = owners
+    item = result.detections[index]
+    if item.review_reasons or item.mask.get("warp_quad") or item.mask.get("detector_source") != "yolo_onnx":
+        return result
+    height, width = source.shape[:2]
+    try:
+        seeds = [quad_from_polygon(normalized_vertices_to_pixels(poly, width, height))[0] for poly in polygons]
+        if any(seed is None for seed in seeds):
+            return result
+        pair = measured_merged_print_pair(source, [order_quad_cyclic(seed) for seed in seeds])
+        if pair is None:
+            return result
+        outlines, lane = pair
+        footprints = [pixel_vertices_to_normalized(quad, width, height) for quad in outlines]
+        overlaps = [normalized_polygon_overlap(poly, parent, raster_size=512) for poly in footprints]
+        if (min(overlap.first_containment for overlap in overlaps) < .96
+                or not .78 <= sum(overlap.second_containment for overlap in overlaps) <= .95):
+            return result
+        shown = [_normalized_polygon(quad, width, height) for quad in outlines]
+        pending = (result.metadata.get("fusion") or {}).get("deferred_print_proposals") or []
+        other_claims = [peer.mask for i, peer in enumerate(result.detections) if i != index] + pending
+        direction = lane[1] - lane[0]
+        normal = 2 * np.float32([-direction[1], direction[0]]) / np.linalg.norm(direction)
+        lane_band = _normalized_polygon(np.vstack((lane - normal, lane[::-1] + normal)), width, height)
+        if any(tiled_outline_conflicts(outline, other_claims, width, height) for outline in (*shown, lane_band)):
+            return result
+    except (cv2.error, ValueError, np.linalg.LinAlgError):
+        return result
+    detections = result.detections.copy()
+    detections[index] = replace(item, mask={
+        **item.mask, MERGED_PRINT_PAIR: {"outlines": shown, "separator": _normalized_polygon(lane, width, height)},
+    }, review_reasons=[MERGED_PRINT_PAIR_REVIEW])
+    return SegmentationResult(detections, result.metadata)
+
+
 def _collect_tiled_print_offers(
     source: np.ndarray, image: np.ndarray, detections: list[SegmentationDetection],
     model_evidence: dict[int, dict[str, float]], infer: Callable[[np.ndarray], list[SegmentationDetection]],
     inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
     partial_tile_seeds: list[list[dict]] | None,
+    merged_tile_pairs: list[tuple[np.ndarray, list[np.ndarray]]] | None,
 ) -> tuple[list[list[dict]], tuple[SegmentationDetection, np.ndarray] | None]:
     candidates, evidence, _ = _recover_dense_prints(image, detections, model_evidence, infer, inputs)
+    if merged_tile_pairs is not None:
+        try:
+            merged_tile_pairs.extend(_nominate_merged_tile_pair(detections, candidates, evidence))
+        except (cv2.error, ValueError, np.linalg.LinAlgError):
+            pass  # Optional count guides must preserve ordinary tile offers.
     height, width = source.shape[:2]
     claims = [item.mask for item in detections]
     offers = []
@@ -4729,6 +4805,7 @@ def _segment_album_page(
     image: np.ndarray, settings: Settings, source: np.ndarray | None = None,
     tile_offers: list[list[dict]] | None = None,
     partial_tile_seeds: list[list[dict]] | None = None,
+    merged_tile_pairs: list[tuple[np.ndarray, list[np.ndarray]]] | None = None,
 ) -> SegmentationResult:
     model_path = Path(settings.yolo_model_path)
     line_budget = min(3 * image.shape[0] * image.shape[1], 12_000_000) if settings.enable_precise_photo_crops else None
@@ -4861,7 +4938,8 @@ def _segment_album_page(
                     tile_review = {}
                     try:
                         direct, retry_seed = _collect_tiled_print_offers(
-                            source, image, detections, model_evidence, lambda frame: infer(frame)[0], inputs, partial_tile_seeds,
+                            source, image, detections, model_evidence, lambda frame: infer(frame)[0], inputs,
+                            partial_tile_seeds, merged_tile_pairs,
                         )
                         tile_offers.extend(direct)
                         if tile_offers:

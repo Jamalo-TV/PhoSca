@@ -70,6 +70,7 @@ export const standalonePrintReviewErrors = {
   tiled_print_claim_conflict: "Der Vorschlag überschneidet sich mit einem erfassten Abzug. Prüfe die aktuelle Anzahl am Original.",
   capture_fabric_claim_conflict: "Die gewählten Ecken überschneiden sich mit einem erfassten oder weiteren vorgeschlagenen Abzug.",
   contested_tile_correction_required: "Öffne den bestehenden Vorschlag in der Zuschnittprüfung und prüfe dort die gestrichelte Kontur.",
+  merged_print_pair_claim_conflict: "Dieser Umriss gehört zu einem offenen Vorschlag. Kläre zuerst am Original, wie viele Abzüge dort liegen.",
 };
 const deferredPrintReviewHints = {
   [nestedFallbackProposal]: {
@@ -214,6 +215,7 @@ const disputedGridPreview = "disputed_paper_grid_outline_review";
 const curvedPrintOutlineReviewReason = "PRINT_CURVED_OUTLINE_REVIEW";
 const captureAtEdgeHint = "Der Abzug reicht über den Aufnahmerand hinaus. Für einen vollständigen Zuschnitt brauchst du eine neue Aufnahme.";
 export const captureSplitReviewHint = "Die gestrichelten Linien zeigen einen möglichen gemeinsamen Papierrand. Prüfe am Original, wie viele Abzüge dort liegen.";
+export const mergedPrintPairHint = "Die gestrichelten Umrisse zeigen zwei mögliche Abzüge innerhalb eines Vorschlags. Prüfe am Original, ob beide Motive auf demselben Papier liegen.";
 export const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
 const curvedMotifReviewReason = "IMAGE_BOUNDARY_CURVED";
 const curvedMotifReviewHint = "Die Motivkante verläuft unregelmässig. Prüfe am Original, welche Bildfelder und Beschriftungen zum Motiv gehören.";

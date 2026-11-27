@@ -41,6 +41,7 @@ from app.pipeline.manual_paper_boundary import (
     original_prediction_mask, paper_curve_from_review_traces, paper_curve_review_reference,
     overlapping_paper_claims, paper_claim_groups, shared_rim_cut_is_inside, shared_rim_cut_reference,
 )
+from app.pipeline.merged_print_review import MERGED_PRINT_PAIR
 from app.pipeline.motif_boundary import PARTIAL_MOTIF_SEAMS
 from app.pipeline.motif_margin import HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
@@ -138,6 +139,12 @@ def _current_paper_claims(photos: list[ExtractedPhoto]) -> list[dict]:
     return claims
 
 
+def _matches_review_outline(outline: list[dict], claimed: list[dict] | None) -> bool:
+    return bool(claimed and normalized_polygon_overlap(
+        [(point["x"], point["y"]) for point in claimed], [(point["x"], point["y"]) for point in outline], raster_size=512,
+    ).iou >= .90)
+
+
 def _matches_contested_tile(photo: ExtractedPhoto, outline: list[dict]) -> bool:
     mask = photo.segmentation_mask or {}
     if mask.get("crossing_print_suggestion_source") == CONTESTED_TILE_OUTLINE:
@@ -148,11 +155,7 @@ def _matches_contested_tile(photo: ExtractedPhoto, outline: list[dict]) -> bool:
         claimed = mask.get("warp_quad")
     else:
         return False
-    if not claimed:
-        return False
-    return normalized_polygon_overlap(
-        [(point["x"], point["y"]) for point in claimed], [(point["x"], point["y"]) for point in outline], raster_size=512,
-    ).iou >= .90
+    return _matches_review_outline(outline, claimed)
 
 
 def _source_size(page: Page) -> tuple[int, int]:
@@ -301,6 +304,11 @@ async def _review_overlapping_crops(
         if is_reviewed_non_print(metadata.get("review_rejected_detection"), neighbor.bounding_box, neighbor.segmentation_mask):
             continue
         correction = metadata.get("correction") or {}
+        pair = (neighbor.segmentation_mask or {}).get(MERGED_PRINT_PAIR) or {}
+        separator = pair.get("separator")
+        if (any(review_outline_intersects_claim(outline, mask, width, height) for outline in pair.get("outlines", []))
+                or (separator and review_traces_intersect_claim([separator], mask, width, height))):
+            neighbor.segmentation_mask = {**neighbor.segmentation_mask, MERGED_PRINT_PAIR: None}
         modes = correction.get("crop_modes") or {}
         full_mode = modes.get("full_print") or {}
         preview = full_mode.get("outline_preview") or {}
@@ -792,6 +800,12 @@ async def create_manual_photo(
     ]
     if any(_matches_contested_tile(photo, quad) for photo in active):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="contested_tile_correction_required")
+    if any(
+        _matches_review_outline(quad, part)
+        for photo in active
+        for part in ((photo.segmentation_mask or {}).get(MERGED_PRINT_PAIR) or {}).get("outlines", [])
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="merged_print_pair_claim_conflict")
     if tiled_offer or fabric_offer:
         claims = [candidate for candidate in pending if candidate["id"] != deferred_id
                   and not (fabric_offer and candidate.get("reason") == CAPTURE_FABRIC_PROPOSAL)]

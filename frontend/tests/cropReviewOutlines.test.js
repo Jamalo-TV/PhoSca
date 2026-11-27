@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   albumLeafSourceWindow, getAlbumLeafReviewGroups,
   filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
-  getFilmGridReviewSeams, getFragmentReviewOutlines,
+  getFilmGridReviewSeams, getFragmentReviewOutlines, getMergedPrintPairs,
   getPaperGridOutlineParents, getPaperGridReviewGroups,
   getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
 } from "../src/cropReviewOutlines.js";
@@ -16,6 +16,23 @@ test("held motif geometry requires selection while a saved or ready motif can be
   assert.equal(getStoredMotifQuad({ image_quad: quad }, held), null);
   assert.equal(getStoredMotifQuad({ segmentation_mask: { image_quad: quad } }, held), quad);
   assert.equal(getStoredMotifQuad({}, { status: "ready", warp_quad: quad }), quad);
+});
+
+test("a merged pair is shown on the current held row with both guides", () => {
+  const outlines = [.0, .32].map(shift => quad.map(point => ({ x: point.x, y: .2 + shift + (point.y - .2) / 3 })));
+  const separator = [{ x: .06, y: .48 }, { x: .78, y: .48 }];
+  const pair = { outlines, separator };
+  const held = { status: "review_needed" };
+  const row = { photo_id: "owner", confidence: .49, crop_modes: { full_print: held, image_only: held },
+    segmentation_mask: { merged_print_pair: pair } };
+  assert.deepEqual(getMergedPrintPairs([row]), [{ id: "owner", outlines, separator }]);
+  assert.deepEqual(getMergedPrintPairs([
+    { ...row, reviewed_non_print: true },
+    { ...row, confidence: null },
+    { ...row, crop_modes: { full_print: { status: "ready" }, image_only: held } },
+    { ...row, segmentation_mask: { merged_print_pair: null } },
+    { ...row, segmentation_mask: { merged_print_pair: { ...pair, outlines: outlines.slice(1) } } },
+  ]), []);
 });
 
 test("motif corners may touch the paper while exterior corners fail on either winding", () => {

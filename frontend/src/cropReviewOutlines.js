@@ -201,6 +201,20 @@ export function getFragmentReviewOutlines(photos) {
   return [...groups.values()].filter(({ photoIds }) => photoIds.size > 1);
 }
 
+export function getMergedPrintPairs(photos) {
+  return photos.flatMap(photo => {
+    const id = photo.photo_id ?? photo.id;
+    const { segmentation_confidence: confidence = photo.confidence } = photo;
+    const { outlines, separator } = photo.segmentation_mask?.merged_print_pair || {};
+    if (!id || photo.reviewed_non_print || confidence == null || !bothModesHeld(cropModes(photo))
+        || !Array.isArray(outlines) || outlines.length !== 2 || !sourceReviewLine(separator)
+        || !outlines.every(outline => Array.isArray(outline) && outline.length === 4 && outline.every(isNormalizedPoint))) {
+      return [];
+    }
+    return [{ id, outlines, separator }];
+  });
+}
+
 export function getStoredMotifQuad(photo, mode) {
   return photo.segmentation_mask?.image_quad
     ?? (mode?.status === "ready" ? mode.warp_quad || photo.image_quad : null);

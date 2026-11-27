@@ -57,7 +57,7 @@ import {
   countGroupReviewError, CountGroupReview, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints,
   borrowedFallbackProposal, captureFabricProposal, filmGridCountHint, filmGridHint, filmGridReason, filmGridRimHint, frameBackingProposal,
   getDeferredPrintEvidence, getDeferredPrintProposals, getDeferredParentCropHints, getSourceEdgeTraces,
-  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, missingPrintEdgeHint,
+  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, mergedPrintPairHint, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, scannerBackingHint, scannerBackingReason,
@@ -71,7 +71,7 @@ import {
 import {
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
-  getPaperJoinReviewGroups, getStoredMotifQuad,
+  getMergedPrintPairs, getPaperJoinReviewGroups, getStoredMotifQuad,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
@@ -1459,6 +1459,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const paperGrid = useMemo(() => getPaperGridReview(paperGridMask), [paperGridMask]);
   const captureSplitGroups = useMemo(() => reviewingCount && !newPrint && !editingImage ? getCaptureSplitReviewGroups(photos) : [],
     [reviewingCount, newPrint, editingImage, photos]);
+  const mergedPairs = useMemo(() => reviewingCount && !newPrint && !editingImage ? getMergedPrintPairs(photos) : [],
+    [reviewingCount, newPrint, editingImage, photos]);
   const captureSplitReview = selected?.segmentation_confidence != null && !rejectedDetection
     && selected.segmentation_mask?.capture_split_review_traces?.length === 2;
   const deferredParentHints = rejectedDetection ? []
@@ -1735,12 +1737,16 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       });
       context.restore();
     }
-    if (countOutlines.length || captureSplitGroups.length) {
+    if (countOutlines.length || captureSplitGroups.length || mergedPairs.length) {
       context.save();
       context.strokeStyle = "#2563eb";
       context.lineWidth = 3;
       const lines = countOutlines.flatMap(({ supportedSides, weakEdge }) => [[supportedSides, [9, 5]], [weakEdge, [2, 5]]]);
       lines.push(...captureSplitGroups.flatMap(({ traces }) => traces.map(trace => [trace, [9, 5]])));
+      lines.push(...mergedPairs.flatMap(({ outlines, separator }) => [
+        ...outlines.map(outline => [[...outline, outline[0]], [8, 5]]),
+        [separator, [2, 5]],
+      ]));
       for (const [line, dashes] of lines) {
         context.setLineDash(dashes);
         context.beginPath();
@@ -1893,7 +1899,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       context.restore();
     }
-  }, [alternateOutline, blockedRegions, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges, extentEdges,
+  }, [alternateOutline, blockedRegions, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges, extentEdges, mergedPairs,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
     printSuggestion,
     markBounds, missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, preliminaryMotifMarks, selectedCountGroup, selectedPhotoId, showMissingEdges, sourceStrip]);
@@ -2168,11 +2174,11 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {!editingImage && showMissingEdges && missingTraces.length > 0 && (
         <p className="crop-editor-hint">{missingPrintEdgeHint}</p>
       )}
-      {!newPrint && !editingImage && deferredProposals.length > 0 && (
+      {!newPrint && !editingImage && (deferredProposals.length > 0 || mergedPairs.length > 0) && (
         <div className="manual-print-actions">
           <p className="crop-editor-hint">
-            {photos.filter((photo) => !photo.reviewed_non_print).length} erfasste Abzüge, {deferredProposals.length === 1
-              ? "1 unklarer Vorschlag" : `${deferredProposals.length} unklare Vorschläge`}.
+            {photos.filter((photo) => !photo.reviewed_non_print).length} erfasste Abzüge{deferredProposals.length > 0
+              && (deferredProposals.length === 1 ? ", 1 unklarer Vorschlag" : `, ${deferredProposals.length} unklare Vorschläge`)}.
             {deferredProposals.some(({ reason }) => reason === sourceFragmentProposal) && ` ${sourceFragmentCountHint}`}
             {deferredProposals.some(({ reason }) => reason !== sourceFragmentProposal && !standalonePrintNeedsConfirmation(reason))
               && ` ${deferredPrintHint}`}
@@ -2206,6 +2212,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {paperGridConfirmed && <p className="crop-editor-hint" role="status"
         id="paper-grid-count-result">{paperGridCountSaved}</p>}
       {countOutlines.length > 0 && <p className="crop-editor-hint" id="fragment-count-review-hint">{fragmentCountHint}</p>}
+      {mergedPairs.length > 0 && <p className="crop-editor-hint" id="merged-print-pair-hint">{mergedPrintPairHint}</p>}
       {captureSplitGroups.length > 0 && <p className="crop-editor-hint" id="capture-split-count-hint">{captureSplitReviewHint}</p>}
       {filmGridGroups.length > 0 && <p className="crop-editor-hint" id="film-grid-count-hint">
         {filmGridCountHint}{filmGridGroups.some(({ rim }) => rim) && ` ${filmGridRimHint}`}
@@ -2311,6 +2318,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           paperGridGroups.length && "paper-grid-count-hint",
           paperJoinGroups.length && "paper-join-count-hint",
           captureSplitGroups.length && "capture-split-count-hint",
+          mergedPairs.length && "merged-print-pair-hint",
           sourceStrip && "source-strip-review-hint",
           preliminaryMotifMarks ? "held-motif-margin-hint"
             : editingImage && motifMarginMarks.length && !crossingReview && !needsPrintReview && "motif-margin-marks-hint",

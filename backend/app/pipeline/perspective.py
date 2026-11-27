@@ -37,6 +37,7 @@ from app.pipeline.geometry import (
     rectify_crop_quad,
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
+from app.pipeline.merged_print_review import MERGED_PRINT_PAIR, MERGED_PRINT_PAIR_REVIEW
 from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_SOURCE, suggest_inward_corner_outline
 from app.pipeline.local_print_edge_review import suggest_local_print_edge_preview
 from app.pipeline.motif_boundary import (
@@ -1648,6 +1649,8 @@ def _inspect_print(
             reasons.append(CROSSING_PRINT_REVIEW)
         if not manual and mask.get(PARTIAL_PRINT_EXTENT_TRACES):
             reasons.append(PARTIAL_PRINT_EXTENT_REVIEW)
+        if not manual and MERGED_PRINT_PAIR in mask:
+            reasons.append(MERGED_PRINT_PAIR_REVIEW)
         if mask.get("album_window_occluded") is True:
             reasons.append(ALBUM_WINDOW_OCCLUDED)
         elif mask.get("source") == ALBUM_WINDOW_SOURCE:

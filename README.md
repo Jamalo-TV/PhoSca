@@ -113,6 +113,14 @@ ein zweiter Abzug aufliegt. Abzugzahl und gespeicherte Ecken folgen
 weiterhin dem bestehenden Eintrag, bis du sie prüfst.
 [Beispiel mit zwei Endkanten](data/evaluation/README.md#show-open-extent-guides-on-a-partial-print)
 
+Ein einzelner Vorschlag kann zwei mögliche Abzüge umfassen. Sind
+beide Umrisse am Original messbar und setzt sich die Struktur des
+Albumträgers durch den Zwischenraum fort, zeigt die Anzahlprüfung
+zwei gestrichelte Konturen und die gemessene Spur dazwischen. Prüfe
+am Original, ob beide Motive auf einem oder auf zwei Papierträgern
+liegen. Für die Anzahl zählt weiterhin der bestehende Eintrag.
+[Beispiel mit zwei möglichen Abzügen](data/evaluation/README.md#compare-two-possible-prints-within-one-count-proposal)
+
 Bei sehr schmalen Modellkonturen am Aufnahmerand vergleicht PhoSca
 Farbe und Oberflächenstruktur mit der Umgebung ausserhalb der
 Albumseite. Sichtbare Papierkanten schützen angeschnittene Abzüge.

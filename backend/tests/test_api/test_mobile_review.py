@@ -1120,6 +1120,46 @@ async def test_new_paper_claim_retires_intersecting_open_crop_guides(client, mon
         assert (await client.get(f"{photo_url}/image", params={"variant": "source_corrected_trimmed"})).status_code == 404
 
 
+async def test_new_paper_claim_retires_a_merged_pair_keeps_crop_hold(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.merged_print_review import MERGED_PRINT_PAIR, MERGED_PRINT_PAIR_REVIEW
+
+    album_id, page_id, photo_id = await _seed_review_data()
+
+    def quad(x1, y1, x2, y2):
+        return [{"x": x, "y": y} for x, y in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))]
+
+    pair = {"outlines": [quad(.19, .24, .73, .48), quad(.16, .53, .72, .81)],
+            "separator": [{"x": .12, "y": .51}, {"x": .82, "y": .51}]}
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        mask = {key: value for key, value in photo.segmentation_mask.items() if key != "warp_quad"}
+        photo.segmentation_mask = {**mask, MERGED_PRINT_PAIR: pair}
+        await session.commit()
+    url = f"/api/v1/photos/{photo_id}"
+    assert (await client.get(url)).json()["segmentation_mask"][MERGED_PRINT_PAIR] == pair
+    duplicate = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": pair["outlines"][0],
+    })
+    assert duplicate.status_code == 409 and duplicate.json()["detail"] == "merged_print_pair_claim_conflict"
+    added = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": quad(.6, .56, .89, .83),
+    })
+    assert added.status_code == 201, added.text
+    assert (await client.get(url)).json()["segmentation_mask"][MERGED_PRINT_PAIR] is None
+    assert len((await client.get(f"/api/v1/albums/{album_id}/photos")).json()) == 2
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "false")
+    get_settings.cache_clear()
+    refreshed = await client.post(f"{url}/reprocess")
+    assert refreshed.status_code == 200, refreshed.text
+    modes = refreshed.json()["enhancement_applied"]["correction"]["crop_modes"]
+    assert all(crop["status"] == "review_needed" and MERGED_PRINT_PAIR_REVIEW in crop["reason_codes"] for crop in modes.values())
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image", params={"variant": variant})).status_code == 404
+
+
 @pytest.mark.parametrize("comparison", ["displaced_edges", "album_layer", "local_edge"])
 async def test_source_claim_retires_measured_comparison(client, monkeypatch, tmp_path, comparison):
     from app.config import get_settings
