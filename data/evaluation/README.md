@@ -2295,6 +2295,52 @@ and development comparisons keep their previous crop and detection
 metrics in both modes. The annotated source and local receipts are
 under `runs/crop-quality/contested-tile-review/`.
 
+#### Show open extent guides on a partial print
+
+Dense tile revision 7 can retain one secondary tile nomination for
+extent review. A strong tile candidate whose raw mask overlaps one
+earlier model claim by at most 1.2% enters this path only if its
+native fit is clear of the earlier claims and agrees with its mask
+at IoU 0.85 or higher. The nomination never becomes a count offer.
+After fusion it must contain at least 95% of exactly one
+minimum-area classical edge contour, which must account for
+35% to 70% of the fitted tile. Other current and pending claims
+veto the comparison.
+
+Three classical sides must align within four native pixels of the
+corresponding tile sides. The fourth must pass through continuous
+image structure without a supported transition along the proposed
+cut. Two original-pixel fits must extend the lateral sides and agree
+with the inner rail projections within two pixels. The terminal search
+must yield two distributed transitions 2.4 to 8 native pixels apart.
+The sample just inside only one transition must be darker and cooler
+than its exterior. An aligned overlay can reproduce image continuity
+and a printed band can reproduce this color change, so the four open
+guides leave ownership and the exact crop to review.
+
+On development spread U040, SHA-256
+`17898ad4cd68da2ff3440c117790351cb0bb51a3612da4e1a7c93aa7a400e706`,
+the delivered guides span 105 and 101 native pixels on the sides
+and about 263 pixels along each terminal transition. The terminal
+paths differ by about five pixels. The existing upper transitions,
+stored warp and four active proposals are preserved. The optical
+check retains all four lines across twelve fixed-geometry quarter-turn
+JPEG controls at qualities 55, 75 and 95. An inserted album gap, a
+different flush scene and two false rib-shadow controls fail that
+check. Aligned same-art overlay controls can still produce guides.
+The standalone native check took 44 ms median and 79 ms at p95 over
+12 warm single-thread samples during concurrent tests. In the
+end-to-end replays, Q55 and Q75 re-encodes and the 75%-size Q75
+derivative supply no new extent guide through the detector.
+
+The normal upload and reprocessing replay verifies that both exports
+and both rendered comparisons remain held. The untrimmed review image
+is available, and a generic geometry approval returns 409. A later
+overlapping paper claim hides the four guides. Reprocessing with
+the precise crop setting disabled still retains the stored hold.
+Measurements and the annotated example are under
+`runs/crop-quality/partial-print-extent-review/`.
+
 #### Review fabric along the capture frame
 
 Fusion ownership revision 7 measures otherwise unresolved, aspect-invalid

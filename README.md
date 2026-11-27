@@ -103,6 +103,16 @@ Eine Neuberechnung des einzelnen Zuschnitts nutzt die gespeicherte
 Kontur dieses Eintrags.
 [Vergleich auf der Spiralalbumseite](data/evaluation/README.md#review-a-tile-outline-blocked-by-a-capture-frame-contour)
 
+Erfasst ein Vorschlag nur den oberen Teil eines möglichen Abzugs,
+kann PhoSca unter **Ganzer Abzug** zwei gemessene seitliche
+Fortsetzungen und zwei mögliche Endkanten zeigen. Dafür müssen
+Bildstrukturen den bisherigen Schnitt durchqueren und die
+seitlichen Übergänge sich im Original fortsetzen. Die offenen
+Linien helfen dir zu prüfen, wie weit das Papier reicht und ob
+ein zweiter Abzug aufliegt. Abzugzahl und gespeicherte Ecken folgen
+weiterhin dem bestehenden Eintrag, bis du sie prüfst.
+[Beispiel mit zwei Endkanten](data/evaluation/README.md#show-open-extent-guides-on-a-partial-print)
+
 Bei sehr schmalen Modellkonturen am Aufnahmerand vergleicht PhoSca
 Farbe und Oberflächenstruktur mit der Umgebung ausserhalb der
 Albumseite. Sichtbare Papierkanten schützen angeschnittene Abzüge.

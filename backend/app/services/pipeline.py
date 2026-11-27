@@ -70,6 +70,7 @@ from app.pipeline.manual_paper_boundary import (
 )
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
 from app.pipeline.page_plane import MeasuredPrintReference, PrintPagePlane
+from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_TRACES
 from app.pipeline.perspective import apply_refined_visibility, correct_photo_crop, page_plane_from_prints
 from app.pipeline.presets import get_enhancement_config
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
@@ -574,6 +575,7 @@ async def perspective_correction_task_logic(
 
     precise_crops = (settings.enable_precise_photo_crops or mask.get("manual_added") is True
                      or mask.get(REVIEWED_CROSSING_OUTLINE) is True or bool(mask.get("crossing_print_suggestion"))
+                     or bool(mask.get(PARTIAL_PRINT_EXTENT_TRACES))
                      or capture_edge_requires_review(mask) or boundary_needs_review or bool(paper_claims)
                      or scalloped_outline is not None
                      or reviewed_mark is not None

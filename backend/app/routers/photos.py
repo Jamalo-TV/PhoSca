@@ -44,8 +44,9 @@ from app.pipeline.manual_paper_boundary import (
 from app.pipeline.motif_boundary import PARTIAL_MOTIF_SEAMS
 from app.pipeline.motif_margin import HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
+from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_TRACES
 from app.pipeline.perspective import (
-    manual_print_intersects, review_motif_seams_intersect_claim, review_outline_intersects_claim, validate_review_quads,
+    manual_print_intersects, review_outline_intersects_claim, review_traces_intersect_claim, validate_review_quads,
 )
 from app.pipeline.presets import available_presets
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
@@ -308,6 +309,10 @@ async def _review_overlapping_crops(
         if strip and review_outline_intersects_claim(strip, mask, width, height):
             full_mode.pop("source_strip_review", None)
             neighbor.enhancement_applied = metadata
+        extent_traces = full_mode.get(PARTIAL_PRINT_EXTENT_TRACES)
+        if extent_traces and review_traces_intersect_claim(extent_traces, mask, width, height):
+            full_mode.pop(PARTIAL_PRINT_EXTENT_TRACES, None)
+            neighbor.enhancement_applied = metadata
         mark_offer = correction.get("album_page_mark_review") or {}
         reviewed_mark = (metadata.get("review_provenance") or {}).get("reviewed_album_mark") or {}
         for review in (mark_offer, reviewed_mark):
@@ -351,7 +356,7 @@ async def _review_overlapping_crops(
                 details={"overlapping_photo_id": str(photo.id)},
             ))
         motif_mode = modes.get("image_only") or {}
-        if motif_mode.get("suggested_seam_source") == PARTIAL_MOTIF_SEAMS and review_motif_seams_intersect_claim(
+        if motif_mode.get("suggested_seam_source") == PARTIAL_MOTIF_SEAMS and review_traces_intersect_claim(
             motif_mode.get("suggested_seam_traces") or [], mask, width, height,
         ):
             motif_mode.pop("suggested_seam_traces", None)

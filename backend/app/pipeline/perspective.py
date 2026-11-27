@@ -64,6 +64,7 @@ from app.pipeline.page_plane import (
     fit_uncalibrated_page_plane,
     measured_page_aspect,
 )
+from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_REVIEW, PARTIAL_PRINT_EXTENT_TRACES
 from app.pipeline.print_edges import (
     COMPETING_PRINT_EDGES,
     POSSIBLE_BACKED_PAPER_EDGE,
@@ -1071,7 +1072,7 @@ def review_outline_intersects_claim(
         return False
 
 
-def review_motif_seams_intersect_claim(
+def review_traces_intersect_claim(
     guides: list[list[dict]], claim: dict, width: int, height: int,
 ) -> bool:
     try:
@@ -1463,7 +1464,7 @@ def _dual_crop_result(
                       for trace in partial_motif_seams(page, full_image, matrix)]
         except (ValueError, cv2.error, np.linalg.LinAlgError):
             guides = []
-        if guides and not any(review_motif_seams_intersect_claim(guides, mask, page_width, page_height)
+        if guides and not any(review_traces_intersect_claim(guides, mask, page_width, page_height)
                               for mask in neighbor_masks or []):
             image_mode["suggested_seam_traces"] = guides
             image_mode["suggested_seam_source"] = PARTIAL_MOTIF_SEAMS
@@ -1645,6 +1646,8 @@ def _inspect_print(
             reasons.append(SOURCE_FRAGMENT_GROUP_REVIEW)
         if not manual and mask.get("crossing_print_suggestion"):
             reasons.append(CROSSING_PRINT_REVIEW)
+        if not manual and mask.get(PARTIAL_PRINT_EXTENT_TRACES):
+            reasons.append(PARTIAL_PRINT_EXTENT_REVIEW)
         if mask.get("album_window_occluded") is True:
             reasons.append(ALBUM_WINDOW_OCCLUDED)
         elif mask.get("source") == ALBUM_WINDOW_SOURCE:
@@ -2194,7 +2197,8 @@ def correct_photo_crop(
         if (competing_segments and not manual and "PRINT_BOUNDARY_AMBIGUOUS" in full_reasons
                 and not full_mode.get("suggested_edge_traces") and not full_mode.get("suggested_warp_quad")
                 and not (mask.get("film_grid_review_seam") or mask.get("paper_grid_review"))
-                and set(full_reasons) <= {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}):
+                and set(full_reasons) - {PARTIAL_PRINT_EXTENT_REVIEW}
+                <= {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}):
             full_mode["suggested_edge_traces"] = [
                 _vertices_on_page(np.asarray(segment), width, height) for segment in competing_segments
             ]
@@ -2388,6 +2392,11 @@ def correct_photo_crop(
                     }
             except (ValueError, cv2.error, np.linalg.LinAlgError):
                 pass  # The existing held crop already supplies its ordinary review.
+        extent_traces = mask.get(PARTIAL_PRINT_EXTENT_TRACES)
+        if not manual and extent_traces and not any(
+            review_traces_intersect_claim(extent_traces, neighbor, width, height) for neighbor in neighbor_masks or []
+        ):
+            full_mode[PARTIAL_PRINT_EXTENT_TRACES] = extent_traces
         return result
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:

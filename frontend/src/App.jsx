@@ -1508,6 +1508,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const neighborOutline = editingImage ? null : fullPrintMode?.neighbor_overlap_outline;
   const missingPaperOutlines = editingImage ? null : fullPrintMode?.neighbor_content_loss_outlines;
   const exposedOverlapEdges = editingImage ? null : fullPrintMode?.exposed_overlap_edge_traces;
+  const extentEdges = editingImage ? null : fullPrintMode?.partial_print_extent_traces;
   const edgeTraces = useMemo(() => [...getSourceEdgeTraces(traces), ...getSourceEdgeTraces([neighborOutline]),
     ...getSourceEdgeTraces(missingPaperOutlines)], [traces, neighborOutline, missingPaperOutlines]);
   const motifPreview = selected?.variant_urls?.image_only_preview || selected?.urls?.image_only_preview;
@@ -1620,12 +1621,13 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         context.closePath();
         context.stroke();
       }
-      if (photo.id === selectedPhotoId && !newPrint && (edgeTraces.length || exposedOverlapEdges?.length)) {
+      if (photo.id === selectedPhotoId && !newPrint && (edgeTraces.length || exposedOverlapEdges?.length || extentEdges?.length)) {
         context.save();
-        context.lineWidth = 2;
         context.setLineDash([5, 3]);
-        for (const [lines, color] of [[edgeTraces, "#a21caf"], [getSourceEdgeTraces(exposedOverlapEdges), "#0e7490"]]) {
+        for (const [lines, color, strokeWidth] of [[edgeTraces, "#a21caf", 2],
+          [getSourceEdgeTraces(exposedOverlapEdges), "#0e7490", 2], [getSourceEdgeTraces(extentEdges), "#0891b2", 1]]) {
           context.strokeStyle = color;
+          context.lineWidth = strokeWidth;
           for (const [first, ...rest] of lines) {
             context.beginPath();
             context.moveTo(first.x * canvas.width, first.y * canvas.height);
@@ -1891,7 +1893,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       context.restore();
     }
-  }, [alternateOutline, blockedRegions, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges,
+  }, [alternateOutline, blockedRegions, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges, extentEdges,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
     printSuggestion,
     markBounds, missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, preliminaryMotifMarks, selectedCountGroup, selectedPhotoId, showMissingEdges, sourceStrip]);

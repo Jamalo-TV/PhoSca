@@ -62,6 +62,7 @@ from app.pipeline.multipanel_prints import (
     paper_join_review_traces, recover_shared_stock_outline, shared_stock_outline, transparent_film_rim,
 )
 from app.pipeline.page_deskew import album_rotation, deskewed_view
+from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_REVIEW, PARTIAL_PRINT_EXTENT_TRACES, partial_print_extent_traces
 from app.pipeline.print_edges import (
     PRINT_EDGE_CONFIRMATION, _backing_color, _is_pale_stock, line_fit_omits_print_stock, refine_print_boundary,
 )
@@ -4404,7 +4405,8 @@ def segment_album_page(
     source = source_image if source_image is not None and source_image.shape == image.shape else None
     evidence_source = source if source is not None else image
     tile_offers = []
-    result = _segment_album_page(image, settings, source, tile_offers)
+    partial_tile_seeds = []
+    result = _segment_album_page(image, settings, source, tile_offers, partial_tile_seeds)
     if settings.enable_classical_segmentation_fallback:
         if settings.enable_precise_photo_crops and (
             result.metadata.get("fallback_used") or (result.metadata.get("model_set_risk") or {}).get("risky")
@@ -4446,6 +4448,8 @@ def segment_album_page(
                 result = _defer_capture_fabric_claims(source, result)
         if tile_offers:
             result = _offer_unclaimed_tiled_prints(evidence_source, result, tile_offers)
+        if partial_tile_seeds:
+            result = _review_partial_tile_extent(evidence_source, result, partial_tile_seeds)
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
@@ -4608,10 +4612,48 @@ def _centered_tile_print_offer(
     return None if tiled_outline_conflicts(normalized, claims, width, height) else normalized
 
 
+def _review_partial_tile_extent(source: np.ndarray, result: SegmentationResult, seeds: list[list[dict]]) -> SegmentationResult:
+    if not result.metadata.get("fallback_used"):
+        return result
+    height, width = source.shape[:2]
+    pending = (result.metadata.get("fusion") or {}).get("deferred_print_proposals") or []
+    updated = result.detections.copy()
+    for outline in seeds:
+        if tiled_outline_conflicts(outline, pending, width, height):
+            continue
+        owners = [i for i, item in enumerate(updated) if tiled_outline_conflicts(outline, [item.mask], width, height)]
+        if len(owners) != 1:
+            continue
+        index, = owners
+        item = updated[index]
+        fusion = item.mask.get("fusion") or {}
+        if (not item.geometry_valid or item.review_reasons or item.mask.get("warp_quad")
+                or item.mask.get("source") != "classical_min_area_rect" or item.mask.get("detector_source") != "edge_contour"
+                or fusion.get("proposal_count") != 1 or fusion.get("proposal_families") != ["classical"]):
+            continue
+        points = _detection_polygon(item)
+        tile = np.float32([(point["x"], point["y"]) for point in outline])
+        overlap = normalized_polygon_overlap(tile, points, raster_size=512)
+        if len(points) != 4 or overlap.second_containment < .95 or not .35 <= overlap.first_containment <= .70:
+            continue
+        try:
+            claim = order_quad_cyclic(normalized_vertices_to_pixels(points, width, height))
+            target = order_quad_cyclic(normalized_vertices_to_pixels(tile, width, height))
+            traces = partial_print_extent_traces(source, claim, target)
+        except (cv2.error, ValueError, np.linalg.LinAlgError):
+            continue
+        if traces:
+            updated[index] = replace(item, mask={
+                **item.mask, PARTIAL_PRINT_EXTENT_TRACES: [_normalized_polygon(span, width, height) for span in traces],
+            }, review_reasons=[PARTIAL_PRINT_EXTENT_REVIEW])
+    return SegmentationResult(updated, result.metadata)
+
+
 def _collect_tiled_print_offers(
     source: np.ndarray, image: np.ndarray, detections: list[SegmentationDetection],
     model_evidence: dict[int, dict[str, float]], infer: Callable[[np.ndarray], list[SegmentationDetection]],
     inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
+    partial_tile_seeds: list[list[dict]] | None,
 ) -> tuple[list[list[dict]], tuple[SegmentationDetection, np.ndarray] | None]:
     candidates, evidence, _ = _recover_dense_prints(image, detections, model_evidence, infer, inputs)
     height, width = source.shape[:2]
@@ -4624,10 +4666,21 @@ def _collect_tiled_print_offers(
                 or candidate.confidence < .65 or evidence[index]["score"] < .80
                 or (not strong and retry_seed is not None)):
             continue
-        if tiled_outline_conflicts(candidate.mask["polygon"], claims, width, height):
-            continue
+        conflicted = tiled_outline_conflicts(candidate.mask["polygon"], claims, width, height)
+        polygon = _detection_polygon(candidate)
+        if conflicted:
+            if not strong or partial_tile_seeds is None or partial_tile_seeds:
+                continue
+            # A small brush against one raw neighbor can seed a review aid.
+            # This path cannot create a count offer.
+            nearby = [item for item in detections
+                      if tiled_outline_conflicts(candidate.mask["polygon"], [item.mask], width, height)]
+            if len(nearby) != 1 or normalized_polygon_overlap(
+                polygon, _detection_polygon(nearby[0]), raster_size=512,
+            ).first_containment > .012:
+                continue
         try:
-            outline = tile_print_outline(source, _detection_polygon(candidate))
+            outline = tile_print_outline(source, polygon)
         except (cv2.error, ValueError, np.linalg.LinAlgError):
             continue
         if outline is None:
@@ -4635,7 +4688,11 @@ def _collect_tiled_print_offers(
         normalized = _normalized_polygon(outline, width, height)
         if tiled_outline_conflicts(normalized, claims, width, height):
             continue
-        if strong:
+        if conflicted:
+            fit = pixel_vertices_to_normalized(outline, width, height)
+            if partial_tile_seeds is not None and normalized_polygon_overlap(polygon, fit, raster_size=512).iou >= .85:
+                partial_tile_seeds.append(normalized)
+        elif strong:
             offers.append(normalized)
         else:
             retry_seed = (candidate, outline)
@@ -4671,6 +4728,7 @@ def _collect_rotated_print_offers(
 def _segment_album_page(
     image: np.ndarray, settings: Settings, source: np.ndarray | None = None,
     tile_offers: list[list[dict]] | None = None,
+    partial_tile_seeds: list[list[dict]] | None = None,
 ) -> SegmentationResult:
     model_path = Path(settings.yolo_model_path)
     line_budget = min(3 * image.shape[0] * image.shape[1], 12_000_000) if settings.enable_precise_photo_crops else None
@@ -4803,7 +4861,7 @@ def _segment_album_page(
                     tile_review = {}
                     try:
                         direct, retry_seed = _collect_tiled_print_offers(
-                            source, image, detections, model_evidence, lambda frame: infer(frame)[0], inputs,
+                            source, image, detections, model_evidence, lambda frame: infer(frame)[0], inputs, partial_tile_seeds,
                         )
                         tile_offers.extend(direct)
                         if tile_offers:

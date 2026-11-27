@@ -582,6 +582,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
               points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
               fill="none" stroke="#0e7490" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />
           ))}
+          {!editingMotif && getSourceEdgeTraces(fullPrintMode?.partial_print_extent_traces).map((trace, index) => (
+            <polyline key={index} aria-label="Gemessener Übergang ausserhalb der bisherigen Kontur"
+              points={trace.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
+              fill="none" stroke="#0891b2" strokeWidth="1.5" strokeDasharray="8 5" pointerEvents="none" />
+          ))}
           {!editingMotif && neighborOutline && <polyline aria-label="Überlappender Nachbarabzug"
             points={neighborOutline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
             fill="none" stroke="#a21caf" strokeWidth="5" strokeDasharray="12 8" pointerEvents="none" />}

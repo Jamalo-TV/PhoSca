@@ -450,6 +450,7 @@ function hasMeasuredEdgeReview(fullPrint, source) {
 export function paperOutlineRequiresReview(fullPrint) {
   return fullPrint?.status === "review_needed" && (fullPrint.suggested_warp_quad?.length === 4
     || fullPrint.suggested_edge_source === competingPrintEdges
+    || getSourceEdgeTraces(fullPrint.partial_print_extent_traces).length > 0
     || fullPrint.suggested_edge_source === possibleBackedPaperEdge
     || fullPrint.suggested_edge_source === possibleOverextendedPrintEdge
     || fullPrint.suggested_edge_source === possibleInwardPrintEdge
@@ -508,6 +509,12 @@ export function getPrintEdgeReviewHint(fullPrint) {
   }
   if (fullPrint?.reason_codes?.includes(curvedPrintOutlineReviewReason)) {
     return printEdgeReviewHints[curvedPrintOutlineReviewReason];
+  }
+  if (getSourceEdgeTraces(fullPrint?.partial_print_extent_traces).length) {
+    const prior = fullPrint.suggested_edge_source === competingPrintEdges
+      ? " Violett markiert Übergänge an der bisherigen Kontur." : "";
+    return "Die türkisen Linien zeigen zwei seitliche Fortsetzungen und zwei mögliche Endkanten." + prior
+      + " Prüfe am Original, wie weit der Abzug reicht und ob ein zweiter Abzug aufliegt.";
   }
   if (getSourceEdgeTraces(fullPrint?.exposed_overlap_edge_traces).length) {
     return "Türkis zeigt einen möglichen Papierrand ausserhalb des Zuschnitts. Prüfe am Original, wo das Fotopapier endet und welcher Abzug oben liegt.";
