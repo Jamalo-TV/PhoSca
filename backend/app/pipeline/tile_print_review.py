@@ -1,5 +1,7 @@
 """Source checks for uncounted print suggestions from enlarged views."""
 
+from collections.abc import Callable
+
 import cv2
 import numpy as np
 
@@ -118,6 +120,28 @@ def _transverse_tile_backing(image: np.ndarray, line: np.ndarray, palette: np.nd
     return correlation[0, 1] >= .85 and abs(correlation[0, 2]) < .25
 
 
+def _fit_unclaimed_tile_views(
+    image: np.ndarray, polygons: tuple[np.ndarray, np.ndarray], claimed: Callable[[np.ndarray], bool],
+) -> list[tuple[np.ndarray, list[dict]]] | None:
+    height, width = image.shape[:2]
+    scale = np.float32([width - 1, height - 1])
+    fits = []
+    for polygon in polygons:
+        pixels = normalized_vertices_to_pixels(polygon, width, height)
+        if claimed(pixels):
+            return None
+        seed, _ = quad_from_polygon(pixels)
+        if seed is None:
+            return None
+        outline, sides, reasons = refine_print_boundary(image, order_quad_cyclic(seed))
+        if (outline is None or len(sides) != 4 or set(reasons) - {"PRINT_BOUNDARY_AMBIGUOUS"}
+                or min(side["support"] for side in sides.values()) < .85
+                or np.any(np.minimum(outline, scale - outline) < 4) or claimed(outline)):
+            return None
+        fits.append((outline, list(sides.values())))
+    return fits
+
+
 def measured_adjacent_tile_outline(
     image: np.ndarray, observations: list[tuple[np.ndarray, float]], claims: list[dict],
 ) -> np.ndarray | None:
@@ -133,20 +157,9 @@ def measured_adjacent_tile_outline(
     def claimed(polygon: np.ndarray) -> bool:
         return tiled_outline_conflicts([{"x": float(x), "y": float(y)} for x, y in polygon / scale], claims, width, height)
 
-    fits = []
-    for polygon in (first, second):
-        pixels = normalized_vertices_to_pixels(polygon, width, height)
-        if claimed(pixels):
-            return None
-        seed, _ = quad_from_polygon(pixels)
-        if seed is None:
-            return None
-        outline, sides, reasons = refine_print_boundary(image, order_quad_cyclic(seed))
-        if (outline is None or len(sides) != 4 or set(reasons) - {"PRINT_BOUNDARY_AMBIGUOUS"}
-                or min(side["support"] for side in sides.values()) < .85
-                or np.any(np.minimum(outline, scale - outline) < 4) or claimed(outline)):
-            return None
-        fits.append((outline, list(sides.values())))
+    fits = _fit_unclaimed_tile_views(image, (first, second), claimed)
+    if fits is None:
+        return None
 
     primary, primary_sides = fits[0]
     rival, rival_sides = fits[1]
@@ -209,6 +222,97 @@ def measured_adjacent_tile_outline(
                    for mask in (first, second))):
         return None
     # A larger print can reproduce two neighboring views and the ribs between them.
+    if has_enclosing_perimeter(image, outline, outline, shortest, search_margin=1.15, maximum_area_ratio=3.1):
+        return None
+    return outline
+
+
+def _signed_grid_rim_offsets(image: np.ndarray, line: np.ndarray, palette: np.ndarray) -> np.ndarray | None:
+    offsets = np.arange(-9, 10, dtype=np.float32)
+    fractions = np.linspace(.08, .92, 160, dtype=np.float32)
+    band = _edge_band(image, *line, offsets, fractions=fractions)
+    if band is None:
+        return None
+    centers = np.arange(6, 13)
+    light = band[..., 0]
+    near = light[:, centers - 1] - light[:, centers + 1]
+    wide = light[:, centers - 2] - light[:, centers + 2]
+    exterior = np.median(band[:, centers[:, None] - [5, 4, 3]], axis=2)
+    backed = np.linalg.norm(exterior[..., 1:] - palette, axis=2) <= 8
+    support = (near >= 12) & backed
+    weakest_eighth = np.min([part.mean(axis=0) for part in np.array_split(support, 8)], axis=0)
+    contrast = np.median(wide, axis=0)
+    good = (support.mean(axis=0) >= .90) & (weakest_eighth >= .60) & (contrast >= 24)
+    ranked = np.argsort(-contrast[good], kind="stable")
+    return offsets[centers[good]][ranked]
+
+
+def measured_grid_tile_outline(
+    image: np.ndarray, observations: list[tuple[np.ndarray, float]], claims: list[dict],
+) -> np.ndarray | None:
+    """Resolve one uncertain grid-view side against another view and source pixels."""
+    if len(observations) != 2 or not all(score >= .80 for _, score in observations):
+        return None
+    first, second = (polygon for polygon, _ in observations)
+    if normalized_polygon_overlap(first, second, raster_size=512).iou < .90:
+        return None
+    height, width = image.shape[:2]
+    scale = np.float32([width - 1, height - 1])
+
+    def claimed(polygon: np.ndarray) -> bool:
+        return tiled_outline_conflicts([{"x": float(x), "y": float(y)} for x, y in polygon / scale], claims, width, height)
+
+    fits = _fit_unclaimed_tile_views(image, (first, second), claimed)
+    if fits is None:
+        return None
+    compared = [(outline, [index for index, side in enumerate(sides) if side["ambiguous"]]) for outline, sides in fits]
+    compared.sort(key=lambda fit: len(fit[1]))
+    (base, base_uncertainty), (rival, rival_uncertainty) = compared
+    if base_uncertainty or len(rival_uncertainty) != 1:
+        return None
+    shift = min(range(4), key=lambda offset: np.linalg.norm(base - np.roll(rival, offset, axis=0)))
+    rival = np.roll(rival, shift, axis=0)
+    side = (rival_uncertainty[0] + shift) % 4
+    tangent = np.roll(base, -1, axis=0) - base
+    lengths = np.linalg.norm(tangent, axis=1)
+    shortest = float(lengths.min())
+    if shortest < 180:
+        return None
+    inward = np.column_stack((-tangent[:, 1], tangent[:, 0])) / lengths[:, None]
+    displacement = rival - base
+    normal_delta = np.column_stack(((displacement * inward).sum(axis=1),
+                                   (np.roll(displacement, -1, axis=0) * inward).sum(axis=1)))
+    if np.max(np.abs(normal_delta[np.arange(4) != side])) > 4 or np.max(np.abs(normal_delta[side])) > 15:
+        return None
+
+    reference = _backing_reference(image, base, claimed)
+    if reference is None or (reference[1] - side) % 2 == 0:
+        return None
+    palette = reference[0]
+    edge = [side, (side + 1) % 4]
+    line = base[edge]
+    offsets = _signed_grid_rim_offsets(image, line, palette)
+    if offsets is None or not len(offsets) or np.ptp(offsets) > 3 or abs(offsets[0]) > 2:
+        return None
+    chosen = offsets[0]
+    alternate = _signed_grid_rim_offsets(image, rival[edge], palette)
+    if alternate is None or np.any(np.abs(normal_delta[side] + alternate[:, None] - chosen) > 2.5):
+        return None
+
+    candidate = line + chosen * inward[side]
+    start, stop = candidate[0] + np.float32([.08, .92])[:, None] * (candidate[1] - candidate[0])
+    outward = 7 * inward[side]
+    if claimed(np.float32([start - outward, stop - outward, stop, start])):
+        return None
+    points = np.column_stack((base, np.ones(4)))
+    lines = np.cross(points, np.roll(points, -1, axis=0))
+    lines[side] = np.cross(np.r_[candidate[0], 1.], np.r_[candidate[1], 1.])
+    outline = _quad_from_lines(lines)
+    if (outline is None or not cv2.isContourConvex(outline) or cv2.contourArea(outline, oriented=True) <= 0
+            or np.any(np.minimum(outline, scale - outline) < 4) or claimed(outline)
+            or any(normalized_polygon_overlap(outline / scale, mask, raster_size=512).iou < .85
+                   for mask in (first, second))):
+        return None
     if has_enclosing_perimeter(image, outline, outline, shortest, search_margin=1.15, maximum_area_ratio=3.1):
         return None
     return outline

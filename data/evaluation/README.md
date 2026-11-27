@@ -2725,6 +2725,84 @@ record dense tile revision 13.
 The paired measurements, annotated original and API receipts are
 under `runs/crop-quality/regional-print-review/`.
 
+#### Recheck an unclaimed tile in smaller views
+
+Dense tile revision 14 reuses masks from the ordinary 70% tile run
+after that run has produced a count offer. A scout must cover
+2.5–12% of the page, with model confidence at least 0.60 and a
+prepared boundary score of at least 0.80. The three highest-confidence
+unclaimed scouts are eligible. Only 52% grid windows that contain
+the complete scout and satisfy the artificial-edge margin are run.
+A cached window supplies all scouts that can use it. One supported
+window can be paired with a centred 52% × 50% view.
+
+Each confirming window must contain exactly one match at scout
+mask IoU at least 0.65. Each admitted mask needs confidence and
+prepared boundary score at least 0.80, and one needs the configured
+acceptance score. The retained masks from different views must all
+agree at IoU 0.90 or higher. If more than two masks agree, the two
+highest-confidence ones reach the source verifier.
+
+The unenhanced image must support all four fitted sides at 0.85 or
+higher. One fit must have no ambiguous side and the other exactly one.
+The three other sides agree to within four native pixels measured
+perpendicular to each rail. The disputed side can differ by up to
+15 pixels. A separate transverse strip establishes a repeating
+backing palette. Of 160 stations on the middle 84% of a disputed
+line, at least 90% in all and 60% in each eighth must show that
+palette outside and a decrease of at least 12 OpenCV Lab L units
+over two native pixels into the image. The median contrast across
+four pixels must reach 24 units. Multiple supported offsets spanning
+more than three pixels, or a competing independently supported rail
+more than 2.5 pixels away, prevent an offer. The chosen rail can move
+the unambiguous fit by up to two pixels. A neighboring claim crossing
+the witness strip, raw masks or fitted outline vetoes the offer. A
+measurable larger enclosure does as well.
+
+Two previous omissions on the original spiral album now appear
+in their count review. U008's polar bear draft reaches 0.97067 IoU.
+Its ordinary and smaller model views can agree while both follow an
+outside backing rib. The centred context supplies the correct polarity
+at the top. U040's slide photo reaches 0.96685 IoU. The paired lower
+rails differ by roughly four pixels. The signed original step selects
+the outer visible edge before the narrow gap to the next photo.
+U008 retains three active rows and two earlier pending offers. U040
+retains four active rows and its one earlier pending offer.
+
+The independent material controls include folds, alternative rails,
+gaps, adjacent papers and wider carriers that copy the same image
+and backing. All 17 altered normal-pipeline controls preserve their
+previous offers and active polygons. Identical local image evidence
+can still support an inner contour on a single carrier when its
+claim is absent. These offers require explicit confirmation of a
+separate paper print, with both geometries in review.
+None of the 18 tested JPEG, downscaling and rotation derivatives
+produces a new offer. Three other native pages from the same album
+preserve all active and pending polygons.
+Across seven alternating warm single-thread runs per arm, U008's
+median segmentation rose from 2.95 s to 3.39 s and U040's from
+2.13 s to 2.34 s. The tile stages rose from 1.33 s to 1.81 s
+and from 0.78 s to 1.07 s, respectively.
+The raw 3 × 3 grid at 52% found agreeing masks for 28 of 35 draft
+prints across three open development spreads. The four 70% tiles
+alone reach 19. Those are proposal measurements before the native
+perimeter, conflict, count and crop checks.
+
+Multipart upload of the original decoded rasters as PNG and repeat
+analysis preserve all earlier photos, warps, available previews and
+pending polygons. A linked explicit confirmation adds one photo on
+each page. Reprocessing and count approval preserve the untrimmed
+303 × 299 and 264 × 277 previews. Both named downloads and the legacy
+trimmed alias remain held. In a bilinear projection of the development
+drawings, 2,141 U008 output positions and 679 U040 positions receive
+some contribution from outside the draft masks. The drawings leave
+physical aspects and exact corner ownership unresolved. Receipts,
+source controls and rendered examples are under
+`runs/crop-quality/multiscale-review/`.
+All eight paired benchmark reports preserve detection, masks,
+crop results and review metadata for the previous inputs. Their
+configuration profile records dense tile revision 14.
+
 #### Require separate confirmation for an unsupported contrast outline
 
 The normal JPEG55 upload of U039 produced a held `contrast_region`

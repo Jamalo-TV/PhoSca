@@ -85,8 +85,8 @@ from app.pipeline.segmentation_filter import (
 )
 from app.pipeline.source_fragment_review import source_fragment_role, suggest_source_fragment_group
 from app.pipeline.tile_print_review import (
-    TILED_PRINT_PROPOSAL, measured_adjacent_tile_outline, opposing_view_print_outlines, ribbed_backing_tile_outline,
-    tile_print_outline, tiled_outline_conflicts,
+    TILED_PRINT_PROPOSAL, measured_adjacent_tile_outline, measured_grid_tile_outline, opposing_view_print_outlines,
+    ribbed_backing_tile_outline, tile_print_outline, tiled_outline_conflicts,
 )
 
 _CLASSICAL_MIN_AREA_RATIO = 0.02
@@ -4415,9 +4415,10 @@ def segment_album_page(
     ribbed_tile_seeds = []
     contrast_review = []
     adjacent_view_pairs = []
+    grid_view_pairs = []
     result = _segment_album_page(
         image, settings, source, tile_offers, partial_tile_seeds, merged_tile_pairs, ribbed_tile_seeds, contrast_review,
-        adjacent_view_pairs,
+        adjacent_view_pairs, grid_view_pairs,
     )
     if settings.enable_classical_segmentation_fallback:
         if settings.enable_precise_photo_crops and (
@@ -4467,7 +4468,14 @@ def segment_album_page(
         if ribbed_tile_seeds:
             result = _offer_ribbed_backing_tile(evidence_source, result, ribbed_tile_seeds[0])
         if adjacent_view_pairs:
-            result = _offer_adjacent_view_prints(evidence_source, result, adjacent_view_pairs)
+            result = _offer_paired_tile_prints(
+                evidence_source, result, adjacent_view_pairs, measured_adjacent_tile_outline,
+                "recovered_from_adjacent_views",
+            )
+        if grid_view_pairs:
+            result = _offer_paired_tile_prints(
+                evidence_source, result, grid_view_pairs, measured_grid_tile_outline, "recovered_from_grid_views",
+            )
         if contrast_review:
             (seed, traces), = contrast_review
             matching = [i for i, item in enumerate(result.detections) if _contrast_review_candidate(item)
@@ -4634,8 +4642,10 @@ def _offer_ribbed_backing_tile(source: np.ndarray, result: SegmentationResult, s
     return SegmentationResult(result.detections, metadata)
 
 
-def _offer_adjacent_view_prints(
+def _offer_paired_tile_prints(
     source: np.ndarray, result: SegmentationResult, pairs: list[list[tuple[np.ndarray, float]]],
+    measure: Callable[[np.ndarray, list[tuple[np.ndarray, float]], list[dict]], np.ndarray | None],
+    statistic: str,
 ) -> SegmentationResult:
     started = perf_counter()
     height, width = source.shape[:2]
@@ -4650,7 +4660,7 @@ def _offer_adjacent_view_prints(
     fits = []
     for pair in pairs:
         try:
-            if (outline := measured_adjacent_tile_outline(source, pair, claims)) is not None:
+            if (outline := measure(source, pair, claims)) is not None:
                 fits.append(_normalized_polygon(outline, width, height))
         except (cv2.error, ValueError, np.linalg.LinAlgError):
             continue
@@ -4667,7 +4677,7 @@ def _offer_adjacent_view_prints(
                        for i, outline in enumerate(offers))
         metadata["fusion"] = {**fusion, "deferred_print_proposals": pending}
         review["candidates"] += len(offers)
-        review["recovered_from_adjacent_views"] = len(offers)
+        review[statistic] = len(offers)
     return SegmentationResult(result.detections, metadata)
 
 
@@ -4748,6 +4758,82 @@ def _collect_adjacent_view_pairs(
         if (len(observations) == 2 and max(confidence for _, confidence in observations) >= max(.80, acceptance)
                 and normalized_polygon_overlap(observations[0][0], observations[1][0], raster_size=512).iou >= .90):
             pairs.append(observations)
+    return pairs
+
+
+def _collect_grid_view_pairs(
+    image: np.ndarray, scouts: list[SegmentationDetection], claims: list[dict],
+    infer: Callable[[np.ndarray], list[SegmentationDetection]],
+    inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray], acceptance: float,
+) -> list[list[tuple[np.ndarray, float]]]:
+    """Revisit complete unclaimed masks in smaller contexts that contain them."""
+    height, width = image.shape[:2]
+    dims = np.float32([width - 1, height - 1])
+    tile_width, tile_height = round(.52 * width), round(.52 * height)
+    remaining_x, remaining_y = width - tile_width, height - tile_height
+    clearance = max(3, round(.015 * min(width, height)))
+    windows = [
+        (x, y, x + tile_width, y + tile_height)
+        for y in (0, round(remaining_y / 2), remaining_y)
+        for x in (0, round(remaining_x / 2), remaining_x)
+    ]
+    cached = {}
+
+    def candidates(bounds: tuple[int, int, int, int]) -> list[tuple[SegmentationDetection, np.ndarray]]:
+        if bounds not in cached:
+            left, top, right, bottom = bounds
+            mapped = _tile_detections_on_page(infer(image[top:bottom, left:right]), bounds, width, height)
+            cached[bounds] = [(item, _detection_polygon(item)) for item in mapped]
+        return cached[bounds]
+
+    def supported(item: SegmentationDetection) -> bool:
+        return (item.confidence >= .80 and _detection_boundary_evidence(item, *inputs)["score"] >= .80
+                and not tiled_outline_conflicts(item.mask["polygon"], claims, width, height))
+
+    pairs = []
+    unclaimed = (scout for scout in sorted(scouts, key=lambda item: item.confidence, reverse=True)
+                 if not tiled_outline_conflicts(scout.mask["polygon"], claims, width, height))
+    for scout in islice(unclaimed, 3):
+        seed = _detection_polygon(scout)
+        low, high = seed.min(axis=0) * dims, seed.max(axis=0) * dims
+        observations = {}
+        ambiguous = False
+        for bounds in windows:
+            left, top, right, bottom = bounds
+            inner_min = [left + clearance if left else 0, top + clearance if top else 0]
+            inner_max = [right - 1 - (clearance if right < width else 0),
+                         bottom - 1 - (clearance if bottom < height else 0)]
+            if np.any(low < inner_min) or np.any(high > inner_max):
+                continue
+            matches = [(item, mask) for item, mask in candidates(bounds)
+                       if normalized_polygon_overlap(mask, seed, raster_size=512).iou >= .65]
+            if len(matches) > 1:
+                ambiguous = True
+                break
+            if matches:
+                item, mask = matches[0]
+                if supported(item):
+                    observations[bounds] = (mask, item.confidence)
+        if ambiguous or not observations:
+            continue
+        if len(observations) == 1:
+            # One smaller grid view can still have a distinct centred check.
+            first, _ = next(iter(observations.values()))
+            center = (first.min(axis=0) + first.max(axis=0)) / 2 * dims
+            bounds = _tile_window(center, width, height, (.52, .50))
+            matches = [(item, mask) for item, mask in candidates(bounds)
+                       if normalized_polygon_overlap(mask, first, raster_size=512).iou >= .65]
+            if len(matches) != 1:
+                continue
+            (item, mask), = matches
+            if not supported(item):
+                continue
+            observations[bounds] = (mask, item.confidence)
+        ranked = sorted(observations.values(), key=lambda row: row[1], reverse=True)
+        if (len(ranked) >= 2 and ranked[0][1] >= acceptance
+                and all(normalized_polygon_overlap(first[0], second[0], raster_size=512).iou >= .90
+                        for first, second in combinations(ranked, 2))):
+            pairs.append(ranked[:2])
     return pairs
 
 
@@ -4970,6 +5056,7 @@ def _collect_tiled_print_offers(
     inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
     partial_tile_seeds: list[list[dict]] | None,
     merged_tile_pairs: list[tuple[np.ndarray, list[np.ndarray]]] | None,
+    grid_scouts: list[SegmentationDetection] | None = None,
 ) -> tuple[
     list[list[dict]], tuple[SegmentationDetection, np.ndarray] | None,
     SegmentationDetection | None, SegmentationDetection | None,
@@ -4989,6 +5076,10 @@ def _collect_tiled_print_offers(
     unfitted_seed = None
     ribbed_seed = None
     for index, candidate in enumerate(candidates):
+        if (grid_scouts is not None and candidate.mask.get("detector_source") == "yolo_onnx_tiled"
+                and candidate.confidence >= .60 and evidence[index]["score"] >= .80
+                and .025 <= _score_value(candidate, "area_ratio") <= .12):
+            grid_scouts.append(candidate)
         strong = candidate.confidence >= .80
         if (candidate.mask.get("detector_source") != "yolo_onnx_tiled"
                 or candidate.confidence < .65 or evidence[index]["score"] < .80
@@ -5094,6 +5185,7 @@ def _segment_album_page(
     ribbed_tile_seeds: list[np.ndarray] | None = None,
     contrast_review: list[tuple[np.ndarray, list[np.ndarray]]] | None = None,
     adjacent_view_pairs: list[list[tuple[np.ndarray, float]]] | None = None,
+    grid_view_pairs: list[list[tuple[np.ndarray, float]]] | None = None,
 ) -> SegmentationResult:
     model_path = Path(settings.yolo_model_path)
     line_budget = min(3 * image.shape[0] * image.shape[1], 12_000_000) if settings.enable_precise_photo_crops else None
@@ -5226,9 +5318,10 @@ def _segment_album_page(
                     review_started = perf_counter()
                     tile_review = {}
                     try:
+                        grid_scouts = []
                         direct, retry_seed, unfitted_seed, ribbed_seed = _collect_tiled_print_offers(
                             source, image, detections, model_evidence, lambda frame: infer(frame)[0], inputs,
-                            partial_tile_seeds, merged_tile_pairs,
+                            partial_tile_seeds, merged_tile_pairs, grid_scouts,
                         )
                         tile_offers.extend(direct)
                         if tile_offers:
@@ -5263,6 +5356,12 @@ def _segment_album_page(
                         if tile_offers and adjacent_view_pairs is not None:
                             adjacent_view_pairs.extend(_collect_adjacent_view_pairs(
                                 image, detections, model_evidence, tile_offers, lambda frame: infer(frame)[0], inputs,
+                                settings.yolo_confidence_threshold,
+                            ))
+                        if tile_offers and grid_scouts and grid_view_pairs is not None:
+                            claims = _tiled_paper_claims(detections) + [{"polygon": outline} for outline in tile_offers]
+                            grid_view_pairs.extend(_collect_grid_view_pairs(
+                                image, grid_scouts, claims, lambda frame: infer(frame)[0], inputs,
                                 settings.yolo_confidence_threshold,
                             ))
                     except Exception as exc:  # Keep earlier proposals if an optional view fails.

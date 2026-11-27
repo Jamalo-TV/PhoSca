@@ -159,7 +159,7 @@ def crop_validation_profile(settings: Settings) -> dict:
             if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "dense_tile_inference": (
-            13 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+            14 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
         "contrast_crossing_review": (
             1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback

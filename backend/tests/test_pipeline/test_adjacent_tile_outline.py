@@ -2,7 +2,9 @@ import cv2
 import numpy as np
 import pytest
 
-from app.pipeline.tile_print_review import measured_adjacent_tile_outline, tiled_outline_conflicts
+from app.pipeline.tile_print_review import (
+    _signed_grid_rim_offsets, measured_adjacent_tile_outline, measured_grid_tile_outline, tiled_outline_conflicts,
+)
 
 
 def _scene():
@@ -28,6 +30,20 @@ def _scene():
 def _quarter_turn(points, turns):
     x, y = points.T
     return np.column_stack(((x, y, 1 - x, 1 - y)[turns], (y, 1 - x, 1 - y, x)[turns]))
+
+
+def test_grid_rim_retains_distinct_signed_transitions_as_competing_evidence():
+    flat = np.full((200, 440, 3), [220, 129, 144], np.uint8)
+    layered = flat.copy()
+    layered[98:101, :, 0] = 100
+    layered[104:, :, 0] = 100
+    side = np.float32([[60, 100], [380, 100]])
+    palette = np.float32([129, 144])
+
+    offsets = _signed_grid_rim_offsets(cv2.cvtColor(layered, cv2.COLOR_LAB2BGR), side, palette)
+    assert any(offset < 0 for offset in offsets) and any(offset > 0 for offset in offsets)
+    assert np.ptp(offsets) > 3
+    assert not len(_signed_grid_rim_offsets(cv2.cvtColor(flat, cv2.COLOR_LAB2BGR), side, palette))
 
 
 @pytest.mark.parametrize("turns", range(4))
@@ -71,3 +87,33 @@ def test_adjacent_tile_requires_unclaimed_distinct_ribs_outside_the_photo(kind):
     image = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
     assert measured_adjacent_tile_outline(image, observations, claims) is None
+
+
+@pytest.mark.parametrize("case", ["print", "flat_stock", "enclosing_sheet", "witness_claim", "weak_observation"])
+def test_grid_tile_requires_a_signed_rim_in_unclaimed_album_stock(case):
+    lab, _, scale = _scene()
+    primary = np.float32([[160, 153], [517, 153], [517, 444], [160, 444]]) / scale
+    alternate = np.float32([[160, 153], [517, 153], [517, 452], [160, 450]]) / scale
+    observations = [(primary, .91), (alternate, .79 if case == "weak_observation" else .85)]
+    claims = []
+    if case == "flat_stock":
+        lab[:153, :, 0] = lab[456:, :, 0] = 202
+        lab[:, :160, 0] = lab[:, 518:, 0] = 202
+    elif case == "enclosing_sheet":
+        interior = lab[130:479, 141:538].copy()
+        lab[116:491, 128:551] = [70, 126, 129]
+        lab[130:479, 141:538] = interior
+    elif case == "witness_claim":
+        plane = np.float32([[215, 459], [288, 459], [288, 462], [215, 462]]) / scale
+        claims = [{"polygon": [{"x": float(x), "y": float(y)} for x, y in plane]}]
+        for polygon, _ in observations:
+            vertices = [{"x": float(x), "y": float(y)} for x, y in polygon]
+            assert not tiled_outline_conflicts(vertices, claims, lab.shape[1], lab.shape[0])
+
+    image = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+    outline = measured_grid_tile_outline(image, observations, claims)
+
+    if case == "print":
+        np.testing.assert_allclose(outline, [[160, 153], [517, 153], [517, 455], [160, 455]], atol=.15)
+    else:
+        assert outline is None

@@ -166,6 +166,44 @@ def test_adjacent_view_retry_requires_a_unique_unclaimed_pair(monkeypatch, case)
     assert len(calls) == expected_calls.get(case, 0)
 
 
+@pytest.mark.parametrize("case", ["corroborated", "competing_mask", "low_score", "claimed"])
+def test_smaller_tiles_corroborate_a_complete_unclaimed_scout(monkeypatch, case) -> None:
+    from app.pipeline import segmentation
+
+    def box(points, confidence):
+        left, top, right, bottom = points
+        return _detection(dict(x1=left, y1=top, x2=right, y2=bottom), confidence, family="model")
+
+    height, width = 1001, 1201
+    dimensions = np.float32([width - 1, height - 1])
+    expected = np.float32([[680, 420], [845, 600]])
+    scout = box((expected / dimensions).ravel(), .623)
+    claims = [scout.mask] if case == "claimed" else []
+    tile_lefts = iter((288, 576, 450))
+    calls = []
+
+    def infer(frame):
+        tile_h, tile_w = frame.shape[:2]
+        origin = [next(tile_lefts), 240 if tile_h == 521 else 260]
+        points = (expected - origin) / [tile_w - 1, tile_h - 1]
+        calls.append(frame.shape[:2])
+        if case == "low_score" and len(calls) > 1:
+            return [box(points.ravel(), .79)]
+        candidate = box(points.ravel(), .92)
+        return [candidate, candidate] if case == "competing_mask" else [candidate]
+
+    monkeypatch.setattr(segmentation, "_detection_boundary_evidence", lambda *_: {"score": .88})
+    page = np.zeros((height, width, 3), np.uint8)
+    result = segmentation._collect_grid_view_pairs(page, [scout], claims, infer, (), .70)
+    if case == "corroborated":
+        pair, = result
+        assert [score for _, score in pair] == [.92, .92]
+        assert all(np.allclose(polygon[[0, 2]], expected / dimensions) for polygon, _ in pair)
+    else:
+        assert not result
+    assert len(calls) == {"corroborated": 2, "competing_mask": 1, "low_score": 3, "claimed": 0}[case]
+
+
 @pytest.mark.parametrize("case", ["confirmed", "competing_match", "edge_missing", "fit_drift", "existing_claim"])
 def test_centered_tile_retry_requires_unique_native_agreement(case) -> None:
     from app.pipeline import segmentation

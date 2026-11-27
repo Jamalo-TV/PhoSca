@@ -132,6 +132,17 @@ zusätzlichen Abzug. Die Bestätigung seiner Anzahl und die Freigabe
 seiner Zuschnitte bleiben getrennte Schritte.
 [Zusatzansichten und Originalmessung](data/evaluation/README.md#confirm-an-unclaimed-print-in-two-local-views)
 
+Nach einem erfolgreichen Kachellauf kann PhoSca bis zu drei weitere
+Teilbildmasken prüfen. Es wählt kleinere Fenster, die die ganze
+vorläufige Kontur enthalten. Zwei Ansichten müssen denselben Abzug
+finden. Stimmen beide an drei Seiten überein und bleibt eine vierte
+Seite unklar, prüft PhoSca dort den Übergang vom Albumkarton ins
+Foto. Dabei muss der Karton aus einem separaten Streifen im Original
+bestimmbar sein. Konkurrierende Kanten oder ein gemeinsamer Papierrand
+können den neuen Vorschlag verhindern. Bestätige einen zusätzlichen
+Papierabzug in der Anzahlprüfung und prüfe danach beide Zuschnittmodi.
+[Kleinere Kacheln und umstrittene Kanten](data/evaluation/README.md#recheck-an-unclaimed-tile-in-smaller-views)
+
 Deckt ein schwacher Ganzseitenvorschlag möglicherweise zwei Abzüge ab,
 kann ein einzelner starker Kachelfund innerhalb dieser Kontur eine
 weitere Prüfung auslösen. PhoSca sucht in der Mitte des gemeinsamen
