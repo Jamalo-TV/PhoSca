@@ -5053,7 +5053,7 @@ def _segment_album_page(
                         "runtime_ms": round((perf_counter() - tile_started) * 1000, 2),
                     }
                 if (source is not None and tile_offers is not None and deskew_enabled and risk_reasons
-                        and settings.visible_mask_model_path is None and 3 <= len(detections) <= 8
+                        and settings.visible_mask_model_path is None and 2 <= len(detections) <= 8
                         and sum(item.geometry_valid and .02 <= _score_value(item, "area_ratio") <= .20
                                 for item in detections) >= 2
                         and sum(item.confidence < settings.yolo_confidence_threshold for item in detections) >= 2):

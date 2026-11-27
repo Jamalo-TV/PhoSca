@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -48,6 +50,34 @@ def test_dense_tile_mapping_preserves_capture_edges_and_rejects_internal_edges()
     assert mapped.bounding_box == pytest.approx({"x1": (31 + .2 * 69) / 100, "y1": (37 + .2 * 83) / 120,
                                                   "x2": 1., "y2": 1.})
     assert mapped.mask["polygon"][2] == {"x": 1., "y": 1.}
+
+
+@pytest.mark.parametrize("count", [1, 2])
+def test_sparse_risky_page_checks_tiles_with_two_valid_model_proposals(count, monkeypatch, tmp_path):
+    from app.config import Settings
+    from app.pipeline import segmentation
+
+    model = tmp_path / "model.onnx"
+    model.touch()
+    input_meta = SimpleNamespace(name="page", shape=(1, 3, 512, 512))
+    session = SimpleNamespace(get_inputs=lambda: [input_meta], get_providers=lambda: ["CPUExecutionProvider"],
+                              run=lambda *_: [])
+    monkeypatch.setattr(segmentation, "_cached_onnx_session", lru_cache(lambda *_: session))
+    candidates = [_detection({"x1": left, "y1": .10, "x2": left + .22, "y2": .32}, .50, family="model")
+                  for left in (.12, .60)][:count]
+    monkeypatch.setattr(segmentation, "_parse_simple_box_outputs", lambda *args, **kwargs: candidates)
+    monkeypatch.setattr(segmentation, "album_rotation", lambda *_: None)
+    page = np.full((500, 700, 3), 125, dtype=np.uint8)
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://", YOLO_MODEL_PATH=str(model),
+                        REQUIRE_REGISTERED_MODELS=False, ENABLE_PRECISE_PHOTO_CROPS=True,
+                        ENABLE_CLASSICAL_SEGMENTATION_FALLBACK=True)
+
+    result = segmentation.segment_album_page(page, settings, source_image=page)
+
+    assert "onnx_error" not in result.metadata, result.metadata.get("onnx_error")
+    assert result.metadata["model_set_risk"]["risky"]
+    assert ("tiled_print_review" in result.metadata) == (count == 2)
+    assert (result.metadata.get("tiled_print_review") or {}).get("error") is None
 
 
 def test_dense_view_fusion_retains_separately_observed_overlaps() -> None:

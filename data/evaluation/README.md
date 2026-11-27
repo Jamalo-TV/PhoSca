@@ -2588,6 +2588,43 @@ two edited crops without measured geometry still require review.
 The replays, source controls and annotated example are under
 `runs/crop-quality/u039-narrow-divider/`.
 
+#### Check a risky page with two model proposals
+
+Dense tile revision 12 admits a risky whole-page result with two to
+eight model proposals. As before, at least two geometry-valid proposals
+must each cover 2–20% of the page and at least two predictions must fall
+below the normal detector confidence threshold. The source-boundary
+checks, overlap vetoes and count-review requirement still apply. The
+detector weights and automatic release gate are unchanged.
+
+For the 1600 × 1110 JPEG55 derivative of U039, the whole-page detector
+returned two usable masks at 0.504 and 0.312 confidence. Four overlapping
+tiles yielded one additional count-review proposal for the middle outer
+print on the left page. Its IoU to the development outline was 0.9784.
+All three existing active polygons, including the classical proposal,
+were identical in the before and after replays. Across five warm runs,
+the median complete analysis was 2.52 s and the tile stage took 0.99 s
+on the shared test host.
+
+The multipart upload replay started with three active rows and one
+pending count proposal. Explicit confirmation produced a fourth active
+row with an untrimmed perspective preview. Unconfirmed and stale
+requests were refused. Repeat analysis and crop reprocessing preserved
+the review state. Both crop exports and the cropped alias stayed held.
+The large diagonal classical proposal on the right still needs review.
+An independent inspection of the decoded pixels found weak boundary
+support on all four sides and lines crossing visible photo content.
+The verified development sample therefore still has unresolved count
+and geometry cases.
+
+The other six U039 encoding and orientation variants and eight earlier
+real replays retained their active and pending outlines. All eight frozen
+and development comparisons preserved their detection and crop metrics.
+The locked synthetic checks retained 18/18 detected prints and 23/23
+recoverable crops. The U039 replays and the rendered review preview are
+under `runs/crop-quality/u039-jpeg55/`. The outline is a development
+reference and does not count towards independent release acceptance.
+
 #### Review a protection margin outside a manually added print
 
 Off-print advisory revision 2 adds a path for a manually added print

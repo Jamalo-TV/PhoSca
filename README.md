@@ -68,10 +68,11 @@ Bei fehlenden, auffälligen oder schwierigen Vorschlägen ergänzt
 OpenCV Konturen, Kontrastflächen oder Papierränder. Dichte Seiten kann
 das System zusätzlich in überlappenden Teilbildern untersuchen.
 
-Bei drei bis acht Vorschlägen aus einer unsicheren Ganzseitenanalyse
+Bei zwei bis acht Vorschlägen aus einer unsicheren Ganzseitenanalyse
 kann PhoSca vier überlappende Teilbilder auf weitere Abzüge prüfen.
 Dafür müssen mindestens zwei mittelgrosse Vorschläge eine gültige
-Geometrie haben.
+Geometrie haben und mindestens zwei Vorschläge unter der regulären
+Konfidenzschwelle des Detektors liegen.
 Ein zusätzlicher Vorschlag braucht auf allen vier Seiten Unterstützung
 aus den Originalpixeln und darf keine vorhandene oder ungeklärte
 Papierkontur schneiden. Er erscheint gestrichelt in der Anzahlprüfung.
@@ -99,6 +100,7 @@ des offenen Kachelvorschlags ab und liegen mindestens 75 % ihrer Fläche
 darin, verweist PhoSca beim Hinzufügen oder Verschieben eines Abzugs
 auf die Anzahlprüfung. Danach prüfst du seine Ecken und beide Zuschnitte.
 [Kachelprüfung](data/evaluation/README.md#missing-prints-in-count-review) ·
+[Seite mit genau zwei Modellvorschlägen](data/evaluation/README.md#check-a-risky-page-with-two-model-proposals) ·
 [Zweite Kachelansicht](data/evaluation/README.md#confirm-a-weak-tile-mask-from-a-centered-view) ·
 [Wiederholte Kantenmessung](data/evaluation/README.md#refit-an-unmeasured-tile-from-two-closer-views)
 
