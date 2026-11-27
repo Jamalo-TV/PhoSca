@@ -1091,6 +1091,7 @@ async def create_manual_photo(
 async def update_photo_bounding_box(
     photo_id: UUID,
     payload: BoundingBoxUpdate,
+    explain_protected_cut: bool = False,
     session: AsyncSession = Depends(get_async_session),
     settings: Settings = Depends(get_settings),
     principal: Principal | None = Depends(require_write_principal),
@@ -1389,7 +1390,9 @@ async def update_photo_bounding_box(
             or edited_claim or edited_polygon):
         await _review_overlapping_crops(session, photo, width, height, neighbors=active_neighbors)
     await session.flush()
-    return await _render_photo_edit(session, photo.id, settings, previous_manual_crop=previous_crop)
+    return await _render_photo_edit(
+        session, photo.id, settings, previous_manual_crop=previous_crop, explain_protected_cut=explain_protected_cut,
+    )
 
 
 @router.patch("/ocr/{ocr_id}", response_model=OCRRead)

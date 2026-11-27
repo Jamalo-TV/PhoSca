@@ -37,6 +37,7 @@ class ProtectedRegionCut(ValueError):
     def __init__(self, quad: np.ndarray, violations: list[dict], width: int, height: int) -> None:
         super().__init__("protected_region_cut")
         contour = quad.astype(np.float32)
+        convex = cv2.isContourConvex(contour)
         regions = []
         for violation in violations:
             box = region_box_in_pixels(violation, width, height)
@@ -47,10 +48,12 @@ class ProtectedRegionCut(ValueError):
             x1, y1, x2, y2 = np.clip(box, 0, [width - 1, height - 1] * 2).tolist()
             if x1 >= x2 or y1 >= y2:
                 continue
+            contained = all(cv2.pointPolygonTest(contour, point, False) >= 0 for point in raw_corners)
+            disjoint = convex and cv2.intersectConvexConvex(contour, np.float32(raw_corners))[0] <= 1.e-3
             regions.append({
                 "x1": x1 / (width - 1), "y1": y1 / (height - 1),
                 "x2": x2 / (width - 1), "y2": y2 / (height - 1),
-                "padding_only": all(cv2.pointPolygonTest(contour, point, False) >= 0 for point in raw_corners),
+                "padding_only": contained or disjoint,
             })
         self.detail = {"code": str(self), "regions": regions}
 

@@ -173,7 +173,7 @@ export const contrastCrossingTraceHint = "An den orange markierten Stellen ist B
 export const contrastCrossingTraceStyle = { color: "#f59e0b", contrast: "#78350f", dash: [8, 5] };
 export const captureBackgroundTraceStyle = { color: "#67e8f9", contrast: "#164e63", dash: [8, 4] };
 
-export function manualAdditionProtection(error) {
+export function protectedCutFeedback(error) {
   if (error?.message !== "protected_region_cut") return null;
   const bounds = error.detail?.regions;
   const regions = Array.isArray(bounds) ? bounds.filter(box => box
@@ -183,7 +183,7 @@ export function manualAdditionProtection(error) {
   const reason = paddingOnly ? "Der Zuschnitt reicht in den Schutzrand um den erkannten Bildbereich."
     : "Der Zuschnitt würde einen geschützten Bereich abschneiden.";
   const inspect = regions.length ? "Prüfe die roten Markierungen am Original." : "Prüfe den Bereich am Original.";
-  return { regions, message: `${reason} ${inspect} Gehört der Bereich zum Abzug oder bleibt die Zuordnung unklar, fotografiere den Abzug einzeln mit sichtbarem Rand.` };
+  return { regions, message: `${reason} ${inspect} Liegt die Kontur bereits am tatsächlichen Papierrand, fotografiere den Abzug einzeln mit sichtbarem Rand.` };
 }
 
 export function getCaptureBackgroundReviewTraces(photo) {

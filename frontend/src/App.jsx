@@ -89,7 +89,7 @@ import {
   possiblePrintRegionStyle,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
   getMeasuredMotifComparison, isMeasuredMotifComparison, measuredMotifOutlineStyle, measuredMotifPaperStyle, measuredMotifSeamStyle,
-  manualAdditionProtection,
+  protectedCutFeedback,
   sameReviewQuad, savedFullPrintReviewUrl,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -1424,8 +1424,6 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const [groupSelection, setGroupSelection] = useState(null);
   const dragRef = useRef(null);
   const editingImage = editMode === "image_only";
-  const blockedRegions = blockedCrop?.photoId === selectedPhotoId && blockedCrop.mode === editMode
-    ? blockedCrop.regions : null;
   const pageId = page?.id;
   const measuredTraces = measuredEdge?.pageId === pageId ? measuredEdge?.traces : null;
   const segmentation = page?.processing_metadata?.steps?.segmentation;
@@ -1537,6 +1535,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const crossingOutline = useMemo(() => cyclicQuad(sanitizePolygon(crossingPolygon)), [crossingPolygon]);
   const savedShape = useMemo(() => selected && draftShapeFromPhoto(selected), [selected]);
   const selectedShape = selected && (draftShapes[selected.id] || savedShape);
+  const activeBlockedCrop = !newPrint && blockedCrop?.mode === editMode && blockedCrop.photoId === selectedPhotoId
+    ? blockedCrop : null;
+  const cutFeedback = activeBlockedCrop?.message && activeBlockedCrop.draft === selectedShape ? activeBlockedCrop : null;
+  const blockedRegions = activeBlockedCrop?.message ? cutFeedback?.regions : activeBlockedCrop?.regions;
   const possiblePrintRegions = useMemo(() => {
     if (newPrint || editingImage || selectedCountGroup) return [];
     if (reviewingCount) return getPossiblePrintRegions(photos);
@@ -2231,6 +2233,12 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       const url = result.urls?.[editMode] || (!getCropModes(result) && !editingImage ? result.urls?.original : null);
       setSaveState({ photoId: selected.id, mode: editMode, url });
     } catch (error) {
+      const protection = protectedCutFeedback(error);
+      if (protection) {
+        setBlockedCrop({ ...protection, photoId: selected.id, mode: editMode, draft: selectedShape });
+        setSaveState(null);
+        return;
+      }
       if (error.message === "album_page_mark_review_stale") albumMarkReview.reset();
       const message = error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message === "print_outline_review_required" ? printOutlineSaveHint
@@ -2315,7 +2323,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       setSaveState({ photoId: photo.id, mode: "full_print", url: photo.urls?.full_print });
     } catch (error) {
       const stale = printAdditionErrors[error.message];
-      const protection = manualAdditionProtection(error);
+      const protection = protectedCutFeedback(error);
       const message = stale || (error.message === "mounted_print_outline_excludes_fragments"
           ? "Die Ecken müssen alle markierten Teilvorschläge umfassen. Wenn sie zu verschiedenen Abzügen gehören, prüfe sie einzeln."
           : darkBackingReviewErrors[error.message] || embossedPocketReviewErrors[error.message]
@@ -2518,6 +2526,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           mergedPairs.length && "merged-print-pair-hint",
           possiblePrintRegions.length && "possible-print-regions-hint",
           newPrint?.protection?.regions.length && "print-addition-protection-error",
+          cutFeedback?.regions.length && "crop-protection-error",
           competingPhotoOutlines.length && "competing-photo-outline-hint",
           contrastCrossingTraces.length && "contrast-crossing-review-hint",
           captureBackgroundTraces.length && "capture-background-review-hint",
@@ -2645,6 +2654,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         <Save size={16} />
         {currentSave?.saving && !currentSave.rejecting && !currentSave.checkingEdges ? "Ausschnitt wird berechnet …" : "Zuschnitt speichern"}
       </button>}
+      {cutFeedback && <p id="crop-protection-error" role="alert">{cutFeedback.message}</p>}
       {currentSave?.error && <p role="alert">{currentSave.error}</p>}
       {(rejectedDetection || (saveState?.rejected && saveState.pageId === pageId))
         && <p role="status">Vorschlag als falsches Objekt markiert.</p>}

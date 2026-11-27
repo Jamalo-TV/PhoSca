@@ -44,7 +44,7 @@ import {
   possiblePrintRegionStyle,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
   getMeasuredMotifComparison, isMeasuredMotifComparison,
-  manualAdditionProtection,
+  protectedCutFeedback,
   sameReviewQuad, savedFullPrintReviewUrl,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
@@ -331,7 +331,10 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const savedAspectPreview = editable && !editingMotif && !deferredDraft && !reviewedNonPrint && !saving
     ? savedFullPrintReviewUrl(item.payload, initialOuter(), quad, measurementFields, orientation) : null;
   const [blockedCrop, setBlockedCrop] = useState(null);
-  const draftProtection = deferredDraft && blockedCrop?.message ? blockedCrop : null;
+  const activeBlockedCrop = blockedCrop?.mode === editMode ? blockedCrop : null;
+  const cutFeedback = activeBlockedCrop?.message && activeBlockedCrop.quad === displayedQuad ? activeBlockedCrop : null;
+  const blockedRegions = activeBlockedCrop?.message ? cutFeedback?.regions : activeBlockedCrop?.regions;
+  const cutFeedbackId = deferredDraft ? "mobile-print-addition-protection-error" : "mobile-crop-protection-error";
   const [magnifierEnabled, setMagnifierEnabled] = useState(true);
   const [magnifier, setMagnifier] = useState({ visible: false, x: 0, y: 0 });
   useEffect(() => {
@@ -462,9 +465,10 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       setSavedCropUrl(cropUrl || "");
       onSaved?.(saved);
     } catch (error) {
-      const protection = deferredDraft && manualAdditionProtection(error);
+      const protection = protectedCutFeedback(error);
       if (protection) {
-        setBlockedCrop({ ...protection, mode: "full_print" });
+        setBlockedCrop({ ...protection, mode: editMode, quad: displayedQuad });
+        if (!deferredDraft) onProtectionBlocked?.(item.id);
         return;
       }
       if (error.message === "album_page_mark_review_stale") albumMarkReview.reset();
@@ -477,6 +481,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       if (error.message === "protected_region_removed") {
         setBlockedCrop(error.detail);
         onProtectionBlocked?.(item.id);
+      } else {
+        setBlockedCrop(current => current?.message ? null : current);
       }
     }
     finally { setSaving(false); }
@@ -629,7 +635,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const overlayHints = [countOutlines.length && "mobile-fragment-count-review-hint",
     mergedPairs.length && "mobile-merged-print-pair-hint",
     possiblePrintRegions.length && "mobile-possible-print-regions-hint",
-    draftProtection?.regions.length && "mobile-print-addition-protection-error",
+    cutFeedback?.regions.length && cutFeedbackId,
     competingPhotoOutlines.length && "mobile-competing-photo-outline-hint",
     captureSplitGroups.length && "mobile-capture-split-count-hint",
     filmGridGroups.length && "mobile-film-grid-count-hint", paperGridGroups.length && "mobile-paper-grid-count-hint",
@@ -723,7 +729,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           width={(x2 - x1) * 1000} height={(y2 - y1) * 1000}
           aria-label={albumMark.source === offPrintAdvisorySource ? `Zu prüfende Schutzmarkierung ${index + 1}` : "Zu prüfende Schutzmarkierung"}
           style={{ fill: "none", stroke: "#facc15", strokeWidth: 6, pointerEvents: "none" }} />)}
-        {blockedCrop?.mode === editMode && blockedCrop.regions.map(({ x1, y1, x2, y2 }, index) => (
+        {blockedRegions?.map(({ x1, y1, x2, y2 }, index) => (
           <rect key={index} aria-label="Geschützter Bildbereich" x={x1 * 1000} y={y1 * 1000}
             width={(x2 - x1) * 1000} height={(y2 - y1) * 1000}
             style={{ fill: "none", stroke: "#b91c1c", strokeWidth: 7, pointerEvents: "none" }} />
@@ -942,7 +948,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       </button>
       {deferredDraft && <button type="button" className="magnifier-toggle" disabled={saving}
         onClick={() => onDeferredDraftClose(false)}>Zurück zur Printanzahl</button>}
-      {draftProtection && <p className="crop-save-error" id="mobile-print-addition-protection-error" role="alert">{draftProtection.message}</p>}
+      {cutFeedback && <p className="crop-save-error" id={cutFeedbackId} role="alert">{cutFeedback.message}</p>}
       {saveError && <p className="crop-save-error" role="alert">{saveError}</p>}
       {displayedQuad && !motifOutside && (comparePaperEdge && !editingPreview && !visibleSavedCropUrl
         ? <PaperEdgePreviewComparison currentUrl={item.payload.untrimmed_url} possibleUrl={comparePaperEdge}

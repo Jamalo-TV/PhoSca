@@ -152,7 +152,7 @@ export async function patchBoundingBox(photoId, boundingBox, segmentationMask = 
     if (albumPageMarkReviewIndices?.length) body.album_page_mark_review_indices = albumPageMarkReviewIndices;
   }
   return parseResponse(
-    await apiFetch(`/api/v1/photos/${photoId}/bounding-box`, {
+    await apiFetch(`/api/v1/photos/${photoId}/bounding-box?explain_protected_cut=true`, {
       method: "PATCH",
       headers: jsonHeaders,
       body: JSON.stringify(body),

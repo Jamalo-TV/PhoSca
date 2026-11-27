@@ -779,40 +779,60 @@ async def test_album_page_mark_is_bound_to_the_reviewed_crop_and_source(client, 
     assert await download_codes() == [404, 404, 404]
 
 
-@pytest.mark.parametrize("padding_only", [False, True])
-async def test_manual_add_can_explain_a_protected_cut_without_changing_the_page(client, monkeypatch, padding_only):
+@pytest.mark.parametrize("operation", ["add", "edit"])
+@pytest.mark.parametrize(("y1", "y2", "padding_only"), [(235, 400, False), (260, 400, True), (490, 570, True)])
+async def test_manual_draft_can_explain_a_protected_cut_without_changing_the_page(
+    client, monkeypatch, operation, y1, y2, padding_only,
+):
     from app.config import get_settings
     from app.database import get_session_factory
-    from app.models import Page
+    from app.models import AuditLog, ExtractedPhoto, Page
+    from sqlalchemy import select
 
     monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
     monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "true")
     get_settings.cache_clear()
     width, height = 800, 600
-    album_id, page_id, _ = await _seed_review_data(np.full((height, width, 3), 150, np.uint8))
-    y1 = 260 if padding_only else 235
+    album_id, page_id, photo_id = await _seed_review_data(np.full((height, width, 3), 150, np.uint8))
     region = {"source": "opencv_haarcascade_frontalface_default", "type": "face", "margin_ratio": .18,
-              "box": {"x1": 280, "y1": y1, "x2": 400, "y2": 400}}
+              "box": {"x1": 280, "y1": y1, "x2": 400, "y2": y2}}
     page_metadata = {"photo_count_revision": str(uuid4()), "steps": {"protected_regions": {"regions": [region]}}}
     async with get_session_factory()() as session:
         page = await session.get(Page, page_id)
         page.processing_metadata = page_metadata
+        if operation == "edit":
+            # Exercise a newly encountered mark. Removing content from a previous crop has a separate error.
+            photo = await session.get(ExtractedPhoto, photo_id)
+            previous = [{"x": x, "y": y} for x, y in ((.66, .2), (.82, .2), (.82, .9), (.66, .9))]
+            photo.bounding_box = {"x1": .66, "y1": .2, "x2": .82, "y2": .9}
+            photo.segmentation_mask = {**photo.segmentation_mask, "polygon": previous, "warp_quad": previous}
         await session.commit()
 
-    payload = {"request_id": str(uuid4()), "warp_quad": [
+    quad = [
         {"x": x / (width - 1), "y": y / (height - 1)} for x, y in ((100, 250), (700, 250), (700, 480), (100, 480))
-    ]}
-    url = f"/api/v1/pages/{page_id}/manual-photos"
-    legacy = await client.post(url, json=payload)
+    ]
+    if operation == "edit":
+        send, url = client.patch, f"/api/v1/photos/{photo_id}/bounding-box"
+        payload = {"bounding_box": {"x1": quad[0]["x"], "y1": quad[0]["y"], "x2": quad[2]["x"], "y2": quad[2]["y"]},
+                   "segmentation_mask": {"source": "manual_quad", "polygon": quad, "warp_quad": quad}}
+    else:
+        send, url = client.post, f"/api/v1/pages/{page_id}/manual-photos"
+        payload = {"request_id": str(uuid4()), "warp_quad": quad}
+    photos_url = f"/api/v1/albums/{album_id}/photos"
+    before = (await client.get(photos_url)).json()
+    assert len(before) == 1
+
+    legacy = await send(url, json=payload)
     assert (legacy.status_code, legacy.json()["detail"]) == (422, "protected_region_cut")
-    detailed = await client.post(url, json=payload, params={"explain_protected_cut": "true"})
+    detailed = await send(url, json=payload, params={"explain_protected_cut": "true"})
     assert detailed.status_code == 422
     assert detailed.json()["detail"] == {"code": "protected_region_cut", "regions": [{
-        "x1": 280 / 799, "y1": y1 / 599, "x2": 400 / 799, "y2": 400 / 599, "padding_only": padding_only,
+        "x1": 280 / 799, "y1": y1 / 599, "x2": 400 / 799, "y2": y2 / 599, "padding_only": padding_only,
     }]}
-    assert len((await client.get(f"/api/v1/albums/{album_id}/photos")).json()) == 1
+    assert (await client.get(photos_url)).json() == before
     async with get_session_factory()() as session:
         assert (await session.get(Page, page_id)).processing_metadata == page_metadata
+        assert await session.scalar(select(AuditLog.id).where(AuditLog.entity_id == photo_id)) is None
 
 
 async def test_manual_print_margin_review_keeps_core_and_binds_confirmation(client, monkeypatch):

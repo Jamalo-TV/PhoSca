@@ -14,6 +14,7 @@ test("the regular geometry PATCH keeps both album mark offer formats compatible"
     { x: box.x2, y: box.y2 }, { x: box.x1, y: box.y2 },
   ] };
   const ordinary = { bounding_box: box, segmentation_mask: mask };
+  const path = "/api/v1/photos/photo/bounding-box?explain_protected_cut=true";
 
   await patchBoundingBox("photo", box, mask);
   await patchBoundingBox("photo", box, mask, true, "legacy-offer");
@@ -22,13 +23,13 @@ test("the regular geometry PATCH keeps both album mark offer formats compatible"
   await patchBoundingBox("photo", box, mask, false, null, null, true);
 
   assert.deepEqual(requests, [
-    { path: "/api/v1/photos/photo/bounding-box", method: "PATCH", body: ordinary },
-    { path: "/api/v1/photos/photo/bounding-box", method: "PATCH",
+    { path, method: "PATCH", body: ordinary },
+    { path, method: "PATCH",
       body: { ...ordinary, confirm_print_outline: true, album_page_mark_review_id: "legacy-offer" } },
-    { path: "/api/v1/photos/photo/bounding-box", method: "PATCH",
+    { path, method: "PATCH",
       body: { ...ordinary, confirm_print_outline: true, album_page_mark_review_id: "current-offer",
         album_page_mark_review_indices: [0, 1] } },
-    { path: "/api/v1/photos/photo/bounding-box", method: "PATCH", body: ordinary },
-    { path: "/api/v1/photos/photo/bounding-box", method: "PATCH", body: { ...ordinary, confirm_merged_print_as_one: true } },
+    { path, method: "PATCH", body: ordinary },
+    { path, method: "PATCH", body: { ...ordinary, confirm_merged_print_as_one: true } },
   ]);
 });

@@ -842,14 +842,19 @@ Anspruch hält die betroffenen Downloads erneut zurück. Ein ungeklärtes
 Papierformat und eine strittige Motivgrenze bleiben eigene Prüfungen.
 [Beispiel mit zwei Markierungen](data/evaluation/README.md#review-multiple-advisory-marks-at-a-measured-paper-edge)
 
-Blockiert ein geschützter Bereich das manuelle Ergänzen eines Abzugs,
-bleiben die gesetzten Ecken zur Korrektur sichtbar. PhoSca zeigt die
-betroffene Stelle rot im Original. Die Meldung unterscheidet einen
-Schnitt durch das markierte Rechteck von einem Konflikt mit dem
-zusätzlichen Sicherheitsabstand. Beide Fälle bleiben gesperrt. Prüfe
-die gesamte Stelle am Original. Ist eine sichere Kontur im Album nicht
-erkennbar, hilft eine separate Aufnahme mit sichtbarem Papierrand.
-[Beispiel der blockierten manuellen Erfassung](data/evaluation/README.md#show-the-original-protection-conflict-on-a-manual-addition)
+Blockiert ein geschützter Bereich das Ergänzen oder Bearbeiten eines
+Abzugs, bleiben die gesetzten Ecken als Entwurf sichtbar. PhoSca zeigt
+das erkannte Rechteck rot im Original. Die Meldung unterscheidet einen
+Schnitt durch das Rechteck von einem Konflikt mit dem zusätzlichen
+Sicherheitsabstand. Der Abstand kann auch dann in den Zuschnitt ragen,
+wenn das erkannte Rechteck vollständig auf einem Nachbarabzug liegt.
+Prüfe die gesamte markierte Stelle am Original. Zeigt die gemessene
+Kontur den echten Papierrand, hilft eine separate Aufnahme des Abzugs
+mit sichtbarem Rand. Beim Verschieben einer Ecke verschwindet die
+Markierung des alten Entwurfs. PhoSca prüft die neue Kontur beim
+nächsten Speichern.
+[Ergänzen eines Abzugs](data/evaluation/README.md#show-the-original-protection-conflict-on-a-manual-addition) ·
+[Bearbeiten eines Zuschnitts](data/evaluation/README.md#show-the-protection-conflict-on-an-existing-crop)
 
 Beim manuellen Ergänzen eines Abzugs prüft PhoSca einen einzelnen
 automatischen Gesicht- oder Kopftreffer, dessen erkannter Bereich

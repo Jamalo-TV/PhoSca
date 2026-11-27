@@ -3597,9 +3597,9 @@ existing detector and padding rule.
 
 The manual-add endpoint supports `explain_protected_cut=true`. It returns
 422 with `detail.code = protected_region_cut` and normalized raw source
-rectangles. `padding_only` describes whether all corners of the unpadded
-detector rectangle are inside the submitted outline. Other clients
-continue receiving a string error. On either editor the draft keeps its
+rectangles. `padding_only` describes a conflict confined to the safety
+margin. The raw rectangle can lie wholly inside or outside the submitted
+outline. Other clients continue receiving a string error. The draft keeps its
 four editable corners and shows the affected source in red. Moving a
 corner clears the old result. The message asks users to inspect the
 whole marked area, including the surrounding content. The rejection rolls
@@ -3627,6 +3627,51 @@ The classical-only Golden run adds a cutoff reason to two crops already
 in review. No additional crop enters review in the eight comparisons.
 Timings and the native source receipts are under
 `runs/crop-quality/u008-protected-manual-cut/`.
+
+#### Show the protection conflict on an existing crop
+
+On the original U040 development spread, the contour for the middle-left
+print is physically separate from the raw Haar rectangle at
+`(357, 547)–(654, 844)`. The rectangle spans parts of two neighbouring
+prints plus the album strip and includes several photographed heads.
+It sits at least 12.67 native pixels from the proposed contour. Its
+53.46-pixel margin reaches into 7,997 source pixel centres of the
+contour. The raw rectangle overlaps none of them.
+
+Pulling only the right edge inward by 42.27 native pixels reaches the
+point where this particular conflict clears. That would omit 12,026
+centres, or 15.85% of the measured outline. The original right line
+has 0.957–0.968 support and an independent refit within 0.09 native
+pixels. The shifted line has at most 0.245 support. Moving the edge
+to satisfy the detector would cut through the photograph. A separate
+capture with an exposed paper edge can resolve the context.
+
+The existing crop-edit endpoint accepts the same `explain_protected_cut`
+query flag as manual addition. The 422 body supplies the normalized raw
+boxes for the rejected draft. `padding_only` is true when the raw box is
+fully enclosed or has no positive-area intersection with the outline.
+A partially intersected raw box keeps its own warning. Removing protected
+content from a previously saved crop keeps the existing separate error.
+This explanation uses the same guard and validation profile as the save.
+
+The exact native working pixels were uploaded through the regular multipart
+path. Both browsers show the original rectangle and the padding message,
+keep the draft corners, and clear the stale highlight on a corner move.
+The refused PATCH keeps four active rows and three deferred outlines.
+The earlier untrimmed previews remain byte-identical. Both named exports
+and the cropped alias stay held for the edited print. Private receipts
+are under `runs/crop-quality/u040-protected-edit/`.
+
+A separate scratch upload confirms a manual geometry gap. Moving the
+right edge inward by 42.52 native pixels omits 12,097 source centres.
+With no measurements the saved edit holds both named modes for aspect
+uncertainty. With deliberately hypothetical 93 × 100 mm entered, the
+same damaged edit makes `full_print` downloadable and holds
+`image_only` for boundary uncertainty. Reprocessing preserves those
+results. Geometry approval still refuses the item. The full-print
+download therefore needs a source-contour check before it can rely on
+manual dimensions. The API receipt and loss overlay are in the same
+private folder.
 
 #### Separate native crop ambiguity from missed detection
 
