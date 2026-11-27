@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  albumLeafSourceWindow, getAlbumLeafReviewGroups, getContrastCrossingTraces,
+  albumLeafSourceWindow, captureSplitSourceWindow, getAlbumLeafReviewGroups, getContrastCrossingTraces,
   competingPhotoRegionPaths, getCompetingPhotoOutline, getCompetingPhotoReviewOutlines,
   filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
   getFilmGridReviewSeams, getFilmNeighborEdgeIndex, getFragmentReviewOutlines, getMergedPrintPairs,
@@ -290,6 +290,26 @@ test("a shared capture corner shows only its measured sides while proposals are 
     { ...second, photo_id: "manual", confidence: null },
     { ...second, photo_id: "invalid", segmentation_mask: { capture_split_review_traces: traces.slice(0, 1) } },
   ]), []);
+});
+
+test("the original capture corner window keeps the full visible area and shows two physical sides", () => {
+  const joint = { x: 0.5276969075202942, y: 0.7033323645591736 };
+  const side = { x: 0, y: 0.7024451494216919 }, row = { x: 0.5266348719596863, y: 1 };
+  const traces = [[side, joint], [joint, row]];
+  const { view, lines } = captureSplitSourceWindow(traces, 2179, 3000);
+  assert.deepEqual(view, [0, 2035, 1222, 965]);
+  assert.deepEqual(lines[0][1], lines[1][0]);
+  assert.equal(lines[0][0][0], .5);
+  assert.equal(lines[1][1][1], 2999.5);
+  assert.deepEqual(captureSplitSourceWindow(traces.map(line => [...line].reverse()), 2179, 3000).view, view);
+
+  const opposite = traces.map(line => line.map(({ x, y }) => ({ x: 1 - x, y: 1 - y })));
+  assert.deepEqual(captureSplitSourceWindow(opposite, 2179, 3000).view, [957, 0, 1222, 965]);
+  assert.equal(captureSplitSourceWindow([[side, joint], [joint, { x: 0, y: .8 }]], 2179, 3000), null);
+  assert.equal(captureSplitSourceWindow([[side, joint], [joint, { x: 0, y: 1 }]], 2179, 3000), null);
+  assert.equal(captureSplitSourceWindow([[side, joint], [side, joint]], 2179, 3000), null);
+  assert.equal(captureSplitSourceWindow([[side, joint], [{ x: .52, y: .70 }, row]], 2179, 3000), null);
+  assert.equal(captureSplitSourceWindow(traces, 0, 3000), null);
 });
 
 test("a paper join links exactly two active automatic proposals with the same native traces", () => {

@@ -53,7 +53,8 @@ import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
 import EdgeMeasurement from "./EdgeMeasurement.jsx";
 import {
-  actionableCountGroups, adjacentPrintHint, AlbumPageMarkReview, captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, cropProtectionErrors,
+  actionableCountGroups, adjacentPrintHint, AlbumPageMarkReview, captureSplitReviewHint, CaptureSplitSourceReview,
+  clippedOverlapHint, clippedOverlapReason, cropProtectionErrors,
   CropOrientationField, CropVariants, cropModeLabels, getCropModes,
   albumLeafChildStyle, albumLeafTraceStyle,
   crossingFallbackTraceStyles, crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
@@ -2313,6 +2314,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {countOutlines.length > 0 && <p className="crop-editor-hint" id="fragment-count-review-hint">{fragmentCountHint}</p>}
       {mergedPairs.length > 0 && <p className="crop-editor-hint" id="merged-print-pair-hint">{mergedPrintPairHint}</p>}
       {captureSplitGroups.length > 0 && <p className="crop-editor-hint" id="capture-split-count-hint">{captureSplitReviewHint}</p>}
+      <CaptureSplitSourceReview groups={captureSplitGroups} photos={photos}
+        sourceUrl={pageImage?.pageId === pageId ? pageImage.image.src : null} />
       {filmGridGroups.length > 0 && <p className="crop-editor-hint" id="film-grid-count-hint">
         {filmGridCountHint}{filmGridGroups.some(({ rim }) => rim) && ` ${filmGridRimHint}`}
       </p>}

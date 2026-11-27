@@ -256,6 +256,20 @@ bleiben in Prüfung, bis die physische Zuordnung und die vollständige
 Aufnahme geklärt sind.
 [Prüfung am Aufnahmerand](data/evaluation/README.md#review-a-shared-capture-corner-and-preserve-separate-prints)
 
+Mit **Sichtbaren Bereich im Original vergleichen** öffnest du in der
+Desktop- und Mobilprüfung einen vergrösserten Ausschnitt der Aufnahme.
+Das Fenster erscheint, wenn zwei gemessene Linien an einer sichtbaren
+Ecke zusammentreffen, an unterschiedlichen Bildrändern enden und
+mindestens zwei dazu verknüpfte Vorschläge aktiv sind. Es zeigt den
+Bereich zwischen den gemessenen Linien und den Aufnahmerändern samt
+etwas Umgebung. Türkis markiert die zwei gemessenen Linien. Mit
+**Vorschläge einblenden** siehst du zusätzlich die Konturen der
+verknüpften Vorschläge in Violett und die übrigen aktiven Konturen in
+Orange. So kannst du eine Überlappung getrennt von der gemessenen
+Papierkante beurteilen. Der Vergleich verwendet die unverzerrte
+Originalansicht und dient der Prüfung der Anzahl.
+[Messung des Originalvergleichs](data/evaluation/README.md#compare-the-visible-capture-corner-in-the-original)
+
 Bei einem strittigen Mehrbildabzug verknüpft PhoSca den gemessenen
 Aussenumriss mit dem vorhandenen Gesamtvorschlag und markiert die
 Schnittlinien der Teilvorschläge. **Aussenumriss prüfen** lädt die

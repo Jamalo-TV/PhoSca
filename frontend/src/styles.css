@@ -704,6 +704,71 @@ select {
   max-width: 520px;
 }
 
+.capture-split-source-review {
+  width: 100%;
+  max-width: 560px;
+  color: #173a33;
+}
+
+.capture-split-source-review summary {
+  cursor: pointer;
+  width: fit-content;
+  font-weight: 600;
+}
+
+.capture-split-source-review label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.capture-split-source-review input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.capture-split-source-detail {
+  margin: 8px 0;
+  overflow: hidden;
+  border: 1px solid #8baca4;
+  border-radius: 8px;
+}
+
+.capture-split-source-detail svg {
+  display: block;
+  width: 100%;
+  max-height: min(55vh, 440px);
+  background: #162422;
+}
+
+.capture-split-source-detail figcaption {
+  padding: 6px 10px;
+  font-size: .875rem;
+  background: #f4f9f7;
+  color: #173a33;
+}
+
+.capture-split-source-sides line {
+  stroke: #99f6e4;
+  stroke-width: 2.5;
+  stroke-dasharray: 6 4;
+  filter: drop-shadow(0 1px 1px #134e4a);
+}
+
+.capture-split-source-proposals polygon {
+  fill: none;
+  stroke-width: 2;
+}
+
+.capture-split-source-proposals .linked { stroke: #c4b5fd; }
+.capture-split-source-proposals .other { stroke: #fb923c; }
+.capture-split-source-review span.linked { color: #6d28d9; font-weight: 600; }
+.capture-split-source-review span.other { color: #9a3412; font-weight: 600; }
+.mobile-shell .capture-split-source-review summary { min-height: 44px; padding-block: 12px; }
+.mobile-shell .capture-split-source-review label { min-height: 44px; }
+
 .dark-backing-evidence, .source-region-evidence {
   flex-basis: 100%;
   width: 100%;

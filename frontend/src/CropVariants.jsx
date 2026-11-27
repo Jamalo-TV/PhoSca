@@ -1,7 +1,8 @@
 import { Download } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import {
-  albumLeafSourceWindow, competingPhotoRegionPaths, competingPhotoRegionStyles, filmSourceWindow,
+  albumLeafSourceWindow, captureSplitSourceWindow, competingPhotoRegionPaths, competingPhotoRegionStyles, filmSourceWindow,
+  sourcePixelCenter,
   getFilmNeighborEdgeIndex, getPaperGridReview, measuredRibbedPrintOutlineSource,
 } from "./cropReviewOutlines.js";
 
@@ -383,7 +384,7 @@ export function CompetingPhotoOutlineOverlay({ outlines }) {
   </g>;
 }
 
-function CountGroupSourceDetails({ sourceUrl, group }) {
+function useSourceImageSize(sourceUrl) {
   const [source, setSource] = useState(null);
   useEffect(() => {
     if (!sourceUrl) return;
@@ -392,7 +393,12 @@ function CountGroupSourceDetails({ sourceUrl, group }) {
     image.src = sourceUrl;
     return () => { image.onload = null; };
   }, [sourceUrl]);
-  if (source?.url !== sourceUrl) return null;
+  return source?.url === sourceUrl ? source : null;
+}
+
+function CountGroupSourceDetails({ sourceUrl, group }) {
+  const source = useSourceImageSize(sourceUrl);
+  if (!source) return null;
   const { width, height } = source;
   const albumLeaf = group.kind === "album_leaf";
   const details = (albumLeaf ? [
@@ -417,6 +423,53 @@ function CountGroupSourceDetails({ sourceUrl, group }) {
       <figcaption>{label}</figcaption>
     </figure>)}
   </section>;
+}
+
+export function CaptureSplitSourceReview({ groups, photos, sourceUrl }) {
+  const source = useSourceImageSize(groups.length ? sourceUrl : null);
+  if (!source) return null;
+  return groups.map((group) => {
+    const detail = captureSplitSourceWindow(group.traces, source.width, source.height);
+    return detail && <CaptureSplitSourceDetail key={`${sourceUrl}:${group.key}:${[...group.photoIds].sort().join(",")}`}
+      source={source} group={group} photos={photos} detail={detail} />;
+  });
+}
+
+function CaptureSplitSourceDetail({ source, group, photos, detail }) {
+  const windowClip = useId();
+  const [showProposals, setShowProposals] = useState(false);
+  const { url, width, height } = source;
+  const { view, lines } = detail;
+  const [left, top, windowWidth, windowHeight] = view;
+  return <details className="capture-split-source-review">
+    <summary>Sichtbaren Bereich im Original vergleichen</summary>
+    <figure className="capture-split-source-detail">
+      <svg viewBox={view.join(" ")} role="img" aria-label="Sichtbarer Bereich am Aufnahmerand">
+        <clipPath id={windowClip}><rect x={left} y={top} width={windowWidth} height={windowHeight} /></clipPath>
+        <g clipPath={`url(#${windowClip})`}>
+          <image href={url} width={width} height={height} />
+          {showProposals && <g aria-hidden="true" className="capture-split-source-proposals">
+            {photos.map(photo => {
+              const id = photo.photo_id ?? photo.id;
+              const [outline] = getSourceEdgeTraces([photo.segmentation_mask?.polygon]);
+              if (!id || photo.reviewed_non_print || !outline || outline.length < 3) return null;
+              return <polygon key={id} className={group.photoIds.has(id) ? "linked" : "other"}
+                points={outline.map(point => sourcePixelCenter(point, width, height).join(",")).join(" ")}
+                vectorEffect="non-scaling-stroke" />;
+            })}
+          </g>}
+          <g aria-hidden="true" className="capture-split-source-sides">
+            {lines.map(([[x1, y1], [x2, y2]]) => <line key={`${x1},${y1},${x2},${y2}`}
+              x1={x1} y1={y1} x2={x2} y2={y2} vectorEffect="non-scaling-stroke" />)}
+          </g>
+        </g>
+      </svg>
+      <figcaption>Türkis gestrichelt markiert gemessene Kanten am möglichen Papierrand. Prüfe auch den Bereich zwischen den Vorschlägen.</figcaption>
+    </figure>
+    <label><input type="checkbox" checked={showProposals} onChange={event => setShowProposals(event.target.checked)} />
+      Vorschläge einblenden</label>
+    {showProposals && <p><span className="linked">Violett</span> markiert die verknüpften Vorschläge. <span className="other">Orange</span> markiert weitere aktive Vorschläge.</p>}
+  </details>;
 }
 
 export function CountGroupReview({ groups, selected, busy, sourceUrl, onSelect, onConfirm }) {

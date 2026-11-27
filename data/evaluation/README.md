@@ -1900,6 +1900,48 @@ turns without interpolation. Upload the resulting PNG with the same
 registered mixed detector and pass both the count and geometry review
 queues. The rotated raster stays local.
 
+#### Compare the visible capture corner in the original
+
+The count review on desktop and mobile now offers a bounded view of the
+original source around an ambiguous capture corner. Two observed traces
+must share an interior endpoint and each run to a different frame axis.
+The UI maps the normalised coordinates back to native pixel centres and
+adds a margin of 8% of the shorter span, with a minimum of eight native
+pixels. It clips this rectangle to the source image. The two measured
+guides stay open at the frame. An optional layer shows the current
+linked proposal contours in violet and other active contours in orange.
+The underlying image is the same authenticated original used by the
+main count editor.
+
+On the 180° NerdScan scan (`d01616fb…`, 2179 × 3000) the view starts at
+`(0, 2035)` and spans 1222 × 965 native pixels. This includes the visible
+fitted footprint and the adjacent context. An unrelated active contour
+intersects 15.65% of that footprint. The comparison therefore uses the
+original as captured, including the disputed pixels. It leaves the
+individual proposals, count and stored crop geometry as they are. It
+creates no rectified variant. Both crop modes and the legacy trimmed
+download remain held for the linked proposals.
+
+The native-window regression covers reversed trace direction, the
+opposite capture corner and invalid or disconnected traces. The separate
+native replay also checks all four rotations and active-set changes.
+After the reviewer explicitly excludes one linked proposal, the view
+can still show the remaining two. With only one active member the shared
+comparison closes. This is a review aid for an unresolved detection. The
+180° development replay remains at two matched prints out of three
+with four extra proposals.
+
+The exact multipart upload was replayed through desktop and mobile
+Chromium. Each view loaded the same pinned original and traced two open
+sides, with three violet and three orange proposal outlines available.
+Opening the view and toggling the layer made no write requests and
+preserved all six masks, both modes' geometry and protection records and
+the review JPEG digests. Both named downloads and the legacy trimmed
+alias returned 404. A separate explicit rejection reduced the count from
+six to five. The five surviving rows kept their existing render records.
+The local browser and API receipts and screenshots are under
+`runs/crop-quality/capture-corner-original-review/`.
+
 ## Four neighboring loose prints on a flatbed
 
 The published 600 × 851 JPEG shows four separate prints that the author
@@ -2115,6 +2157,28 @@ landmark and aspect accuracy. Decode through both crop branches and JPEG
 writes took a median of 4.59 s and p95 of 15.34 s per input on the single
 CPU-thread development run. Local reports are in
 `runs/crop-quality/real-development-refresh/`.
+
+The paired `8241e4c` rerun reproduces all eight inputs' ordered final
+mask geometry, instance measurements, both modes' measurements and
+separately scored review previews from `4bbf7d5`. The seven-view result
+is still 24/24 with two extra proposals. The separate JPEG75 case still
+has no match and five active nonmatches. Across the eight inputs, 30
+of 31 whole-print rows and all 31 motif rows are held. One whole print
+is locally ready. None has a verified automatic release. The eight
+decode-to-JPEG samples take 9.98 s median and 30.82 s p95 under concurrent
+host load, including possible model initialisation on the first view.
+
+On JPEG75, the raw whole-page model mask reaches 0.8224 IoU against
+the drafted paper footprint. Three quarter turns of the exact decoded
+source reach 0.7900–0.7906 after remapping. Twelve source-window probes
+use margins around the existing measured paper perimeter or around its
+perspective-normalised view. The best recovers 0.4688 IoU against that
+measured perimeter. The JPEG55 and lossless copies show the same local
+mask failure. The model often selects a strip of image panels. The
+existing source comparison is still available and includes the
+handwritten heading. These probes do not support enabling a rotated or
+closer inference retry. Receipts are under
+`runs/crop-quality/real-development-refresh/8241e4c/`.
 
 #### First development replay of a newly supplied spiral album
 

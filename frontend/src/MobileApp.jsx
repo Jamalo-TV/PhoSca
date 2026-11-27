@@ -10,7 +10,7 @@ import {
 } from "./cropReviewApproval.js";
 import {
   actionableCountGroups, adjacentPrintHint, albumLeafChildStyle, albumLeafTraceStyle, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
-  captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, cropProtectionErrors, CropVariants,
+  captureSplitReviewHint, CaptureSplitSourceReview, clippedOverlapHint, clippedOverlapReason, CropOrientationField, cropProtectionErrors, CropVariants,
   CompetingPhotoOutlineLegend, CompetingPhotoOutlineOverlay,
   cropModeLabels, crossingFallbackTraceStyles, crossingPrintHint,
   countGroupReviewError, CountGroupReview, crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridRimHint,
@@ -724,6 +724,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     {mergedPairs.length > 0 && <p className="quad-hint" id="mobile-merged-print-pair-hint">{mergedPrintPairHint}</p>}
     {competingPhotoOutlines.length > 0 && <CompetingPhotoOutlineLegend id="mobile-competing-photo-outline-hint" mobile />}
     {captureSplitGroups.length > 0 && <p className="quad-hint" id="mobile-capture-split-count-hint">{captureSplitReviewHint}</p>}
+    {!deferredDraft && <CaptureSplitSourceReview groups={captureSplitGroups} photos={detections} sourceUrl={item.preview_url} />}
     {filmGridGroups.length > 0 && <p className="quad-hint" id="mobile-film-grid-count-hint">
       {filmGridCountHint}{filmGridGroups.some(({ rim }) => rim) && ` ${filmGridRimHint}`}
     </p>}

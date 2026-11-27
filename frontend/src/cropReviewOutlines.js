@@ -18,6 +18,10 @@ function sourceReviewLine(line) {
   return Array.isArray(line) && line.length === 2 && line.every(isNormalizedPoint) ? line : null;
 }
 
+export function sourcePixelCenter({ x, y }, width, height) {
+  return [x * (width - 1) + .5, y * (height - 1) + .5];
+}
+
 export const filmNeighborEdgeColor = "#f59e0b";
 
 export function getFilmNeighborEdgeIndex(fullPrint) {
@@ -32,7 +36,7 @@ export function filmSourceWindow(line, width, height) {
   if (!sourceReviewLine(line) || !Number.isFinite(width) || !Number.isFinite(height) || width < 2 || height < 2) return null;
   const boxWidth = Math.min(width, Math.max(48, .13 * Math.min(width, height)));
   const boxHeight = Math.min(height, boxWidth * 2 / 3);
-  const [a, b] = line.map(({ x, y }) => [x * (width - 1) + .5, y * (height - 1) + .5]);
+  const [a, b] = line.map(point => sourcePixelCenter(point, width, height));
   const x = (a[0] + b[0]) / 2, y = (a[1] + b[1]) / 2;
   const delta = [b[0] - a[0], b[1] - a[1]];
   const length = Math.hypot(...delta);
@@ -56,6 +60,29 @@ export function albumLeafSourceWindow(traces, width, height) {
   const boxHeight = Math.min(height, boxWidth * 2 / 3);
   return { view: [Math.min(width - boxWidth, Math.max(0, (left + right - boxWidth) / 2)),
     Math.min(height - boxHeight, Math.max(0, (top + bottom - boxHeight) / 2)), boxWidth, boxHeight], ticks };
+}
+
+export function captureSplitSourceWindow(traces, width, height) {
+  if (!Array.isArray(traces) || traces.length !== 2 || !traces.every(sourceReviewLine)
+      || ![width, height].every(size => Number.isInteger(size) && size > 1)) return null;
+  const [first, second] = traces;
+  const sharedIndex = first.findIndex(point => second.some(other => point.x === other.x && point.y === other.y));
+  if (sharedIndex < 0) return null;
+  const joint = first[sharedIndex];
+  const ends = [first[1 - sharedIndex], second.find(point => point.x !== joint.x || point.y !== joint.y)];
+  const onFrame = value => value === 0 || value === 1;
+  if (onFrame(joint.x) || onFrame(joint.y) || !ends[1]
+      || ends.some(({ x, y }) => onFrame(x) === onFrame(y)) || onFrame(ends[0].x) === onFrame(ends[1].x)) return null;
+  const lines = traces.map(line => line.map(point => sourcePixelCenter(point, width, height)));
+  const points = lines.flat();
+  const xs = points.map(([x]) => x), ys = points.map(([, y]) => y);
+  const left = Math.min(...xs), right = Math.max(...xs), top = Math.min(...ys), bottom = Math.max(...ys);
+  const span = Math.min(right - left, bottom - top);
+  if (span <= 1) return null;
+  const padding = Math.max(8, .08 * span);
+  const x1 = Math.max(0, Math.floor(left - padding)), y1 = Math.max(0, Math.floor(top - padding));
+  const x2 = Math.min(width, Math.ceil(right + padding)), y2 = Math.min(height, Math.ceil(bottom + padding));
+  return { view: [x1, y1, x2 - x1, y2 - y1], lines };
 }
 
 function cropModes(photo) {
