@@ -38,6 +38,7 @@ from app.pipeline.geometry import (
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, save_jpeg
 from app.pipeline.merged_print_review import MERGED_PRINT_PAIR, MERGED_PRINT_PAIR_REVIEW
+from app.pipeline.manual_paper_extent import MANUAL_PAPER_EXTENT_SOURCE, measure_manual_paper_extent
 from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_SOURCE, suggest_inward_corner_outline
 from app.pipeline.local_print_edge_review import suggest_local_print_edge_preview
 from app.pipeline.motif_boundary import (
@@ -2128,6 +2129,17 @@ def correct_photo_crop(
             mode["suggested_edge_source"] = ROUNDED_CORNER_SOURCE
             mode["suggested_edge_traces"] = [_vertices_on_page(trace, width, height) for trace in rounded.traces]
             mode[ROUNDED_CORNER_WEDGES] = corner_bounds
+            try:
+                span = measure_manual_paper_extent(page_image, src_points, [*neighbor_polygons, *protected_boxes])
+            except cv2.error:
+                span = None
+            if span is not None:
+                mode["source_strip_review"] = {
+                    "source": MANUAL_PAPER_EXTENT_SOURCE,
+                    "source_size": {"width": width, "height": height},
+                    "source_trace": _vertices_on_page(span.trace, width, height),
+                    "evidence_scope": _vertices_on_page(span.evidence_scope, width, height),
+                }
             try:
                 preview, evidence = _render_outline_preview(page_image, rounded.outline, np.asarray(mode["page_to_output"]))
                 mode["outline_preview"] = {**evidence, "source": ROUNDED_CORNER_SOURCE}

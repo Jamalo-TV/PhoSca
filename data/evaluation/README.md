@@ -2492,11 +2492,13 @@ backing pixels within the original marked rectangle and 70 still
 present in the comparison. The number of output pixels sampling those
 confirmed backing pixels falls from 166 to 115. The comparison loses
 no source pixel within the rectangle that the mask identifies as
-visible paper. At least 265 other visible source pixels lie beyond the
-marked rectangle in this development measurement. The lower right
-corner, the rest of the outer contour and the paper aspect remain
-unresolved. These numbers are optical development measurements.
-Physical verification of the reference outline remains pending.
+visible paper. The preliminary chroma mask flags 265 possible paper
+pixels beyond the marked rectangle. Their ownership remains uncertain
+under the [source-relative side check](#inspect-a-local-edge-section-outside-a-manual-crop).
+The lower right corner, the rest of the outer contour and the paper
+aspect remain unresolved. These numbers are optical development
+measurements. Physical verification of the reference outline remains
+pending.
 
 The native helper agrees on the original and two of eight JPEG
 controls at fixed geometry. A flat rounded design printed on a square
@@ -2510,6 +2512,63 @@ The eight benchmark comparisons match the preceding detection, crop
 metrics and availability outcomes. Native upload, revision, continued
 review and download status are recorded under
 `runs/crop-quality/rounded-corner-review/`.
+
+#### Inspect a local edge section outside a manual crop
+
+Manual paper extent review revision 1 runs with the supported,
+held comparison for a manually added print. For each side it
+samples 144 stations over 13–87% of the side, along seven native
+pixels either way in 0.25-pixel steps. It fits directed transitions
+in the 8-bit CIELAB b-minus-a channel at levels 4, 6 and 8. Each
+level needs a unique transition at 75% or more of the stations and
+a 90th-percentile fit residual of at most one native pixel.
+
+The second check compares the exterior chroma at offsets −7 to
+−4.5 with the interior chroma at +3.5 to +6.5. It projects the
+sample at −0.5 onto the local direction between those colours.
+Each selected eighth of the sampled side needs 85% agreement on
+the directed transitions and 65% agreement after the relative
+chroma check. The view offers one contiguous interval on one side
+with clear source claim and protection scopes. The line marks the
+sample positions at −0.5. It represents an interval to inspect.
+The recorded quadrilateral, baseline JPEG, rounded-corner PNG and
+both crop-mode decisions are preserved.
+
+The native U008 replay shows a 24.8-pixel interval near the upper
+left, from approximately (95.11, 397.56) to (119.90, 396.46).
+The independent sampling check found no sample with a relative
+photo projection of at least 0.75 one native pixel beyond the
+top, right or left side. The bottom has a localized mixed signal.
+The backing rib remains visible there and a separate unsigned
+line fit agrees with the current side within 0.20 pixels. These
+measurements leave the ownership of the previously flagged 265
+centres and the complete paper contour unresolved.
+
+An exact synthetic boundary triggers no trace. Separate one- and
+three-pixel insets on each of the four sides trigger a trace over
+the same material. A claim intersecting
+the measurement band vetoes it even when the two trace endpoints
+are outside the claim. A borrowed rib, three shadow strengths and
+the separate contact-sheet JPEG55 development image all abstain.
+The original U008 fixture offers the interval and its eight
+fixed-geometry JPEG re-encodes abstain. A facsimile containing the
+same local source pixels can preserve the signal. The helper took
+14.5 ms median and 34.1 ms p95 over 20 warm trials.
+
+The native API replay saves the same manual crop and serves the
+same baseline JPEG. A late edit to an existing neighbor invalidates
+the previously confirmed protection corridor with the same count
+revision. The current correction loses its validation receipt.
+The corner PNG and edge trace then disappear from the detail,
+variant and geometry review responses. The direct PNG, both named
+downloads and the cropped alias return 404. The baseline review
+JPEG remains available. In a separate native replay an upper claim
+intersects the sampled band outside the marked interval. That edit
+retires the interval and preserves the independent corner preview and
+protection confirmation. Reprocessing reproduces that result. Eight
+benchmark comparisons keep the preceding detection, crop scores and
+availability outcomes. The receipts and reports are under
+`runs/crop-quality/manual-paper-edge-review/`.
 
 #### Review fabric along the capture frame
 

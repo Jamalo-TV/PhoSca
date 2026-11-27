@@ -719,6 +719,17 @@ einer veralteten Schutzbestätigung zieht PhoSca die betroffene
 Vergleichsvorschau zurück. Prüfe auch alle geraden Seiten am Original.
 [Beispiel mit drei gemessenen Ecken](data/evaluation/README.md#compare-supported-corner-shapes-on-a-manually-added-print)
 
+Bei einem Abzug mit gemessener Eckform kann PhoSca zusätzlich einen
+kurzen Abschnitt knapp ausserhalb einer geraden Seite markieren.
+Es vergleicht dort den Farbwechsel mit dem sichtbaren Albumkarton und
+der Farbe weiter innen auf dem Foto. Die offene Linie kennzeichnet den
+Abschnitt, den du am Original prüfen kannst. Eine vergrösserte Ansicht
+zeigt den markierten Bereich mit seiner Umgebung. Die vier Ecken, die
+Eckenvorschau und beide Export-Sperren gelten weiter. Ändert sich ein
+Nachbarabzug so, dass die Messung oder eine Schutzbestätigung ihre
+Grundlage verliert, zieht PhoSca die betroffenen Hinweise zurück.
+[Beispiel an der Oberkante von U008](data/evaluation/README.md#inspect-a-local-edge-section-outside-a-manual-crop)
+
 Bei einem zur Prüfung zurückgehaltenen Abzug kann PhoSca einen
 weiteren sichtbaren Bildstreifen ausserhalb des bisherigen Umrisses
 türkis markieren. Es sucht von einer gut belegten Seite aus, prüft

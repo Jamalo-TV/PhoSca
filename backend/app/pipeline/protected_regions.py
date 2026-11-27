@@ -50,6 +50,12 @@ def album_mark_matches_quad(review: dict, quad: list[dict] | None) -> bool:
     return isinstance(quad, list) and len(quad) == 4 and review.get("warp_quad") == quad
 
 
+def album_mark_correction_matches(review: dict, mask: dict, correction: dict) -> bool:
+    quad = mask.get("warp_quad") or mask.get("polygon")
+    return bool(review.get("id") and album_mark_matches_quad(review, quad)
+                and (correction.get("protected_regions") or {}).get("reviewed_album_mark_id") == review["id"])
+
+
 def album_mark_source_matches(review: dict, page_sha256: str, page_metadata: dict) -> bool:
     protection = ((page_metadata or {}).get("steps") or {}).get("protected_regions") or {}
     regions = protection.get("regions")

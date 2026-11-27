@@ -53,7 +53,10 @@ from app.pipeline.perspective import (
 from app.pipeline.presets import available_presets
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
-from app.pipeline.protected_regions import OFF_PRINT_ADVISORY, ProtectedRegionRemoval, album_mark_matches_quad, album_mark_source_matches
+from app.pipeline.protected_regions import (
+    OFF_PRINT_ADVISORY, ProtectedRegionRemoval, album_mark_correction_matches, album_mark_matches_quad,
+    album_mark_source_matches,
+)
 from app.pipeline.rounded_corner_review import ROUNDED_CORNER_SOURCE, ROUNDED_CORNER_WEDGES
 from app.pipeline.tile_print_review import TILED_PRINT_PROPOSAL, tiled_outline_conflicts
 from app.pipeline.variants import (
@@ -76,6 +79,7 @@ from app.services.pipeline import (
     perspective_correction_task_logic,
     photo_views_for_current_album_marks,
     resolve_nested_edge_parent_reviews,
+    retire_album_mark_previews,
     retire_rounded_corner_preview,
     retire_source_fragment_proposals,
 )
@@ -316,8 +320,9 @@ async def _review_overlapping_crops(
         full_mode = modes.get("full_print") or {}
         preview = full_mode.get("outline_preview") or {}
         preview_source = preview.get("source")
-        strip = (full_mode.get("source_strip_review") or {}).get("source_outline")
-        if strip and review_outline_intersects_claim(strip, mask, width, height):
+        strip = full_mode.get("source_strip_review") or {}
+        strip_scope = strip.get("evidence_scope") or strip.get("source_outline")
+        if strip_scope and review_outline_intersects_claim(strip_scope, mask, width, height):
             full_mode.pop("source_strip_review", None)
             neighbor.enhancement_applied = metadata
         extent_traces = full_mode.get(PARTIAL_PRINT_EXTENT_TRACES)
@@ -339,6 +344,7 @@ async def _review_overlapping_crops(
                 reason = "album_page_mark_review_stale"
                 route_ready_crop_modes_to_review(modes, [reason])
                 (correction.get("protected_regions") or {}).pop("reviewed_album_mark_id", None)
+                retire_album_mark_previews(correction)
                 metadata["review_reasons"] = list(dict.fromkeys([reason, *(metadata.get("review_reasons") or [])]))
                 neighbor.status = PhotoStatus.review_needed
             neighbor.enhancement_applied = metadata
@@ -555,11 +561,13 @@ async def get_photo_image(
     selected_variant = variant or released_variant_from_photo(photo)
     metadata = photo.enhancement_applied or {}
     mark = (metadata.get("review_provenance") or {}).get("reviewed_album_mark")
-    mode = (((metadata.get("correction") or {}).get("crop_modes") or {}).get("full_print") or {})
+    correction = metadata.get("correction") or {}
+    mode = (correction.get("crop_modes") or {}).get("full_print") or {}
     rounded_preview = selected_variant == FULL_PRINT_REVIEW_PREVIEW and mode.get("suggested_edge_source") == ROUNDED_CORNER_SOURCE
     if mark and (selected_variant in {"full_print", "image_only", "source_corrected_trimmed"} or rounded_preview):
         page = await session.get(Page, photo.page_id)
         if (page is None or not get_settings().enable_protected_region_guard
+                or not album_mark_correction_matches(mark, photo.segmentation_mask or {}, correction)
                 or not album_mark_source_matches(mark, page.file_hash_sha256, page.processing_metadata)):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
     selected_path = variant_path_from_photo(photo, selected_variant)

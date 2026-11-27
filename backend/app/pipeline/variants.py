@@ -17,7 +17,7 @@ from app.pipeline.image_ops import calculate_blur_score
 from app.pipeline.manual_paper_boundary import (
     manual_paper_download_needs_review, manual_scalloped_outline, paper_claims_need_overlap_check,
 )
-from app.pipeline.protected_regions import album_mark_matches_quad
+from app.pipeline.protected_regions import album_mark_correction_matches
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
 from app.pipeline.quality_critic import evaluate_candidate
 from app.pipeline.release import select_released_variant
@@ -257,8 +257,7 @@ def variant_path_from_photo(photo: Any, variant: str) -> str | None:
         if not automatic:
             quad = mask.get("warp_quad") or mask.get("polygon")
             mark = (metadata.get("review_provenance") or {}).get("reviewed_album_mark")
-            if mark and (not album_mark_matches_quad(mark, quad)
-                         or (correction.get("protected_regions") or {}).get("reviewed_album_mark_id") != mark["id"]):
+            if mark and not album_mark_correction_matches(mark, mask, correction):
                 return None
             if manual_paper_download_needs_review(metadata, quad):
                 return None

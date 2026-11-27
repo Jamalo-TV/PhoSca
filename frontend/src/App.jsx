@@ -1646,7 +1646,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         context.beginPath();
         context.moveTo(first.x * canvas.width, first.y * canvas.height);
         rest.forEach(({ x, y }) => context.lineTo(x * canvas.width, y * canvas.height));
-        context.closePath();
+        if (!sourceStrip.edgeOnly) context.closePath();
         context.strokeStyle = sourceStripContrastColor;
         context.lineWidth = 4;
         context.setLineDash([]);

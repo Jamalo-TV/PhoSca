@@ -635,12 +635,14 @@ async def test_manual_crop_cannot_remove_a_whole_protected_source_region(client,
     assert [response.status_code for response in await exports()] == [200, 404]
 
 
-async def test_album_page_mark_is_bound_to_the_reviewed_crop_and_source(client, monkeypatch):
+async def test_album_page_mark_is_bound_to_the_reviewed_crop_and_source(client, monkeypatch, tmp_path):
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, Page
+    from app.pipeline.manual_paper_extent import MANUAL_PAPER_EXTENT_SOURCE
     from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
     from app.pipeline.protected_regions import protected_region_digest
+    from app.pipeline.rounded_corner_review import ROUNDED_CORNER_SOURCE
 
     monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
     monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "true")
@@ -713,6 +715,37 @@ async def test_album_page_mark_is_bound_to_the_reviewed_crop_and_source(client, 
     assert await download_codes() == [200, 200, 200]
     assert (await save(edited, review_id)).status_code == 409
     assert (await save(original)).status_code == 422
+    assert await download_codes() == [200, 200, 200]
+
+    preview = tmp_path / "held-corner.png"
+    assert cv2.imwrite(str(preview), np.zeros((12, 12, 4), np.uint8))
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        metadata = photo.enhancement_applied
+        correction = metadata["correction"]
+        modes = correction["crop_modes"]
+        full = {**modes["full_print"], "status": "review_needed", "suggested_edge_source": ROUNDED_CORNER_SOURCE,
+                "outline_preview": {"source": ROUNDED_CORNER_SOURCE},
+                "source_strip_review": {"source": MANUAL_PAPER_EXTENT_SOURCE}}
+        photo.enhancement_applied = {**metadata, "correction": {**correction, "full_print_preview_path": str(preview),
+                                                             "crop_modes": {**modes, "full_print": full}}}
+        await session.commit()
+
+    variant = {"variant": "full_print_preview"}
+    assert (await client.get(f"{url}/image", params=variant)).status_code == 200
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        metadata = photo.enhancement_applied
+        correction = metadata["correction"]
+        protection = {key: value for key, value in correction["protected_regions"].items()
+                      if key != "reviewed_album_mark_id"}
+        photo.enhancement_applied = {**metadata, "correction": {**correction, "protected_regions": protection}}
+        await session.commit()
+
+    assert (await client.get(f"{url}/image", params=variant)).status_code == 404
+    cropped = (await client.get(url)).json()["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+    assert "source_strip_review" not in cropped and "outline_preview" not in cropped
+    assert (await client.post(f"{url}/reprocess")).status_code == 200
     assert await download_codes() == [200, 200, 200]
 
     await write_protection([mark, trusted])

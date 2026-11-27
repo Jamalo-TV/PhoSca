@@ -60,6 +60,7 @@ from app.pipeline.exif import write_caption_exif
 from app.pipeline.fragmented_prints import SOURCE_FRAGMENT_PROPOSAL
 from app.pipeline.fusion_ownership import NESTED_EDGE_CONTOUR, NESTED_EDGE_CONTOUR_REVIEW, deferred_neighbor_masks
 from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels
+from app.pipeline.manual_paper_extent import MANUAL_PAPER_EXTENT_SOURCE
 from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, save_png, sha256_file
 from app.pipeline.manual_paper_boundary import (
     MANUAL_PAPER_BOUNDARY_REVISION, PAPER_GRID_OVERLAP_REVIEW, hold_overlapping_paper_claim_modes,
@@ -78,7 +79,8 @@ from app.pipeline.presets import get_enhancement_config
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.protected_regions import (
-    OFF_PRINT_ADVISORY, album_mark_matches_quad, album_mark_source_matches, detect_protected_regions, is_advisory_page_face,
+    OFF_PRINT_ADVISORY, album_mark_correction_matches, album_mark_matches_quad, album_mark_source_matches,
+    detect_protected_regions, is_advisory_page_face,
     protected_region_digest, protected_region_key, region_box_in_pixels,
 )
 from app.pipeline.rounded_corner_review import ROUNDED_CORNER_SOURCE, ROUNDED_CORNER_WEDGES
@@ -157,7 +159,9 @@ async def photo_views_for_current_album_marks(
     for photo in photos:
         page = pages.get(photo.page_id)
         mark = marks.get(photo.id)
+        correction = (photo.enhancement_applied or {}).get("correction") or {}
         if not mark or (guard_enabled and page is not None
+                        and album_mark_correction_matches(mark, photo.segmentation_mask or {}, correction)
                         and album_mark_source_matches(mark, page.file_hash_sha256, page.processing_metadata)):
             views.append(photo)
             continue
@@ -165,7 +169,7 @@ async def photo_views_for_current_album_marks(
         view.status = PhotoStatus.review_needed
         metadata = deepcopy(view.enhancement_applied)
         correction = metadata.get("correction") or {}
-        retire_rounded_corner_preview(correction)
+        retire_album_mark_previews(correction)
         (correction.get("protected_regions") or {}).pop("reviewed_album_mark_id", None)
         for mode in (correction.get("crop_modes") or {}).values():
             mode["status"] = "review_needed"
@@ -185,6 +189,13 @@ def retire_rounded_corner_preview(correction: dict) -> None:
         full.pop(field, None)
     correction.pop(f"{FULL_PRINT_REVIEW_PREVIEW}_path", None)
     correction.pop(f"{FULL_PRINT_REVIEW_PREVIEW}_asset_id", None)
+
+
+def retire_album_mark_previews(correction: dict) -> None:
+    retire_rounded_corner_preview(correction)
+    full = (correction.get("crop_modes") or {}).get("full_print") or {}
+    if (full.get("source_strip_review") or {}).get("source") == MANUAL_PAPER_EXTENT_SOURCE:
+        full.pop("source_strip_review", None)
 
 
 def page_fusion_evidence(metadata: dict | None) -> dict:
