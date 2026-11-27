@@ -4,7 +4,10 @@ import { addManualPhoto, confirmSharedPaperGrid, createAlbum, excludeCountReview
 import { captureCameraImage } from "./cameraCapture.js";
 import { motifUsesPaperAxes, projectedCropAspect, resizeMotifInPaperPlane, resamplePerspective, samplePreviewSource } from "./cropPreview.js";
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
-import { heldPrintCorrectionHint, wholePrintApprovalHeld } from "./cropReviewApproval.js";
+import {
+  contrastOutlineConfirmation, contrastOutlineNeedsConfirmation, contrastOutlineReviewHint,
+  heldPrintCorrectionHint, wholePrintApprovalHeld,
+} from "./cropReviewApproval.js";
 import {
   actionableCountGroups, adjacentPrintHint, albumLeafChildStyle, albumLeafTraceStyle, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
   captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, cropProtectionErrors, CropVariants,
@@ -215,6 +218,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     && !reviewedNonPrint
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.crossing_print_suggestion));
   const fullPrintMode = reviewedNonPrint ? null : item.payload?.crop_modes?.full_print;
+  const contrastOutlineReview = contrastOutlineNeedsConfirmation(item.payload, item.payload?.crop_modes?.full_print);
   const fullPrintHeld = !reviewedNonPrint && wholePrintApprovalHeld(item.payload?.crop_modes, item.payload?.variant_urls);
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode)
     || (fullPrintHeld && heldPrintCorrectionHint(fullPrintMode));
@@ -245,7 +249,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const measuredQuad = storedMeasurement && (savedQuad || sanitizeReviewPolygon(item.payload?.warp_quad));
   const markOffer = item.payload?.correction?.album_page_mark_review;
   const protectedOutline = markOffer?.source === offPrintAdvisorySource && sanitizeReviewPolygon(fullPrintMode?.warp_quad);
-  const canEditMotif = editable && !reviewedNonPrint && isValidQuad(savedQuad)
+  const canEditMotif = editable && !reviewedNonPrint && !contrastOutlineReview && isValidQuad(savedQuad)
     && canEditMobileMotif(item.payload, item.payload?.crop_modes);
   const storedMotif = cyclicReviewQuad(sanitizeReviewPolygon(getStoredMotifQuad(item.payload || {}, motifMode)));
   const suggestedMotif = cyclicReviewQuad(sanitizeReviewPolygon(motifMode?.suggested_warp_quad));
@@ -261,6 +265,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const saving = geometrySaving || reprocessing;
   const [confirmDeferredDraft, setConfirmDeferredDraft] = useState(false);
   const [confirmMergedPrintAsOne, setConfirmMergedPrintAsOne] = useState(false);
+  const [confirmedContrastOutline, setConfirmedContrastOutline] = useState(null);
+  const contrastOutlineConfirmed = quad != null && confirmedContrastOutline === quad;
+  const contrastOutlineNeedsCheck = contrastOutlineReview && !contrastOutlineConfirmed;
   const [editMode, setEditMode] = useState("full_print");
   const [motifQuad, setMotifQuad] = useState(storedMotif);
   const editingMotif = canEditMotif && editMode === "image_only";
@@ -297,6 +304,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     setBlockedCrop(null);
     setDraftTouched(false);
     setConfirmMergedPrintAsOne(false);
+    setConfirmedContrastOutline(null);
   }, [item.id]);
   const box = quadToBox(quad);
   const validQuad = !editable || isValidQuad(displayedQuad);
@@ -353,6 +361,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     addEventListener("pointermove", move); addEventListener("pointerup", up); addEventListener("pointercancel", up);
   }
   async function save() {
+    if (contrastOutlineNeedsCheck) return;
     if (editingMotif ? !validMotif : (!validQuad || sizeError || crossingNeedsCorrection)) return;
     if (deferredDraft && !confirmDeferredDraft) return;
     setSaving(true); setSaveError("");
@@ -380,12 +389,15 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         source: "manual_mobile_quad",
       };
       const mark = albumMarkReview.confirmation;
+      const confirmOuter = contrastOutlineReview ? contrastOutlineConfirmed
+        : Boolean(printSuggestion) || paperOutlineNeedsConfirmation(fullPrintMode);
       const saved = await patchBoundingBox(item.payload.photo_id, editingMotif ? sourceBox : box, mask,
-        !editingMotif && (Boolean(printSuggestion) || paperOutlineNeedsConfirmation(fullPrintMode)), mark?.id, mark?.indices,
+        !editingMotif && confirmOuter, mark?.id, mark?.indices,
         Boolean(selectedMergedPair && confirmMergedPrintAsOne && !editingMotif));
       albumMarkReview.reset();
       setBlockedCrop(null);
       setConfirmMergedPrintAsOne(false);
+      setConfirmedContrastOutline(null);
       const savedDegrees = saved.segmentation_mask?.orientation_degrees ?? null;
       setOrientation(savedDegrees);
       setSavedOrientation(savedDegrees);
@@ -403,6 +415,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       if (error.message === "album_page_mark_review_stale") albumMarkReview.reset();
       setSaveError(error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message === "print_outline_review_required" ? printOutlineSaveHint
+        : error.message === "contrast_print_outline_review_required" ? contrastOutlineReviewHint
         : darkBackingReviewErrors[error.message] || embossedPocketReviewErrors[error.message] || standalonePrintReviewErrors[error.message]
           || sourceFragmentReviewErrors[error.message] || cropProtectionErrors[error.message]
           || error.message || "Ausschnitt konnte nicht gespeichert werden.");
@@ -701,6 +714,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         && <p className="quad-hint">{paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint}</p>}
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
+      {contrastOutlineReview && <p className="quad-hint">{contrastOutlineReviewHint}</p>}
       {!reviewedNonPrint && getDeferredParentCropHints(item.payload?.review_reasons).map(({ id, text }) => (
         <p key={id} className="quad-hint" id={`mobile-${id}`}>{text}</p>
       ))}
@@ -797,8 +811,16 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           {mergedPrintAsOneLabel}
         </label>
       </>}
+      {!deferredDraft && !editingMotif && contrastOutlineReview && (
+        <label className="mounted-print-fragment-review">
+          <input type="checkbox" checked={contrastOutlineConfirmed} disabled={saving}
+            onChange={event => setConfirmedContrastOutline(event.target.checked ? quad : null)} />
+          {contrastOutlineConfirmation}
+        </label>
+      )}
       <button className="save-crop" onClick={save} disabled={saving
         || (deferredDraft && !confirmDeferredDraft)
+        || contrastOutlineNeedsCheck
         || (editingMotif ? !validMotif : (!validQuad || Boolean(sizeError) || crossingNeedsCorrection))}>
         <Save size={18}/>{geometrySaving ? "Richtet das Bild …" : standaloneDraft ? "Als Abzug erfassen" : sourceFragmentDraft ? "Als einen Abzug speichern"
           : editingMotif ? "Motivzuschnitt speichern" : "Viereck speichern & geraderichten"}

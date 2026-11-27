@@ -1027,8 +1027,18 @@ async def update_photo_bounding_box(
         full_print = (correction.get("crop_modes") or {}).get("full_print") or {}
         saved_review = (photo.enhancement_applied or {}).get("review_provenance") or {}
         shared_rim_traces = saved_review.get("shared_rim_cut_traces") or shared_rim_cut_reference(correction)
+        explicit = payload.segmentation_mask is not None and payload.segmentation_mask.warp_quad is not None
+        confirm_contrast_outline = (
+            photo.segmentation_confidence is not None and original_mask.get("detector_source") == "contrast_region"
+            and full_print.get("status") == "review_needed"
+            and "PRINT_BOUNDARY_UNSUPPORTED" in (full_print.get("reason_codes") or [])
+            and not capture_outline_review_required(full_print)
+        )
+        if confirm_contrast_outline and (
+            not payload.confirm_print_outline or not explicit or segmentation_mask.get("image_quad") is not None
+        ):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="contrast_print_outline_review_required")
         if full_print.get("suggested_warp_quad") and photo.segmentation_confidence is not None:
-            explicit = payload.segmentation_mask is not None and payload.segmentation_mask.warp_quad is not None
             outer = segmentation_mask.get("warp_quad") or []
             previous_outlines = (full_print.get("warp_quad"), original_mask.get("warp_quad") or original_mask.get("polygon"))
             if not explicit or (not payload.confirm_print_outline and (
@@ -1230,6 +1240,7 @@ async def update_photo_bounding_box(
             "before": before,
             "after": after,
             "source": segmentation_mask.get("source"),
+            **({"contrast_print_outline_confirmed": True} if confirm_contrast_outline else {}),
             **({"merged_print_resolution": merged_resolution} if merged_resolution else {}),
         }
     )

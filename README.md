@@ -1055,6 +1055,17 @@ weiterhin Geometrie-, Nachbarschafts- und Pixelprüfungen. Rechenläufe,
 Bilddateien, Prüfentscheide und Korrekturrevisionen bleiben mit der
 Quellseite verknüpft.
 
+Bei einer automatisch vorgeschlagenen Kontrastkontur mit unbelegtem
+Papierrand innerhalb der Aufnahme bleibt die Papierprüfung offen.
+Prüfe im Original, ob alle vier Ecken zum selben Abzug gehören.
+Bestätige die Papierkontur im Desktop- oder Mobile-Editor ausdrücklich,
+bevor du «Ganzer Abzug» speicherst. Papiermasse und Ausrichtung reichen
+dafür allein nicht aus.
+Zeigt die markierte Fläche keinen eigenen Abzug, kannst du sie als
+«Falsches Objekt» aus der aktiven Anzahl entfernen. Die Historie und
+unabhängige Vorschläge bleiben erhalten.
+[Beispiel einer unbelegten Kontrastkontur](data/evaluation/README.md#require-separate-confirmation-for-an-unsupported-contrast-outline)
+
 | Aktion | Verhalten |
 | --- | --- |
 | Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |

@@ -2122,6 +2122,57 @@ async def test_saving_coordinates_cannot_release_a_photo_hidden_by_an_album_wind
         assert (await client.get(f"{url}/image?variant={name}")).status_code == 404
 
 
+async def test_unsupported_contrast_outline_requires_separate_paper_confirmation(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    image = np.full((120, 160, 3), 215, np.uint8)
+    image[24:108, 16:128] = (75, 100, 145)
+    _, _, photo_id = await _seed_review_data(image)
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        box = photo.bounding_box
+        quad = photo.segmentation_mask["warp_quad"]
+        photo.segmentation_mask = {**photo.segmentation_mask, "detector_source": "contrast_region", "polygon": quad}
+        photo.enhancement_applied = {
+            **photo.enhancement_applied,
+            "correction": {"crop_modes": {
+                name: {"status": "review_needed", "warp_quad": quad, "reason_codes": ["PRINT_BOUNDARY_UNSUPPORTED"]}
+                for name in ("full_print", "image_only")
+            }},
+        }
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    mask = {"source": "manual_quad", "polygon": quad, "warp_quad": quad, "print_size_mm": {"width": 100, "height": 75}}
+    for update in (
+        {"segmentation_mask": mask},
+        {"confirm_print_outline": True},
+        {"confirm_print_outline": True, "segmentation_mask": {**mask, "image_quad": quad}},
+    ):
+        blocked = await client.patch(f"{url}/bounding-box", json={"bounding_box": box, **update})
+        assert blocked.status_code == 409 and blocked.json()["detail"] == "contrast_print_outline_review_required"
+
+    unchanged = (await client.get(url)).json()
+    assert unchanged["segmentation_confidence"] == .72
+    assert unchanged["segmentation_mask"]["warp_quad"] == quad
+    for name in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image", params={"variant": name})).status_code == 404
+
+    saved = await client.patch(f"{url}/bounding-box", json={
+        "bounding_box": box, "segmentation_mask": mask, "confirm_print_outline": True,
+    })
+    assert saved.status_code == 200, saved.text
+    details = saved.json()
+    assert details["segmentation_confidence"] is None
+    revisions = details["enhancement_applied"]["review_provenance"]["correction_revisions"]
+    assert len(revisions) == 1 and revisions[0]["contrast_print_outline_confirmed"] is True
+
+
 async def _seed_adjacent_manual_addition(monkeypatch):
     from app.config import get_settings
     from app.database import get_session_factory

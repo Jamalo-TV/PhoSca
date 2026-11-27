@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { heldPrintCorrectionHint, wholePrintApprovalHeld } from "../src/cropReviewApproval.js";
+import { contrastOutlineNeedsConfirmation, heldPrintCorrectionHint, wholePrintApprovalHeld } from "../src/cropReviewApproval.js";
+
+test("only automatically detected contrast outlines with an unsupported paper boundary need confirmation", () => {
+  const photo = { segmentation_confidence: 0.71, segmentation_mask: { detector_source: "contrast_region" } };
+  const full = { status: "review_needed", reason_codes: ["PRINT_BOUNDARY_UNSUPPORTED", "PRINT_ASPECT_UNCERTAIN"] };
+  assert.equal(contrastOutlineNeedsConfirmation(photo, full), true);
+  assert.equal(contrastOutlineNeedsConfirmation({ ...photo, segmentation_confidence: null, confidence: 0.71 }, full), true);
+  assert.equal(contrastOutlineNeedsConfirmation({ ...photo, segmentation_confidence: null }, full), false);
+  assert.equal(contrastOutlineNeedsConfirmation({ ...photo, segmentation_mask: { detector_source: "edge_contour" } }, full), false);
+  assert.equal(contrastOutlineNeedsConfirmation(photo, { ...full, status: "ready" }), false);
+  assert.equal(contrastOutlineNeedsConfirmation(photo, { ...full, reason_codes: [...full.reason_codes, "PRINT_AT_CAPTURE_EDGE"] }), false);
+  assert.equal(contrastOutlineNeedsConfirmation(photo, { ...full, reason_codes: ["PRINT_ASPECT_UNCERTAIN"] }), false);
+});
 
 test("the current whole-print URL controls geometry approval even when a mode says ready", () => {
   const urls = { full_print: null, full_print_preview: "/comparison", image_only: "/motif" };

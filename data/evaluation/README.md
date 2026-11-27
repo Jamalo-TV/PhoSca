@@ -2625,6 +2625,42 @@ recoverable crops. The U039 replays and the rendered review preview are
 under `runs/crop-quality/u039-jpeg55/`. The outline is a development
 reference and does not count towards independent release acceptance.
 
+#### Require separate confirmation for an unsupported contrast outline
+
+The normal JPEG55 upload of U039 produced a held `contrast_region`
+proposal whose perimeter cuts across visible photo content. A diagnostic
+size-only edit previously made both named crops downloadable. The saved
+quadrilateral was identical to the original preview. The issue was in the
+manual save route that converted an automatic proposal into manually
+supplied geometry, which uses a different boundary check.
+
+The route now requires an explicit paper outline and an explicit
+confirmation for an automatic contrast proposal whose whole-print
+mode remains held with `PRINT_BOUNDARY_UNSUPPORTED`. Proposals at the
+capture edge already have a separate hold that survives manual edits.
+A motif edit, implicitly generated corners or an ordinary size or
+orientation edit returns `409` and preserves the saved state. The
+desktop and mobile editors bind confirmation to the four displayed corners. Confirmed
+edits continue through the existing geometry and crop checks and record
+the confirmation in the correction revision. «Falsches Objekt» removes
+the proposal from the active count and retains its review history.
+
+On the same real upload, the dimension-only and orientation attempts
+now preserve both export holds, including after crop reprocessing.
+Rejecting the false proposal reduces the active count from three to two
+and leaves the separate pending print offer intact. A source experiment
+measured spans of 210 and 243 native pixels where the diagonal proposal
+cuts through visible scenes. A faint-shadow test produced both spans
+too. They remain diagnostic evidence while a reliable contour
+correction is investigated. Development receipts and browser captures
+are under `runs/crop-quality/u039-jpeg55/outline-confirmation/`.
+
+A separate manual edit tested a four-corner source fit of the lower car
+print, with IoU 0.9611 against the development outline. After explicit
+confirmation both named exports returned the rectified single print.
+This verifies the manual path on the real source. The crop is a
+development example, with rounded corners still visible in the render.
+
 #### Review a protection margin outside a manually added print
 
 Off-print advisory revision 2 adds a path for a manually added print

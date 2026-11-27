@@ -46,6 +46,7 @@ import {
 } from "./api.js";
 import { captureCameraImage } from "./cameraCapture.js";
 import { motifUsesPaperAxes, resizeMotifInPaperPlane } from "./cropPreview.js";
+import { contrastOutlineConfirmation, contrastOutlineNeedsConfirmation, contrastOutlineReviewHint } from "./cropReviewApproval.js";
 import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
 import EdgeMeasurement from "./EdgeMeasurement.jsx";
@@ -1394,6 +1395,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const [showMissingEdges, setShowMissingEdges] = useState(false);
   const [pageImage, setPageImage] = useState(null);
   const [draftShapes, setDraftShapes] = useState({});
+  const [confirmedContrastOutline, setConfirmedContrastOutline] = useState(null);
   const [editMode, setEditMode] = useState("full_print");
   const [saveState, setSaveState] = useState(null);
   const [blockedCrop, setBlockedCrop] = useState(null);
@@ -1422,6 +1424,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const additionSize = newPrint && parsePrintSize(newPrint.printSizeFields);
   const canAddPhoto = pageImage?.pageId === pageId && ["completed", "review_needed"].includes(page?.status);
   const selected = photos.find((photo) => photo.id === selectedPhotoId);
+  const selectedModes = selected?.crop_modes || getCropModes(selected);
+  const contrastOutlineReview = contrastOutlineNeedsConfirmation(selected, selectedModes?.full_print);
   const overlapReview = selected?.segmentation_confidence != null
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(clippedOverlapReason);
   const scannerReview = selected?.segmentation_confidence != null
@@ -1468,7 +1472,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const detectionReviewHint = (crossingReview && crossingPrintHint) || (scannerReview && scannerBackingHint)
     || (overlapReview && clippedOverlapHint) || (filmGridSeam && filmGridHint) || (paperJoinReview && paperJoinHint)
     || (paperGrid && (paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint)) || (fragmentReview && fragmentOutlineHint)
-    || (captureSplitReview && "Prüfe, ob dieser Vorschlag einen eigenen Papierabzug zeigt.");
+    || (captureSplitReview && "Prüfe, ob dieser Vorschlag einen eigenen Papierabzug zeigt.")
+    || (contrastOutlineReview && contrastOutlineReviewHint);
   const fragmentMask = fragmentReview && !rejectedDetection ? selected.segmentation_mask : null;
   const fragmentOutline = useMemo(() => getFragmentOutline(fragmentMask), [fragmentMask]);
   const suggestedNeighbor = selected?.segmentation_mask?.adjacent_print_suggestion;
@@ -1491,15 +1496,18 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const crossingNeedsCorrection = crossingReview && (editingImage || savedShape.warpQuad.every(
     (point, index) => point.x === selectedShape.warpQuad[index].x && point.y === selectedShape.warpQuad[index].y,
   ));
-  const selectedModes = selected?.crop_modes || getCropModes(selected);
+  const contrastOutlineConfirmed = confirmedContrastOutline?.photoId === selected?.id
+    && confirmedContrastOutline?.quad === selectedShape?.warpQuad;
+  const contrastOutlineNeedsCheck = contrastOutlineReview && !contrastOutlineConfirmed;
   const fullPrintMode = rejectedDetection ? null : selectedModes?.full_print;
   const sourceStrip = useMemo(() => reviewingGeometry && !newPrint && !editingImage ? getSourceStripReview(fullPrintMode) : null,
     [reviewingGeometry, newPrint, editingImage, fullPrintMode]);
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
   const proposedPrintQuad = fullPrintMode?.suggested_warp_quad;
   const printSuggestion = useMemo(() => cyclicQuad(sanitizePolygon(proposedPrintQuad)), [proposedPrintQuad]);
-  const confirmOuter = Boolean(printSuggestion) || paperOutlineNeedsConfirmation(fullPrintMode);
-  const needsPrintReview = editingImage && confirmOuter;
+  const confirmOuter = contrastOutlineReview ? contrastOutlineConfirmed
+    : Boolean(printSuggestion) || paperOutlineNeedsConfirmation(fullPrintMode);
+  const needsPrintReview = editingImage && (contrastOutlineReview || confirmOuter);
   const motifReview = selectedModes?.image_only;
   const motifBoundaryReviewHint = getMotifBoundaryReviewHint(motifReview);
   const motifMarginMarks = useMemo(() => getMotifMarginMarks(motifReview), [motifReview]);
@@ -2039,7 +2047,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   }
 
   async function saveSelected() {
-    if (!selected || sizeError || needsMotifSelection || crossingNeedsCorrection || needsPrintReview) return;
+    if (!selected || sizeError || needsMotifSelection || crossingNeedsCorrection || needsPrintReview || contrastOutlineNeedsCheck) return;
     const box = editingImage ? selected.bounding_box : selectedShape.boundingBox;
     const mask = editingImage
       ? maskFromShape(savedShape, selectedShape.imageQuad)
@@ -2065,6 +2073,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       if (error.message === "album_page_mark_review_stale") albumMarkReview.reset();
       const message = error.message === "crossing_print_outline_required" ? crossingPrintSaveHint
         : error.message === "print_outline_review_required" ? printOutlineSaveHint
+          : error.message === "contrast_print_outline_review_required" ? contrastOutlineReviewHint
           : standalonePrintReviewErrors[error.message] || cropProtectionErrors[error.message] || error.message;
       setBlockedCrop(error.message === "protected_region_removed" ? { ...error.detail, photoId: selected.id } : null);
       setSaveState({ photoId: selected.id, mode: editMode, error: message });
@@ -2072,7 +2081,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   }
 
   async function rejectSelected() {
-    const target = { photoId: selected.id, mode: editMode };
+    const target = { pageId, photoId: selected.id, mode: editMode };
     setSaveState({ ...target, saving: true, rejecting: true });
     try {
       await onRejectPhoto(selected.id);
@@ -2395,6 +2404,14 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           </label>
         </div>
       )}
+      {!newPrint && !editingImage && contrastOutlineReview && selectedShape && (
+        <label className="mounted-print-fragment-review">
+          <input type="checkbox" checked={contrastOutlineConfirmed} disabled={saveState?.saving}
+            onChange={event => setConfirmedContrastOutline(event.target.checked
+              ? { photoId: selected.id, quad: selectedShape.warpQuad } : null)} />
+          {contrastOutlineConfirmation}
+        </label>
+      )}
       {!editingImage && selectedShape && (
         <PrintSizeFields
           value={selectedShape.printSizeFields}
@@ -2413,13 +2430,15 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         }} />
       )}
       {!newPrint && <button className="primary-button compact" type="button"
-        disabled={!selected || saveState?.saving || Boolean(sizeError) || needsMotifSelection || crossingNeedsCorrection || needsPrintReview}
+        disabled={!selected || saveState?.saving || Boolean(sizeError) || needsMotifSelection || crossingNeedsCorrection
+          || needsPrintReview || contrastOutlineNeedsCheck}
         onClick={saveSelected}>
         <Save size={16} />
         {currentSave?.saving && !currentSave.rejecting ? "Ausschnitt wird berechnet …" : "Zuschnitt speichern"}
       </button>}
       {currentSave?.error && <p role="alert">{currentSave.error}</p>}
-      {(rejectedDetection || currentSave?.rejected) && <p role="status">Vorschlag als falsches Objekt markiert.</p>}
+      {(rejectedDetection || (saveState?.rejected && saveState.pageId === pageId))
+        && <p role="status">Vorschlag als falsches Objekt markiert.</p>}
       {currentSave?.url && <img className="review-crop-preview" src={currentSave.url} alt={cropModeLabels[editMode]} />}
       {editingImage && motifPreview && !currentSave?.url && (
         <>
