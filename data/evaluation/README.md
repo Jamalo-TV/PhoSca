@@ -566,10 +566,14 @@ The Priscilla Smith Album 8 documentation identifies the same five
 physical cards before and after removal from the mounted leaf. The
 separate front and back views and the named leaf positions provide a
 potential link for motif landmarks. Album windows cover parts of the
-paper boundaries. The native assets and reproduction rights for the
-paired images remain open. Document retrieval in this workspace
-returned HTTP 403. This source has no assigned dataset role.
-[Documented leaf and cards, figures 3.25–3.27](https://fileserver-az.core.ac.uk/download/360554527.pdf)
+paper boundaries. Volume I describes the leaf and cards on printed
+pages 103–104. The repository index locates the actual figures 3.25–3.27
+on printed pages 57–59 of Volume II. The CORE copy links to the text
+volume. The image volume and its reproduction terms remain unverified.
+The workspace received HTTP 403 when resolving the repository handle.
+This source has no assigned dataset role.
+[Volume I documentation](https://fileserver-az.core.ac.uk/download/360554527.pdf) ·
+[University repository record](https://hdl.handle.net/10523/7504)
 
 All 17 archived legacy JPEGs retain the same capture signature. The
 relative `DateTimeOriginal` values follow the numbered page sequence
@@ -3315,12 +3319,17 @@ configuration revision is 11.
 A separate wider search is still an experiment. Across 16 resizes,
 encodings and rotations of the same real source, nine wider outlines
 pass its material checks, at 0.984–0.991 draft IoU. Eight of these
-overlap an existing proposal. The experiment does not resolve the
-physical ownership, and the original JPEG90 and the JPEG75 quarter
-turns at 90° and 270° still lack a complete supported perimeter.
+overlap an existing proposal. This search leaves the upright JPEG90
+and the 90° and 270° JPEG75 variants unresolved. A follow-up fits each
+side from the signed change along the locally measured Lab chroma
+direction. It recovers an outline at roughly 0.9914 draft IoU on all
+three. The JPEG90 and 90° JPEG75 fits enclose another active proposal.
+At 270° the contact fit is clear of the three other active masks. The
+same optical refit also measures an enclosing rectangle around the
+negative sleeve in that view, so it cannot establish paper ownership.
 Among the 31 real development views and 24 authored joined/separate
 controls, the stricter search only yields complete outlines on
-two encodings of this same contact-sheet source. The prototype stays
+two encodings of this same contact-sheet source. Both prototypes stay
 outside the product. Evidence and reproducible scripts are under
 `runs/crop-quality/standalone-paper-comparison/`.
 
@@ -10247,11 +10256,17 @@ contain four-slot leaves. The catalogue derivative of page 44 has yet
 to be linked to the slot of either print. The native IIIF and public
 DPLA metadata requests returned HTTP 403. Exact leaf-to-print mapping,
 native raster hashes and visible stock boundaries still need verification.
+Commons separately lists BPL-exported derivatives of pages 10, 32
+and 68 at 3,575 × 2,640, 3,500 × 2,612 and 1,862 × 2,846 pixels.
+Their slot correspondence to Lucas or Shaw has not been established.
 The published image rights designation is No Copyright – United States.
 [Finding aid](https://archives.bpl.org/repositories/2/resources/180) ·
 [Album digital object](https://archives.bpl.org/repositories/2/digital_objects/7564) ·
 [Image collection](https://www.digitalcommonwealth.org/collections/commonwealth:63964b37k) ·
-[Item 6](https://ark.digitalcommonwealth.org/ark:/50959/8910t015r)
+[Item 6](https://ark.digitalcommonwealth.org/ark:/50959/8910t015r) ·
+[Page 10](https://commons.wikimedia.org/w/index.php?title=File:Photograph_album_of_teachers_of_the_New_England_Freedman%27s_%26_Union_Commission_-_DPLA_-_b4b7e02983eb15ad31e81dcf51fb207b_(page_10).jpg&oldid=1161726133) ·
+[Page 32](https://commons.wikimedia.org/wiki/File:Photograph_album_of_teachers_of_the_New_England_Freedman%27s_%26_Union_Commission_-_DPLA_-_b4b7e02983eb15ad31e81dcf51fb207b_(page_32).jpg) ·
+[Page 68](https://commons.wikimedia.org/wiki/File:Photograph_album_of_teachers_of_the_New_England_Freedman%27s_%26_Union_Commission_-_DPLA_-_b4b7e02983eb15ad31e81dcf51fb207b_(page_68).jpg)
 
 The 1908 Hungarian family album on Commons separately catalogues 17
 mounted page JPEGs and 68 individual TIFFs. The uploader links print
