@@ -85,7 +85,8 @@ from app.pipeline.segmentation_filter import (
 )
 from app.pipeline.source_fragment_review import source_fragment_role, suggest_source_fragment_group
 from app.pipeline.tile_print_review import (
-    TILED_PRINT_PROPOSAL, measured_adjacent_tile_outline, measured_grid_tile_outline, opposing_view_print_outlines,
+    TILED_PRINT_PROPOSAL, measured_adjacent_tile_outline, measured_grid_tile_outline, measured_recentered_ribbed_outline,
+    opposing_view_print_outlines,
     ribbed_backing_tile_outline, tile_print_outline, tiled_outline_conflicts,
 )
 
@@ -4416,9 +4417,10 @@ def segment_album_page(
     contrast_review = []
     adjacent_view_pairs = []
     grid_view_pairs = []
+    recentered_rotated_tile = []
     result = _segment_album_page(
         image, settings, source, tile_offers, partial_tile_seeds, merged_tile_pairs, ribbed_tile_seeds, contrast_review,
-        adjacent_view_pairs, grid_view_pairs,
+        adjacent_view_pairs, grid_view_pairs, recentered_rotated_tile,
     )
     if settings.enable_classical_segmentation_fallback:
         if settings.enable_precise_photo_crops and (
@@ -4476,6 +4478,22 @@ def segment_album_page(
             result = _offer_paired_tile_prints(
                 evidence_source, result, grid_view_pairs, measured_grid_tile_outline, "recovered_from_grid_views",
             )
+        if recentered_rotated_tile:
+            started = perf_counter()
+            try:
+                outline = measured_recentered_ribbed_outline(
+                    evidence_source, recentered_rotated_tile, _tiled_review_claims(result),
+                )
+            except (cv2.error, ValueError, np.linalg.LinAlgError):
+                outline = None
+            review = dict(result.metadata["tiled_print_review"])
+            review["runtime_ms"] = round(review["runtime_ms"] + (perf_counter() - started) * 1000, 2)
+            if outline is not None:
+                height, width = evidence_source.shape[:2]
+                result = _offer_unclaimed_tiled_prints(evidence_source, result, [_normalized_polygon(outline, width, height)])
+                review["candidates"] += 1
+                review["recovered_from_recentered_rotation"] = True
+            result = SegmentationResult(result.detections, {**result.metadata, "tiled_print_review": review})
         if contrast_review:
             (seed, traces), = contrast_review
             matching = [i for i, item in enumerate(result.detections) if _contrast_review_candidate(item)
@@ -4616,18 +4634,23 @@ def _offer_unclaimed_tiled_prints(
     })
 
 
-def _offer_ribbed_backing_tile(source: np.ndarray, result: SegmentationResult, seed: np.ndarray) -> SegmentationResult:
-    started = perf_counter()
-    fusion = result.metadata.get("fusion") or {}
-    pending = list(fusion.get("deferred_print_proposals") or [])
+def _tiled_review_claims(result: SegmentationResult) -> list[dict]:
+    pending = (result.metadata.get("fusion") or {}).get("deferred_print_proposals") or []
     claims = _tiled_paper_claims(result.detections) + pending
     for item in result.detections:
         if crossing := item.mask.get("crossing_print_suggestion"):
             claims.append({"polygon": crossing})
         for outline in (item.mask.get(MERGED_PRINT_PAIR) or {}).get("outlines", ()):
             claims.append({"polygon": outline})
+    return claims
+
+
+def _offer_ribbed_backing_tile(source: np.ndarray, result: SegmentationResult, seed: np.ndarray) -> SegmentationResult:
+    started = perf_counter()
+    fusion = result.metadata.get("fusion") or {}
+    pending = list(fusion.get("deferred_print_proposals") or [])
     try:
-        outline = ribbed_backing_tile_outline(source, seed, claims)
+        outline = ribbed_backing_tile_outline(source, seed, _tiled_review_claims(result))
     except (cv2.error, ValueError, np.linalg.LinAlgError):
         outline = None
     review = dict(result.metadata["tiled_print_review"])
@@ -4651,12 +4674,7 @@ def _offer_paired_tile_prints(
     height, width = source.shape[:2]
     fusion = result.metadata.get("fusion") or {}
     pending = list(fusion.get("deferred_print_proposals") or [])
-    claims = _tiled_paper_claims(result.detections) + pending
-    for item in result.detections:
-        if crossing := item.mask.get("crossing_print_suggestion"):
-            claims.append({"polygon": crossing})
-        for outline in (item.mask.get(MERGED_PRINT_PAIR) or {}).get("outlines", ()):
-            claims.append({"polygon": outline})
+    claims = _tiled_review_claims(result)
     fits = []
     for pair in pairs:
         try:
@@ -4841,10 +4859,11 @@ def _centered_tile_print_mask(
     image: np.ndarray, original: np.ndarray,
     claims: list[dict], infer: Callable[[np.ndarray], list[SegmentationDetection]],
     inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
-    *, window: tuple[float, float] = (.56, .60),
+    *, window: tuple[float, float] = (.56, .60), center: np.ndarray | None = None,
 ) -> np.ndarray | None:
     height, width = image.shape[:2]
-    center = (original.min(axis=0) + original.max(axis=0)) / 2 * [width - 1, height - 1]
+    if center is None:
+        center = (original.min(axis=0) + original.max(axis=0)) / 2 * [width - 1, height - 1]
     left, top, right, bottom = bounds = _tile_window(center, width, height, window)
     candidates = _tile_detections_on_page(infer(image[top:bottom, left:right]), bounds, width, height)
     matches = []
@@ -5126,6 +5145,7 @@ def _collect_tiled_print_offers(
 def _collect_rotated_print_offers(
     source: np.ndarray, image: np.ndarray, detections: list[SegmentationDetection],
     existing_offers: list[list[dict]], infer: Callable[[np.ndarray], list[SegmentationDetection]], acceptance: float,
+    *, scouts: list[np.ndarray], inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
 ) -> list[list[dict]]:
     height, width = source.shape[:2]
     claims = [item.mask for item in detections] + [{"polygon": outline} for outline in existing_offers]
@@ -5137,8 +5157,14 @@ def _collect_rotated_print_offers(
                 continue
             x, y = _detection_polygon(item).T
             mapped = np.column_stack((1 - y, x) if turn == 1 else (y, 1 - x))
-            if not tiled_outline_conflicts(_normalized_polygon(mapped, 1, 1), claims, width, height):
-                shapes.append((mapped, item.confidence))
+            polygon = _normalized_polygon(mapped, 1, 1)
+            if tiled_outline_conflicts(polygon, claims, width, height):
+                continue
+            shapes.append((mapped, item.confidence))
+            if item.confidence >= .60 and .025 <= _score_value(item, "area_ratio") <= .12:
+                native = replace(item, mask={**item.mask, "polygon": polygon})
+                if _detection_boundary_evidence(native, *inputs)["score"] >= .80:
+                    scouts.append(mapped)
         observations.append(shapes)
     offers = []
     for outline in opposing_view_print_outlines(source, *observations, acceptance=acceptance):
@@ -5147,6 +5173,26 @@ def _collect_rotated_print_offers(
             offers.append(normalized)
             claims.append({"polygon": normalized})
     return offers
+
+
+def _recenter_rotated_print(
+    source: np.ndarray, image: np.ndarray, scouts: list[np.ndarray], claims: list[dict],
+    infer: Callable[[np.ndarray], list[SegmentationDetection]], inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
+) -> list[np.ndarray]:
+    height, width = source.shape[:2]
+    unclaimed = [seed for seed in scouts if not tiled_outline_conflicts(_normalized_polygon(seed, 1, 1), claims, width, height)]
+    if len(unclaimed) != 1:
+        return []
+    seed, = unclaimed
+    fitted = ribbed_backing_tile_outline(source, seed, claims)
+    if fitted is None:
+        return []
+    points = normalized_vertices_to_pixels([(point["x"], point["y"]) for point in fitted], width, height)
+    center = (points.min(axis=0) + points.max(axis=0)) / 2
+    # Shift towards the page center to keep context on both sides of the backing.
+    center[0] += .025 * width * np.sign((width - 1) / 2 - center[0])
+    match = _centered_tile_print_mask(image, seed, claims, infer, inputs, window=(.60, .60), center=center)
+    return [] if match is None else [seed, match]
 
 
 def _contrast_review_candidate(item: SegmentationDetection) -> bool:
@@ -5186,6 +5232,7 @@ def _segment_album_page(
     contrast_review: list[tuple[np.ndarray, list[np.ndarray]]] | None = None,
     adjacent_view_pairs: list[list[tuple[np.ndarray, float]]] | None = None,
     grid_view_pairs: list[list[tuple[np.ndarray, float]]] | None = None,
+    recentered_rotated_tile: list[np.ndarray] | None = None,
 ) -> SegmentationResult:
     model_path = Path(settings.yolo_model_path)
     line_budget = min(3 * image.shape[0] * image.shape[1], 12_000_000) if settings.enable_precise_photo_crops else None
@@ -5319,6 +5366,7 @@ def _segment_album_page(
                     tile_review = {}
                     try:
                         grid_scouts = []
+                        rotated_scouts = []
                         direct, retry_seed, unfitted_seed, ribbed_seed = _collect_tiled_print_offers(
                             source, image, detections, model_evidence, lambda frame: infer(frame)[0], inputs,
                             partial_tile_seeds, merged_tile_pairs, grid_scouts,
@@ -5330,6 +5378,7 @@ def _segment_album_page(
                                 rotated = _collect_rotated_print_offers(
                                     source, image, detections, tile_offers, lambda frame: infer(frame)[0],
                                     settings.yolo_confidence_threshold,
+                                    scouts=rotated_scouts, inputs=inputs,
                                 )
                             except Exception as exc:  # The centered view can still corroborate its seed.
                                 tile_review["rotated_error"] = str(exc)
@@ -5363,6 +5412,11 @@ def _segment_album_page(
                             grid_view_pairs.extend(_collect_grid_view_pairs(
                                 image, grid_scouts, claims, lambda frame: infer(frame)[0], inputs,
                                 settings.yolo_confidence_threshold,
+                            ))
+                        if rotated_scouts and recentered_rotated_tile is not None:
+                            claims = _tiled_paper_claims(detections) + [{"polygon": outline} for outline in tile_offers]
+                            recentered_rotated_tile.extend(_recenter_rotated_print(
+                                source, image, rotated_scouts, claims, lambda frame: infer(frame, record_rejections=False)[0], inputs,
                             ))
                     except Exception as exc:  # Keep earlier proposals if an optional view fails.
                         tile_review["error"] = str(exc)

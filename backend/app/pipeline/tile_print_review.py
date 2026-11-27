@@ -120,6 +120,55 @@ def _transverse_tile_backing(image: np.ndarray, line: np.ndarray, palette: np.nd
     return correlation[0, 1] >= .85 and abs(correlation[0, 2]) < .25
 
 
+def measured_recentered_ribbed_outline(
+    image: np.ndarray, polygons: list[np.ndarray], claims: list[dict],
+) -> np.ndarray | None:
+    """Fit both views on the original and confirm that the album ribs end at the print."""
+    if len(polygons) != 2 or normalized_polygon_overlap(*polygons, raster_size=512).iou < .90:
+        return None
+    height, width = image.shape[:2]
+    scale = np.float32([width - 1, height - 1])
+
+    def claimed(quad: np.ndarray) -> bool:
+        return tiled_outline_conflicts([{"x": float(x), "y": float(y)} for x, y in quad / scale], claims, width, height)
+
+    fits = []
+    for polygon in polygons:
+        fitted = ribbed_backing_tile_outline(image, polygon, claims)
+        if fitted is None:
+            return None
+        quad = order_quad_cyclic(normalized_vertices_to_pixels([(p["x"], p["y"]) for p in fitted], width, height))
+        reference = _backing_reference(image, quad, claimed)
+        if reference is None:
+            return None
+        palette, _ = reference
+        sides = [np.float32([start, end]) for start, end in zip(quad, np.roll(quad, -1, axis=0), strict=True)]
+        phase = []
+        for side in sides:
+            if _signed_tile_edge_support(image, side, palette) < .80:
+                return None
+            direction = side[1] - side[0]
+            start, end = side[0] + np.float32([.10, .90])[:, None] * direction
+            inward = np.float32([-direction[1], direction[0]]) / np.linalg.norm(direction)
+            collar = np.float32([start - 6 * inward, end - 6 * inward, end, start])
+            phase.append(not claimed(collar) and _transverse_tile_backing(image, side, palette))
+            line = _supported_backing_transition(image, *side, palette, 8)
+            if line is None or np.max(np.linalg.norm(np.float32(_line_endpoints(*side, line)) - side, axis=1)) > 4:
+                return None
+        if not any(phase[index] and phase[index + 2] for index in range(2)):
+            return None
+        short = float(np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min())
+        if has_enclosing_perimeter(image, quad, quad, short, search_margin=1.25, maximum_area_ratio=3.1):
+            return None
+        fits.append(quad)
+
+    first, second = fits
+    drift = min(np.linalg.norm(first - np.roll(second, index, axis=0), axis=1).max() for index in range(4))
+    if drift > 4:
+        return None
+    return second
+
+
 def _fit_unclaimed_tile_views(
     image: np.ndarray, polygons: tuple[np.ndarray, np.ndarray], claimed: Callable[[np.ndarray], bool],
 ) -> list[tuple[np.ndarray, list[dict]]] | None:

@@ -552,6 +552,16 @@ disjointness and the additional samples behind the historical registered
 ONNX remain unverified. The preflight performs no inference on the
 release drafts.
 
+The local preflight at `5d5d255` checked 99 submitted image-file and
+decoded-raster hashes against 672 registered digests with no exact hits.
+The registered historical model still lacks reviewed training provenance.
+U005 and U042 have pinned source rasters and labels, with 12 unverified
+mode references between them. Both U042 motifs lack an independent aspect
+reference. Seven pinned archive rasters were unavailable across the
+Talbot, Gardner, Quine and Whiting drafts. This preflight adds zero
+verified physical album groups. Its source-only receipt is under
+`runs/crop-quality/recentered-rotation-review/reference-preflight.json`.
+
 All 17 archived legacy JPEGs retain the same capture signature. The
 relative `DateTimeOriginal` values follow the numbered page sequence
 across the original train, validation and Golden sets within 242 seconds.
@@ -2994,6 +3004,81 @@ The trial ONNX is
 Its source inventory, raw controls, training receipt and normal reports
 are in `runs/crop-quality/crowded-print-training/stock-controls/`.
 The arm stays a development experiment.
+
+#### Corroborate one rotated mask in a local view
+
+The normal 512 path already compares two whole-page quarter turns after
+an initial tile finds a missing print. On native U039 the 270° mask for
+the lower peacock print has model confidence 0.715 and prepared boundary
+score 0.8088. Its 90° counterpart is too weak for the direct comparison.
+The new path considers exactly one unclaimed rotated mask that meets the
+existing grid scout floors. It measures the four original boundaries
+against the surrounding ribbed backing. One additional 60% × 60% view
+is centred on the measured outline and shifted towards the page centre.
+On U039 this is the native window `(576, 444)–(1536, 1110)`. The local
+mask has confidence 0.806 and prepared boundary score 0.8228.
+
+The two masks must agree with IoU at least 0.90 and their independently
+measured corners within four native pixels. The original pixels must
+show the signed album-to-print transition on every side. The backing
+phase must end at the photo on two opposing sides and their witness
+bands must be unclaimed. A larger enclosing perimeter, a raw or fitted
+collision with a current claim, or a conflicting open review vetoes the
+offer. This path reuses the existing detector and adds at most one local
+inference call, with no additional whole-page pass.
+
+The normal native U039 upload retains four active proposals and both
+previously pending outlines. It adds a third pending outline at
+0.9828 IoU against the development draft on a 2048-pixel scoring raster,
+with a maximum corner discrepancy of 3.70 native pixels. It covers
+98.59% of that draft. Both measured views agree to 1.31 native pixels.
+The upload, reanalysis, explicit standalone-print confirmation, count
+revision and reprocessing tests preserve the four original photo
+records and preview JPEGs. Confirmation raises the active count to five.
+It serves the original-pixel rectified preview and keeps the two named
+export variants held. Reprocessing produces identical preview bytes.
+
+The three other native open pages and the front cover do not add an
+offer. Rotated and recompressed U039 variants and single-carrier
+lookalikes also abstain. On JPEG75 the candidate in the additional
+local view hits a known neighbour. The source claim veto prevents the
+app from offering it. The eight frozen and development regression
+reports reproduce their prior detection and per-mode measurements.
+Both configuration profiles record dense tile revision 15.
+Five warm single-thread development measurements on U039 put median
+segmentation time at 3.61 s versus 2.76 s. The tile and review stage
+accounts for 1.93 s versus 1.21 s. This is the qualifying page, including
+the additional source measurements.
+Receipts are under `runs/crop-quality/recentered-rotation-review/`.
+
+#### Separate native crop ambiguity from missed detection
+
+The crowd-trained camera-tilt failure keeps the same detected print.
+Its top mask moves enough that the search can include the top ink
+line, about ten native pixels inside the true paper edge. Both lines
+then have full distributed support. The existing paper witness fits
+the exterior accurately and keeps the count and crop hold. The held
+motif preview measures 0.0835 native pixels of corner error, 0.0659
+pixels at p95 across landmarks, and zero cutoff or foreign samples
+beyond one source pixel. An apparently identical flush inset and a
+two-level shadow on a separate inset both pass a stricter stock test.
+The accurate preview does not resolve which material is paper.
+
+On the touching-print controls, an inward retry can select a printed
+border and appear unambiguous while omitting over 2,100 owned pixel
+centres. A source-assisted estimate using a stable neighbour restores
+966 omitted centres on one held cut without adding foreign centres.
+A different estimate overlaps the neighbour's raw claim and is
+blocked. The preview experiment keeps the existing hold and remains
+outside the product.
+
+For the JPEG75 contact print, one of 17 tested detector contexts
+finds a fragment mask that passes the original-pixel grid check.
+Applying that measured mask to thin separate-paper stress controls
+still accepts all 32 one-pixel rim variants and 8 of 32 two-pixel rim
+variants. This is a detector-phase effect and insufficient evidence
+to change the count. The existing explicit paper and motif review
+workflow remains in use for that print.
 
 #### Require separate confirmation for an unsupported contrast outline
 

@@ -77,9 +77,18 @@ Ein zusätzlicher Vorschlag braucht auf allen vier Seiten Unterstützung
 aus den Originalpixeln und darf keine vorhandene oder ungeklärte
 Papierkontur schneiden. Er erscheint gestrichelt in der Anzahlprüfung.
 Findet die Kachelsuche einen solchen Abzug, prüft PhoSca auch die um
-90 und 270 Grad gedrehten Modellansichten. Ein weiterer Vorschlag
-braucht eine eindeutige Übereinstimmung dieser beiden Ansichten und
-vier klar messbare Papierkanten in den Originalpixeln.
+90 und 270 Grad gedrehten Modellansichten. Der direkte Vergleich
+braucht eine eindeutige Übereinstimmung dieser beiden Ansichten
+und vier klar messbare Papierkanten in den Originalpixeln.
+Bleibt genau eine brauchbare Maske aus einer gedrehten Ansicht frei,
+kann PhoSca ihren Umriss am gerippten Albumkarton nachmessen.
+Ein zusätzliches Teilbild muss diese Maske bestätigen. Die Messungen
+müssen auf allen vier Seiten den Übergang vom Albumkarton zum Foto
+und an zwei gegenüberliegenden Seiten das Ende der Albumrippen
+zeigen. Ein umschliessender Papierträger oder ein anderer bereits
+beanspruchter Umriss verhindert den neuen Prüfvorschlag.
+[Abzug aus einer gedrehten Ansicht prüfen](data/evaluation/README.md#corroborate-one-rotated-mask-in-a-local-view)
+
 Ein Kachelvorschlag mit schwächerer Modellkonfidenz und messbarem
 Papierrand kann eine zusätzliche Modellansicht auslösen. PhoSca
 zentriert einen engeren Ausschnitt um diesen Vorschlag. Für einen

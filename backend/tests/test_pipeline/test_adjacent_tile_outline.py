@@ -3,7 +3,8 @@ import numpy as np
 import pytest
 
 from app.pipeline.tile_print_review import (
-    _signed_grid_rim_offsets, measured_adjacent_tile_outline, measured_grid_tile_outline, tiled_outline_conflicts,
+    _signed_grid_rim_offsets, measured_adjacent_tile_outline, measured_grid_tile_outline,
+    measured_recentered_ribbed_outline, tiled_outline_conflicts,
 )
 
 
@@ -115,5 +116,36 @@ def test_grid_tile_requires_a_signed_rim_in_unclaimed_album_stock(case):
 
     if case == "print":
         np.testing.assert_allclose(outline, [[160, 153], [517, 153], [517, 455], [160, 455]], atol=.15)
+    else:
+        assert outline is None
+
+
+@pytest.mark.parametrize("kind", ["print", "enclosing_sheet", "ribs_in_motif", "claimed_collar", "disagreement"])
+def test_recentered_tile_needs_two_unclaimed_native_fits_and_opposing_backing_ribs(kind):
+    lab, _, scale = _scene()
+    first = np.float32([[163, 154], [517, 152], [519, 454], [161, 456]]) / scale
+    second = np.float32([[160, 153], [517, 155], [516, 454], [160, 457]]) / scale
+    claims = []
+    if kind == "enclosing_sheet":
+        interior = lab[130:479, 141:538].copy()
+        lab[116:491, 128:551] = [70, 126, 129]
+        lab[130:479, 141:538] = interior
+    elif kind == "ribs_in_motif":
+        lab[153:456, 160:169, 0] = lab[153:456, 149:150, 0] - 55
+    elif kind == "claimed_collar":
+        collar = np.float32([[154, 205], [156, 205], [156, 365], [154, 365]]) / scale
+        claim = {"polygon": [{"x": float(x), "y": float(y)} for x, y in collar]}
+        for candidate in (first, second):
+            vertices = [{"x": float(x), "y": float(y)} for x, y in candidate]
+            assert not tiled_outline_conflicts(vertices, [claim], lab.shape[1], lab.shape[0])
+        claims.append(claim)
+    elif kind == "disagreement":
+        second += np.float32([24, 0]) / scale
+
+    outline = measured_recentered_ribbed_outline(cv2.cvtColor(lab, cv2.COLOR_LAB2BGR), [first, second], claims)
+
+    if kind == "print":
+        expected = np.float32([[160, 153], [517, 153], [517, 455], [160, 455]])
+        assert np.linalg.norm(outline - expected, axis=1).max() < 3
     else:
         assert outline is None
