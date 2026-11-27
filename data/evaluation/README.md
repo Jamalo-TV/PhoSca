@@ -2265,7 +2265,7 @@ separate from the fixed software regression checkpoints.
 | Control | 14 | 5 | 15 | 18 |
 | Heading contrast | 14 | 4 | 14 | 21 |
 | Integrated reduction | 14 | 4 | 17 | 19 |
-| Both changes | 14 | 5 | 16 | 22 |
+| Both changes | 14 | 5 | 16 | 23 |
 
 The pilot is rejected for deployment. The inventories, hash-checked
 training receipts and both crop-mode reports are in
