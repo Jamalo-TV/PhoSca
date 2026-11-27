@@ -3333,6 +3333,79 @@ two encodings of this same contact-sheet source. Both prototypes stay
 outside the product. Evidence and reproducible scripts are under
 `runs/crop-quality/standalone-paper-comparison/`.
 
+#### Locate paper edges around a held contact grid
+
+The 270° JPEG75 contact-sheet view has four active proposals. The
+right-hand paper in the original orientation is at the bottom of the
+rotated view. Its rendered whole-print mode is held for ambiguous
+boundaries, uncertain corners and unknown aspect. Two preceding hints
+mark competing lines along part of the current crop. In the new route a
+held classical contrast proposal with boundary score at least 0.78 can
+add four open source guides alongside those lines. The route requires
+both modes to be in review and gives precedence to an existing outline
+or rendered comparison. Explicit geometry and unresolved stock groups
+stay on their respective review paths.
+
+In a patch no larger than 1.2 million source pixels, three Lab chroma
+thresholds must find enclosing contours with corresponding corners no
+more than 5 native pixels apart. On each side, 360 source stations
+estimate the local chroma change between two plateaus. The fitted edges
+use the half-height crossing where the two-pixel bands supply signed
+contrast. The independent lines must support a convex in-frame scope.
+Its measured area must contain at least 98.5% of the primary footprint.
+Dense interior samples check the pale rim and reject a sustained break.
+Five or more period-matched pairs of rails must support a regular printed
+grid. The median body-minus-rail lightness must be at least 18 OpenCV
+Lab L levels. At least 80% of pairs must reach +8, and no pair may fall
+below −10. The rails must also retain the measured pitch in direct
+nearest source samples.
+
+In the 1,014 × 1,346 JPEG75 view all 14 source rails pass the native
+period test. Body-minus-rail medians range from +8.8 to +86.5 on the
+paper and −30.5 to −22.8 on the sleeve. The measured paper scope
+improves draft overlap from 0.8057 to 0.9915. It covers all 3,255 sampled
+heading centres below Lab L192, versus 1,819 within the detector mask.
+Both shapes cover all 315 interior landmarks. These measurements compare
+source scopes. The ordinary crop still needs a checked paper outline and
+an independent physical aspect measurement.
+Six alternating warm executions on one OpenCV thread report 337 ms
+median crop CPU time, versus 218 ms with the extra source check bypassed.
+
+The UI labels the four teal spans as measured transitions. The endpoints
+stop short of the corners. A pending or active claim intersecting the
+full source scope by more than a native square pixel vetoes the added
+guides. An enclosing scope is used for this check even if none of the
+drawn segments touches the claim. A protected region can also veto the
+guides. The upload and reprocess keep the existing primary warp and
+preview byte-identical. An interior manual claim removed the new spans
+without touching either side of the earlier hint. The two named and the
+legacy trimmed downloads returned HTTP 404 throughout.
+
+The archived normal API accepted an unchanged tight warp when the user
+only added diagnostic physical dimensions. Its whole-print download
+then returned HTTP 200 even though the unchanged footprint covered
+80.7% of the draft. An observed contact edge discrepancy now activates
+the existing explicit contrast-outline confirmation and native boundary
+check. The marker survives reprocessing of the same automatic row after
+a peer invalidates the lines. Saving without the confirmation returns
+HTTP 409. A confirmed retry with the same tight corners stays held after
+the native check. Even the diagnostic wider edit is still held for
+boundary ambiguity in this case.
+
+Across 16 rotations, resizes and encodings of this source, the normal
+two-mode crop replay adds one guide. Eight frozen, seeded and real
+development comparisons preserve the detection and both crop results.
+The outline-suggestion configuration revision is 12.
+
+Near-identical separators, overlapping plates and positive artwork
+behind simulated clear film can reproduce the optical proof. In an
+independent 76-raster control study the measurement alone passed all 16
+faint same-chroma separations, 12 overlaps and 12 positive-sleeve
+treatments. The fixed four guides indicate a possible boundary for
+review. The contour is used internally to test conflicts. Exports and
+instance ownership still follow the ordinary review decisions.
+Receipts are under `runs/crop-quality/printed-contact-edge-review/`.
+
 #### Require separate confirmation for an unsupported contrast outline
 
 The normal JPEG55 upload of U039 produced a held `contrast_region`

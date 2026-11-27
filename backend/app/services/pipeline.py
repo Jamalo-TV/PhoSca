@@ -36,6 +36,7 @@ from app.models import (
 from app.pipeline.bowed_edge_review import POSSIBLE_BOWED_PRINT_EDGE
 from app.pipeline.camera_calibration import CAMERA_ASPECT_REVIEW, CameraCalibration, load_crop_source
 from app.pipeline.confidence import calibrate_confidence
+from app.pipeline.contact_print_review import CONTACT_PRINT_EDGE_CHECK
 from app.pipeline.crop_validation import (
     CROP_VALIDATION_UNAVAILABLE,
     automatic_crop_review_reasons,
@@ -77,6 +78,7 @@ from app.pipeline.page_plane import MeasuredPrintReference, PrintPagePlane
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_TRACES
 from app.pipeline.perspective import apply_refined_visibility, correct_photo_crop, page_plane_from_prints
 from app.pipeline.presets import get_enhancement_config
+from app.pipeline.print_edges import PRINT_EDGE_CONFIRMATION
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.protected_regions import (
@@ -569,6 +571,7 @@ async def perspective_correction_task_logic(
     mark_recheck = reviewed_mark and (stale_mark or
         (previous.get("protected_regions") or {}).get("reviewed_album_mark_id") != reviewed_mark["id"])
     modes = previous.get("crop_modes") or {}
+    prior_contact_check = automatic_detection and (modes.get("full_print") or {}).get(CONTACT_PRINT_EDGE_CHECK) is True
     boundary_check = previous.get("manual_paper_boundary") or {}
     boundary_recheck = boundary_needs_review and (
         boundary_check.get("revision") != MANUAL_PAPER_BOUNDARY_REVISION
@@ -604,7 +607,7 @@ async def perspective_correction_task_logic(
             }
     stage = await start_stage(session, run, "perspective_correction", input_path=Path(photo.page.storage_path))
 
-    precise_crops = (settings.enable_precise_photo_crops or mask.get("manual_added") is True or contrast_outline
+    precise_crops = (settings.enable_precise_photo_crops or mask.get("manual_added") is True or contrast_outline or prior_contact_check
                      or mask.get(REVIEWED_CROSSING_OUTLINE) is True or bool(mask.get("crossing_print_suggestion"))
                      or bool(mask.get(PARTIAL_PRINT_EXTENT_TRACES))
                      or MERGED_PRINT_PAIR in mask
@@ -734,6 +737,8 @@ async def perspective_correction_task_logic(
                 name: {"status": "review_needed", "reason_codes": [reason]}
                 for name in ("full_print", "image_only")
             }
+            if prior_contact_check:
+                metadata["correction"]["crop_modes"]["full_print"][CONTACT_PRINT_EDGE_CHECK] = True
         photo.enhancement_applied = metadata
         session.add(
             AuditLog(entity_type="photo", entity_id=photo.id, action="correction_rejected", details={"reason": reason})
@@ -758,6 +763,9 @@ async def perspective_correction_task_logic(
         output_directories.add(output_dir.parent)
     untrimmed_path = output_dir / f"{photo.id}_source_corrected_untrimmed.jpg"
     crop_modes = correction_metadata.get("crop_modes") or {}
+    if crop_modes and prior_contact_check:
+        crop_modes["full_print"][CONTACT_PRINT_EDGE_CHECK] = True
+        route_ready_crop_modes_to_review(crop_modes, [PRINT_EDGE_CONFIRMATION])
     orientation_reason = (correction_metadata.get("orientation") or {}).get("reason_code")
     camera_aspect = page_camera is not None and (
         (correction_metadata.get("aspect_ratio_estimation") or {}).get("method") == "calibrated_camera"

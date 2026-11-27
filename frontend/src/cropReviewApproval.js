@@ -3,9 +3,11 @@ export const contrastOutlineConfirmation = "Die vier Ecken liegen am sichtbaren 
 
 export function contrastOutlineNeedsConfirmation(photo, fullPrint) {
   const confidence = photo?.segmentation_confidence ?? photo?.confidence;
+  const reasons = fullPrint?.reason_codes || [];
   return confidence != null && photo?.segmentation_mask?.detector_source === "contrast_region"
-    && fullPrint?.status === "review_needed" && fullPrint.reason_codes?.includes("PRINT_BOUNDARY_UNSUPPORTED") === true
-    && !fullPrint.reason_codes.includes("PRINT_AT_CAPTURE_EDGE");
+    && fullPrint?.status === "review_needed"
+    && (reasons.includes("PRINT_BOUNDARY_UNSUPPORTED") || fullPrint.contact_print_edge_check_required === true)
+    && !reasons.includes("PRINT_AT_CAPTURE_EDGE");
 }
 
 export function wholePrintApprovalHeld(cropModes, variantUrls) {

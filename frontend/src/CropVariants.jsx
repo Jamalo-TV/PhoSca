@@ -555,6 +555,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
     return printEdgeReviewHints[curvedPrintOutlineReviewReason];
   }
   if (getSourceEdgeTraces(fullPrint?.partial_print_extent_traces).length) {
+    if (fullPrint.contact_print_edge_scope) {
+      return "Türkis markiert gemessene Übergänge am Rand des Rasters. Prüfe am Original, welche Kanten zum selben Papierabzug gehören und ob einzelne Teile aufliegen.";
+    }
     const prior = fullPrint.suggested_edge_source === competingPrintEdges
       ? " Violett markiert Übergänge an der bisherigen Kontur." : "";
     return "Die türkisen Linien zeigen zwei seitliche Fortsetzungen und zwei mögliche Endkanten." + prior

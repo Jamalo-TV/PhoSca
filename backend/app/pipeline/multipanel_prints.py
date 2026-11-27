@@ -266,7 +266,7 @@ def _perforation_rails_cross_split(luminance: np.ndarray, split: int) -> bool:
     return _perforation_witness(luminance, split) is not None
 
 
-def _perforation_witness(luminance: np.ndarray, split: int, nearby_rows: int = 0) -> tuple[int, int] | None:
+def _perforation_rows(luminance: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     light = luminance.astype(np.float32)
     detail = np.clip(light - cv2.GaussianBlur(light, (41, 1), 7), -64, 64)
     strength = np.minimum(np.percentile(np.abs(light[:, 2:] - light[:, :-2]), 90, axis=1), 100) / 100
@@ -283,8 +283,13 @@ def _perforation_witness(luminance: np.ndarray, split: int, nearby_rows: int = 0
     pitch = lags[(correlations >= best[:, None] - .012).argmax(axis=1)]
     active = scores >= .50
     bounds = np.flatnonzero(np.diff(np.r_[False, active, False]))
-    rails = np.array([(start + stop) // 2 for start, stop in bounds.reshape(-1, 2)
-                      if stop - start >= 3], dtype=int)
+    bands = bounds.reshape(-1, 2)
+    return bands[np.diff(bands, axis=1)[:, 0] >= 3], pitch, scores
+
+
+def _perforation_witness(luminance: np.ndarray, split: int, nearby_rows: int = 0) -> tuple[int, int] | None:
+    bands, pitch, scores = _perforation_rows(luminance)
+    rails = bands.mean(axis=1).astype(int)
     rows = sorted(range(split - nearby_rows, split + nearby_rows + 1), key=lambda row: abs(row - split))
     for row in rows:
         before, after = rails[rails < row], rails[rails > row]

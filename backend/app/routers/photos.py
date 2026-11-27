@@ -24,6 +24,7 @@ from app.pipeline.adjacent_stock_review import ADJACENT_STOCK_REVIEW_SOURCE
 from app.pipeline.bowed_edge_review import MEASURED_PRINT_PREVIEW_SOURCES
 from app.pipeline.bowed_scene_preview import BOWED_SCENE_PREVIEW
 from app.pipeline.capture_fabric_review import CAPTURE_FABRIC_PROPOSAL
+from app.pipeline.contact_print_review import CONTACT_PRINT_EDGE_CHECK, CONTACT_PRINT_EDGE_SCOPE
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
 from app.pipeline.crossing_prints import CONTESTED_TILE_OUTLINE, REVIEWED_CROSSING_OUTLINE, reviewed_outline_covers_traces
 from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES, near_capture_guide_conflicts
@@ -389,8 +390,11 @@ async def _review_overlapping_crops(
             full_mode.pop("source_strip_review", None)
             neighbor.enhancement_applied = metadata
         extent_traces = full_mode.get(PARTIAL_PRINT_EXTENT_TRACES)
-        if extent_traces and review_traces_intersect_claim(extent_traces, mask, width, height):
+        contact_scope = full_mode.get(CONTACT_PRINT_EDGE_SCOPE)
+        if extent_traces and (review_traces_intersect_claim(extent_traces, mask, width, height)
+                              or (contact_scope and review_outline_intersects_claim(contact_scope, mask, width, height))):
             full_mode.pop(PARTIAL_PRINT_EXTENT_TRACES, None)
+            full_mode.pop(CONTACT_PRINT_EDGE_SCOPE, None)
             neighbor.enhancement_applied = metadata
         mark_offer = correction.get("album_page_mark_review") or {}
         reviewed_mark = (metadata.get("review_provenance") or {}).get("reviewed_album_mark") or {}
@@ -1055,7 +1059,8 @@ async def update_photo_bounding_box(
         confirm_contrast_outline = (
             photo.segmentation_confidence is not None and original_mask.get("detector_source") == "contrast_region"
             and full_print.get("status") == "review_needed"
-            and "PRINT_BOUNDARY_UNSUPPORTED" in (full_print.get("reason_codes") or [])
+            and ("PRINT_BOUNDARY_UNSUPPORTED" in (full_print.get("reason_codes") or [])
+                 or full_print.get(CONTACT_PRINT_EDGE_CHECK) is True)
             and not capture_outline_review_required(full_print)
         )
         if confirm_contrast_outline:

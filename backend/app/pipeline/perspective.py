@@ -16,6 +16,7 @@ from app.pipeline.bowed_edge_review import (
     POSSIBLE_MOUNTED_EDGE_STRIP, suggest_bowed_print_preview, suggest_displaced_print_preview,
 )
 from app.pipeline.bowed_scene_preview import BOWED_SCENE_PREVIEW, measure_bowed_scene
+from app.pipeline.contact_print_review import CONTACT_PRINT_EDGE_CHECK, CONTACT_PRINT_EDGE_SCOPE, contact_print_review_outline
 from app.pipeline.crop_sampling import OWNED_BILINEAR, warp_owned_crop, warp_owned_outline
 from app.pipeline.dark_album_review import DARK_BACKING_OUTLINE_REVIEW, DARK_MOUNTED_EDGE_SOURCE
 from app.pipeline.decisions import (
@@ -2585,6 +2586,32 @@ def correct_photo_crop(
                 if not any(motif_seams_intersect_claim(spans, box) for box in boxes):
                     full_mode["suggested_edge_traces"] = [_vertices_on_page(span, width, height) for span in spans]
                     full_mode["suggested_edge_source"] = VISIBLE_SCENE_EDGE
+        if (enable_classical_retry and not manual and protection["passed"]
+                and mask.get("source") == "classical_border_quad" and mask.get("detector_source") == "contrast_region"
+                and (mask.get("boundary_evidence") or {}).get("score", 0) >= .78
+                and {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN"} <= uncertain_edges
+                and uncertain_edges <= {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
+                and all(mode["status"] == "review_needed" for mode in modes.values())
+                and not any(mask.get(key) for key in ("warp_quad", *_STOCK_REVIEW_CONFLICTS))
+                and full_mode.get("suggested_edge_source") in (None, COMPETING_PRINT_EDGES)
+                and not any(full_mode.get(key) for key in (
+                    PARTIAL_PRINT_EXTENT_TRACES, "suggested_warp_quad", "outline_preview", "source_strip_review",
+                ))):
+            try:
+                outline = contact_print_review_outline(page_image, seed_points, src_points)
+                if (outline is not None
+                        and _keeps_protected_preview_content(page_image, src_points, outline, regions, protection)
+                        and validate_protected_regions(outline, regions, width=width, height=height)["passed"]):
+                    full_mode[CONTACT_PRINT_EDGE_CHECK] = True
+                    scope = _vertices_on_page(outline, width, height)
+                    if not any(review_outline_intersects_claim(scope, claim, width, height) for claim in neighbor_masks or []):
+                        full_mode[CONTACT_PRINT_EDGE_SCOPE] = scope
+                        full_mode[PARTIAL_PRINT_EXTENT_TRACES] = [
+                            _vertices_on_page(start + np.float32([[.06], [.94]]) * (end - start), width, height)
+                            for start, end in zip(outline, np.roll(outline, -1, axis=0), strict=True)
+                        ]
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                pass  # This source guide does not change the crop or its availability.
         return result
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:

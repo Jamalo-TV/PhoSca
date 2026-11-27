@@ -2310,12 +2310,14 @@ async def test_ribbed_outline_comparison_is_held_and_retires_with_an_adjacent_cl
     assert (await crop("source_corrected_untrimmed")).status_code == 200
 
 
-async def test_unsupported_contrast_outline_requires_separate_paper_confirmation(client, monkeypatch):
+@pytest.mark.parametrize("contact_edge_guide", [False, True])
+async def test_held_contrast_outline_requires_separate_paper_confirmation(client, monkeypatch, contact_edge_guide):
     from copy import deepcopy
 
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, PhotoStatus
+    from app.pipeline.contact_print_review import CONTACT_PRINT_EDGE_CHECK
     from app.pipeline.manual_paper_boundary import MANUAL_CONTRAST_OUTLINE_CHECK, MANUAL_CONTRAST_OUTLINE_REVISION
 
     monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
@@ -2329,10 +2331,12 @@ async def test_unsupported_contrast_outline_requires_separate_paper_confirmation
         box = photo.bounding_box
         quad = photo.segmentation_mask["warp_quad"]
         photo.segmentation_mask = {**photo.segmentation_mask, "detector_source": "contrast_region", "polygon": quad}
+        reason = "PRINT_BOUNDARY_AMBIGUOUS" if contact_edge_guide else "PRINT_BOUNDARY_UNSUPPORTED"
         photo.enhancement_applied = {
             **photo.enhancement_applied,
             "correction": {"crop_modes": {
-                name: {"status": "review_needed", "warp_quad": quad, "reason_codes": ["PRINT_BOUNDARY_UNSUPPORTED"]}
+                name: {"status": "review_needed", "warp_quad": quad, "reason_codes": [reason],
+                       **({CONTACT_PRINT_EDGE_CHECK: True} if contact_edge_guide and name == "full_print" else {})}
                 for name in ("full_print", "image_only")
             }},
         }

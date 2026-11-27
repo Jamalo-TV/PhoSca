@@ -7,7 +7,7 @@ from app.pipeline.geometry import normalized_polygon_overlap, order_quad_cyclic
 from app.pipeline.print_edges import _PRINT_SIDES, _edge_band, _line_endpoints, _replace_quad_side, _sample_lab, _side_line
 
 
-PRINT_OUTLINE_SUGGESTION_REVISION = 11
+PRINT_OUTLINE_SUGGESTION_REVISION = 12
 POSSIBLE_OUTER_PRINT_PREVIEW = "possible_outer_print_preview"
 POSSIBLE_OVEREXTENDED_PRINT_EDGE = "possible_overextended_print_edge"
 POSSIBLE_INWARD_PRINT_EDGE = "possible_inward_print_edge"
@@ -15,13 +15,14 @@ POSSIBLE_INWARD_PRINT_EDGE = "possible_inward_print_edge"
 
 def _outline_at_distance(
     distance: np.ndarray, offset: np.ndarray, seed: np.ndarray, scale: np.ndarray, threshold: int,
+    *, max_area_ratio: float = 1.27, minimum_iou: float = .81,
 ) -> np.ndarray | None:
     mask = cv2.morphologyEx(np.uint8(distance <= threshold), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     seed_area = cv2.contourArea(seed)
     outlines = []
     for contour in contours:
-        if not 1.02 * seed_area <= cv2.contourArea(contour) <= 1.27 * seed_area:
+        if not 1.02 * seed_area <= cv2.contourArea(contour) <= max_area_ratio * seed_area:
             continue
         points = contour[:, 0]
         if np.any(points.min(axis=0) < 3) or np.any(points.max(axis=0) > np.array(distance.shape[1::-1]) - 4):
@@ -32,7 +33,7 @@ def _outline_at_distance(
             continue
         quad = order_quad_cyclic(corners + offset)
         match = normalized_polygon_overlap(seed / scale, quad / scale)
-        if .81 <= match.iou <= .96 and match.first_containment >= .985:
+        if minimum_iou <= match.iou <= .96 and match.first_containment >= .985:
             outlines.append(quad)
     return outlines[0] if len(outlines) == 1 else None
 

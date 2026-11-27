@@ -984,6 +984,22 @@ Vergleich. Gespeicherte Ecken, Anzahl und Exporte
 eine überlappende Nachbarkontur an, zieht PhoSca die Vergleichsvorschau
 zurück. [Vergleich am Kontaktbogen](data/evaluation/README.md#render-the-measured-paper-comparison-in-classical-fallback)
 
+Bei einem Kontaktbogen mit strittigen Ecken kann PhoSca im Original
+vier getrennte Abschnitte eines grösseren Rands markieren. Es vergleicht
+drei Farbschwellen, misst an jeder Kante den Übergang zwischen zwei
+Farbbereichen und prüft den hellen Saum in der Originalauflösung. Ein
+regelmässiges Raster mit dunkleren Lochreihen und helleren Bildfeldern
+stützt den Hinweis. Die gemessenen Abschnitte erscheinen in Türkis neben
+den vorhandenen violetten Kantenhinweisen. Das Original zeigt, ob der
+Rand zu einem Papierabzug gehört oder beispielsweise Teile aufliegen.
+Ein Vorschlag, der mehr als ein Quadratpixel des untersuchten Bereichs
+beansprucht, blendet die türkisen Linien aus. Vor dem Speichern muss die
+Person in der Prüfung die vier Ecken am sichtbaren Rand desselben Abzugs
+bestätigen. PhoSca prüft diese Ecken erneut an der Originalaufnahme.
+Die Bestätigungspflicht gilt auch nach erneuter Verarbeitung, wenn die
+türkisen Linien durch einen Nachbarabzug ausgeblendet wurden.
+[Gemessene Kanten am gedrehten Kontaktbogen](data/evaluation/README.md#locate-paper-edges-around-a-held-contact-grid)
+
 Bleibt genau eine Papierkante strittig, kann PhoSca ihren Verlauf
 anhand der anderen drei Seiten und der angrenzenden Ecken für
 die Prüfung genauer messen. Vier im Original gestützte Motivkanten,
