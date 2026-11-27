@@ -3286,6 +3286,9 @@ of each. Standard tiling finds one oversized upper proposal and misses
 the lower. The normal evaluation matches one of eleven draft prints and
 counts two extra merged proposals. Three separate outlines are deferred.
 All three active rows remain held in both crop modes.
+The regular upload of an exact decoded-pixel PNG reaches the same three
+review rows. Reanalysis preserves their locations. Each row has a working
+untrimmed preview. Both named download endpoints return 404.
 
 One parent-centred 512-model call produces both child hypotheses at
 confidence 0.867 and 0.865. The upper hypothesis takes a textured album
@@ -5122,6 +5125,38 @@ documented inputs. The candidate stays outside the product
 registry. A future model selection needs the complete inventory
 of all sources used in fitting or selection and the independent
 calibration and release checks for the selected configuration.
+
+### Expand the architecture-only training corpus
+
+The follow-up fits the same YOLO11n segmenter from random initialization.
+The training source inventory contains 200 views with 553 print instances
+in 151 source groups. The validation inventory contains 65 views with 185
+instances in 47 groups. The groups identify authored scenes and texture
+sources. No physical albums occur in this fit or in checkpoint selection.
+There are six intentional training negatives and three validation negatives.
+
+The union combines procedural stock, dense pages, matched separate-paper
+and common-stock variants, and contact sheets with varied heading tone and
+sampling. Four pinned Poly Haven CC0 surface textures supply negative
+views. Encoded image, decoded RGB, label and available native ownership
+hashes, scene and capture seeds, and split assignment are recorded for
+each pair. Both splits and the authored holdouts are disjoint by recorded
+source group, seeds and image hashes. Ultralytics 8.3.0 accepted all 265
+pairs with the documented empty labels. A separate read verified all image,
+RGB and label hashes. [Per-image training inventory](detector-authored-union-training-sources.csv)
+
+The run uses 24 epochs at 512 × 512, batch and nominal batch size 8,
+AdamW with initial learning rate 0.001, cosine decay, seed 0 and
+deterministic CPU execution. The initial state digest is
+`e3fd8231d60829127a0243b13fd21eff4393ba837f9596d645bdc17d999bcba4`,
+matching the earlier architecture-only trial. The exact train/validation
+inventory SHA-256 is `1161305191b4a9f407b99a571c108a09d0ae0a7148d15fb374fc05242e4e5bd9`.
+The assembly receipts, configuration and source verification are under
+`runs/crop-quality/provenance-clean-detector-next/`. Separate development
+comparisons use the authored native-ownership cohort with 36 prints, the
+46-print stock challenge, the frozen synthetic set and the real development
+views. A separate locked field validation and calibration are required for
+a release decision.
 
 ### Isolate invalid model proposals at the image boundary
 
