@@ -104,7 +104,8 @@ from app.pipeline.shared_motif_review import (
 )
 from app.pipeline.source_fragment_review import source_fragment_role, suggest_source_fragment_group
 from app.pipeline.tile_print_review import (
-    TILED_PRINT_PROPOSAL, measured_adjacent_tile_outline, measured_grid_tile_outline, measured_recentered_ribbed_outline,
+    CONTESTED_TILE_FOLLOWUP, TILED_PRINT_PROPOSAL, contested_tile_followup_outline,
+    measured_adjacent_tile_outline, measured_grid_tile_outline, measured_recentered_ribbed_outline,
     opposing_view_print_outlines,
     ribbed_backing_tile_outline, tile_print_outline, tiled_outline_conflicts,
 )
@@ -133,9 +134,10 @@ class SegmentationResult:
 
 
 @dataclass(frozen=True)
-class _NeighboringPrintSearch:
+class _TileReviewSearch:
     infer: Callable[[np.ndarray], list[SegmentationDetection]]
     initial_claims: list[dict]
+    unfitted_seed: np.ndarray | None
 
 
 @dataclass(frozen=True)
@@ -4640,12 +4642,12 @@ def segment_album_page(
     grid_view_pairs = []
     recentered_rotated_tile = []
     near_capture_views = []
-    neighboring_search = []
+    tile_review_search = []
     possible_region_inference = []
     contained_tile_pairs = []
     result = _segment_album_page(
         image, settings, source, tile_offers, partial_tile_seeds, merged_tile_pairs, ribbed_tile_seeds, contrast_review,
-        adjacent_view_pairs, grid_view_pairs, recentered_rotated_tile, near_capture_views, neighboring_search,
+        adjacent_view_pairs, grid_view_pairs, recentered_rotated_tile, near_capture_views, tile_review_search,
         possible_region_inference, contained_tile_pairs,
     )
     if settings.enable_classical_segmentation_fallback:
@@ -4730,8 +4732,8 @@ def segment_album_page(
                 result = SegmentationResult(result.detections, {
                     **result.metadata, NEAR_CAPTURE_PRINT_TRACES: [_normalized_polygon(trace, 1, 1) for trace in traces],
                 })
-        if neighboring_search and (result.metadata.get("tiled_print_review") or {}).get("recovered_from_grid_views"):
-            result = _offer_neighboring_print(evidence_source, image, result, neighboring_search[0])
+        if tile_review_search and (result.metadata.get("tiled_print_review") or {}).get("recovered_from_grid_views"):
+            result = _offer_neighboring_print(evidence_source, image, result, tile_review_search[0])
         if contrast_review:
             (seed, traces), = contrast_review
             matching = [i for i, item in enumerate(result.detections) if _contrast_review_candidate(item)
@@ -4758,6 +4760,8 @@ def segment_album_page(
             result = _review_contained_tile_pair(source, result, *contained_tile_pairs[0])
         if source is not None and (result.metadata.get("tiled_print_review") or {}).get("recovered_from_recentered_rotation"):
             result = _offer_neighboring_layout_traces(source, result)
+        if source is not None and tile_review_search:
+            result = _record_contested_tile_followup(source, image, result, tile_review_search[0])
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
@@ -4916,6 +4920,51 @@ def _offer_neighboring_layout_traces(source: np.ndarray, result: SegmentationRes
     })
 
 
+def _record_contested_tile_followup(
+    source: np.ndarray, image: np.ndarray, result: SegmentationResult, search: _TileReviewSearch,
+) -> SegmentationResult:
+    """Keep a measured neighbor dormant while the original proposal owns its pixels."""
+    seed = search.unfitted_seed
+    if seed is None:
+        return result
+    owners = [index for index, item in enumerate(result.detections)
+              if item.mask.get("crossing_print_suggestion_source") == CONTESTED_TILE_OUTLINE
+              and item.mask.get("crossing_print_suggestion")
+              and item.mask.get("detector_source") == "contrast_region"]
+    if len(owners) != 1:
+        return result
+    index, = owners
+    item = result.detections[index]
+    replacement = item.mask["crossing_print_suggestion"]
+    overlap = normalized_polygon_overlap(seed, _detection_polygon(item), raster_size=1024)
+    if overlap.first_containment < .80 or overlap.second_containment > .60:
+        return result
+    replacement_points = np.float32([(p["x"], p["y"]) for p in replacement])
+    if normalized_polygon_overlap(seed, replacement_points, raster_size=1024).first_containment > .012:
+        return result
+    height, width = source.shape[:2]
+    try:
+        center = seed.mean(axis=0) * np.float32([width - 1, height - 1])
+        observation = _centered_tile_print_mask(
+            image, seed, [], search.infer, _boundary_inputs(image), window=(.44, .49), center=center,
+        )
+        if observation is None:
+            return result
+        outline = contested_tile_followup_outline(source, seed, observation, replacement)
+        if outline is None:
+            return result
+        polygon = _normalized_polygon(outline, width, height)
+        peers = result.detections[:index] + result.detections[index + 1:]
+        claims = _tiled_review_claims(SegmentationResult(peers, result.metadata)) + [{"polygon": replacement}]
+        if tiled_outline_conflicts(polygon, claims, width, height):
+            return result
+    except Exception:  # A failed optional view must preserve the earlier proposals.
+        return result
+    detections = result.detections.copy()
+    detections[index] = replace(item, mask={**item.mask, CONTESTED_TILE_FOLLOWUP: polygon})
+    return SegmentationResult(detections, result.metadata)
+
+
 def _measure_neighboring_print(
     source: np.ndarray, image: np.ndarray, projection: np.ndarray, direction: np.ndarray,
     claims: list[dict], infer: Callable[[np.ndarray], list[SegmentationDetection]],
@@ -4941,7 +4990,7 @@ def _measure_neighboring_print(
 
 
 def _offer_neighboring_print(
-    source: np.ndarray, image: np.ndarray, result: SegmentationResult, search: _NeighboringPrintSearch,
+    source: np.ndarray, image: np.ndarray, result: SegmentationResult, search: _TileReviewSearch,
 ) -> SegmentationResult:
     started = perf_counter()
     review = dict(result.metadata["tiled_print_review"])
@@ -5709,7 +5758,7 @@ def _segment_album_page(
     grid_view_pairs: list[list[tuple[np.ndarray, float]]] | None = None,
     recentered_rotated_tile: list[np.ndarray] | None = None,
     near_capture_views: list[np.ndarray] | None = None,
-    neighboring_search: list[_NeighboringPrintSearch] | None = None,
+    tile_review_search: list[_TileReviewSearch] | None = None,
     possible_region_inference: list[Callable[[np.ndarray], list[SegmentationDetection]]] | None = None,
     contained_tile_pairs: list[tuple[np.ndarray, list[np.ndarray]]] | None = None,
 ) -> SegmentationResult:
@@ -5843,6 +5892,7 @@ def _segment_album_page(
                         and sum(item.confidence < settings.yolo_confidence_threshold for item in detections) >= 2):
                     review_started = perf_counter()
                     tile_review = {}
+                    unfitted_seed = None
                     try:
                         grid_scouts = []
                         rotated_scouts = []
@@ -5911,9 +5961,10 @@ def _segment_album_page(
                         **tile_review, "candidates": len(tile_offers),
                         "runtime_ms": round((perf_counter() - review_started) * 1000, 2),
                     }
-                    if neighboring_search is not None and grid_view_pairs:
-                        neighboring_search.append(_NeighboringPrintSearch(
+                    if tile_review_search is not None and (grid_view_pairs or unfitted_seed is not None):
+                        tile_review_search.append(_TileReviewSearch(
                             lambda frame: infer(frame, record_rejections=False)[0], _tiled_paper_claims(detections),
+                            _detection_polygon(unfitted_seed) if unfitted_seed is not None else None,
                         ))
                     if possible_region_inference is not None and merged_tile_pairs:
                         possible_region_inference.append(lambda frame: infer(frame, record_rejections=False)[0])

@@ -2850,6 +2850,84 @@ async def test_contested_tile_cannot_be_added_separately_or_saved_over_a_new_cla
         assert len((await client.get(f"/api/v1/albums/{album}/photos")).json()) == 1
 
 
+@pytest.mark.parametrize("outcome", ["released_for_review", "occupied", "rejected_save", "different_outline", "refined_claim"])
+async def test_contested_tile_followup_requires_a_committed_matching_correction(client, monkeypatch, outcome):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, Page
+    from app.pipeline.crossing_prints import CONTESTED_TILE_OUTLINE
+    from app.pipeline.tile_print_review import CONTESTED_TILE_FOLLOWUP, TILED_PRINT_PROPOSAL
+    from app.routers import photos
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    get_settings.cache_clear()
+    album, page_id, photo_id = await _seed_review_data()
+
+    def rect(x1, y1, x2, y2):
+        return [{"x": x, "y": y} for x, y in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))]
+
+    alternative = rect(.15, .45, .60, .82)
+    followup = rect(.14, .09, .59, .42)
+    revision = str(uuid4())
+    pending = [{"id": 2, "reason": TILED_PRINT_PROPOSAL, "polygon": rect(.16 if outcome == "occupied" else .70, .20, .92, .34)}]
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        page.processing_metadata = {"steps": {"segmentation": {"fusion": {"deferred_print_proposals": pending}}},
+                                    "photo_count_revision": revision}
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {"polygon": rect(.12, .07, .67, .84), "source": "classical_min_area_rect",
+                                   "crossing_print_suggestion": alternative,
+                                   "crossing_print_suggestion_source": CONTESTED_TILE_OUTLINE,
+                                   CONTESTED_TILE_FOLLOWUP: followup}
+        await session.commit()
+
+    queue = f"/api/v1/review/queue?album_id={album}&type=segmentation"
+
+    async def payload():
+        response = await client.get(queue)
+        assert response.status_code == 200, response.text
+        (item,) = response.json()
+        return item["payload"]
+
+    before = await payload()
+    assert before["deferred_print_proposals"] == pending
+    if outcome == "rejected_save":
+        async def reject(*args, **kwargs):
+            raise ValueError("test_render_rejection")
+
+        monkeypatch.setattr(photos, "perspective_correction_task_logic", reject)
+    elif outcome == "refined_claim":
+        async def refine(session, photo_id, *args, **kwargs):
+            current = await session.get(ExtractedPhoto, photo_id)
+            current.segmentation_mask = {**current.segmentation_mask, "visible_polygon": rect(.13, .17, .60, .82)}
+            return {"review_required": True}
+
+        monkeypatch.setattr(photos, "perspective_correction_task_logic", refine)
+    corners = alternative if outcome != "different_outline" else rect(.17, .57, .57, .81)
+    url = f"/api/v1/photos/{photo_id}/bounding-box"
+    body = {"bounding_box": {"x1": corners[0]["x"], "y1": corners[0]["y"], "x2": corners[2]["x"], "y2": corners[2]["y"]},
+            "segmentation_mask": {"source": "manual_quad", "warp_quad": corners, "polygon": corners}}
+    saved = await client.patch(url, json=body)
+    assert saved.status_code == (422 if outcome == "rejected_save" else 200), saved.text
+    after = await payload()
+    assert after["detection_count"] == before["detection_count"] == 1
+    if outcome != "released_for_review":
+        assert after["photo_count_revision"] == revision
+        assert after["deferred_print_proposals"] == pending
+        if outcome == "rejected_save":
+            async with get_session_factory()() as session:
+                photo = await session.get(ExtractedPhoto, photo_id)
+                assert photo.segmentation_mask[CONTESTED_TILE_FOLLOWUP] == followup
+        return
+
+    assert after["photo_count_revision"] != revision
+    assert after["deferred_print_proposals"] == [*pending, {"id": 3, "reason": TILED_PRINT_PROPOSAL, "polygon": followup}]
+    assert CONTESTED_TILE_FOLLOWUP not in saved.json()["segmentation_mask"]
+    retry = await client.patch(url, json=body)
+    assert retry.status_code == 200, retry.text
+    assert (await payload())["deferred_print_proposals"] == after["deferred_print_proposals"]
+
+
 async def test_measured_print_extent_holds_both_modes_after_manual_dimensions_and_stale_reads(client, monkeypatch):
     from copy import deepcopy
 

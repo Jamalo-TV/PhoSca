@@ -6,6 +6,41 @@ from app.pipeline import segmentation, tile_print_review
 from app.pipeline.merged_print_review import MERGED_PRINT_PAIR
 
 
+@pytest.mark.parametrize("case", ["separate", "flat_inside", "single_carrier", "shared_carrier", "wrong_seed"])
+def test_contested_tile_followup_needs_independent_visible_photo_edges(case):
+    height, width = 720, 660
+    image = np.full((height, width, 3), [166, 192, 225], dtype=np.uint8)
+    y, x = np.indices((height, width))
+    texture = 35 * np.sin(.18 * x + .35 * y) + 24 * np.cos(.23 * x - .13 * y)
+    image[98:350, 146:425] = [63, 82, 108]
+    image[363:608, 149:432] = [81, 97, 122]
+    if case != "flat_inside":
+        image[110:338, 158:413] = (image[110:338, 158:413].astype(np.float32)
+                                   + texture[110:338, 158:413, None]).astype(np.uint8)
+    if case in {"single_carrier", "shared_carrier"}:
+        bottom = 377 if case == "single_carrier" else 638
+        top, left, right = 71, 116, 459
+        sheet = image[top:bottom, left:right]
+        inner = sheet[9:-9, 9:-9].copy()
+        sheet[:] = [46, 40, 39]
+        sheet[9:-9, 9:-9] = inner
+    scale = np.float32([width - 1, height - 1])
+    outline = np.float32([[146, 98], [424, 98], [424, 349], [146, 349]])
+    observation = (outline + [2, -1]) / scale
+    seed = outline / scale
+    if case == "wrong_seed":
+        seed += np.float32([35, 5]) / scale
+    replacement = [{"x": float(x), "y": float(y)}
+                   for x, y in np.float32([[149, 363], [431, 363], [431, 607], [149, 607]]) / scale]
+
+    result = tile_print_review.contested_tile_followup_outline(image, seed, observation, replacement)
+
+    if case == "separate":
+        np.testing.assert_allclose(result, outline, atol=1.)
+    else:
+        assert result is None
+
+
 @pytest.mark.parametrize("case", ["ribbed", "flat", "broken_rib", "raw_claim", "claimed_rib", "crossing", "merged"])
 def test_ribbed_tile_requires_distributed_original_backing_and_an_unclaimed_outline(case):
     height, width = 600, 640

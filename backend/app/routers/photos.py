@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Callable
 from copy import deepcopy
 from datetime import datetime, timezone
 from math import hypot
@@ -72,7 +73,7 @@ from app.pipeline.protected_regions import (
 )
 from app.pipeline.ribbed_outline_review import MEASURED_RIBBED_PRINT_OUTLINE
 from app.pipeline.rounded_corner_review import ROUNDED_CORNER_SOURCE, ROUNDED_CORNER_WEDGES
-from app.pipeline.tile_print_review import TILED_PRINT_PROPOSAL, tiled_outline_conflicts
+from app.pipeline.tile_print_review import CONTESTED_TILE_FOLLOWUP, TILED_PRINT_PROPOSAL, tiled_outline_conflicts
 from app.pipeline.variants import (
     CROP_REVIEW_PREVIEWS,
     FULL_PRINT_REVIEW_PREVIEW,
@@ -225,6 +226,34 @@ def _matches_contested_tile(photo: ExtractedPhoto, outline: list[dict]) -> bool:
     return _matches_review_outline(outline, claimed)
 
 
+def _offer_contested_tile_followup(
+    page: Page, previous: dict, photo: ExtractedPhoto, neighbors: list[ExtractedPhoto], width: int, height: int,
+) -> None:
+    outline = previous.get(CONTESTED_TILE_FOLLOWUP)
+    edited = photo.segmentation_mask or {}
+    if (not outline or previous.get("crossing_print_suggestion_source") != CONTESTED_TILE_OUTLINE
+            or edited.get(REVIEWED_CROSSING_OUTLINE) is not True or not edited.get("warp_quad")
+            or not _same_visible_outline(previous.get("crossing_print_suggestion"), edited["warp_quad"],
+                                         native_size=(width, height))):
+        return
+    pending = page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals") or []
+    claims = [*_current_paper_claims([photo, *neighbors]), *pending]
+    for neighbor in neighbors:
+        mask = neighbor.segmentation_mask or {}
+        if alternative := mask.get("crossing_print_suggestion"):
+            claims.append({"polygon": alternative})
+        claims.extend({"polygon": alternative} for alternative in (mask.get(MERGED_PRINT_PAIR) or {}).get("outlines", ()))
+    if tiled_outline_conflicts(outline, claims, width, height):
+        return
+    next_id = max((candidate["id"] for candidate in pending), default=-1) + 1
+    metadata = deepcopy(page.processing_metadata or {})
+    segmentation = metadata.setdefault("steps", {}).setdefault("segmentation", {})
+    segmentation.setdefault("fusion", {})["deferred_print_proposals"] = [
+        *pending, {"id": next_id, "reason": TILED_PRINT_PROPOSAL, "polygon": deepcopy(outline)},
+    ]
+    page.processing_metadata = {**metadata, "photo_count_revision": str(uuid4())}
+
+
 def _source_size(page: Page) -> tuple[int, int]:
     try:
         with Image.open(page.storage_path) as source:
@@ -329,6 +358,7 @@ async def _render_photo_edit(
     reject_invalid_edit: bool = True, preset: str | None = "auto",
     previous_manual_crop: dict | None = None,
     explain_protected_cut: bool = False,
+    after_render: Callable[[], None] | None = None,
 ) -> ExtractedPhoto:
     output_directories: set[Path] = set()
     try:
@@ -355,6 +385,8 @@ async def _render_photo_edit(
             )
             await deduplication_task_logic(session, photo_id, settings, commit=False)
             await persistence_task_logic(session, photo_id, settings, commit=False)
+        if after_render is not None:
+            after_render()
     except BaseException:
         await session.rollback()
         for directory in output_directories:
@@ -1393,6 +1425,8 @@ async def update_photo_bounding_box(
     await session.flush()
     return await _render_photo_edit(
         session, photo.id, settings, previous_manual_crop=previous_crop, explain_protected_cut=explain_protected_cut,
+        after_render=(lambda: _offer_contested_tile_followup(page, original_mask, photo, active_neighbors, width, height))
+        if original_mask.get(CONTESTED_TILE_FOLLOWUP) else None,
     )
 
 

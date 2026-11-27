@@ -8,6 +8,7 @@ import numpy as np
 from app.pipeline.album_backing import (
     _backing_reference, _repeating_profile, _supported_backing_transition, measured_ribbed_backing_outline,
 )
+from app.pipeline.edge_prints import _photo_texture
 from app.pipeline.geometry import (
     normalized_polygon_overlap, normalized_vertices_to_pixels, order_quad_cyclic, pixel_vertices_to_normalized,
     quad_from_polygon,
@@ -17,6 +18,7 @@ from app.pipeline.visible_scene_edge import has_enclosing_perimeter
 
 
 TILED_PRINT_PROPOSAL = "possible_tiled_print"
+CONTESTED_TILE_FOLLOWUP = "contested_tile_followup"
 
 
 def tiled_outline_conflicts(outline: list[dict], claims: list[dict], width: int, height: int) -> bool:
@@ -66,6 +68,30 @@ def tile_print_outline(
     if np.any(np.minimum(outline, [width - 1, height - 1] - outline) < 4):
         return None
     return outline
+
+
+def contested_tile_followup_outline(
+    image: np.ndarray, seed: np.ndarray, observation: np.ndarray, replacement: list[dict],
+) -> np.ndarray | None:
+    """Measure a second paper outline independently of the contested replacement."""
+    height, width = image.shape[:2]
+    scale = np.float32([width - 1, height - 1])
+    local, _ = quad_from_polygon(normalized_vertices_to_pixels(observation, width, height))
+    outline, sides, reasons = refine_print_boundary(image, local)
+    if (outline is None or len(sides) != 4 or reasons
+            or any(side["ambiguous"] or side["support"] < .85 for side in sides.values())
+            or np.min(np.minimum(outline, scale - outline)) < 4 or not _photo_texture(image, outline)):
+        return None
+    if any(normalized_polygon_overlap(outline / scale, polygon, raster_size=1024).iou < .90
+           for polygon in (seed, observation)):
+        return None
+    replacement_pixels = normalized_vertices_to_pixels([(p["x"], p["y"]) for p in replacement], width, height)
+    envelope = cv2.convexHull(np.vstack((outline, replacement_pixels)))[:, 0]
+    shortest = np.linalg.norm(np.roll(outline, -1, axis=0) - outline, axis=1).min()
+    if any(has_enclosing_perimeter(image, hull, hull, shortest, search_margin=.65, maximum_area_ratio=3.8)
+           for hull in (outline, envelope)):
+        return None
+    return order_quad_cyclic(outline)
 
 
 def ribbed_backing_tile_outline(image: np.ndarray, polygon: np.ndarray, claims: list[dict]) -> list[dict] | None:

@@ -206,6 +206,17 @@ Eine Neuberechnung des einzelnen Zuschnitts nutzt die gespeicherte
 Kontur dieses Eintrags.
 [Vergleich auf der Spiralalbumseite](data/evaluation/README.md#review-a-tile-outline-blocked-by-a-capture-frame-contour)
 
+Beansprucht die alte Kontrastkontur auch einen weiteren möglichen
+Abzug, kann PhoSca dessen Umriss in einer kleineren Modellansicht und
+direkt am Original messen. Die Abzugsprüfung zeigt ihn erst, nachdem
+du die bereits angebotene Korrektur des bestehenden Eintrags
+gespeichert hast und der zweite Umriss neben den aktuellen Konturen
+Platz hat. Prüfe, ob das Original zwei getrennte Papierabzüge zeigt,
+und kontrolliere die Ecken des neuen Vorschlags. Erst die ausdrückliche
+Bestätigung als eigener Abzug erhöht die Anzahl. Papierkontur,
+Papierformat und Motivgrenze werden für den neuen Eintrag separat
+geprüft. [Beispiel U039](data/evaluation/README.md#recheck-a-second-print-after-correcting-its-competing-proposal)
+
 Ein zu hoher oder zu breiter Modellvorschlag kann einen fehlenden und
 einen bereits erkannten Abzug umfassen. Zwei starke Kachelmasken müssen
 die Teilflächen einzeln finden. PhoSca prüft am Original die vier Kanten

@@ -2713,6 +2713,73 @@ and development comparisons keep their previous crop and detection
 metrics in both modes. The annotated source and local receipts are
 under `runs/crop-quality/contested-tile-review/`.
 
+#### Recheck a second print after correcting its competing proposal
+
+The 70% tile already nominates the print at the upper left of native
+U039. It scores 0.772 with prepared boundary support 0.8874. The
+original left-side fit is weak and the ordinary tile path holds it.
+After fusion, an unsupported classical rectangle covers most of its
+footprint. That rectangle already has a measured correction for the
+separate middle-left print.
+
+The original unfitted tile must have one eligible classical owner and
+strong containment by that owner. One centred 44% × 49% model view
+rechecks it. On U039 this view scores 0.888 with prepared boundary
+support 0.8786. The two masks agree at 0.9469 IoU. The native fit has
+four unambiguous sides with at least 0.85 support and must overlap
+both observed masks at 0.90 IoU or higher. The existing photo texture
+test rejects regions with texture in only one direction. A visibly
+enclosing perimeter around the fitted region or around it and the
+middle-left correction suppresses the candidate. The fit must clear
+the existing correction and every other paper claim. The raw masks
+can brush the correction near its edge. On U039 the two measured
+paper outlines have a minimum gap of about one original pixel.
+
+The measured outline initially belongs to the automatic row as
+dormant evidence. A matching correction on that row must commit
+through the ordinary geometry edit, with all four corners within two
+original pixels of the previously measured outline. After rendering,
+the transaction checks the fitted candidate against the stored paper
+outlines and rendered warp, competing alternatives and pending
+contours. An unclaimed candidate enters the usual standalone-print
+review with a new count revision. Repeating the geometry save after
+that first successful edit leaves the existing offer in place.
+
+The normal multipart upload has four active photos and three pending
+proposals. The ordinary desktop correction keeps all four IDs and
+publishes one more pending proposal. A stale revision, a missing
+standalone confirmation and a duplicate separate attempt each return
+409. The existing checkbox and linked Add action take the count to
+five. The earlier pending set, the four existing crop records and
+their previews are preserved during that addition. A repeated linked
+request returns the same photo. The 282 × 269 preview is available.
+Whole-print and motif exports remain held for
+`PROJECTIVE_PRINT_OUTLINE_REVIEW` and `PRINT_ASPECT_UNCERTAIN`.
+An explicit count acknowledgement can instead dismiss the proposal.
+The old revision then fails, and another geometry save or photo
+reprocess keeps the queue closed.
+
+The fitted footprint covers 98.1% of the drawn development reference.
+Its overlap is 0.8920 IoU, with corner differences up to 21.2 native
+pixels against that draft. The preview visibly includes a narrow
+strip of album backing on the left. The fit is an editable count
+proposal. Independently verified paper and motif limits, metric
+aspect and landmarks remain outstanding for this photo.
+
+Fixed-observation controls reject a shifted neighboring print, an
+album-texture substitute and visible light and dark enclosing carriers.
+An optically similar faint common carrier can pass the fixed optical
+checks. In the ordinary pipeline its local fit abstains. The tested
+full-resolution JPEG derivatives, 75%- and 66%-scale JPEG75 inputs,
+quarter-turned U039 and original U008 and U040 fail the prerequisites
+for a new dormant proposal. This stage used one additional model call
+and took 258–355 ms in two single-thread replays under shared load.
+All eight comparison
+reports retain their earlier detection and crop outcomes, including
+18/18 locked matches and 23/23 seeded geometry passes.
+Source measurements, ordinary upload and review receipts and screen
+captures are under `runs/crop-quality/u039-contested-followup/`.
+
 #### Recover a held outline from a proposal covering an existing print
 
 On native U040, an invalid full-page mask covers the middle and
