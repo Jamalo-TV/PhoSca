@@ -32,6 +32,7 @@ from app.pipeline.manual_paper_boundary import (
 )
 from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
 from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES
+from app.pipeline.neighboring_print_review import NEIGHBORING_PRINT_EDGE_TRACES
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
 from app.pipeline.printed_illustration_review import (
     PRINTED_ILLUSTRATION_COUNT_REVIEW, PRINTED_ILLUSTRATION_REVIEW_FRAME, PRINTED_ILLUSTRATION_REVIEW_ID,
@@ -871,8 +872,8 @@ async def get_review_queue(
                         "detection_count": len(detections), "detections": detections,
                         "photo_count_revision": (page.processing_metadata or {}).get("photo_count_revision"),
                         "missing_print_edge_traces": segmentation.get("missing_print_edge_traces", []),
-                        **({NEAR_CAPTURE_PRINT_TRACES: segmentation[NEAR_CAPTURE_PRINT_TRACES]}
-                           if segmentation.get(NEAR_CAPTURE_PRINT_TRACES) else {}),
+                        **{key: segmentation[key] for key in (NEAR_CAPTURE_PRINT_TRACES, NEIGHBORING_PRINT_EDGE_TRACES)
+                           if segmentation.get(key)},
                         "deferred_print_proposals": page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals", []),
                     },
                 )

@@ -71,7 +71,9 @@ from app.pipeline.multipanel_prints import (
 from app.pipeline.near_capture_review import (
     NEAR_CAPTURE_PRINT_TRACES, near_capture_candidate_turn, near_capture_print_traces, quarter_turn,
 )
-from app.pipeline.neighboring_print_review import neighboring_print_outline, next_print_position
+from app.pipeline.neighboring_print_review import (
+    NEIGHBORING_PRINT_EDGE_TRACES, neighboring_layout_traces, neighboring_print_outline, next_print_position,
+)
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_REVIEW, PARTIAL_PRINT_EXTENT_TRACES, partial_print_extent_traces
 from app.pipeline.possible_print_regions import (
@@ -4754,6 +4756,8 @@ def segment_album_page(
                                                    settings.yolo_confidence_threshold)
         if source is not None and len(contained_tile_pairs) == 1:
             result = _review_contained_tile_pair(source, result, *contained_tile_pairs[0])
+        if source is not None and (result.metadata.get("tiled_print_review") or {}).get("recovered_from_recentered_rotation"):
+            result = _offer_neighboring_layout_traces(source, result)
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
@@ -4891,6 +4895,25 @@ def _tiled_review_claims(result: SegmentationResult) -> list[dict]:
         for outline in (item.mask.get(MERGED_PRINT_PAIR) or {}).get("outlines", ()):
             claims.append({"polygon": outline})
     return claims
+
+
+def _offer_neighboring_layout_traces(source: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    if any(item.mask.get(POSSIBLE_PRINT_REGIONS) for item in result.detections):
+        return result
+    pending = (result.metadata.get("fusion") or {}).get("deferred_print_proposals") or []
+    anchors = [_detection_polygon(item) for item in result.detections
+               if item.geometry_valid and item.mask.get("detector_source") == "yolo_onnx"
+               and not item.mask.get(MERGED_PRINT_PAIR)]
+    try:
+        traces = neighboring_layout_traces(source, anchors, pending, _tiled_review_claims(result))
+    except (cv2.error, ValueError, np.linalg.LinAlgError):
+        return result
+    if not traces:
+        return result
+    height, width = source.shape[:2]
+    return SegmentationResult(result.detections, {
+        **result.metadata, NEIGHBORING_PRINT_EDGE_TRACES: [_normalized_polygon(trace, width, height) for trace in traces],
+    })
 
 
 def _measure_neighboring_print(

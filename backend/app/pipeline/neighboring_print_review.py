@@ -1,15 +1,20 @@
-"""Verify a possible print at the next position in a measured row or column."""
+"""Check a vacant position beside measured album prints against the source."""
 
+from collections.abc import Callable
 from itertools import combinations
 
 import cv2
 import numpy as np
 
-from app.pipeline.album_backing import _repeating_profile
+from app.pipeline.album_backing import _backing_reference, _repeating_profile
 from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels, order_quad_cyclic, quad_from_polygon
+from app.pipeline.near_capture_review import _Rail, _claimed_contours, _signed_stations, _trace_intervals
 from app.pipeline.print_edges import _edge_band, _line_endpoints, _quad_from_lines, _side_line, refine_print_boundary
 from app.pipeline.tile_print_review import TILED_PRINT_PROPOSAL, tiled_outline_conflicts
 from app.pipeline.visible_scene_edge import has_enclosing_perimeter
+
+
+NEIGHBORING_PRINT_EDGE_TRACES = "neighboring_print_edge_traces"
 
 
 def _vertices(points):
@@ -149,6 +154,103 @@ def _ribs_end_at_edge(image: np.ndarray, start: np.ndarray, stop: np.ndarray) ->
         return False
     _, middle, near, inside = np.corrcoef([profile for profile, _ in profiles])[0]
     return min(middle, near) >= .85 and abs(inside) < .25
+
+
+def _vacant_layout_cell(
+    anchors: list[np.ndarray], held: list[np.ndarray], scale: np.ndarray, claimed: Callable[[np.ndarray], bool],
+) -> tuple[np.ndarray, np.ndarray] | None:
+    cells = []
+    for anchor in anchors:
+        lengths = np.linalg.norm(np.roll(anchor, -1, axis=0) - anchor, axis=1)
+        if lengths.min() < 200 or lengths.max() > 1.20 * lengths.min():
+            continue
+        axes = np.diff(anchor[:3], axis=0) / lengths[:2, None]
+        comparable = [quad for quad in held
+                      if np.max(np.abs(np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1) / lengths - 1)) <= .25]
+        for first, second in combinations(comparable, 2):
+            delta = np.stack([first.mean(axis=0), second.mean(axis=0)]) - anchor.mean(axis=0)
+            distance = np.linalg.norm(delta, axis=1)
+            if distance.min() < .98 * lengths.min():
+                continue
+            unit = delta / distance[:, None]
+            alignment = np.abs(unit @ axes.T)
+            match = alignment.argmax(axis=1)
+            pitch = distance / lengths[match]
+            if (match[0] == match[1] or abs(unit[0] @ unit[1]) > .13
+                    or alignment.max(axis=1).min() < .97 or not np.all((.98 <= pitch) & (pitch <= 1.30))):
+                continue
+            cell = first + second - anchor
+            if (cv2.isContourConvex(cell) and cv2.contourArea(cell, oriented=True) > 0
+                    and np.min(np.minimum(cell, scale - cell)) >= 4 and not claimed(cell)):
+                cells.append((cell, np.stack([first, second])))
+    return cells[0] if len(cells) == 1 else None
+
+
+def _measure_layout_side(
+    image: np.ndarray, cell: np.ndarray, side: int, palette: np.ndarray, claimed: Callable[[np.ndarray], bool],
+) -> _Rail | None:
+    start, stop = cell[[side, (side + 1) % 4]]
+    span = start + np.float32([.08, .92])[:, None] * (stop - start)
+    measurements = [_side_line(image, *span, radius) for radius in (15, 18)]
+    if any(line is None or evidence["ambiguous"] or evidence["support"] < .80 for line, evidence in measurements):
+        return None
+    (line, evidence), (crosscheck, _) = measurements
+    measured = np.float32(_line_endpoints(*span, line))
+    if np.abs(measured @ crosscheck[:2] + crosscheck[2]).max() > 1.5:
+        return None
+    a, b = measured
+    direction = b - a
+    normal = np.float32([-direction[1], direction[0]]) / np.linalg.norm(direction)
+    # Ownership must be clear for the entire sampled strip, including rib and colour witnesses.
+    witness = np.float32([a - 14 * normal, b - 14 * normal, b + 9 * normal, a + 9 * normal])
+    if np.min(np.minimum(witness, np.float32(image.shape[1::-1]) - 1 - witness)) < 1 or claimed(witness):
+        return None
+    if not _ribs_end_at_edge(image, a, b):
+        return None
+    _, signed = _signed_stations(image, measured, palette)
+    return _Rail(line, measured, evidence["support"], signed)
+
+
+def neighboring_layout_traces(
+    image: np.ndarray, active: list[np.ndarray], pending: list[dict], claims: list[dict],
+) -> list[np.ndarray]:
+    """Measure opposite open sides in one unclaimed cell. The layout never supplies a crop."""
+    height, width = image.shape[:2]
+    scale = np.float32([width - 1, height - 1])
+    outlines = [row["polygon"] for row in pending
+                if row.get("reason") == TILED_PRINT_PROPOSAL and len(row.get("polygon") or []) == 4]
+    if len(outlines) != 3 or not active:
+        return []
+    held = [order_quad_cyclic(_vertices(outline) * scale) for outline in outlines]
+    anchors = [quad_from_polygon(outline * scale)[0] for outline in active if len(outline) >= 4]
+    contours = _claimed_contours(claims, width, height, 0)
+
+    def claimed(quad):
+        return any(cv2.intersectConvexConvex(quad, contour)[0] > 1 for contour in contours)
+
+    layout = _vacant_layout_cell(anchors, held, scale, claimed)
+    if layout is None:
+        return []
+    cell, peers = layout
+    reference = _backing_reference(image, cell, claimed)
+    if reference is None:
+        return []
+    palette, side = reference
+    opposite = (side + 2) % 4
+    traces = []
+    for index in (side, opposite):
+        rail = _measure_layout_side(image, cell, index, palette, claimed)
+        intervals = [] if rail is None else _trace_intervals(image, rail, palette, contours)
+        if not intervals:
+            return []
+        traces.extend(intervals)
+
+    envelopes = [cell, *(cv2.convexHull(np.vstack((cell, peer)))[:, 0] for peer in peers)]
+    shortest = np.linalg.norm(np.roll(cell, -1, axis=0) - cell, axis=1).min()
+    if any(has_enclosing_perimeter(image, envelope, envelope, shortest, search_margin=.65, maximum_area_ratio=3.8)
+           for envelope in envelopes):
+        return []
+    return traces
 
 
 def _native_outline(image: np.ndarray, polygon: np.ndarray, direction: np.ndarray, claims: list[dict]) -> np.ndarray | None:

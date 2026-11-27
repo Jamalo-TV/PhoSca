@@ -73,6 +73,66 @@ async def _seed_review_data(image=None):
         return album.id, page.id, photo.id
 
 
+@pytest.mark.parametrize("edit_existing", [False, True])
+async def test_neighboring_source_guide_is_retired_only_by_a_material_manual_claim(client, monkeypatch, edit_existing):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import Page
+    from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES
+    from app.pipeline.neighboring_print_review import NEIGHBORING_PRINT_EDGE_TRACES
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    album_id, page_id, photo_id = await _seed_review_data(np.full((600, 660, 3), 180, np.uint8))
+
+    def quad(left, top, right, bottom):
+        return [{"x": x, "y": y} for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
+
+    detected = quad(.80, .25, .96, .75)
+    traces = [detected[:2], detected[1:3], detected[2:]]
+    other_traces = [quad(.02, .45, .08, .63)[::3]]
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        page.processing_metadata = {"steps": {"segmentation": {
+            NEIGHBORING_PRINT_EDGE_TRACES: traces, NEAR_CAPTURE_PRINT_TRACES: other_traces,
+        }}}
+        await session.commit()
+
+    review_url = f"/api/v1/review/queue?album_id={album_id}&type=segmentation"
+
+    async def review_payload():
+        item, = (await client.get(review_url)).json()
+        return item["payload"]
+
+    initial = await review_payload()
+    assert initial[NEIGHBORING_PRINT_EDGE_TRACES] == traces
+    assert initial[NEAR_CAPTURE_PRINT_TRACES] == other_traces
+    assert initial["detection_count"] == 1 and initial["deferred_print_proposals"] == []
+    manual_url = f"/api/v1/pages/{page_id}/manual-photos"
+    separate = await client.post(manual_url, json={"request_id": str(uuid4()), "warp_quad": quad(.08, .03, .29, .15)})
+    assert separate.status_code == 201, separate.text
+    assert (await review_payload())[NEIGHBORING_PRINT_EDGE_TRACES] == traces
+
+    # Only this part of the saved quad intersects a measured span: no inferred
+    # corner or automatic photo is created from the open trace.
+    claim = quad(.92, .36, .98, .61)
+    if edit_existing:
+        saved = await client.patch(f"/api/v1/photos/{photo_id}/bounding-box", json={
+            "bounding_box": {"x1": .92, "y1": .36, "x2": .98, "y2": .61},
+            "segmentation_mask": {"source": "manual_quad", "polygon": claim, "warp_quad": claim},
+        })
+    else:
+        saved = await client.post(manual_url, json={"request_id": str(uuid4()), "warp_quad": claim})
+    assert saved.status_code == (200 if edit_existing else 201), saved.text
+    review_provenance = saved.json()["enhancement_applied"]["review_provenance"]
+    assert "paper_trace_review" not in review_provenance
+    final = await review_payload()
+    assert NEIGHBORING_PRINT_EDGE_TRACES not in final
+    assert final[NEAR_CAPTURE_PRINT_TRACES] == other_traces
+    assert final["detection_count"] == (2 if edit_existing else 3)
+
+
 async def test_embossed_carrier_cannot_restore_a_manually_updated_child_outline(client, monkeypatch):
     from app.config import get_settings
     from app.database import get_session_factory

@@ -3569,6 +3569,82 @@ Both configuration profiles record dense tile revision 16.
 Development receipts are under
 `runs/crop-quality/near-capture-print-review/`.
 
+#### Show open edges in a vacant album cell
+
+On native U039, instance 11 in the development drawing has no normal
+whole-page, classical or standard-tile match. Two tighter local model
+windows find it, but their masks cross the held peacock proposal to
+the left. Native source measurements show about 39 pixels of album
+backing between the two prints. The upper edge has weak luminance
+separation, and the lower edge competes with parallel ribs. A
+reproduction on one carrier can preserve the visible side transitions.
+The evidence supports open edge sections for count review.
+
+This check runs on the original only after a successful existing
+recentered-rotation recovery and with exactly three held tile outlines.
+A geometry-valid model anchor with near-square sides and two
+comparably sized held outlines must imply one unclaimed position.
+The two measured shifts must align with different anchor axes and
+each cover 0.98–1.30 times the corresponding side. The provisional
+fourth outline is a search region. The check makes no model call.
+
+Both opposite edges need unambiguous native fits in two search bands,
+a signed colour or lightness transition, and repeated exterior ribs
+that stop at the edge. The measurement strips stay clear of other
+paper claims and the capture boundary. A visible common outer
+perimeter suppresses the guide. Only supported two-point intervals
+are recorded. No rectangle, corner position, print count, crop mode,
+pixel assignment or export decision is derived from them.
+
+The native page shows five sections totalling 387.4 native pixels.
+The optional source check took 105 ms in the single-thread native
+replay, including the enclosure check. Twelve repeats under concurrent
+test load measured a 275 ms median and 403 ms p95. Four other original captures,
+the three quarter turns of U039 and its four JPEG derivatives
+abstained in normal processing because the prerequisite count evidence
+was unavailable. Desktop and mobile draw the five sections using the
+existing blue source edge control. A successful manual save that
+materially occupies the witness band clears the guide. A save
+elsewhere leaves it available. The guide supplies no geometry to a
+saved crop.
+
+In the normal multipart upload A/B check, the guide was the only
+output difference. Both runs kept four active photos, three held
+outlines and the same masks, warp geometry, crop-mode status and
+reason codes. The previews were pixel-identical before JPEG encoding
+and byte-identical when served. Both named crop exports and the legacy
+trimmed alias returned 404 for all four entries.
+In a separate upload, a manual addition using the independently entered
+development outline increased the count from four to five and cleared
+the guide. It served a 270 × 299 original-pixel review preview. Both
+named exports stayed in review with `PRINT_ASPECT_UNCERTAIN`. The
+ordinary reanalysis request reused the saved result and its preview.
+Reprocessing the individual photo also preserved the JPEG and the two
+held mode statuses, and the guide stayed absent.
+
+The authored fixtures cover four quarter turns, a claim in the
+witness gap, flat backing, a rib pattern continuing through the
+putative print, a closed shared carrier and an extra held outline.
+On fixed U039 layout observations, a shifted peacock print, flat
+replacement of the right edge and replacement of the elephant
+print with album texture suppress the two-sided hint. Some subtle
+or capture-clipped one-carrier controls retain it, as do strongly
+compressed variants of some enclosing carriers. The wording asks
+for manual verification of physical ownership. Neither crop mode
+uses the hint as evidence for automatic readiness.
+
+All eight frozen and development comparisons preserved detections,
+mode availability and measured crop results. The locked detector
+retains 18/18 matches with zero extras. The seeded geometry replay
+retains 11/11 whole-print and 12/12 motif passes. The U039 source
+and the comparison receipts are development material. This result
+adds no independent release references or calibration.
+
+The native source is pinned as
+`d82b6a755c4dfa72a98a3a68251458e6b658b7db57140b40ee00e55adbfedebd`.
+Replay, source overlays and receipts are under
+`runs/crop-quality/u039-open-neighbor/`.
+
 #### Show the original protection conflict on a manual addition
 
 On U008 the lower giraffe print has eight open edge observations. The
@@ -12071,3 +12147,22 @@ print and the reuse terms for those image files are unresolved. Neither
 of these two archival leads adds a verified physical release group.
 [Alpiger album](https://rietberg.ch/sammlungen/2023-14-1-88) ·
 [Individual print](https://rietberg.ch/sammlungen/2023-14-19)
+
+The Rijksmuseum catalogues the Esperanto album `NG-2007-59` and the
+Vermeulen family album `RP-F-2004-89` as distinct physical objects.
+The Esperanto record `NG-2007-59-34` separates the 180 × 242 mm
+paper from its 210 × 285 mm album leaf. The published offline media
+index identifies the original asset, but the workspace proxy returned
+403 for the native bytes. The inspected Vermeulen file history
+identifies a later crop of a common capture. An independently captured
+and measured counterpart is still required for both albums. Both stay
+in source intake. [Esperanto record](https://id.rijksmuseum.nl/200502174)
+· [Vermeulen album](https://id.rijksmuseum.nl/200477012)
+
+A separate source-only calibration check pins six private pages and
+26 draft outlines. Page count and outline review and the attested
+physical group assignments are pending. The release preflight has two
+private pages with six proposed prints, twelve unverified mode
+references and two missing independent motif aspects. The reviewed
+training inventory for the registered historical checkpoint remains
+outstanding. These checks contribute zero verified shared release groups.

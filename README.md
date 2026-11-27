@@ -229,6 +229,20 @@ erfolgt separat. Ein älterer Zuschnitt mit fehlendem Prüfnachweis erscheint
 ebenfalls zur Prüfung. Speichere die am Original geprüften Ecken erneut.
 [Prüfung der ursprünglichen Papierkontur](data/evaluation/README.md#retain-measured-paper-extent-through-manual-edits)
 
+Bei einem fehlenden Vorschlag in einem regelmässig angeordneten Teil der
+Albumseite kann PhoSca sichtbare Seitenkanten zur Prüfung markieren.
+Zwei zurückgestellte Umrisse und ein erkannter, ähnlich grosser
+Abzug grenzen die Suchposition ein. Im Original müssen an zwei
+gegenüberliegenden Seiten die sichtbare Kante und das Ende der
+gerippten Albumunterlage zusammenfallen. Die Abzugsprüfung zeigt
+dann blau markierte, offene Abschnitte. Prüfe am Original, ob dort
+ein eigener Abzug liegt. Falls du einen Abzug ergänzt, setzt du
+seine vier Ecken selbst. Die Abschnitte verändern weder die
+gezählte Anzahl noch die Papier- oder Motivkontur. Nach dem
+Speichern einer Korrektur, die den markierten Bereich belegt,
+verschwindet der Hinweis.
+[Beispiel U039](data/evaluation/README.md#show-open-edges-in-a-vacant-album-cell)
+
 Erfasst ein Vorschlag nur den oberen Teil eines möglichen Abzugs,
 kann PhoSca unter **Ganzer Abzug** zwei gemessene seitliche
 Fortsetzungen und zwei mögliche Endkanten zeigen. Dafür müssen

@@ -121,11 +121,13 @@ def _backing_at_frame(image: np.ndarray, bottom: _Rail, palette: np.ndarray) -> 
     return True
 
 
-def _trace_intervals(image: np.ndarray, rail: _Rail, side: int, palette: np.ndarray, contours: list[np.ndarray]) -> list[np.ndarray]:
+def _trace_intervals(
+    image: np.ndarray, rail: _Rail, palette: np.ndarray, contours: list[np.ndarray], *, check_midgap: bool = False,
+) -> list[np.ndarray]:
     if rail.support < .75 or rail.signed.mean() < .65 or sum(part.mean() >= .60 for part in np.array_split(rail.signed, 8)) < 5:
         return []
     stations, signed = _signed_stations(image, rail.span, palette)
-    if side == 2:
+    if check_midgap:
         middle = np.flatnonzero(~signed[15:-15]) + 15
         gaps = np.split(middle, np.flatnonzero(np.diff(middle) > 1) + 1)
         if any(len(gap) and np.linalg.norm(stations[gap[-1]] - stations[gap[0]]) > 41 for gap in gaps):
@@ -176,7 +178,7 @@ def near_capture_print_traces(image: np.ndarray, polygons: list[np.ndarray], cla
     envelope = _quad_from_lines(np.stack([rail.line for rail in rails]))
     if envelope is None or claimed(cv2.convexHull(np.clip(envelope, 0, scale))):
         return []
-    sides = [_trace_intervals(source, rail, side, palette, contours) for side, rail in enumerate(rails)]
+    sides = [_trace_intervals(source, rail, palette, contours, check_midgap=side == 2) for side, rail in enumerate(rails)]
     if not all(sides[index] for index in (1, 2, 3)):
         return []
     return [quarter_turn(trace / scale, (-turns) % 4) for side in sides for trace in side]

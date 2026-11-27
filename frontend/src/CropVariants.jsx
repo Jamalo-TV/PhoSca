@@ -236,8 +236,8 @@ export const mergedPrintPairHint = "Die gestrichelten Umrisse zeigen zwei mögli
 export const mergedPrintAsOneLabel = "Beide Motive liegen auf einem gemeinsamen Papierabzug.";
 export const possiblePrintRegionsHint = "Die hellblau gepunkteten Umrisse markieren zwei Bildbereiche in einem Vorschlag. Prüfe am Original, ob sie zusammen auf einem Papierabzug liegen oder ob getrennte Papierkanten sichtbar sind.";
 const possiblePrintRegionsReason = "POSSIBLE_PRINT_REGIONS_REVIEW";
-export const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
-export const nearCapturePrintEdgeHint = "Die blauen Abschnitte markieren sichtbare Kanten eines möglichen Abzugs am Aufnahmerand. Die Ecke am Rand bleibt offen. Prüfe am Original, ob dort ein eigener Abzug liegt.";
+const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
+const nearCapturePrintEdgeHint = "Die blauen Abschnitte markieren sichtbare Kanten eines möglichen Abzugs am Aufnahmerand. Die Ecke am Rand bleibt offen. Prüfe am Original, ob dort ein eigener Abzug liegt.";
 const curvedMotifReviewReason = "IMAGE_BOUNDARY_CURVED";
 const curvedMotifReviewHint = "Die Motivkante verläuft unregelmässig. Prüfe am Original, welche Bildfelder und Beschriftungen zum Motiv gehören.";
 const markedMotifMarginReason = "IMAGE_MARGIN_MARKS_REVIEW";
@@ -274,6 +274,14 @@ const printEdgeReviewHints = {
 export function getSourceEdgeTraces(traces) {
   return Array.isArray(traces) ? traces.filter((trace) => Array.isArray(trace) && trace.length >= 2
     && trace.every((point) => [point?.x, point?.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1))) : [];
+}
+
+export function getMissingPrintEdgeReview(metadata) {
+  const nearCaptureTraces = getSourceEdgeTraces(metadata?.near_capture_print_edge_traces);
+  const otherTraces = [...getSourceEdgeTraces(metadata?.missing_print_edge_traces),
+    ...getSourceEdgeTraces(metadata?.neighboring_print_edge_traces).filter((trace) => trace.length === 2)];
+  return { traces: [...otherTraces, ...nearCaptureTraces],
+    hint: nearCaptureTraces.length > 0 && !otherTraces.length ? nearCapturePrintEdgeHint : missingPrintEdgeHint };
 }
 
 export function getDeferredPrintEvidence(proposal) {

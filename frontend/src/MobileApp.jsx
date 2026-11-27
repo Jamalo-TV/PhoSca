@@ -18,10 +18,9 @@ import {
   filmGridReason, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   borrowedFallbackProposal, captureFabricProposal, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints, frameBackingProposal,
-  getDeferredParentCropHints, getDeferredPrintEvidence, getDeferredPrintProposals, getSourceEdgeTraces,
+  getDeferredParentCropHints, getDeferredPrintEvidence, getDeferredPrintProposals, getMissingPrintEdgeReview, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin,
-  MeasuredMotifReview, MeasuredMotifReviewOverlay, mergedPrintAsOneLabel, mergedPrintPairHint, missingPrintEdgeHint, possiblePrintRegionsHint,
-  nearCapturePrintEdgeHint,
+  MeasuredMotifReview, MeasuredMotifReviewOverlay, mergedPrintAsOneLabel, mergedPrintPairHint, possiblePrintRegionsHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview, partialMotifSeams, printedIllustrationFrameStyle,
@@ -198,7 +197,7 @@ function heldDeferredParentCropHints(fullPrint, reviewReasons) {
 }
 
 function DetectionOverlay({ item, editable = false, openPaperOutline, countOutlines, captureSplitGroups, mergedPairs, filmGridGroups,
-  selectedCountGroup, paperGridGroups, paperJoinGroups, onSaved, onReprocess, onProtectionBlocked, deferredDraft, onDeferredDraftClose }) {
+  selectedCountGroup, paperGridGroups, paperJoinGroups, missingPrintReview, onSaved, onReprocess, onProtectionBlocked, deferredDraft, onDeferredDraftClose }) {
   const sourceFragmentDraft = deferredDraft?.reason === sourceFragmentProposal;
   const darkBackingDraft = deferredDraft?.reason === darkBackingProposal;
   const standaloneDraft = standalonePrintNeedsConfirmation(deferredDraft?.reason);
@@ -211,8 +210,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     setMeasuredEdge(null);
   }, [item.page_id]);
   const measuredTraces = measuredEdge?.pageId === item.page_id ? measuredEdge?.traces : null;
-  const nearCaptureTraces = getSourceEdgeTraces(item.payload?.near_capture_print_edge_traces);
-  const missingTraces = [...getSourceEdgeTraces(item.payload?.missing_print_edge_traces), ...nearCaptureTraces];
+  const { traces: missingTraces, hint: missingPrintEdgeHint } = missingPrintReview;
   const visibleTraces = showMissingEdges ? [...missingTraces, ...(measuredTraces || [])] : measuredTraces;
   const sourceBox = item.payload?.bounding_box;
   const detections = sourceBox ? [{ bounding_box: sourceBox, photo_id: item.payload?.photo_id }] : (item.payload?.detections || []);
@@ -784,7 +782,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       </div>
     )}
     {showMissingEdges && missingTraces.length > 0 && (
-      <p className="quad-hint">{nearCaptureTraces.length ? nearCapturePrintEdgeHint : missingPrintEdgeHint}
+      <p className="quad-hint">{missingPrintEdgeHint}
         {!deferredProposals.length && " Einen eigenen Abzug kannst du im Desktop-Editor ergänzen."}
       </p>
     )}
@@ -1122,6 +1120,7 @@ function CropReview({ albumId, goHome }) {
   const loading = queue?.key !== queueKey;
   const items = loading ? [] : queue.rows;
   const item = items[index];
+  const missingPrintReview = getMissingPrintEdgeReview(item?.payload);
   const fullPrint = item?.payload?.crop_modes?.full_print;
   const fullPrintHeld = type === "geometry" && wholePrintApprovalHeld(item?.payload?.crop_modes, item?.payload?.variant_urls);
   const captureReviewPending = type === "geometry" && captureRequiresReview(fullPrint);
@@ -1310,7 +1309,7 @@ function CropReview({ albumId, goHome }) {
         editable={type === "geometry" || Boolean(activeDeferredDraft)} openPaperOutline={Boolean(focusedPhotoId)}
         countOutlines={countOutlines} captureSplitGroups={captureSplitGroups} mergedPairs={activeDeferredDraft ? [] : mergedPairs}
         filmGridGroups={filmGridGroups} selectedCountGroup={selectedCountGroup} paperGridGroups={paperGridGroups}
-        paperJoinGroups={paperJoinGroups} onSaved={updateSavedCropModes}
+        paperJoinGroups={paperJoinGroups} missingPrintReview={missingPrintReview} onSaved={updateSavedCropModes}
         onReprocess={type === "geometry" ? reprocessHeldPhoto : undefined}
         deferredDraft={activeDeferredDraft} onDeferredDraftClose={closeDeferredDraft}
         onProtectionBlocked={setBlockedCropTaskId} />
@@ -1361,8 +1360,7 @@ function CropReview({ albumId, goHome }) {
             aria-describedby={value === "correct" ? approvalHint : undefined}
             onClick={() => record(value)}>
             {value === "correct" && type === "segmentation" && (item.payload?.detection_count === 0
-              || deferredProposals.length || item.payload?.missing_print_edge_traces?.length
-              || item.payload?.near_capture_print_edge_traces?.length
+              || deferredProposals.length || missingPrintReview.traces.length
               || countOutlines.length || captureSplitGroups.length || filmGridGroups.length || paperGridGroups.length || paperJoinGroups.length
               || albumLeafGroups.length || mergedPairs.length)
               ? "Anzahl bestätigen" : label}

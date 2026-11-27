@@ -63,10 +63,9 @@ import {
   countGroupReviewError, CountGroupReview, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints,
   borrowedFallbackProposal, captureFabricProposal, filmGridCountHint, filmGridHint, filmGridReason, filmGridRimHint, frameBackingProposal,
   CompetingPhotoOutlineLegend,
-  getDeferredPrintEvidence, getDeferredPrintProposals, getDeferredParentCropHints, getSourceEdgeTraces,
+  getDeferredPrintEvidence, getDeferredPrintProposals, getDeferredParentCropHints, getMissingPrintEdgeReview, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin,
-  MeasuredMotifReview, mergedPrintAsOneLabel, mergedPrintPairHint, missingPrintEdgeHint, possiblePrintRegionsHint,
-  nearCapturePrintEdgeHint,
+  MeasuredMotifReview, mergedPrintAsOneLabel, mergedPrintPairHint, possiblePrintRegionsHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, printedIllustrationFrameStyle, printedIllustrationReviewHint, scannerBackingHint, scannerBackingReason,
@@ -1427,11 +1426,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const pageId = page?.id;
   const measuredTraces = measuredEdge?.pageId === pageId ? measuredEdge?.traces : null;
   const segmentation = page?.processing_metadata?.steps?.segmentation;
-  const pendingMissingTraces = segmentation?.missing_print_edge_traces;
-  const nearCaptureTraces = segmentation?.near_capture_print_edge_traces;
-  const missingTraces = useMemo(() => [
-    ...getSourceEdgeTraces(pendingMissingTraces), ...getSourceEdgeTraces(nearCaptureTraces),
-  ], [pendingMissingTraces, nearCaptureTraces]);
+  const { traces: missingTraces, hint: missingPrintEdgeHint } = useMemo(() => getMissingPrintEdgeReview(segmentation), [segmentation]);
   const pendingProposals = page?.processing_metadata?.steps?.segmentation?.fusion?.deferred_print_proposals;
   const deferredProposals = useMemo(() => getDeferredPrintProposals(pendingProposals), [pendingProposals]);
   const activePage = useRef(pageId);
@@ -2373,7 +2368,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {measurementPage && measurementPage === pageId && <EdgeMeasurement key={pageId} pageId={pageId}
         onClose={() => setMeasurementPage(null)} onMeasured={(traces) => setMeasuredEdge({ pageId, traces })} />}
       {!editingImage && showMissingEdges && missingTraces.length > 0 && (
-        <p className="crop-editor-hint">{nearCaptureTraces?.length ? nearCapturePrintEdgeHint : missingPrintEdgeHint}</p>
+        <p className="crop-editor-hint">{missingPrintEdgeHint}</p>
       )}
       {!newPrint && !editingImage && (deferredProposals.length > 0 || mergedPairs.length > 0
         || (countPending && activePhotoCount === 0)) && (
