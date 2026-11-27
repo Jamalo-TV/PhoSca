@@ -3277,6 +3277,38 @@ Its source inventory, raw controls, training receipt and normal reports
 are in `runs/crop-quality/crowded-print-training/stock-controls/`.
 The arm stays a development experiment.
 
+#### Reproduce a second merged proposal on U008
+
+The 1600 × 1134 Spiral view U008 exposes a second merged model proposal
+along the right album edge. The top and bottom draft print masks match
+the parent at 0.407 and 0.457 IoU, despite the parent covering over 99%
+of each. Standard tiling finds one oversized upper proposal and misses
+the lower. The normal evaluation matches one of eleven draft prints and
+counts two extra merged proposals. Three separate outlines are deferred.
+All three active rows remain held in both crop modes.
+
+One parent-centred 512-model call produces both child hypotheses at
+confidence 0.867 and 0.865. The upper hypothesis takes a textured album
+edge 50–74 native pixels outside the print. An experimental refit measures
+the facing transitions across 1–3 pixel collars and samples unclaimed
+album stock for its palette. It produces two provisional outlines with
+0.965 and 0.972 IoU against the development drafts. They share no native
+source centres and intersect no other active or deferred proposal. The
+existing rib check abstains. Along the weaker facing side, support falls
+from 0.947 on the original to 0.572 on JPEG75 and 0.276 on JPEG55 with
+masks held fixed. These codec derivatives test only the optical fit.
+
+An opaque reproduction on one sheet and exact-optical one-sheet aliases
+with narrow matte rims produce the same local evidence. Two independent
+prints and one composite print remain viable physical interpretations.
+A future review guide can present both regions on the original with the
+existing count, while any count change needs independent ownership
+evidence or the user's decision. The development test gives about 0.52 s
+for the extra local model call and its two standard refits, and 0.53 s
+for the experimental source measurement. The reports, visual comparison,
+exact aliases and scripts are under
+`runs/crop-quality/u008-right-merge-independent/`.
+
 #### Corroborate one rotated mask in a local view
 
 The normal 512 path already compares two whole-page quarter turns after
@@ -11659,3 +11691,17 @@ path of that individual web view could be a separate capture or a derivative.
 The workspace proxy returns HTTP 403 for the tested web JPEGs. This lead
 still needs the paired native files, acquisition proof and reuse terms.
 [Page 62 correspondence](https://www.458raafsquadron.org/official-squadron-albums/album-1-chapters/chapter-3)
+
+National Gallery of Art Gardner volume `2019.14.1.1-50` is one distinct
+bound physical copy. The official media index supplies 104 open-access
+canvases with native dimensions. Three catalogue records distinguish the
+album leaf size from one combined image/sheet measurement. Separate media
+for the individual physical prints were not present. The official IIIF
+metadata and native image routes return HTTP 403 through the workspace proxy.
+The online 800-pixel rendition supports identifying the source. The
+native contours and independent measurement of both crop extents remain
+unverified. An available identically titled Met print belongs to a
+different physical copy. This intake contributes zero verified groups.
+[NGA volume](https://www.nga.gov/artworks/219354-gardners-photographic-sketch-book-war-volume-1) ·
+[NGA example print](https://www.nga.gov/artworks/220156-marshall-house-alexandria-virginia) ·
+[NGA media index at the inspected revision](https://github.com/NationalGalleryOfArt/opendata/blob/343e6d65fc7d3e8f7ab6465af6e1a93ea30d8f38/data/published_images.csv)

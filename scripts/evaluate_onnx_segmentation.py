@@ -1186,7 +1186,7 @@ def main() -> None:
                 primary_metrics = metrics if primary == detected else evaluate_page_crops(
                     expected, primary, width=image.shape[1], height=image.shape[0],
                     iou_threshold=args.iou_threshold, accepted=accepted or [False] * len(primary),
-                    truth_masks=native_truth_masks,
+                    truth_masks=native_truth_masks, diagnose_instances=True,
                 )
                 primary_page_metrics.append(primary_metrics)
             refined_polygons = [
