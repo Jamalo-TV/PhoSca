@@ -1096,6 +1096,16 @@ verschiebst oder ein neuer Abzug die Messfläche beansprucht, blendet
 PhoSca die Vergleichsvorschau aus.
 [Messung und Gegenproben auf geripptem Albumkarton](data/evaluation/README.md#compare-a-measured-outline-on-ribbed-backing)
 
+Bei einem unbelegten Modellumriss auf einer breiten, hellen Fläche
+kann PhoSca einen einzelnen Übergang zum sichtbaren Bild als
+violette Prüfspur im Original markieren. Mehrere Messungen müssen
+denselben Abschnitt stützen. Geschützte Inhalte, beanspruchte
+Nachbarabzüge und ein belegter äusserer Rahmen können die Spur
+verhindern. Die Spur hilft, den Bildübergang am Original zu finden.
+Ob dort auch das Fotopapier beginnt, muss im Review geklärt werden.
+Ecken, Zuschnitt und Freigabe werden weiterhin separat geprüft.
+[Messung an Scan 66 und Gegenproben](data/evaluation/README.md#show-a-measured-image-transition-inside-a-held-detection)
+
 | Aktion | Verhalten |
 | --- | --- |
 | Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |

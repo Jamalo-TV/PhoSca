@@ -7927,6 +7927,71 @@ transitions and shares its coarse outline with parts of other prints.
 The historical scanner strip and these unresolved ownership issues
 have different causes. [Pinned scan 66 PDF](https://github.com/ndipatri/photoScanner/blob/1000a550af25257e53af921ba61b72b65fe54657/tests/reference/scan-66.pdf)
 
+### Show a measured image transition inside a held detection
+
+This guide applies when the automatic ONNX crop has an unsupported
+outer boundary and both variants already need review. An existing
+edge or outline review takes precedence. The shortest side of the
+working quadrilateral must be at least 420 source pixels. A side
+with outer support of at least 0.45 or a competing outer edge is
+excluded. A paper claim overlapping the working quad vetoes the
+guide.
+
+For each remaining side, a projective grid samples 120 stations and
+256 inboard depths. It looks for a bright local field followed by a
+signed drop into darker pixels. The exterior must agree with the
+local field along the way to the proposed step. At least 87% of
+stations must support the same robust line, with at least 70% in each
+of six sections. The source fit then needs at least two unambiguous
+search radii with at least 0.85 edge support. Fitted endpoints agree
+within the larger of one source pixel and 0.18% of the measured
+length. Further signed Lab measurements count an optical step only
+where both its near and far collars support it. Their coverage must
+reach 81% overall and 63% in every section. The guide draws contiguous
+supported spans with at least 12 measurements.
+
+The outer field is also tested for detail at a separate sampling
+scale. A closed four-sided perimeter around the transition and its
+collars can veto the guide. Its search uses a bounded image of at
+most 1,100 pixels on the longest side, then checks each proposed side
+and its ends in the source raster. Intersections with protected
+regions withhold the corresponding guide. More than one supported
+side leaves the decision open. A later overlapping paper claim
+retires the guide immediately and prevents it from reappearing while
+the claim remains. The editor retains its paper corners and shows
+the source spans as an open guide. Both modes remain in review.
+
+The exact 4,960 × 7,014 Scan 66 JPEG (`9ae5f44a…87534`) yielded
+one guide between `(1975.64, 1263.49)` and `(1997.05, 2636.41)`,
+about 1,373 source pixels along the upper photo. The desktop canvas
+and mobile overlay use the same native endpoints. Across the normal
+upload and reprocess path, the four active detections, mode reasons,
+warp geometry and four untrimmed JPEGs matched the baseline. Both
+named downloads, the cropped alias and the alternative crop preview
+routes remained held. The beach photo and the partial prints lower
+down have insufficient or conflicting evidence for this guide.
+On this source the guide measured a 144 ms median and 160 ms p95
+across 21 warm single-threaded runs. All eight benchmark reports
+matched the previous milestone on detection, crop metrics and mode
+availability. The frozen runs retained 18/18 detections and passed
+23/23 recoverable crops with the supplied starting contours.
+
+In development controls the guide also appeared after each quarter
+turn. It abstained on the tested film and contact-print layouts,
+montages, penned text, reflective stripes, and separate registered
+overlapping claims. With ten authored wider reproductions on
+different backing colours, four well-supported outer perimeters
+vetoed the guide. The six near-colour reproductions still showed the
+same visible transition, so the guide does not identify the physical
+sheet. A second, independent source audit found that the first
+sustained change from the bright field may be several pixels from
+the sharpest optical step, particularly near the bottom glare.
+These measurements establish a source location for review. Physical
+paper ownership, corner geometry and aspect remain unconfirmed.
+
+The before-and-after receipts, renders and controls are under
+`runs/crop-quality/scan-66/visible-image-edge/`.
+
 ### Review a fallback outline crossing the album edge
 
 The same Golden 26 180° JPEG75 development raster has a third false

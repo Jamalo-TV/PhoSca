@@ -93,6 +93,18 @@ async def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncGenera
 
 
 @pytest.fixture
+def visible_scene_edge_page():
+    page = np.full((850, 1160, 3), (176, 198, 221), np.uint8)
+    y, x = np.indices((532, 495))
+    page[165:697, 468:963] = np.uint8(np.stack((
+        90 + 33 * np.sin(y / 22),
+        93 + 44 * np.cos((x + y) / 40),
+        110 + 53 * np.sin(x / 22),
+    ), axis=-1))
+    return page, np.float32([[155, 110], [995, 110], [995, 736], [155, 736]])
+
+
+@pytest.fixture
 def rounded_corner_page():
     import cv2
 

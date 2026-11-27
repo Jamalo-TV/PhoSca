@@ -209,6 +209,7 @@ const sharedPrintRimReason = "PRINT_SHARED_RIM_UNCERTAIN";
 const possibleBackedPaperEdge = "possible_backed_paper_edge";
 export const possibleOverextendedPrintEdge = "possible_overextended_print_edge";
 const possibleInwardPrintEdge = "possible_inward_print_edge";
+const visibleSceneEdge = "visible_scene_edge";
 const possibleEmbossedAlbumPaperEdges = "possible_embossed_album_paper_edges";
 const possibleInwardPrintCorner = "possible_inward_print_corner";
 const possibleBowedPrintEdge = "possible_bowed_print_edge";
@@ -463,6 +464,7 @@ export function paperOutlineRequiresReview(fullPrint) {
     || fullPrint.suggested_edge_source === possibleBackedPaperEdge
     || fullPrint.suggested_edge_source === possibleOverextendedPrintEdge
     || fullPrint.suggested_edge_source === possibleInwardPrintEdge
+    || fullPrint.suggested_edge_source === visibleSceneEdge
     || fullPrint.suggested_edge_source === possibleEmbossedAlbumPaperEdges
     || hasMeasuredEdgeReview(fullPrint, possibleBowedPrintEdge)
     || hasMeasuredEdgeReview(fullPrint, possibleDisplacedPrintEdges)
@@ -546,6 +548,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
     }
     if (fullPrint.suggested_edge_source === possibleInwardPrintEdge) {
       return "Die gestrichelte Linie markiert einen weiter innen sichtbaren Abschnitt. Prüfe am Original, ob dort der Papierrand oder die Motivgrenze verläuft, und verfolge den Papierrand rundum.";
+    }
+    if (fullPrint.suggested_edge_source === visibleSceneEdge) {
+      return "Die gestrichelte Linie markiert einen sichtbaren Übergang ins Bild. Prüfe am Original, ob dort auch das Fotopapier beginnt. Sind die Ecken oder der Rand unter der Hülle verdeckt, hilft eine Aufnahme des frei liegenden Abzugs.";
     }
     if (fullPrint.suggested_edge_source === possibleEmbossedAlbumPaperEdges) {
       return "An den gestrichelten Abschnitten endet die sichtbare Prägung der Albumfolie. Prüfe am Original, ob dort das Fotopapier endet oder ob die Folie den Bildrand verdeckt. Setze die Ecken erst, wenn du den Papierrand erkennst.";

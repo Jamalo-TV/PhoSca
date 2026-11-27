@@ -2122,6 +2122,57 @@ async def test_saving_coordinates_cannot_release_a_photo_hidden_by_an_album_wind
         assert (await client.get(f"{url}/image?variant={name}")).status_code == 404
 
 
+async def test_visible_scene_guide_stays_held_and_retires_with_a_new_claim(client, monkeypatch, visible_scene_edge_page):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.visible_scene_edge import VISIBLE_SCENE_EDGE
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_CLASSICAL_SEGMENTATION_FALLBACK", "true")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    image, quad = visible_scene_edge_page
+    album_id, page_id, photo_id = await _seed_review_data(image)
+
+    def points(vertices):
+        return [{"x": float(x) / (image.shape[1] - 1), "y": float(y) / (image.shape[0] - 1)}
+                for x, y in vertices]
+
+    proposal = points(quad)
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {"source": "yolo_seg_mask", "detector_source": "yolo_onnx", "polygon": proposal}
+        photo.bounding_box = {f"{axis}{index}": bound(point[axis] for point in proposal)
+                              for axis in "xy" for index, bound in ((1, min), (2, max))}
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    response = await client.post(f"{url}/reprocess")
+    assert response.status_code == 200, response.text
+    modes = response.json()["enhancement_applied"]["correction"]["crop_modes"]
+    full = modes["full_print"]
+    assert full["suggested_edge_source"] == VISIBLE_SCENE_EDGE
+    assert "suggested_warp_quad" not in full and "outline_preview" not in full
+    assert all(mode["status"] == "review_needed" for mode in modes.values())
+    queue = await client.get("/api/v1/review/queue", params={"album_id": str(album_id), "type": "geometry"})
+    item, = queue.json()
+    assert item["payload"]["crop_modes"]["full_print"]["suggested_edge_traces"] == full["suggested_edge_traces"]
+
+    claim = points([(210, 380), (381, 380), (381, 470), (210, 470)])
+    added = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={"request_id": str(uuid4()), "warp_quad": claim})
+    assert added.status_code == 201, added.text
+    after = (await client.get(url)).json()["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+    assert "suggested_edge_source" not in after and "suggested_edge_traces" not in after
+    assert (await client.post(f"{url}/reprocess")).status_code == 200
+    final = (await client.get(url)).json()["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+    assert "suggested_edge_traces" not in final
+    for variant in ("full_print", "image_only", "source_corrected_trimmed", "full_print_preview", "image_only_preview"):
+        assert (await client.get(f"{url}/image", params={"variant": variant})).status_code == 404
+    assert (await client.get(f"{url}/image", params={"variant": "source_corrected_untrimmed"})).status_code == 200
+
+
 async def test_ribbed_outline_comparison_is_held_and_retires_with_an_adjacent_claim(client, monkeypatch, rounded_corner_page):
     from app.config import get_settings
     from app.database import get_session_factory

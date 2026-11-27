@@ -108,6 +108,7 @@ from app.pipeline.rounded_corner_review import (
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVIEW, SCALLOPED_PRINT_REVISION
 from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE, refine_visible_paper_rim
 from app.pipeline.source_strip_review import source_strip_outline
+from app.pipeline.visible_scene_edge import VISIBLE_SCENE_EDGE, suggest_visible_scene_edge
 
 _PRINT_BOUNDARY_SOURCE = "physical_print_boundary"
 _PAPER_RIM_SOURCE = "visible_paper_rim"
@@ -2516,6 +2517,26 @@ def correct_photo_crop(
                         pixels, evidence = preview
                         full_mode["outline_preview"] = {**evidence, "source_search_band": _vertices_on_page(scope, width, height)}
                         result = replace(result, full_print_preview=pixels)
+        if (enable_classical_retry and not manual and mask.get("detector_source") == "yolo_onnx"
+                and "PRINT_BOUNDARY_UNSUPPORTED" in full_reasons
+                and set(full_reasons) <= {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_ASPECT_UNCERTAIN",
+                                          "PRINT_CORNERS_UNCERTAIN", "POSSIBLE_CONTENT_CUTOFF"}
+                and not any(mask.get(key) for key in _STOCK_REVIEW_CONFLICTS)
+                and not any(full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview"))
+                and all(mode["status"] == "review_needed" for mode in modes.values())):
+            try:
+                spans = suggest_visible_scene_edge(page_image, src_points, boundary_refinement, neighbor_polygons)
+            except (ValueError, cv2.error):
+                spans = []
+            if spans:
+                boxes = []
+                for region in regions:
+                    if box := region_box_in_pixels(region, width, height):
+                        left, top, right, bottom = box
+                        boxes.append(np.float32([[left, top], [right, top], [right, bottom], [left, bottom]]))
+                if not any(motif_seams_intersect_claim(spans, box) for box in boxes):
+                    full_mode["suggested_edge_traces"] = [_vertices_on_page(span, width, height) for span in spans]
+                    full_mode["suggested_edge_source"] = VISIBLE_SCENE_EDGE
         return result
     rectified_untrimmed = corrected.copy()
     if trim_border and protection["passed"]:

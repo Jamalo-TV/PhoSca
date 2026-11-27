@@ -70,6 +70,7 @@ from app.pipeline.variants import (
     variant_urls,
     variants_from_metadata,
 )
+from app.pipeline.visible_scene_edge import VISIBLE_SCENE_EDGE
 from app.schemas import BoundingBoxUpdate, OCRRead, OCRUpdate, PhotoDetail, PhotoRead
 from app.schemas.common import PrintSizeMM
 from app.schemas.pipeline import ManualPhotoCreate
@@ -364,6 +365,11 @@ async def _review_overlapping_crops(
             neighbor.segmentation_mask = {**neighbor.segmentation_mask, MERGED_PRINT_PAIR: None}
         modes = correction.get("crop_modes") or {}
         full_mode = modes.get("full_print") or {}
+        if (full_mode.get("suggested_edge_source") == VISIBLE_SCENE_EDGE and full_mode.get("warp_quad")
+                and review_outline_intersects_claim(full_mode["warp_quad"], mask, width, height)):
+            full_mode.pop("suggested_edge_source", None)
+            full_mode.pop("suggested_edge_traces", None)
+            neighbor.enhancement_applied = metadata
         preview = full_mode.get("outline_preview") or {}
         preview_source = preview.get("source")
         strip = full_mode.get("source_strip_review") or {}
