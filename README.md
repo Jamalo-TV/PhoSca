@@ -161,6 +161,18 @@ können den neuen Vorschlag verhindern. Bestätige einen zusätzlichen
 Papierabzug in der Anzahlprüfung und prüfe danach beide Zuschnittmodi.
 [Kleinere Kacheln und umstrittene Kanten](data/evaluation/README.md#recheck-an-unclaimed-tile-in-smaller-views)
 
+Wenn die kleineren Ausschnitte einen zusätzlichen Umriss bestätigt
+haben, können zwei bereits gemessene Vorschläge eine Reihe oder
+Spalte erkennen lassen. PhoSca setzt den Abstand zwischen den beiden
+Umrissen einmal fort. Genau eine freie Position darf übrig bleiben.
+Zwei Ausschnitte müssen dort dieselbe Papierfläche finden. Im
+Original müssen die vier Kanten übereinstimmen und die Albumrippen
+an einer Flanke enden. Ein grösserer umschliessender Papierrand oder
+eine bereits beanspruchte Fläche verhindert den Vorschlag. Die Anzahl
+ändert sich erst mit der Bestätigung, dass es ein eigener Papierabzug
+ist. Danach bleiben seine Zuschnitte separat prüfpflichtig.
+[Freie Position in einer Reihe prüfen](data/evaluation/README.md#check-a-vacant-position-beside-measured-prints)
+
 Deckt ein schwacher Ganzseitenvorschlag möglicherweise zwei Abzüge ab,
 kann ein einzelner starker Kachelfund innerhalb dieser Kontur eine
 weitere Prüfung auslösen. PhoSca sucht in der Mitte des gemeinsamen

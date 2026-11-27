@@ -68,6 +68,7 @@ from app.pipeline.multipanel_prints import (
 from app.pipeline.near_capture_review import (
     NEAR_CAPTURE_PRINT_TRACES, near_capture_candidate_turn, near_capture_print_traces, quarter_turn,
 )
+from app.pipeline.neighboring_print_review import neighboring_print_outline, next_print_position
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_REVIEW, PARTIAL_PRINT_EXTENT_TRACES, partial_print_extent_traces
 from app.pipeline.print_edges import (
@@ -114,6 +115,12 @@ class SegmentationDetection:
 class SegmentationResult:
     detections: list[SegmentationDetection]
     metadata: dict
+
+
+@dataclass(frozen=True)
+class _NeighboringPrintSearch:
+    infer: Callable[[np.ndarray], list[SegmentationDetection]]
+    initial_claims: list[dict]
 
 
 @dataclass(frozen=True)
@@ -4422,9 +4429,10 @@ def segment_album_page(
     grid_view_pairs = []
     recentered_rotated_tile = []
     near_capture_views = []
+    neighboring_search = []
     result = _segment_album_page(
         image, settings, source, tile_offers, partial_tile_seeds, merged_tile_pairs, ribbed_tile_seeds, contrast_review,
-        adjacent_view_pairs, grid_view_pairs, recentered_rotated_tile, near_capture_views,
+        adjacent_view_pairs, grid_view_pairs, recentered_rotated_tile, near_capture_views, neighboring_search,
     )
     if settings.enable_classical_segmentation_fallback:
         if settings.enable_precise_photo_crops and (
@@ -4507,6 +4515,8 @@ def segment_album_page(
                 result = SegmentationResult(result.detections, {
                     **result.metadata, NEAR_CAPTURE_PRINT_TRACES: [_normalized_polygon(trace, 1, 1) for trace in traces],
                 })
+        if neighboring_search and (result.metadata.get("tiled_print_review") or {}).get("recovered_from_grid_views"):
+            result = _offer_neighboring_print(evidence_source, image, result, neighboring_search[0])
         if contrast_review:
             (seed, traces), = contrast_review
             matching = [i for i, item in enumerate(result.detections) if _contrast_review_candidate(item)
@@ -4656,6 +4666,53 @@ def _tiled_review_claims(result: SegmentationResult) -> list[dict]:
         for outline in (item.mask.get(MERGED_PRINT_PAIR) or {}).get("outlines", ()):
             claims.append({"polygon": outline})
     return claims
+
+
+def _measure_neighboring_print(
+    source: np.ndarray, image: np.ndarray, projection: np.ndarray, direction: np.ndarray,
+    claims: list[dict], infer: Callable[[np.ndarray], list[SegmentationDetection]],
+) -> np.ndarray | None:
+    height, width = source.shape[:2]
+    center = projection.mean(axis=0)
+    projected = pixel_vertices_to_normalized(projection, width, height)
+    inputs = _boundary_inputs(image)
+    masks = []
+    for extent in ((.36, .42), (.44, .49)):
+        left, top, right, bottom = window = _tile_window(center, width, height, extent)
+        mapped = _tile_detections_on_page(infer(image[top:bottom, left:right]), window, width, height)
+        matches = [(item, polygon) for item in mapped
+                   if normalized_polygon_overlap((polygon := _detection_polygon(item)), projected, raster_size=1024).iou >= .75]
+        if len(matches) != 1:
+            return None
+        (item, polygon), = matches
+        if (not item.geometry_valid or item.confidence < .80 or _detection_boundary_evidence(item, *inputs)["score"] < .80
+                or tiled_outline_conflicts(item.mask["polygon"], claims, width, height)):
+            return None
+        masks.append(polygon)
+    return neighboring_print_outline(source, masks, direction, claims)
+
+
+def _offer_neighboring_print(
+    source: np.ndarray, image: np.ndarray, result: SegmentationResult, search: _NeighboringPrintSearch,
+) -> SegmentationResult:
+    started = perf_counter()
+    review = dict(result.metadata["tiled_print_review"])
+    pending = (result.metadata.get("fusion") or {}).get("deferred_print_proposals") or []
+    claims = _tiled_review_claims(result) + search.initial_claims
+    height, width = source.shape[:2]
+    try:
+        position = next_print_position(pending, claims, width, height)
+        if position is None:
+            return result
+        outline = _measure_neighboring_print(source, image, *position, claims, search.infer)
+        if outline is not None:
+            result = _offer_unclaimed_tiled_prints(source, result, [_normalized_polygon(outline, width, height)])
+            review["candidates"] += 1
+            review["recovered_from_neighboring_prints"] = True
+    except Exception as exc:  # An optional review view must not affect existing crop decisions.
+        review["neighboring_print_error"] = str(exc)
+    review["runtime_ms"] = round(review["runtime_ms"] + (perf_counter() - started) * 1000, 2)
+    return SegmentationResult(result.detections, {**result.metadata, "tiled_print_review": review})
 
 
 def _offer_ribbed_backing_tile(source: np.ndarray, result: SegmentationResult, seed: np.ndarray) -> SegmentationResult:
@@ -5280,6 +5337,7 @@ def _segment_album_page(
     grid_view_pairs: list[list[tuple[np.ndarray, float]]] | None = None,
     recentered_rotated_tile: list[np.ndarray] | None = None,
     near_capture_views: list[np.ndarray] | None = None,
+    neighboring_search: list[_NeighboringPrintSearch] | None = None,
 ) -> SegmentationResult:
     model_path = Path(settings.yolo_model_path)
     line_budget = min(3 * image.shape[0] * image.shape[1], 12_000_000) if settings.enable_precise_photo_crops else None
@@ -5479,6 +5537,10 @@ def _segment_album_page(
                         **tile_review, "candidates": len(tile_offers),
                         "runtime_ms": round((perf_counter() - review_started) * 1000, 2),
                     }
+                    if neighboring_search is not None and grid_view_pairs:
+                        neighboring_search.append(_NeighboringPrintSearch(
+                            lambda frame: infer(frame, record_rejections=False)[0], _tiled_paper_claims(detections),
+                        ))
                 del inputs
                 if detections and settings.enable_classical_segmentation_fallback and risk_reasons and not dense_small_prints:
                     fallback = detect_photos_classical(

@@ -3060,6 +3060,71 @@ accounts for 1.93 s versus 1.21 s. This is the qualifying page, including
 the additional source measurements.
 Receipts are under `runs/crop-quality/recentered-rotation-review/`.
 
+#### Check a vacant position beside measured prints
+
+On native U040, two held outlines in the same column are already
+measured. One came from the existing smaller-grid check. The new
+path compares their centres and matching side directions. The
+axis cosine must reach 0.96, the two side lengths must agree within
+1.25×, and the pitch must be 0.93–1.35× the mean matching side length.
+Extrapolate in both directions and proceed only when exactly one
+projected four-corner position meets the frame and claim checks.
+No annotation determines the position. On this page the one vacant
+centre is near `(1012.2, 282.4)`.
+
+Two fresh local 512 views cover 36% × 42% and 44% × 49% of the page.
+Each must supply a unique matching mask, with model confidence and
+prepared boundary score at least 0.80. The two raw masks agree at
+0.9573 IoU. The original-pixel verification requires signed intensity
+and material transitions on all sides. It fits the two transverse
+rails independently and rejects a competing line on the inner edge.
+On at least one lateral flank, the periodic signal must repeat in
+three independent exterior strips and cease inside the outline. On
+the selected U040 right flank the far-to-near backing correlation is
+0.936, while far-to-inside correlation is −0.042. Native witness
+bands and the fitted footprint must be clear of active, pending and
+earlier raw claims. The fitted corners differ by at most 1.5 native
+pixels. A larger closed source perimeter vetoes the offer.
+
+The two native fits differ by 0.656 pixels at the farthest corner and
+reach 0.9593 and 0.9612 IoU against the proposed U040 development
+outline. Against the draft paper footprint, the held rendered comparison
+omits 4.12%. The largest native corner discrepancy is 7.24 pixels. Most
+omitted draft pixels near the paper edge resemble neighboring album
+stock. This source has no independently confirmed mask, aspect
+or landmark references for either mode.
+
+The normal multipart upload keeps four active detections, their
+stored outlines and preview JPEGs, and both prior pending items
+identical. It adds one uncounted print suggestion. Reanalysis
+reproduces it. A stale revision or absent standalone-print
+confirmation returns 409. Explicit confirmation raises the count
+to five. Reprocessing preserves the 266 × 256 source-corrected
+review JPEG. Both named variants and the legacy trimmed alias
+return 404.
+
+The unchanged detector finds this print at 90°. The 180° and 270°
+uploads contain incomplete or competing proposals and no suitable
+pair of measured neighbours. None of the three gains a duplicate
+offer. JPEG55, JPEG75 and JPEG90 also fail the ordinary page
+prerequisites, even though the JPEG90 source comparison can fit the
+paper given two matching masks. A diagnostic that also considered the
+active candidates as anchors found no additional candidate with four
+supported original sides in JPEG90, 180° or 270°. Wide same-art
+carriers and real-paper overlap controls exercise the claim, source
+and enclosing vetoes.
+A carrier with visible edges outside the local detector windows
+requires the wider 1.65× search. With an optically identical open
+carrier the visible scene can still pass a fixed-mask comparison.
+The suggestion therefore requires explicit standalone-print review.
+All eight regression suites preserve the prior detection and crop
+results. On the qualifying U040 page, five warm single-thread
+measurements under concurrent development load give a median
+segmentation time of 4.26 seconds versus 3.54 with this check disabled.
+Both profiles record dense tile revision 17. Reproduction,
+projection and upload receipts are under
+`runs/crop-quality/neighboring-print-review/`.
+
 #### Show open print edges near the capture boundary
 
 On native U008 the mixed detector's standard 70% tile pins an edge
@@ -3194,6 +3259,21 @@ The ONNX SHA-256 is
 `236796403f8c6f858a906554c4d7529ee7bcc8fa4af0509c73196df350449b05`.
 The training inventory, owner-mask manifests and matched reports are
 under `runs/crop-quality/crowded-print-training/paired-contact-controls/`.
+
+An independent source-only replay retraces the five enclosing-paper
+fusion losses. On the authored sheet `1449607-joined`, the losing
+classical seed allows a four-sided native paper measurement. It
+improves the held full-print comparison from 0.8038 to 0.9939
+footprint IoU and reduces the strict omission from 23,664 to 62
+source centres, with zero foreign interpolation samples beyond one
+pixel in either preview. Two other measured alternatives intersect
+still-active print claims, and one case has an unsupported fourth
+rail. With the current mixed checkpoint, the same wider outline
+for `1449607-joined` would enclose a separately active model
+proposal. The overlap veto holds. Some near-identical separate
+stocks can reproduce the optical signal. The comparison stays
+a held development prototype. Its
+source and rendered tests are in the `carrier-proof/` subfolder.
 
 #### Require separate confirmation for an unsupported contrast outline
 
