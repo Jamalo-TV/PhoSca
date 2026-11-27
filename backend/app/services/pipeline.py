@@ -92,9 +92,11 @@ from app.pipeline.protected_regions import (
     detect_protected_regions, is_advisory_page_face,
     protected_region_digest, protected_region_key, region_box_in_pixels,
 )
+from app.pipeline.ribbed_scene_edge import ribbed_scene_edge_review
 from app.pipeline.rounded_corner_review import ROUNDED_CORNER_SOURCE, ROUNDED_CORNER_WEDGES
 from app.pipeline.quality import segmentation_review_reasons
 from app.pipeline.segmentation import segment_album_page
+from app.pipeline.tile_print_review import CONTESTED_TILE_FOLLOWUP
 from app.pipeline.variants import (
     CROP_REVIEW_PREVIEWS, FULL_PRINT_REVIEW_PREVIEW, MOTIF_REVIEW_PREVIEW,
     build_variant_bundle,
@@ -567,6 +569,8 @@ async def perspective_correction_task_logic(
     current_quad = mask.get("warp_quad") or mask.get("polygon")
     manual_margin_state = mask.get(MANUAL_MARGIN_CONTEXT)
     review_provenance = metadata.get("review_provenance") or {}
+    followup_scene_review = (not automatic_detection
+        and (review_provenance.get("deferred_print_proposal") or {}).get("source") == CONTESTED_TILE_FOLLOWUP)
     reviewed_mark = None if automatic_detection else review_provenance.get("reviewed_album_mark")
     original = review_provenance.get("original_prediction") or {}
     prior_neighbor = None if automatic_detection else review_provenance.get("ready_before_neighbor_overlap")
@@ -643,6 +647,7 @@ async def perspective_correction_task_logic(
             settings.camera_calibration_path if precise_crops else None,
         )
     neighbor_masks = []
+    scene_edge_claims = []
     rejected_film_groups = {}
     measured_references = []
     paper_claim_conflicts: set[str] = set()
@@ -684,6 +689,15 @@ async def perspective_correction_task_logic(
                     neighbor_masks.append({"polygon": prior_quad})
             else:
                 neighbor_masks.append(other_mask)
+            if followup_scene_review:
+                scene_edge_claims.append(other_mask)
+                full_warp = (((correction or {}).get("crop_modes") or {}).get("full_print") or {}).get("warp_quad")
+                if full_warp:
+                    scene_edge_claims.append({"warp_quad": full_warp})
+                if outline := other_mask.get("crossing_print_suggestion"):
+                    scene_edge_claims.append({"polygon": outline})
+                for key in (MERGED_PRINT_PAIR, POSSIBLE_PRINT_REGIONS):
+                    scene_edge_claims.extend({"polygon": outline} for outline in (other_mask.get(key) or {}).get("outlines", []))
             if paper_claims.keys() - paper_claim_conflicts:
                 neighbor_groups = paper_claim_groups(other_mask, original_mask)
                 paper_claim_conflicts.update(overlapping_paper_claims(
@@ -852,6 +866,13 @@ async def perspective_correction_task_logic(
             correction_metadata["crop_validation"] = evidence
     full_mode = crop_modes.get("full_print")
     image_mode = crop_modes.get("image_only") or {}
+    if precise_crops and followup_scene_review and page_camera is None and full_mode:
+        scene_edge = await asyncio.to_thread(
+            ribbed_scene_edge_review, page_image, mask, review_provenance, photo.page.file_hash_sha256, crop_modes,
+            [*scene_edge_claims, *pending_neighbors, *(deferred_print_proposals or [])], protected_regions or [],
+        )
+        if scene_edge:
+            full_mode.update(scene_edge)
     ready = geometrically_ready_crop_modes(
         crop_modes, image_only_present=crop_result.image_only is not None,
         image_only_is_full_print=crop_result.image_only is corrected,

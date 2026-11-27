@@ -220,6 +220,7 @@ const adjacentFaintPaperSteps = "adjacent_faint_paper_steps";
 export const possibleOverextendedPrintEdge = "possible_overextended_print_edge";
 const possibleInwardPrintEdge = "possible_inward_print_edge";
 const visibleSceneEdge = "visible_scene_edge";
+export const ribbedSceneEdge = "ribbed_scene_edge";
 const bowedScenePreview = "bowed_scene_preview";
 const possibleEmbossedAlbumPaperEdges = "possible_embossed_album_paper_edges";
 const possibleInwardPrintCorner = "possible_inward_print_corner";
@@ -621,6 +622,7 @@ export function paperOutlineRequiresReview(fullPrint) {
     || fullPrint.suggested_edge_source === possibleOverextendedPrintEdge
     || fullPrint.suggested_edge_source === possibleInwardPrintEdge
     || fullPrint.suggested_edge_source === visibleSceneEdge
+    || fullPrint.suggested_edge_source === ribbedSceneEdge
     || fullPrint.suggested_edge_source === possibleEmbossedAlbumPaperEdges
     || hasMeasuredEdgeReview(fullPrint, possibleBowedPrintEdge)
     || hasMeasuredEdgeReview(fullPrint, possibleDisplacedPrintEdges)
@@ -726,6 +728,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
     }
     if (fullPrint.suggested_edge_source === visibleSceneEdge) {
       return "Die gestrichelte Linie markiert einen sichtbaren Übergang ins Bild. Prüfe am Original, ob dort auch das Fotopapier beginnt. Sind die Ecken oder der Rand unter der Hülle verdeckt, hilft eine Aufnahme des frei liegenden Abzugs.";
+    }
+    if (fullPrint.suggested_edge_source === ribbedSceneEdge) {
+      return "Violett markiert gemessene Übergänge vom hellen Streifen ins Bild. Prüfe am Original, wo das Fotopapier beginnt und ob der helle Streifen zum Abzug gehört.";
     }
     if (fullPrint.suggested_edge_source === bowedScenePreview) {
       if (fullPrint?.outline_preview?.excluded_outer_band) {

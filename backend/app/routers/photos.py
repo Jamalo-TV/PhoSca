@@ -71,6 +71,7 @@ from app.pipeline.protected_regions import (
     OFF_PRINT_ADVISORY, ProtectedRegionCut, ProtectedRegionRemoval, album_mark_correction_matches, album_mark_matches_quad,
     album_mark_source_matches,
 )
+from app.pipeline.ribbed_scene_edge import RIBBED_SCENE_EDGE, RIBBED_SCENE_EDGE_SCOPE
 from app.pipeline.ribbed_outline_review import MEASURED_RIBBED_PRINT_OUTLINE
 from app.pipeline.rounded_corner_review import ROUNDED_CORNER_SOURCE, ROUNDED_CORNER_WEDGES
 from app.pipeline.tile_print_review import CONTESTED_TILE_FOLLOWUP, TILED_PRINT_PROPOSAL, tiled_outline_conflicts
@@ -249,7 +250,7 @@ def _offer_contested_tile_followup(
     metadata = deepcopy(page.processing_metadata or {})
     segmentation = metadata.setdefault("steps", {}).setdefault("segmentation", {})
     segmentation.setdefault("fusion", {})["deferred_print_proposals"] = [
-        *pending, {"id": next_id, "reason": TILED_PRINT_PROPOSAL, "polygon": deepcopy(outline)},
+        *pending, {"id": next_id, "reason": TILED_PRINT_PROPOSAL, "source": CONTESTED_TILE_FOLLOWUP, "polygon": deepcopy(outline)},
     ]
     page.processing_metadata = {**metadata, "photo_count_revision": str(uuid4())}
 
@@ -443,6 +444,13 @@ async def _review_overlapping_crops(
             full_mode.get("suggested_edge_traces") or [], mask, width, height, margin_px=FAINT_PAPER_WITNESS_MARGIN,
         ):
             full_mode.pop("suggested_edge_source", None)
+            full_mode.pop("suggested_edge_traces", None)
+            neighbor.enhancement_applied = metadata
+        if full_mode.get("suggested_edge_source") == RIBBED_SCENE_EDGE and any(
+            tiled_outline_conflicts(scope, [mask], width, height) for scope in full_mode.get(RIBBED_SCENE_EDGE_SCOPE, [])
+        ):
+            full_mode.pop(RIBBED_SCENE_EDGE_SCOPE)
+            full_mode.pop("suggested_edge_source")
             full_mode.pop("suggested_edge_traces", None)
             neighbor.enhancement_applied = metadata
         inward_scope = full_mode.get(INWARD_SCENE_EDGE_SCOPE)

@@ -217,6 +217,15 @@ Bestätigung als eigener Abzug erhöht die Anzahl. Papierkontur,
 Papierformat und Motivgrenze werden für den neuen Eintrag separat
 geprüft. [Beispiel U039](data/evaluation/README.md#recheck-a-second-print-after-correcting-its-competing-proposal)
 
+Bei einem so ergänzten Abzug kann die Prüfung **Ganzer Abzug** offene
+violette Abschnitte innerhalb der gespeicherten Kontur zeigen. Sie
+markieren den gemessenen Übergang vom hellen Streifen ins Bild. Prüfe
+am Original, wo das Fotopapier beginnt und ob der Streifen zum Abzug
+gehört. Die Fotoecken setzt du weiterhin am Original. Sobald du eine
+Ecke verschiebst oder ein anderer Abzug einen Messbereich belegt,
+blendet PhoSca den Hinweis aus. Papierformat und Motivgrenze bleiben
+separate Prüfschritte. [Beispiel mit offenen Bildkanten](data/evaluation/README.md#show-an-open-scene-transition-inside-a-held-follow-up-print)
+
 Ein zu hoher oder zu breiter Modellvorschlag kann einen fehlenden und
 einen bereits erkannten Abzug umfassen. Zwei starke Kachelmasken müssen
 die Teilflächen einzeln finden. PhoSca prüft am Original die vier Kanten

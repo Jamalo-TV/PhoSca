@@ -66,7 +66,7 @@ import {
   getDeferredPrintEvidence, getDeferredPrintProposals, getDeferredParentCropHints, getMissingPrintEdgeReview, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin,
   MeasuredMotifReview, mergedPrintAsOneLabel, mergedPrintPairHint, possiblePrintRegionsHint,
-  paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
+  paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint, ribbedSceneEdge,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, printedIllustrationFrameStyle, printedIllustrationReviewHint, scannerBackingHint, scannerBackingReason,
   isNestedFallbackProposal, requiresStandalonePrintFlag, standalonePrintReviewErrors,
@@ -1567,7 +1567,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     selectedShape?.warpQuad]);
   const sourceStrip = useMemo(() => reviewingGeometry && !newPrint && !editingImage ? getSourceStripReview(fullPrintMode) : null,
     [reviewingGeometry, newPrint, editingImage, fullPrintMode]);
-  const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
+  const showPrintEdge = fullPrintMode?.suggested_edge_source !== ribbedSceneEdge
+    || sameReviewQuad(savedShape?.warpQuad, selectedShape?.warpQuad);
+  const printEdgeReviewHint = getPrintEdgeReviewHint(showPrintEdge ? fullPrintMode
+    : { ...fullPrintMode, suggested_edge_source: null, suggested_edge_traces: [] });
   const measuredOutlineCutoff = measuredOutlineCutoffRequiresReview(fullPrintMode);
   const measuredOutlineReview = measuredOutlineCutoff || measuredOutlineRecheckRequiresReview(fullPrintMode);
   const proposedPrintQuad = fullPrintMode?.suggested_warp_quad;
@@ -1591,7 +1594,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const imageSuggestion = advisoryMotif ? null : cyclicQuad(sanitizePolygon(motifReview?.suggested_warp_quad));
   const cutoffPaperTraces = measuredOutlineCutoff && fullPrintMode.suggested_edge_source === measuredOutlineCutoffSource;
   const traces = editingImage && !advisoryMotif && !cutoffPaperTraces
-    ? motifReview?.suggested_seam_traces : fullPrintMode?.suggested_edge_traces;
+    ? motifReview?.suggested_seam_traces : showPrintEdge && fullPrintMode?.suggested_edge_traces;
   const neighborOutline = editingImage ? null : fullPrintMode?.neighbor_overlap_outline;
   const missingPaperOutlines = editingImage ? null : fullPrintMode?.neighbor_content_loss_outlines;
   const exposedOverlapEdges = editingImage ? null : fullPrintMode?.exposed_overlap_edge_traces;

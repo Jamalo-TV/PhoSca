@@ -73,6 +73,45 @@ async def _seed_review_data(image=None):
         return album.id, page.id, photo.id
 
 
+async def test_scene_edge_guide_is_retired_by_a_new_manual_claim_on_the_remote_witness(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.ribbed_scene_edge import RIBBED_SCENE_EDGE, RIBBED_SCENE_EDGE_SCOPE
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    get_settings.cache_clear()
+    _, page_id, photo_id = await _seed_review_data(np.full((600, 660, 3), 180, np.uint8))
+
+    def quad(left, top, right, bottom):
+        return [{"x": x, "y": y} for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
+
+    retained_geometry = quad(.10, .20, .79, .90)
+    trace = [quad(.14, .32, .15, .56)[::3]]
+    scope = [quad(.13, .30, .17, .60), quad(.84, .30, .85, .60)]
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.enhancement_applied = {"correction": {"crop_modes": {"full_print": {
+            "warp_quad": retained_geometry, "status": "review_needed", "suggested_edge_source": RIBBED_SCENE_EDGE,
+            "suggested_edge_traces": trace, RIBBED_SCENE_EDGE_SCOPE: scope,
+        }}}}
+        await session.commit()
+
+    add_url = f"/api/v1/pages/{page_id}/manual-photos"
+    unrelated = await client.post(add_url, json={"request_id": str(uuid4()), "warp_quad": quad(.88, .13, .97, .29)})
+    assert unrelated.status_code == 201, unrelated.text
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        assert photo.enhancement_applied["correction"]["crop_modes"]["full_print"]["suggested_edge_traces"] == trace
+
+    overlaps = await client.post(add_url, json={"request_id": str(uuid4()), "warp_quad": quad(.82, .34, .93, .62)})
+    assert overlaps.status_code == 201, overlaps.text
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        full = photo.enhancement_applied["correction"]["crop_modes"]["full_print"]
+        assert full == {"warp_quad": retained_geometry, "status": "review_needed"}
+
+
 @pytest.mark.parametrize("edit_existing", [False, True])
 async def test_neighboring_source_guide_is_retired_only_by_a_material_manual_claim(client, monkeypatch, edit_existing):
     from app.config import get_settings
@@ -2921,7 +2960,9 @@ async def test_contested_tile_followup_requires_a_committed_matching_correction(
         return
 
     assert after["photo_count_revision"] != revision
-    assert after["deferred_print_proposals"] == [*pending, {"id": 3, "reason": TILED_PRINT_PROPOSAL, "polygon": followup}]
+    assert after["deferred_print_proposals"] == [
+        *pending, {"id": 3, "reason": TILED_PRINT_PROPOSAL, "source": CONTESTED_TILE_FOLLOWUP, "polygon": followup},
+    ]
     assert CONTESTED_TILE_FOLLOWUP not in saved.json()["segmentation_mask"]
     retry = await client.patch(url, json=body)
     assert retry.status_code == 200, retry.text

@@ -21,7 +21,7 @@ import {
   getDeferredParentCropHints, getDeferredPrintEvidence, getDeferredPrintProposals, getMissingPrintEdgeReview, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin,
   MeasuredMotifReview, MeasuredMotifReviewOverlay, mergedPrintAsOneLabel, mergedPrintPairHint, possiblePrintRegionsHint,
-  paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
+  paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint, ribbedSceneEdge,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview, partialMotifSeams, printedIllustrationFrameStyle,
   isNestedFallbackProposal, requiresStandalonePrintFlag, projectivePrintProposal, standalonePrintReviewErrors, tiledPrintProposal,
@@ -233,8 +233,6 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const fullPrintMode = reviewedNonPrint ? null : item.payload?.crop_modes?.full_print;
   const contrastOutlineReview = contrastOutlineNeedsConfirmation(item.payload, item.payload?.crop_modes?.full_print);
   const fullPrintHeld = !reviewedNonPrint && wholePrintApprovalHeld(item.payload?.crop_modes, item.payload?.variant_urls);
-  const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode)
-    || (fullPrintHeld && heldPrintCorrectionHint(fullPrintMode));
   const motifMode = item.payload?.crop_modes?.image_only;
   const motifReviewPending = !reviewedNonPrint && item.payload?.motif_review_pending;
   const motifBoundaryReviewHint = getMotifBoundaryReviewHint(motifMode);
@@ -251,7 +249,6 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
   const initialPaperOutline = deferredDraft?.polygon || (openPaperOutline && paperGrid?.cut === null && printSuggestion);
-  const printEdgeTraces = getSourceEdgeTraces(fullPrintMode?.suggested_edge_traces);
   const filmEdgeIndex = getFilmNeighborEdgeIndex(fullPrintMode);
   const adjacentOutline = item.payload?.confidence != null
     && cyclicReviewQuad(sanitizeReviewPolygon(item.payload?.segmentation_mask?.adjacent_print_suggestion));
@@ -276,6 +273,10 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     sourceBox,
   ));
   const [quad, setQuad] = useState(initialOuter); const [geometrySaving, setSaving] = useState(false);
+  const showPrintEdge = fullPrintMode?.suggested_edge_source !== ribbedSceneEdge || sameReviewQuad(initialOuter(), quad);
+  const printEdgeReviewHint = (showPrintEdge && getPrintEdgeReviewHint(fullPrintMode))
+    || (fullPrintHeld && heldPrintCorrectionHint(fullPrintMode));
+  const printEdgeTraces = showPrintEdge ? getSourceEdgeTraces(fullPrintMode?.suggested_edge_traces) : [];
   const [reprocessing, setReprocessing] = useState(false);
   const [draftTouched, setDraftTouched] = useState(false);
   const saving = geometrySaving || reprocessing;

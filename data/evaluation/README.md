@@ -2780,6 +2780,60 @@ reports retain their earlier detection and crop outcomes, including
 Source measurements, ordinary upload and review receipts and screen
 captures are under `runs/crop-quality/u039-contested-followup/`.
 
+#### Show an open scene transition inside a held follow-up print
+
+On the upper-left U039 print the held left edge follows an album
+highlight. A signed native fit finds the image transition around 18
+pixels further in. The bright strip outside the transition repeats
+the same rib pattern as an independent gutter across the print.
+The pattern stops toward the darker scene. An opaque, flat rim can
+preserve the contrast step, which is why the repeated material and
+independent gutter evidence are required.
+
+The check searches short native bands inside each side of the held
+outline. It requires at least 95.5% signed luminance and colour
+support overall and 82% in every eighth, plus an unambiguous native
+refit. Three exterior strips must carry the repeated texture. The
+texture must lose coherence toward the scene, and the opposite
+gutter must agree in colour and phase. Only one side may satisfy
+these checks. Rounded corner neighborhoods and unsupported gaps
+stay open. On native U039 this gives two spans with a combined
+length of about 200 pixels. Evidence from the lower transition
+remains a development finding.
+
+The check applies after explicitly adding a server-marked follow-up
+proposal. The current, originally entered, offered and rendered
+corners must match the original-page fingerprint and both crop modes
+must still await review. Other crop explanations take precedence.
+The search strip, refined side and independently sampled gutter
+must stay clear of active and pending paper claims and protected
+content. A new claim across a witness removes the hint. A geometry
+draft that moves its corners hides the hint on desktop and mobile.
+Saving a changed outline or specifying a motif shape makes the
+original hint inapplicable, including during ordinary reprocessing.
+Rows created before the server origin marker continue their existing
+review workflow.
+
+The new metadata draws violet strokes on the original in the
+`full_print` editor. The working pixels, warp and preview JPEG
+stay identical before and after the check. The user can compare
+the recorded outer contour with the measured transition. Both
+exports remain held. The ordinary exact-save and photo reprocessing
+paths reproduce the two observed spans. A moved draft hides them
+while keeping the existing hold explanation available.
+
+All 12 original, rotated and JPEG75/JPEG55 fixed-geometry views
+retain two spans. A shifted occluding strip, a hard shadow, a flat
+opaque rim and a faded transition suppress the hint in both native
+and JPEG75 controls. A printed sheet that reproduces the album
+texture can retain both transitions even after small changes to
+paper colour. The strokes therefore describe visible evidence.
+They provide no crop geometry or ownership decision.
+The single-thread optical check took a warm median of 31 ms
+over eleven fixed-geometry runs under shared test load.
+The upload and review receipts, images and source controls are under
+`runs/crop-quality/u039-ribbed-scene-edge/`.
+
 #### Recover a held outline from a proposal covering an existing print
 
 On native U040, an invalid full-page mask covers the middle and
