@@ -29,6 +29,7 @@ import {
   getSourceStripReview, SourceStripOutline, SourceStripReview, offPrintAdvisorySource, useAlbumPageMarkReview,
 } from "./CropVariants.jsx";
 import {
+  contrastCrossingTraceHint, contrastCrossingTraceStyle, getContrastCrossingTraces,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getMergedPrintPairs, getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
@@ -271,6 +272,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const [editMode, setEditMode] = useState("full_print");
   const [motifQuad, setMotifQuad] = useState(storedMotif);
   const editingMotif = canEditMotif && editMode === "image_only";
+  const contrastCrossingTraces = editable && contrastOutlineReview && !deferredDraft && !editingMotif
+    ? getContrastCrossingTraces(item.payload, initialOuter(), quad) : [];
   const selectedMergedPair = !reviewedNonPrint && getMergedPrintPairs([item.payload || {}])[0];
   const sourceStrip = editable && !deferredDraft && !editingMotif ? getSourceStripReview(fullPrintMode) : null;
   const albumMark = editable && !editingMotif && !reviewedNonPrint ? markOffer : null;
@@ -571,6 +574,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     paperJoinGroups.length && "mobile-paper-join-count-hint",
     editable && motifTraces.length && "mobile-motif-seam-hint",
     editable && preliminaryMotifMarks && "mobile-motif-review-hint",
+    contrastCrossingTraces.length && "mobile-contrast-crossing-review-hint",
     sourceStrip && "mobile-source-strip-review-hint",
   ].filter(Boolean).join(" ");
   const paperTraceOverlay = printEdgeTraces.map((trace, index) => (
@@ -603,6 +607,16 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
             fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9" />}
           <polygon className="editable-quad" points={displayedQuad.map(point => `${point.x * 1000},${point.y * 1000}`).join(" ")} />
           {!editingMotif && <>{uncertainLine}{alternateOverlay}{paperTraceOverlay}</>}
+          {contrastCrossingTraces.length > 0 && <g aria-hidden="true" fill="none" pointerEvents="none">
+            {contrastCrossingTraces.map(([start, end], index) => {
+              const points = `${start.x * 1000},${start.y * 1000} ${end.x * 1000},${end.y * 1000}`;
+              return <g key={index}>
+                <polyline points={points} stroke={contrastCrossingTraceStyle.contrast} strokeWidth="4" vectorEffect="non-scaling-stroke" />
+                <polyline points={points} stroke={contrastCrossingTraceStyle.color} strokeWidth="2" vectorEffect="non-scaling-stroke"
+                  strokeDasharray={contrastCrossingTraceStyle.dash.join(" ")} />
+              </g>;
+            })}
+          </g>}
           {sourceStrip && <SourceStripOutline edgeOnly={sourceStrip.edgeOnly}
             points={sourceStrip.outline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />}
           {!editingMotif && getSourceEdgeTraces(fullPrintMode?.exposed_overlap_edge_traces).map((trace, index) => (
@@ -714,6 +728,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         && <p className="quad-hint">{paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint}</p>}
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
+      {contrastCrossingTraces.length > 0 && <p className="quad-hint" id="mobile-contrast-crossing-review-hint">{contrastCrossingTraceHint}</p>}
       {contrastOutlineReview && <p className="quad-hint">{contrastOutlineReviewHint}</p>}
       {!reviewedNonPrint && getDeferredParentCropHints(item.payload?.review_reasons).map(({ id, text }) => (
         <p key={id} className="quad-hint" id={`mobile-${id}`}>{text}</p>

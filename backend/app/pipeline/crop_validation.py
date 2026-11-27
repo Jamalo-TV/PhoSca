@@ -161,6 +161,10 @@ def crop_validation_profile(settings: Settings) -> dict:
         "dense_tile_inference": (
             12 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
+        "contrast_crossing_review": (
+            1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback
+            and visible_model is None else None
+        ),
         "deskew_inference": 1 if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None,
         "border_analysis": settings.enable_border_trim,
         "curved_motif_check": 7 if settings.enable_precise_photo_crops and settings.enable_border_trim else None,

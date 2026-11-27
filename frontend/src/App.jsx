@@ -70,6 +70,7 @@ import {
   offPrintAdvisorySource, useAlbumPageMarkReview,
 } from "./CropVariants.jsx";
 import {
+  contrastCrossingTraceHint, contrastCrossingTraceStyle, getContrastCrossingTraces,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getMergedPrintPairs, getPaperJoinReviewGroups, getStoredMotifQuad,
@@ -1500,6 +1501,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     && confirmedContrastOutline?.quad === selectedShape?.warpQuad;
   const contrastOutlineNeedsCheck = contrastOutlineReview && !contrastOutlineConfirmed;
   const fullPrintMode = rejectedDetection ? null : selectedModes?.full_print;
+  const contrastCrossingTraces = useMemo(() => reviewingGeometry && !newPrint && !editingImage
+    ? getContrastCrossingTraces(selected, savedShape?.warpQuad, selectedShape?.warpQuad) : [],
+  [reviewingGeometry, newPrint, editingImage, selected, savedShape?.warpQuad, selectedShape?.warpQuad]);
   const sourceStrip = useMemo(() => reviewingGeometry && !newPrint && !editingImage ? getSourceStripReview(fullPrintMode) : null,
     [reviewingGeometry, newPrint, editingImage, fullPrintMode]);
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
@@ -1646,6 +1650,23 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             context.stroke();
           }
         }
+        context.restore();
+      }
+      if (photo.id === selectedPhotoId && contrastCrossingTraces.length) {
+        const { color, contrast, dash } = contrastCrossingTraceStyle;
+        context.save();
+        context.beginPath();
+        for (const [start, end] of contrastCrossingTraces) {
+          context.moveTo(start.x * canvas.width, start.y * canvas.height);
+          context.lineTo(end.x * canvas.width, end.y * canvas.height);
+        }
+        context.strokeStyle = contrast;
+        context.lineWidth = 4;
+        context.stroke();
+        context.strokeStyle = color;
+        context.lineWidth = 2;
+        context.setLineDash(dash);
+        context.stroke();
         context.restore();
       }
       if (photo.id === selectedPhotoId && sourceStrip) {
@@ -1908,7 +1929,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       context.restore();
     }
-  }, [alternateOutline, blockedRegions, captureSplitGroups, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges, extentEdges, mergedPairs,
+  }, [alternateOutline, blockedRegions, captureSplitGroups, contrastCrossingTraces, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges, extentEdges, mergedPairs,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
     printSuggestion,
     markBounds, missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, preliminaryMotifMarks, selectedCountGroup, selectedPhotoId, showMissingEdges, sourceStrip]);
@@ -2331,11 +2352,13 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           paperJoinGroups.length && "paper-join-count-hint",
           captureSplitGroups.length && "capture-split-count-hint",
           mergedPairs.length && "merged-print-pair-hint",
+          contrastCrossingTraces.length && "contrast-crossing-review-hint",
           sourceStrip && "source-strip-review-hint",
           preliminaryMotifMarks ? "held-motif-margin-hint"
             : editingImage && motifMarginMarks.length && !crossingReview && !needsPrintReview && "motif-margin-marks-hint",
         ].filter(Boolean).join(" ") || undefined}
       />
+      {contrastCrossingTraces.length > 0 && <p className="crop-editor-hint" id="contrast-crossing-review-hint">{contrastCrossingTraceHint}</p>}
       {!newPrint && detectionReviewHint && !rejectedDetection && (
         <div className="manual-print-actions">
           <p className="crop-editor-hint">{detectionReviewHint}</p>

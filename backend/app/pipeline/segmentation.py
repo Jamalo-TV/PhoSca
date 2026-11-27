@@ -16,6 +16,7 @@ from app.pipeline.album_leaf_review import (
 )
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves
 from app.pipeline.capture_fabric_review import CAPTURE_FABRIC_PROPOSAL, capture_fabric_traces
+from app.pipeline.contrast_crossing_review import CONTRAST_CROSSING_TRACES, contrast_crossing_traces, contrast_review_windows
 from app.pipeline.crossing_prints import (
     CONTESTED_TILE_OUTLINE, CROSSING_PRINT_REVIEW, crossing_print_outlines, near_leaf_edge_traces, staggered_print_source_traces,
     tile_crosses_unsupported_frame_claim,
@@ -4412,7 +4413,10 @@ def segment_album_page(
     partial_tile_seeds = []
     merged_tile_pairs = []
     ribbed_tile_seeds = []
-    result = _segment_album_page(image, settings, source, tile_offers, partial_tile_seeds, merged_tile_pairs, ribbed_tile_seeds)
+    contrast_review = []
+    result = _segment_album_page(
+        image, settings, source, tile_offers, partial_tile_seeds, merged_tile_pairs, ribbed_tile_seeds, contrast_review,
+    )
     if settings.enable_classical_segmentation_fallback:
         if settings.enable_precise_photo_crops and (
             result.metadata.get("fallback_used") or (result.metadata.get("model_set_risk") or {}).get("risky")
@@ -4460,6 +4464,19 @@ def segment_album_page(
             result = _review_merged_tile_pair(evidence_source, result, *merged_tile_pairs[0])
         if ribbed_tile_seeds:
             result = _offer_ribbed_backing_tile(evidence_source, result, ribbed_tile_seeds[0])
+        if contrast_review:
+            (seed, traces), = contrast_review
+            matching = [i for i, item in enumerate(result.detections) if _contrast_review_candidate(item)
+                        and np.array_equal(_detection_polygon(item), seed)]
+            if len(matching) == 1:
+                index, = matching
+                height, width = evidence_source.shape[:2]
+                detections = result.detections.copy()
+                item = detections[index]
+                detections[index] = replace(item, mask={
+                    **item.mask, CONTRAST_CROSSING_TRACES: [_normalized_polygon(span, width, height) for span in traces],
+                })
+                result = SegmentationResult(detections, result.metadata)
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
@@ -4923,12 +4940,41 @@ def _collect_rotated_print_offers(
     return offers
 
 
+def _contrast_review_candidate(item: SegmentationDetection) -> bool:
+    fusion = item.mask.get("fusion") or {}
+    return (
+        item.geometry_valid and not item.review_reasons and not item.mask.get("warp_quad")
+        and item.mask.get("source") == "classical_min_area_rect" and item.mask.get("detector_source") == "contrast_region"
+        and fusion.get("proposal_count") == 1 and fusion.get("proposal_families") == ["classical"]
+    )
+
+
+def _contrast_review_observations(
+    image: np.ndarray, quad: np.ndarray, infer: Callable[[np.ndarray], list[SegmentationDetection]],
+) -> Iterator[tuple[int, np.ndarray, float]]:
+    height, width = image.shape[:2]
+    inputs = _boundary_inputs(image)
+    observations = {}
+    for side, window in contrast_review_windows(quad, width, height):
+        if window not in observations:
+            left, top, right, bottom = window
+            detections = _tile_detections_on_page(infer(image[top:bottom, left:right]), window, width, height)
+            observations[window] = [
+                (normalized_vertices_to_pixels(_detection_polygon(item), width, height), item.confidence)
+                for item in detections if item.geometry_valid and item.confidence >= .76
+                and item.mask.get("source") == "yolo_seg_mask" and _detection_boundary_evidence(item, *inputs)["score"] >= .68
+            ]
+        for polygon, confidence in observations[window]:
+            yield side, polygon, confidence
+
+
 def _segment_album_page(
     image: np.ndarray, settings: Settings, source: np.ndarray | None = None,
     tile_offers: list[list[dict]] | None = None,
     partial_tile_seeds: list[list[dict]] | None = None,
     merged_tile_pairs: list[tuple[np.ndarray, list[np.ndarray]]] | None = None,
     ribbed_tile_seeds: list[np.ndarray] | None = None,
+    contrast_review: list[tuple[np.ndarray, list[np.ndarray]]] | None = None,
 ) -> SegmentationResult:
     model_path = Path(settings.yolo_model_path)
     line_budget = min(3 * image.shape[0] * image.shape[1], 12_000_000) if settings.enable_precise_photo_crops else None
@@ -4963,15 +5009,16 @@ def _segment_album_page(
             )
             rejected_proposals: Counter[str] = Counter()
 
-            def infer(frame: np.ndarray):
+            def infer(frame: np.ndarray, *, record_rejections: bool = True):
                 letterboxed, transform = _letterbox_image(frame, target_width, target_height)
                 tensor = letterboxed[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
                 outputs = session.run(None, {input_meta.name: tensor[np.newaxis, ...]})
                 detections = _parse_simple_box_outputs(
                     outputs, frame.shape[1], frame.shape[0], settings,
-                    input_width=target_width, input_height=target_height, rejected=rejected_proposals,
+                    input_width=target_width, input_height=target_height,
+                    rejected=rejected_proposals if record_rejections else None,
                 )
-                if rejected_proposals:
+                if record_rejections and rejected_proposals:
                     metadata["rejected_model_proposals"] = dict(rejected_proposals)
                 return detections, transform, outputs
 
@@ -5119,6 +5166,25 @@ def _segment_album_page(
                             "classical_metadata": fallback.metadata,
                         }
                     )
+                    if (source is not None and contrast_review is not None
+                            and "tiled_print_review" in metadata and 2 <= len(merged) <= 8):
+                        candidates = [item for item in merged if _contrast_review_candidate(item)]
+                        if len(candidates) == 1:
+                            seed = _detection_polygon(candidates[0])
+                            if len(seed) == 4 and cv2.isContourConvex(seed):
+                                started = perf_counter()
+                                quad = order_quad_cyclic(normalized_vertices_to_pixels(seed, *source.shape[1::-1]))
+                                try:
+                                    traces = contrast_crossing_traces(source, quad, _contrast_review_observations(
+                                        image, quad, lambda frame: infer(frame, record_rejections=False)[0],
+                                    ))
+                                except Exception:  # A failed optional view leaves the existing proposals intact.
+                                    traces = []
+                                if traces:
+                                    contrast_review.append((seed, traces))
+                                    metadata["contrast_crossing_review"] = {
+                                        "runtime_ms": round((perf_counter() - started) * 1000, 2),
+                                    }
                     return SegmentationResult(detections=merged, metadata=metadata)
                 if detections:
                     model_only, fusion = fuse_candidate_evidence(image, detections, [], model_evidence=model_evidence)

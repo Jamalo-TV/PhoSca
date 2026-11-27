@@ -2661,6 +2661,46 @@ confirmation both named exports returned the rectified single print.
 This verifies the manual path on the real source. The crop is a
 development example, with rounded corners still visible in the render.
 
+#### Show source detail across an unsupported contrast outline
+
+The source advisory runs when the existing tile review examines a
+risky page and fusion retains a single eligible classical contrast
+rectangle among two to eight detections. The rectangle must be fully
+inside the capture, with at least 12 native pixels around its corners
+and a shortest side of at least 320 pixels. All four sides must lack
+independent boundary support above 0.42 and have no competing edge or
+positive paper rim. A veto stops before regional model inference.
+
+PhoSca takes up to two views centred near each side. Each witness uses
+a regional segmentation mask with model confidence of at least 0.76
+and prepared boundary evidence of at least 0.68. Two opposite sides
+of that mask must have source-measured rails that bracket the suspect
+line. The method keeps the interval shared by plausible fits, away
+from the observed scene boundaries. The original source must contain
+at least five connected structures crossing a native 21-pixel band.
+The connections must cover at least six of eight equal sections and
+span at least 60% of the length. Exactly one pair on different axes
+and with distinct regional masks must agree. The original proposal
+must survive refinement with the same geometry.
+
+On U039 JPEG55, the review shows 210 and 243 native pixels on the
+upper-car and flower scenes. The normal upload and reprocessing
+retain three active proposals and one pending offer. Both named
+exports and the cropped alias remain held. Desktop and mobile show
+the same endpoints and clear the guides when the editing corners
+move. The orange marks refer to local image detail. Geometry, crop
+status and the active count depend on the existing checks and review.
+
+An independent replay withheld the advisory on 24 real control
+contours, including a physical contact sheet. Six of ten targeted
+recompositions with narrow seams, faint rims or weak shadows still
+produce both marks. The trace pair does not resolve stock ownership.
+In three real pipeline comparisons, both mode records and rendered
+pixel arrays match the run with the advisory disabled. U039 took
+about 1.15 s for the advisory in one single-thread CPU replay.
+The development source reports and browser captures are under
+`runs/crop-quality/u039-jpeg55/crossing-traces/`.
+
 #### Review a protection margin outside a manually added print
 
 Off-print advisory revision 2 adds a path for a manually added print

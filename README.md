@@ -1066,6 +1066,15 @@ Zeigt die markierte Fläche keinen eigenen Abzug, kannst du sie als
 unabhängige Vorschläge bleiben erhalten.
 [Beispiel einer unbelegten Kontrastkontur](data/evaluation/README.md#require-separate-confirmation-for-an-unsupported-contrast-outline)
 
+Sind beide Zuschnitte in Prüfung, kann die Geometrieprüfung zwei
+orange gestrichelte Abschnitte auf der vorgeschlagenen Kontur zeigen.
+Dort ist beidseits der Linie zusammenhängende Bildstruktur messbar.
+Prüfe an diesen Stellen den Papierrand im Original. Beim Verschieben
+einer Ecke verschwinden die Markierungen für den ursprünglichen
+Vorschlag. Die Markierungen allein ändern weder die Ecken noch die
+Abzugsanzahl oder den Prüfstatus.
+[Messung durchgehender Bildstruktur](data/evaluation/README.md#show-source-detail-across-an-unsupported-contrast-outline)
+
 | Aktion | Verhalten |
 | --- | --- |
 | Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |

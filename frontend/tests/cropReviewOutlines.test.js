@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  albumLeafSourceWindow, getAlbumLeafReviewGroups,
+  albumLeafSourceWindow, getAlbumLeafReviewGroups, getContrastCrossingTraces,
   filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
   getFilmGridReviewSeams, getFragmentReviewOutlines, getMergedPrintPairs,
   getPaperGridOutlineParents, getPaperGridReviewGroups,
@@ -61,6 +61,39 @@ test("a crossing count hint selects only its current, held automatic proposal", 
   assert.equal(group.kind, "crossing");
   assert.deepEqual(group.photoIds, new Set(["crossed"]));
   assert.deepEqual(group.traces, traces);
+});
+
+test("two valid contrast crossing spans are shown only on unchanged held automatic interior outlines", () => {
+  const traces = [[quad[0], quad[1]], [quad[2], quad[3]]];
+  const segmentationMask = { detector_source: "contrast_region", contrast_crossing_traces: traces };
+  const fullPrint = { status: "review_needed", reason_codes: ["PRINT_BOUNDARY_UNSUPPORTED"] };
+  const modes = { full_print: fullPrint, image_only: { status: "review_needed" } };
+  const desktop = { segmentation_confidence: .71, segmentation_mask: segmentationMask,
+    enhancement_applied: { correction: { crop_modes: modes } } };
+  const mobile = { confidence: .71, segmentation_mask: segmentationMask, crop_modes: modes };
+  const unchanged = structuredClone(quad);
+  const changed = structuredClone(quad);
+  changed[1].x += .0001;
+  assert.deepEqual(getContrastCrossingTraces(desktop, quad, unchanged), traces);
+  assert.deepEqual(getContrastCrossingTraces(mobile, quad, unchanged), traces);
+  assert.deepEqual(getContrastCrossingTraces(desktop, quad, changed), []);
+  assert.deepEqual(getContrastCrossingTraces(mobile, quad, null), []);
+
+  for (const photo of [
+    { ...desktop, reviewed_non_print: true },
+    { ...mobile, review_reasons: ["GEOMETRY_REVIEW_WRONG_OBJECT"] },
+    { ...mobile, confidence: null },
+    { ...mobile, segmentation_mask: { ...segmentationMask, detector_source: "yolo_onnx" } },
+    { ...mobile, crop_modes: { ...modes, full_print: { ...fullPrint, status: "ready" } } },
+    { ...mobile, crop_modes: { ...modes, image_only: { status: "ready" } } },
+    { ...mobile, crop_modes: { full_print: fullPrint } },
+    { ...mobile, crop_modes: { ...modes, full_print: { ...fullPrint, reason_codes: [] } } },
+    { ...mobile, crop_modes: { ...modes, full_print: { ...fullPrint, reason_codes: [...fullPrint.reason_codes, "PRINT_AT_CAPTURE_EDGE"] } } },
+    ...[[traces[0]], [...traces, traces[0]], [[quad[0], quad[0]], traces[1]], [quad, traces[1]],
+      [[{ x: -.01, y: .2 }, quad[1]], traces[1]]].map(contrast_crossing_traces => ({
+      ...mobile, segmentation_mask: { ...segmentationMask, contrast_crossing_traces },
+    })),
+  ]) assert.deepEqual(getContrastCrossingTraces(photo, quad, unchanged), []);
 });
 
 test("an album leaf can be excluded only while exactly one active matched child remains", () => {

@@ -1,3 +1,5 @@
+import { contrastOutlineNeedsConfirmation } from "./cropReviewApproval.js";
+
 function isNormalizedPoint(point) {
   return [point?.x, point?.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1);
 }
@@ -52,6 +54,20 @@ function cropModes(photo) {
 
 function bothModesHeld(modes) {
   return modes?.full_print?.status === "review_needed" && modes?.image_only?.status === "review_needed";
+}
+
+export const contrastCrossingTraceHint = "An den orange markierten Stellen ist Bildstruktur auf beiden Seiten der vorgeschlagenen Linie sichtbar. Prüfe dort den Papierrand am Original.";
+export const contrastCrossingTraceStyle = { color: "#f59e0b", contrast: "#78350f", dash: [8, 5] };
+
+export function getContrastCrossingTraces(photo, savedQuad, editedQuad) {
+  if (!photo || photo.reviewed_non_print || photo.review_reasons?.includes("GEOMETRY_REVIEW_WRONG_OBJECT")) return [];
+  const modes = cropModes(photo);
+  if (!bothModesHeld(modes) || !contrastOutlineNeedsConfirmation(photo, modes.full_print)) return [];
+  if (savedQuad?.length !== 4 || editedQuad?.length !== 4
+      || savedQuad.some(({ x, y }, index) => x !== editedQuad[index].x || y !== editedQuad[index].y)) return [];
+  const traces = photo.segmentation_mask?.contrast_crossing_traces;
+  return Array.isArray(traces) && traces.length === 2 && traces.every(line => sourceReviewLine(line)
+    && (line[0].x !== line[1].x || line[0].y !== line[1].y)) ? traces : [];
 }
 
 export function getFilmGridSeam(mask) {
