@@ -102,6 +102,20 @@ auf die Anzahlprüfung. Danach prüfst du seine Ecken und beide Zuschnitte.
 [Zweite Kachelansicht](data/evaluation/README.md#confirm-a-weak-tile-mask-from-a-centered-view) ·
 [Wiederholte Kantenmessung](data/evaluation/README.md#refit-an-unmeasured-tile-from-two-closer-views)
 
+Bei einem starken Kachelvorschlag mit fehlgeschlagener Kantenmessung
+kann eine gerippte Albumseite zusätzliche Evidenz liefern. PhoSca
+sucht ausserhalb der Maske nach einem gleichmässig gefärbten Streifen
+mit wiederkehrenden Helligkeitsrippen. Die Farbe dieses Streifens
+bestimmt, auf welcher Seite jeder gemessenen Kante der Albumkarton
+liegen muss. Die vier Kanten brauchen verteilte Unterstützung und der
+Umriss muss zur Detektormaske passen. Eine quer zum Referenzstreifen
+verlaufende Rippe muss auch vor und nach der Nachbarschaft des Abzugs
+messbar sein. Der Umriss erscheint in der Anzahlprüfung, wenn er sich
+mit keinem bestehenden oder offenen Umriss überschneidet. Eine
+abfotografierte Reproduktion kann dieselbe Textur zeigen. Deshalb
+bleiben Papierzugehörigkeit, Ecken und beide Zuschnittmodi prüfpflichtig.
+[Gerippter Albumkarton](data/evaluation/README.md#check-a-failed-tile-fit-against-ribbed-backing)
+
 Blockiert eine einzelne, am Aufnahmerand abgestützte Kontrastkontur
 einen gemessenen Kachelumriss, prüft PhoSca beide am Original. Ist
 der Papierverlauf des Kachelfunds belegt und führt eine Seite der

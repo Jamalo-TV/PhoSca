@@ -3,8 +3,10 @@
 import cv2
 import numpy as np
 
+from app.pipeline.album_backing import measured_ribbed_backing_outline
 from app.pipeline.geometry import (
-    normalized_polygon_overlap, normalized_vertices_to_pixels, order_quad_cyclic, quad_from_polygon,
+    normalized_polygon_overlap, normalized_vertices_to_pixels, order_quad_cyclic, pixel_vertices_to_normalized,
+    quad_from_polygon,
 )
 from app.pipeline.print_edges import refine_print_boundary
 
@@ -59,6 +61,29 @@ def tile_print_outline(
     if np.any(np.minimum(outline, [width - 1, height - 1] - outline) < 4):
         return None
     return outline
+
+
+def ribbed_backing_tile_outline(image: np.ndarray, polygon: np.ndarray, claims: list[dict]) -> list[dict] | None:
+    height, width = image.shape[:2]
+    if tiled_outline_conflicts([{"x": float(x), "y": float(y)} for x, y in polygon], claims, width, height):
+        return None
+    seed, _ = quad_from_polygon(normalized_vertices_to_pixels(polygon, width, height))
+    if seed is None:
+        return None
+
+    def normalized(quad: np.ndarray) -> list[dict]:
+        return [{"x": float(x), "y": float(y)} for x, y in pixel_vertices_to_normalized(quad, width, height)]
+
+    def claimed(quad: np.ndarray) -> bool:
+        return tiled_outline_conflicts(normalized(quad), claims, width, height)
+
+    fitted = measured_ribbed_backing_outline(image, seed, claimed)
+    if fitted is None:
+        return None
+    vertices = pixel_vertices_to_normalized(fitted, width, height)
+    if normalized_polygon_overlap(vertices, polygon, raster_size=512).iou < .85:
+        return None
+    return normalized(fitted)
 
 
 def opposing_view_print_outlines(

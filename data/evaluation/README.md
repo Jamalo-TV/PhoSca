@@ -2309,6 +2309,77 @@ both crop metrics, including 18/18 locked synthetic detections and
 The local receipts are under
 `runs/crop-quality/recovered-centered-tile-review/`.
 
+#### Check a failed tile fit against ribbed backing
+
+Dense tile revision 10 checks one additional candidate after the
+ordinary tile review paths. It takes the highest-confidence unclaimed
+tile seed with confidence and prepared boundary score both at least
+0.80 whose ordinary source fit failed. The shortest initial side must
+measure at least 180 native pixels. The method uses the original
+decoded raster and adds no model inference.
+
+The source check looks for a 5-pixel-wide strip outside the seed.
+The strip must have a coherent warm Lab palette for at least 82% of
+its sampled stations and 68% of each eighth. Its high-pass luminance
+must repeat at a lag of 4–12 native pixels with at least 0.52
+correlation and have matching phase across the strip. Existing paper
+claims exclude reference strips. Admissible palettes more than five
+Lab AB units apart make the evidence inconclusive.
+
+The reference palette determines the outside of the four edge fits.
+Each fit searches at most 16% of the shortest seed side, capped at 44
+pixels, with a signed colour or lightness change. Every edge needs
+90% support overall and 80% in each eighth. A separate rib must pass
+along one of the two sides adjacent to the reference side. The rib
+must also be measurable beyond both ends and match the reference
+colour. The fitted outline must overlap the original mask at 0.85 IoU
+and stay inside the capture. The raw and fitted outline, reference strip
+and a five-pixel corridor on each side of the rib trace must clear the
+final active and pending print claims and existing alternative outlines.
+The ordinary suggestions are decided first. The ribbed backing check
+leaves those suggestions intact.
+
+On U039, the registered development checkpoint yields an unclaimed
+seed 0.855 with a prepared boundary score of 0.8233 for the car
+photograph at the outer right of the middle row. The source choice
+uses the strip to its left at Lab AB [129, 144] and the continuous
+rib below it. The recovered outline has 0.96592 IoU to the development
+draft. The adjacent car photograph remains separate. Two plausible
+lower transitions in the independent source probe differ by over four
+native pixels at one end. Shadow, flat printed gold, and continuous
+car imagery replacing the gap fail the source checks. A physical
+sheet reproducing those same source pixels passes them. The new
+outline is a count suggestion and requires explicit confirmation.
+
+Normal upload of the exact decoded raster and repeat analysis preserve
+the four previously active rows and the two pending suggestions. Adding
+the new suggestion requires the current count revision and standalone
+confirmation. The previous pending suggestion remains available. The
+untrimmed review image renders successfully. Both named downloads and
+the legacy trimmed alias remain held after reprocessing. No new offer
+for this print appears in the full-pipeline JPEG 55, 75 and 90 runs,
+the JPEG 75 downscaled run, or the two lossless quarter-turn runs.
+Source-only fixed-mask replays and end-to-end detection are tracked
+separately. A separate tile inference probe still sees the target on
+the three full-resolution JPEG derivatives at confidence 0.836–0.842
+and mask IoU 0.856–0.865. This bounds the remaining end-to-end failures
+to the tile selection or subsequent source and ownership checks on
+those derivatives. On JPEG 75 and JPEG 90 a competing full-frame mask
+includes more than 96% of the target draft and more than 99% of the
+similar car print above it. On JPEG 55 a classical contrast proposal
+includes more than 96% of the target and crosses three other drafts.
+The same probe sees an approximately 0.93 IoU
+tile mask at confidence 0.749 after the 90-degree turn. The 270-degree
+turn yields only a partial full-frame proposal. In nine warm local
+measurements on a shared host, median time for the added native source
+check was 195 ms. In the five original spiral captures, U039 adds one
+count suggestion. All recorded active polygons and earlier pending
+suggestions stay unchanged. The eight frozen and development reports
+preserve the detection and both crop-mode metrics, including 18/18
+locked synthetic detections and 11/11 whole-print plus 12/12 image-only
+recoverable synthetic crops. The receipts are under
+`runs/crop-quality/ribbed-backing-tile-review/`.
+
 #### Review a tile outline blocked by a capture frame contour
 
 Crossing outline revision 4 compares a previously verified tile

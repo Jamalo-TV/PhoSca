@@ -5,6 +5,7 @@ from itertools import product
 import cv2
 import numpy as np
 
+from app.pipeline.album_backing import ribbed_lane
 from app.pipeline.multipanel_prints import recover_shared_stock_outline
 from app.pipeline.print_edges import _edge_band
 
@@ -101,40 +102,6 @@ def _fit_print(image: np.ndarray, seed: np.ndarray, stock: np.ndarray) -> np.nda
     return quad
 
 
-def _ribbed_lane(image: np.ndarray, lane: np.ndarray, stock: np.ndarray) -> np.ndarray | None:
-    """Match a bright rib across the lane against independently observed ends."""
-    start, stop = lane
-    length = np.linalg.norm(stop - start)
-    fractions = np.r_[np.linspace(-29, -8, 24), np.linspace(18, length - 18, 112),
-                      np.linspace(length + 9, length + 28, 24)].astype(np.float32) / length
-    band = _edge_band(image, start, stop, range(-11, 12), fractions=fractions)
-    if band is None:
-        return None
-    light = band[..., 0]
-    positions = np.arange(6, 17)  # offsets -5 to +5 around the fitted lane
-    score = np.minimum(
-        light[:, positions] - light[:, positions - 4],
-        light[:, positions] - light[:, positions + 4],
-    )
-    ends = [int(positions[np.argmax(np.median(block, axis=0))]) for block in (score[:24], score[-24:])]
-    if abs(ends[0] - ends[1]) > 8:
-        return None
-    offsets = np.rint(np.interp(fractions, [fractions[:24].mean(), fractions[-24:].mean()], ends)).astype(np.intp)
-    rows = np.arange(len(fractions))
-    evidence = (score[rows, offsets - 6] >= 12) & (np.linalg.norm(band[rows, offsets, 1:] - stock, axis=1) <= 7)
-    if any(block.mean() < threshold for block, threshold in (
-        (evidence[:24], .80), (evidence[24:-24], .88), (evidence[-24:], .80),
-    )):
-        return None
-    tangent = (stop - start) / length
-    normal = np.float32([-tangent[1], tangent[0]])
-    first = np.flatnonzero(evidence[:24])[0]
-    last = len(fractions) - 24 + np.flatnonzero(evidence[-24:])[-1]
-    endpoints = [first, last]
-    return np.float32(start + fractions[endpoints, None] * (stop - start)
-                      + (offsets[endpoints, None] - 11) * normal)
-
-
 def measured_merged_print_pair(image: np.ndarray, seeds: list[np.ndarray]) -> tuple[list[np.ndarray], np.ndarray] | None:
     facing = _facing_sides(*seeds)
     if facing is None:
@@ -147,7 +114,7 @@ def measured_merged_print_pair(image: np.ndarray, seeds: list[np.ndarray]) -> tu
     fits = [_fit_print(image, seed, palette) for seed in seeds]
     if any(quad is None for quad in fits) or cv2.intersectConvexConvex(*fits)[0] > 0:
         return None
-    lane = _ribbed_lane(image, _lane_center(fits, facing), palette)
+    lane = ribbed_lane(image, _lane_center(fits, facing), palette)
     if lane is None or recover_shared_stock_outline(image, fits) is not None:
         return None
     return fits, lane

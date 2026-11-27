@@ -3,7 +3,8 @@
 import cv2
 import numpy as np
 
-from app.pipeline.merged_print_review import _ribbed_lane, _stock_side
+from app.pipeline.album_backing import ribbed_lane
+from app.pipeline.merged_print_review import _stock_side
 from app.pipeline.print_edges import _edge_band, _line_endpoints, _side_line
 from app.pipeline.protected_regions import is_advisory_page_face, protected_region_key, region_box_in_pixels
 
@@ -76,7 +77,7 @@ def _separating_rib(page: np.ndarray, edge: np.ndarray, outward: np.ndarray, cor
     if center_band is None or np.mean(np.linalg.norm(center_band[..., 1:] - palette, axis=2) <= 8) < .90:
         return None
     for offset in (0, 2, -2, 4, -4):
-        rib = _ribbed_lane(page, lane + offset * outward, palette)
+        rib = ribbed_lane(page, lane + offset * outward, palette)
         if (rib is not None and ((rib - edge[0]) @ outward).min() >= 3
                 and ((rib - facing[0]) @ neighbor_inward).max() <= -3):
             return rib

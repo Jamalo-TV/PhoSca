@@ -82,7 +82,8 @@ from app.pipeline.segmentation_filter import (
 )
 from app.pipeline.source_fragment_review import source_fragment_role, suggest_source_fragment_group
 from app.pipeline.tile_print_review import (
-    TILED_PRINT_PROPOSAL, opposing_view_print_outlines, tile_print_outline, tiled_outline_conflicts,
+    TILED_PRINT_PROPOSAL, opposing_view_print_outlines, ribbed_backing_tile_outline, tile_print_outline,
+    tiled_outline_conflicts,
 )
 
 _CLASSICAL_MIN_AREA_RATIO = 0.02
@@ -4408,7 +4409,8 @@ def segment_album_page(
     tile_offers = []
     partial_tile_seeds = []
     merged_tile_pairs = []
-    result = _segment_album_page(image, settings, source, tile_offers, partial_tile_seeds, merged_tile_pairs)
+    ribbed_tile_seeds = []
+    result = _segment_album_page(image, settings, source, tile_offers, partial_tile_seeds, merged_tile_pairs, ribbed_tile_seeds)
     if settings.enable_classical_segmentation_fallback:
         if settings.enable_precise_photo_crops and (
             result.metadata.get("fallback_used") or (result.metadata.get("model_set_risk") or {}).get("risky")
@@ -4454,6 +4456,8 @@ def segment_album_page(
             result = _review_partial_tile_extent(evidence_source, result, partial_tile_seeds)
         if len(merged_tile_pairs) == 1:
             result = _review_merged_tile_pair(evidence_source, result, *merged_tile_pairs[0])
+        if ribbed_tile_seeds:
+            result = _offer_ribbed_backing_tile(evidence_source, result, ribbed_tile_seeds[0])
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
@@ -4548,16 +4552,20 @@ def _contested_tile_outlines(
     return updated
 
 
+def _tiled_paper_claims(detections: list[SegmentationDetection]) -> list[dict]:
+    return [
+        {**item.mask, "polygon": item.mask.get("polygon") or _normalized_polygon(_detection_polygon(item), 1, 1)}
+        for item in detections
+    ]
+
+
 def _offer_unclaimed_tiled_prints(
     source: np.ndarray, result: SegmentationResult, offers: list[list[dict]],
 ) -> SegmentationResult:
     height, width = source.shape[:2]
     fusion = result.metadata.get("fusion") or {}
     pending = list(fusion.get("deferred_print_proposals") or [])
-    active = [
-        {**item.mask, "polygon": item.mask.get("polygon") or _normalized_polygon(_detection_polygon(item), 1, 1)}
-        for item in result.detections
-    ]
+    active = _tiled_paper_claims(result.detections)
     next_id = max((item["id"] for item in pending), default=-1) + 1
     accepted = []
     blocked = []
@@ -4575,6 +4583,32 @@ def _offer_unclaimed_tiled_prints(
     return SegmentationResult(detections, {
         **result.metadata, "fusion": {**fusion, "deferred_print_proposals": [*pending, *accepted]},
     })
+
+
+def _offer_ribbed_backing_tile(source: np.ndarray, result: SegmentationResult, seed: np.ndarray) -> SegmentationResult:
+    started = perf_counter()
+    fusion = result.metadata.get("fusion") or {}
+    pending = list(fusion.get("deferred_print_proposals") or [])
+    claims = _tiled_paper_claims(result.detections) + pending
+    for item in result.detections:
+        if crossing := item.mask.get("crossing_print_suggestion"):
+            claims.append({"polygon": crossing})
+        for outline in (item.mask.get(MERGED_PRINT_PAIR) or {}).get("outlines", ()):
+            claims.append({"polygon": outline})
+    try:
+        outline = ribbed_backing_tile_outline(source, seed, claims)
+    except (cv2.error, ValueError, np.linalg.LinAlgError):
+        outline = None
+    review = dict(result.metadata["tiled_print_review"])
+    review["runtime_ms"] = round(review["runtime_ms"] + (perf_counter() - started) * 1000, 2)
+    metadata = {**result.metadata, "tiled_print_review": review}
+    if outline is not None:
+        next_id = max((item["id"] for item in pending), default=-1) + 1
+        pending.append({"id": next_id, "reason": TILED_PRINT_PROPOSAL, "polygon": outline})
+        metadata["fusion"] = {**fusion, "deferred_print_proposals": pending}
+        review["recovered_from_ribbed_backing"] = True
+        review["candidates"] += 1
+    return SegmentationResult(result.detections, metadata)
 
 
 def _centered_tile_print_mask(
@@ -4768,7 +4802,10 @@ def _collect_tiled_print_offers(
     inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray],
     partial_tile_seeds: list[list[dict]] | None,
     merged_tile_pairs: list[tuple[np.ndarray, list[np.ndarray]]] | None,
-) -> tuple[list[list[dict]], tuple[SegmentationDetection, np.ndarray] | None, SegmentationDetection | None]:
+) -> tuple[
+    list[list[dict]], tuple[SegmentationDetection, np.ndarray] | None,
+    SegmentationDetection | None, SegmentationDetection | None,
+]:
     candidates, evidence, _ = _recover_dense_prints(image, detections, model_evidence, infer, inputs)
     if merged_tile_pairs is not None:
         try:
@@ -4780,6 +4817,7 @@ def _collect_tiled_print_offers(
     offers = []
     retry_seed = None
     unfitted_seed = None
+    ribbed_seed = None
     for index, candidate in enumerate(candidates):
         strong = candidate.confidence >= .80
         if (candidate.mask.get("detector_source") != "yolo_onnx_tiled"
@@ -4804,8 +4842,11 @@ def _collect_tiled_print_offers(
         except (cv2.error, ValueError, np.linalg.LinAlgError):
             continue
         if outline is None:
-            if not strong and not conflicted and (unfitted_seed is None or candidate.confidence > unfitted_seed.confidence):
-                unfitted_seed = candidate
+            if not conflicted:
+                if strong and (ribbed_seed is None or candidate.confidence > ribbed_seed.confidence):
+                    ribbed_seed = candidate
+                elif not strong and (unfitted_seed is None or candidate.confidence > unfitted_seed.confidence):
+                    unfitted_seed = candidate
             continue
         normalized = _normalized_polygon(outline, width, height)
         if tiled_outline_conflicts(normalized, claims, width, height):
@@ -4818,7 +4859,7 @@ def _collect_tiled_print_offers(
             offers.append(normalized)
         else:
             retry_seed = (candidate, outline)
-    return offers, retry_seed, unfitted_seed
+    return offers, retry_seed, unfitted_seed, ribbed_seed
 
 
 def _collect_rotated_print_offers(
@@ -4852,6 +4893,7 @@ def _segment_album_page(
     tile_offers: list[list[dict]] | None = None,
     partial_tile_seeds: list[list[dict]] | None = None,
     merged_tile_pairs: list[tuple[np.ndarray, list[np.ndarray]]] | None = None,
+    ribbed_tile_seeds: list[np.ndarray] | None = None,
 ) -> SegmentationResult:
     model_path = Path(settings.yolo_model_path)
     line_budget = min(3 * image.shape[0] * image.shape[1], 12_000_000) if settings.enable_precise_photo_crops else None
@@ -4983,7 +5025,7 @@ def _segment_album_page(
                     review_started = perf_counter()
                     tile_review = {}
                     try:
-                        direct, retry_seed, unfitted_seed = _collect_tiled_print_offers(
+                        direct, retry_seed, unfitted_seed, ribbed_seed = _collect_tiled_print_offers(
                             source, image, detections, model_evidence, lambda frame: infer(frame)[0], inputs,
                             partial_tile_seeds, merged_tile_pairs,
                         )
@@ -5015,6 +5057,8 @@ def _segment_album_page(
                             if recovered is not None:
                                 tile_offers.append(recovered)
                                 tile_review["recovered_from_centered_pair"] = True
+                        if ribbed_seed is not None and ribbed_tile_seeds is not None:
+                            ribbed_tile_seeds.append(_detection_polygon(ribbed_seed))
                     except Exception as exc:  # Keep earlier proposals if an optional view fails.
                         tile_review["error"] = str(exc)
                     metadata["tiled_print_review"] = {
