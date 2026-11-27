@@ -56,6 +56,48 @@ function bothModesHeld(modes) {
   return modes?.full_print?.status === "review_needed" && modes?.image_only?.status === "review_needed";
 }
 
+export const competingPhotoRegionStyles = {
+  shared: { label: "In beiden Vorschlägen", color: "#7c3aed", fill: "rgba(139, 92, 246, .32)" },
+  wider: { label: "Nur im grösseren Vorschlag", color: "#ea580c", fill: "rgba(249, 115, 22, .34)" },
+  narrower: { label: "Nur im kleineren Vorschlag", color: "#0891b2", fill: "rgba(34, 211, 238, .34)" },
+};
+
+export function getCompetingPhotoOutline(photo) {
+  if (!photo || photo.reviewed_non_print || photo.review_reasons?.includes("GEOMETRY_REVIEW_WRONG_OBJECT")) return null;
+  const { segmentation_confidence: confidence = photo.confidence, competing_photo_outline: outline } = photo;
+  const id = photo.photo_id ?? photo.id;
+  if (confidence == null || !bothModesHeld(cropModes(photo)) || !id || !outline) return null;
+  const { wider, narrower, wider_photo_id: widerId, narrower_photo_id: narrowerId } = outline;
+  if (typeof widerId !== "string" || typeof narrowerId !== "string" || widerId === narrowerId
+      || ![wider, narrower].every(points => Array.isArray(points) && points.length >= 3 && points.every(isNormalizedPoint))) return null;
+  const member = id === widerId ? wider : id === narrowerId ? narrower : null;
+  const raw = photo.segmentation_mask?.polygon;
+  return member && raw?.length === member.length
+    && member.every(({ x, y }, index) => x === raw[index]?.x && y === raw[index]?.y) ? outline : null;
+}
+
+export function getCompetingPhotoReviewOutlines(photos) {
+  const current = new Map(photos.map(photo => [photo.photo_id ?? photo.id, getCompetingPhotoOutline(photo)]));
+  return [...current].flatMap(([id, outline]) => {
+    if (id !== outline?.wider_photo_id) return [];
+    const peer = current.get(outline.narrower_photo_id);
+    return peer?.wider_photo_id === id && peer.narrower_photo_id === outline.narrower_photo_id
+      && JSON.stringify([peer.wider, peer.narrower]) === JSON.stringify([outline.wider, outline.narrower]) ? [outline] : [];
+  });
+}
+
+export function competingPhotoRegionPaths({ wider, narrower }, width, height) {
+  const closedPath = points => `M ${points.map(({ x, y }) => `${x * width} ${y * height}`).join(" L ")} Z`;
+  const outer = closedPath(wider);
+  const inner = closedPath(narrower);
+  const exclusive = `${outer} ${inner}`;
+  return [
+    { kind: "shared", path: inner, clip: outer, rule: "nonzero" },
+    { kind: "wider", path: exclusive, clip: outer, rule: "evenodd" },
+    { kind: "narrower", path: exclusive, clip: inner, rule: "evenodd" },
+  ];
+}
+
 function sameReviewQuad(saved, edited) {
   return saved?.length === 4 && edited?.length === 4
     && saved.every(({ x, y }, index) => x === edited[index].x && y === edited[index].y);

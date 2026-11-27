@@ -11,6 +11,7 @@ import {
 import {
   actionableCountGroups, adjacentPrintHint, albumLeafChildStyle, albumLeafTraceStyle, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
   captureSplitReviewHint, clippedOverlapHint, clippedOverlapReason, CropOrientationField, cropProtectionErrors, CropVariants,
+  CompetingPhotoOutlineLegend, CompetingPhotoOutlineOverlay,
   cropModeLabels, crossingFallbackTraceStyles, crossingPrintHint,
   countGroupReviewError, CountGroupReview, crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridRimHint,
   filmGridReason, fragmentCountHint,
@@ -29,6 +30,7 @@ import {
   getSourceStripReview, SourceStripOutline, SourceStripReview, offPrintAdvisorySource, useAlbumPageMarkReview,
 } from "./CropVariants.jsx";
 import {
+  getCompetingPhotoOutline, getCompetingPhotoReviewOutlines,
   contrastCrossingTraceHint, contrastCrossingTraceStyle, getContrastCrossingTraces,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
@@ -273,6 +275,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const [editMode, setEditMode] = useState("full_print");
   const [motifQuad, setMotifQuad] = useState(storedMotif);
   const editingMotif = canEditMotif && editMode === "image_only";
+  const selectedCompetingOutline = editable && getCompetingPhotoOutline(item.payload);
+  const competingPhotoOutlines = deferredDraft || editingMotif || selectedCountGroup ? [] : editable
+    ? selectedCompetingOutline ? [selectedCompetingOutline] : [] : getCompetingPhotoReviewOutlines(detections);
   const contrastCrossingTraces = editable && contrastOutlineReview && !deferredDraft && !editingMotif
     ? getContrastCrossingTraces(item.payload, initialOuter(), quad) : [];
   const selectedMergedPair = !reviewedNonPrint && getMergedPrintPairs([item.payload || {}])[0];
@@ -576,6 +581,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   ));
   const overlayHints = [countOutlines.length && "mobile-fragment-count-review-hint",
     mergedPairs.length && "mobile-merged-print-pair-hint",
+    competingPhotoOutlines.length && "mobile-competing-photo-outline-hint",
     captureSplitGroups.length && "mobile-capture-split-count-hint",
     filmGridGroups.length && "mobile-film-grid-count-hint", paperGridGroups.length && "mobile-paper-grid-count-hint",
     paperJoinGroups.length && "mobile-paper-join-count-hint",
@@ -611,6 +617,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       <img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"
         aria-describedby={overlayHints || undefined} />
       <svg viewBox="0 0 1000 1000" preserveAspectRatio="none">
+        {competingPhotoOutlines.length > 0 && <CompetingPhotoOutlineOverlay outlines={competingPhotoOutlines} />}
         {editable && displayedQuad ? <g>
           {visiblePolygon && <polygon points={visiblePolygon.map(point => `${point.x * 1000},${point.y * 1000}`).join(" ")}
             fill="none" stroke="#f59e0b" strokeWidth="5" strokeDasharray="14 9" />}
@@ -710,6 +717,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     )}
     {countOutlines.length > 0 && <p className="quad-hint" id="mobile-fragment-count-review-hint">{fragmentCountHint}</p>}
     {mergedPairs.length > 0 && <p className="quad-hint" id="mobile-merged-print-pair-hint">{mergedPrintPairHint}</p>}
+    {competingPhotoOutlines.length > 0 && <CompetingPhotoOutlineLegend id="mobile-competing-photo-outline-hint" mobile />}
     {captureSplitGroups.length > 0 && <p className="quad-hint" id="mobile-capture-split-count-hint">{captureSplitReviewHint}</p>}
     {filmGridGroups.length > 0 && <p className="quad-hint" id="mobile-film-grid-count-hint">
       {filmGridCountHint}{filmGridGroups.some(({ rim }) => rim) && ` ${filmGridRimHint}`}

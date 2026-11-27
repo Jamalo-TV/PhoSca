@@ -1106,6 +1106,18 @@ Ob dort auch das Fotopapier beginnt, muss im Review geklärt werden.
 Ecken, Zuschnitt und Freigabe werden weiterhin separat geprüft.
 [Messung an Scan 66 und Gegenproben](data/evaluation/README.md#show-a-measured-image-transition-inside-a-held-detection)
 
+Wenn sich zwei gehaltene Modellvorschläge stark überdecken und
+der grössere zugleich in einen weiteren offenen Vorschlag reicht,
+kann die Prüfung die Originalmasken vergleichen. Violett liegt
+in beiden Vorschlägen, Orange nur im grösseren und Türkis nur im
+kleineren. Die Farben beschreiben die erkannten Flächen. Prüfe
+am Original, welche Bildteile und Papierränder zusammengehören.
+PhoSca berechnet den Vergleich aus den aktuellen Einträgen der Seite.
+Wird einer der beteiligten Einträge korrigiert, verworfen oder
+freigegeben, entfällt dieser Vergleich. Zuschnitte, Anzahl und
+Freigabe werden weiterhin über die bestehenden Schritte geprüft.
+[Überlappende Vorschläge auf Scan 66](data/evaluation/README.md#compare-overlapping-held-model-outlines)
+
 | Aktion | Verhalten |
 | --- | --- |
 | Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |

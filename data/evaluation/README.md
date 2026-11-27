@@ -7992,6 +7992,57 @@ paper ownership, corner geometry and aspect remain unconfirmed.
 The before-and-after receipts, renders and controls are under
 `runs/crop-quality/scan-66/visible-image-edge/`.
 
+### Compare overlapping held model outlines
+
+The comparison is calculated from current page records when the
+album list, count queue or geometry queue is read. It uses active
+automatic ONNX masks with both crop modes held. Manual or refined
+geometry and other proposed paper outlines take precedence. The
+two candidates must have admissible initial geometry. Between 68%
+and 83% of the larger mask and at least 96% of the smaller mask
+must overlap on the normalized 1,024-pixel comparison raster. There
+must also be a single current automatic candidate with unresolved
+geometry overlapping 10–23% of the larger and at least 55% of
+its own area. Its IoU with the smaller mask may be at most 0.005.
+Conflicting pair assignments are withheld.
+
+The API returns the two exact original polygons and their row IDs
+in `competing_photo_outline`. The desktop and mobile views clip the
+fills directly to those polygons. Violet is the intersection, orange
+is exclusive to the larger proposal, and cyan is exclusive to the
+smaller proposal. The source remains visible through the fills.
+Both rows retain their own geometry controls. The comparison is
+request-local, so the next read after a correction or rejection
+reflects the current page. The focused geometry queue reads the
+associated sibling records as well.
+
+The original Scan 66 pair shared 7,782,018 native pixel centres.
+The larger candidate contained 2,696,094 centres outside the smaller
+one. This included a 109,503-centre visible landscape strip sampled
+inside a conservative 44-pixel band that was outside both other
+candidate masks and their held warp quadrilaterals. The wider
+candidate also overlapped 1,672,162 centres of the lower proposal.
+At half resolution the same pair qualified with nearly the same
+containment. The pair qualified under all four quarter turns. A
+single printed reproduction or a physical stack can show the same
+local source structure, leaving the physical count unresolved.
+
+The original upload and reprocess path kept four active detections,
+their source masks, both held crop modes and byte-identical untrimmed
+views. Rejecting the overlapping lower candidate in a disposable
+test album changed the count through the existing action and
+removed the comparison. Across 31 warm single-threaded checks on
+the registered page geometry, the comparison took 3.3 ms at the
+median and 7.9 ms at p95. The independent replay included 64
+direct cases, checks against 14 further real development views,
+and a 37-case archive stress with an invalid companion forced.
+The comparison matched Scan 66 and abstained on the archive stress.
+The eight frozen and development benchmark reports matched the
+previous milestone on detection, crop quality and mode availability.
+
+Source measurements, upload receipts and both review views are
+available under `runs/crop-quality/scan-66/competing-outlines/`.
+
 ### Review a fallback outline crossing the album edge
 
 The same Golden 26 180° JPEG75 development raster has a third false

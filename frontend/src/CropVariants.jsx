@@ -1,6 +1,9 @@
 import { Download } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
-import { albumLeafSourceWindow, filmSourceWindow, getPaperGridReview, measuredRibbedPrintOutlineSource } from "./cropReviewOutlines.js";
+import {
+  albumLeafSourceWindow, competingPhotoRegionPaths, competingPhotoRegionStyles, filmSourceWindow,
+  getPaperGridReview, measuredRibbedPrintOutlineSource,
+} from "./cropReviewOutlines.js";
 
 export const cropModeLabels = {
   full_print: "Ganzer Abzug",
@@ -349,6 +352,33 @@ const groupReviewLabels = {
     prompt: "Prüfe am Original, ob die markierten Teilvorschläge zum selben Papierabzug gehören. Sind es getrennte Abzüge oder bleibt es unklar, wähle «Abbrechen».",
   },
 };
+
+export function CompetingPhotoOutlineLegend({ id, mobile = false }) {
+  return <div className={`source-region-evidence ${mobile ? "quad-hint" : "crop-editor-hint"}`}>
+    <p id={id}>Die ursprünglichen Vorschläge überschneiden sich. Prüfe die Papierränder und die orange markierten Bilddetails am Original.</p>
+    <ul>
+      {Object.entries(competingPhotoRegionStyles).map(([kind, { label, color, fill }]) => <li key={kind}>
+        <svg aria-hidden="true" width="18" height="12" viewBox="0 0 18 12">
+          <rect x="1" y="1" width="16" height="10" rx="2" fill={fill} stroke={color} />
+        </svg>
+        <span>{label}</span>
+      </li>)}
+    </ul>
+  </div>;
+}
+
+export function CompetingPhotoOutlineOverlay({ outlines }) {
+  const prefix = useId();
+  return <g aria-hidden="true" pointerEvents="none">
+    {outlines.flatMap(outline => competingPhotoRegionPaths(outline, 1000, 1000).map(({ kind, path, clip, rule }) => {
+      const id = `${prefix}-${outline.wider_photo_id}-${outline.narrower_photo_id}-${kind}`;
+      return <g key={id}>
+        <clipPath id={id}><path d={clip} /></clipPath>
+        <path d={path} clipPath={`url(#${id})`} fill={competingPhotoRegionStyles[kind].fill} fillRule={rule} stroke="none" />
+      </g>;
+    }))}
+  </g>;
+}
 
 function CountGroupSourceDetails({ sourceUrl, group }) {
   const [source, setSource] = useState(null);

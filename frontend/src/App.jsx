@@ -57,6 +57,7 @@ import {
   crossingFallbackTraceStyles, crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   countGroupReviewError, CountGroupReview, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints,
   borrowedFallbackProposal, captureFabricProposal, filmGridCountHint, filmGridHint, filmGridReason, filmGridRimHint, frameBackingProposal,
+  CompetingPhotoOutlineLegend,
   getDeferredPrintEvidence, getDeferredPrintProposals, getDeferredParentCropHints, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, mergedPrintAsOneLabel, mergedPrintPairHint, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
@@ -70,6 +71,7 @@ import {
   offPrintAdvisorySource, useAlbumPageMarkReview,
 } from "./CropVariants.jsx";
 import {
+  competingPhotoRegionPaths, competingPhotoRegionStyles, getCompetingPhotoReviewOutlines,
   contrastCrossingTraceHint, contrastCrossingTraceStyle, getContrastCrossingTraces,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
@@ -1460,6 +1462,13 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   [filmGridGroups, paperJoinGroups, paperGridGroups, photos, reviewingCount, newPrint, editingImage]);
   const selectedCountGroup = groupSelection?.pageId === pageId
     ? countGroups.find(({ key }) => key === groupSelection?.key) : null;
+  const competingPhotoOutlines = useMemo(() => {
+    if (newPrint || editingImage || selectedCountGroup || (!reviewingCount && !reviewingGeometry)) return [];
+    const comparisons = getCompetingPhotoReviewOutlines(photos);
+    return reviewingCount ? comparisons : comparisons.filter(outline => (
+      outline.wider_photo_id === selectedPhotoId || outline.narrower_photo_id === selectedPhotoId
+    ));
+  }, [newPrint, editingImage, selectedCountGroup, reviewingCount, reviewingGeometry, photos, selectedPhotoId]);
   const paperGridMask = selected?.segmentation_confidence != null && !rejectedDetection
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(paperGridReason) ? selected.segmentation_mask : null;
   const paperGrid = useMemo(() => getPaperGridReview(paperGridMask), [paperGridMask]);
@@ -1570,6 +1579,15 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     canvas.height = Math.round(maxWidth * ratio);
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    for (const outline of competingPhotoOutlines) {
+      for (const { kind, path, clip, rule } of competingPhotoRegionPaths(outline, canvas.width, canvas.height)) {
+        context.save();
+        context.clip(new Path2D(clip));
+        context.fillStyle = competingPhotoRegionStyles[kind].fill;
+        context.fill(new Path2D(path), rule);
+        context.restore();
+      }
+    }
     photos.forEach((photo) => {
       const inCountGroup = selectedCountGroup?.photoIds.has(photo.id);
       const shape = (!inCountGroup && draftShapes[photo.id]) || draftShapeFromPhoto(photo);
@@ -1953,7 +1971,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       context.restore();
     }
-  }, [alternateOutline, blockedRegions, captureSplitGroups, contrastCrossingTraces, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges, extentEdges, mergedPairs,
+  }, [alternateOutline, blockedRegions, captureSplitGroups, competingPhotoOutlines, contrastCrossingTraces, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges, extentEdges, mergedPairs,
     filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
     printSuggestion, ribbedReviewOutline,
     markBounds, missingTraces, motifCorners, motifMarginMarks, newPrint, pageId, pageImage, photos, preliminaryMotifMarks, selectedCountGroup, selectedPhotoId, showMissingEdges, sourceStrip]);
@@ -2376,6 +2394,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           paperJoinGroups.length && "paper-join-count-hint",
           captureSplitGroups.length && "capture-split-count-hint",
           mergedPairs.length && "merged-print-pair-hint",
+          competingPhotoOutlines.length && "competing-photo-outline-hint",
           contrastCrossingTraces.length && "contrast-crossing-review-hint",
           ribbedReviewOutline && "ribbed-print-outline-hint",
           sourceStrip && "source-strip-review-hint",
@@ -2383,6 +2402,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             : editingImage && motifMarginMarks.length && !crossingReview && !needsPrintReview && "motif-margin-marks-hint",
         ].filter(Boolean).join(" ") || undefined}
       />
+      {competingPhotoOutlines.length > 0 && <CompetingPhotoOutlineLegend id="competing-photo-outline-hint" />}
       {contrastCrossingTraces.length > 0 && <p className="crop-editor-hint" id="contrast-crossing-review-hint">{contrastCrossingTraceHint}</p>}
       {ribbedReviewOutline && <p className="crop-editor-hint" id="ribbed-print-outline-hint">{ribbedPrintOutlineHint}</p>}
       {!newPrint && detectionReviewHint && !rejectedDetection && (

@@ -704,16 +704,16 @@ select {
   max-width: 520px;
 }
 
-.dark-backing-evidence {
+.dark-backing-evidence, .source-region-evidence {
   flex-basis: 100%;
   width: 100%;
 }
 
-.dark-backing-evidence p {
+.dark-backing-evidence p, .source-region-evidence p {
   margin: 0;
 }
 
-.dark-backing-evidence ul {
+.dark-backing-evidence ul, .source-region-evidence ul {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 16px;
@@ -722,13 +722,13 @@ select {
   padding: 0;
 }
 
-.dark-backing-evidence li {
+.dark-backing-evidence li, .source-region-evidence li {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.dark-backing-evidence svg {
+.dark-backing-evidence svg, .source-region-evidence svg {
   flex: none;
 }
 

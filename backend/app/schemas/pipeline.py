@@ -85,6 +85,17 @@ class PhotoRead(BaseModel):
         }
 
 
+class CompetingPhotoOutline(BaseModel):
+    wider_photo_id: UUID
+    narrower_photo_id: UUID
+    wider: list[NormalizedPoint]
+    narrower: list[NormalizedPoint]
+
+
+class AlbumPhotoRead(PhotoRead):
+    competing_photo_outline: CompetingPhotoOutline | None = None
+
+
 class PhotoDetail(PhotoRead):
     ocr_results: list[OCRRead] = []
     urls: dict[str, str | None] = Field(default_factory=dict)

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   albumLeafSourceWindow, getAlbumLeafReviewGroups, getContrastCrossingTraces,
+  competingPhotoRegionPaths, getCompetingPhotoOutline, getCompetingPhotoReviewOutlines,
   filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
   getFilmGridReviewSeams, getFragmentReviewOutlines, getMergedPrintPairs,
   getPaperGridOutlineParents, getPaperGridReviewGroups,
@@ -116,6 +117,39 @@ test("a ribbed-paper preview exposes its own contour only on the unchanged held 
   assert.equal(getRibbedPrintReviewOutline({ ...mode, outline_preview: {
     ...mode.outline_preview, source: "another_source",
   } }, url, quad, quad), null);
+});
+
+test("a competing outline requires both current held proposals in count review", () => {
+  const narrower = [{ x: .2, y: .3 }, { x: .8, y: .31 }, { x: .51, y: .53 }, { x: .3, y: .7 }, { x: .2, y: .66 }];
+  const outline = { wider_photo_id: "wide", narrower_photo_id: "narrow", wider: quad, narrower };
+  const held = { status: "review_needed" };
+  const modes = { full_print: held, image_only: held };
+  const desktop = { id: "wide", segmentation_confidence: .7, segmentation_mask: { polygon: quad },
+    enhancement_applied: { correction: { crop_modes: modes } }, competing_photo_outline: outline };
+  const mobile = { photo_id: "narrow", confidence: .6, segmentation_mask: { polygon: narrower },
+    crop_modes: modes, competing_photo_outline: structuredClone(outline) };
+
+  assert.equal(getCompetingPhotoOutline(mobile), mobile.competing_photo_outline);
+  assert.deepEqual(getCompetingPhotoReviewOutlines([mobile, desktop]), [outline]);
+  assert.deepEqual(getCompetingPhotoReviewOutlines([desktop]), []);
+  assert.deepEqual(getCompetingPhotoReviewOutlines([desktop, { ...mobile, reviewed_non_print: true }]), []);
+  assert.equal(getCompetingPhotoOutline({ ...mobile, review_reasons: ["GEOMETRY_REVIEW_WRONG_OBJECT"] }), null);
+  assert.deepEqual(getCompetingPhotoReviewOutlines([desktop, { ...mobile, confidence: null }]), []);
+  assert.deepEqual(getCompetingPhotoReviewOutlines([desktop, { ...mobile, segmentation_mask: { polygon: quad } }]), []);
+  assert.deepEqual(getCompetingPhotoReviewOutlines([desktop, { ...mobile, crop_modes: { ...modes, image_only: { status: "ready" } } }]), []);
+  const changedPair = { ...mobile, competing_photo_outline: { ...outline, wider: quad.slice(1) } };
+  assert.deepEqual(getCompetingPhotoReviewOutlines([desktop, changedPair]), []);
+});
+
+test("competing outline paths share the exact source clip and leave exclusive regions unquantized", () => {
+  const wider = [{ x: .1, y: .2 }, { x: .7, y: .2 }, { x: .4, y: .47 }, { x: .7, y: .8 }, { x: .1, y: .8 }];
+  const narrower = [{ x: .3, y: .3 }, { x: .8, y: .3 }, { x: .8, y: .6 }, { x: .3, y: .6 }];
+  const [shared, wideOnly, narrowOnly] = competingPhotoRegionPaths({ wider, narrower }, 200, 100);
+  const widePath = "M 20 20 L 140 20 L 80 47 L 140 80 L 20 80 Z";
+  const narrowPath = "M 60 30 L 160 30 L 160 60 L 60 60 Z";
+  assert.deepEqual(shared, { kind: "shared", path: narrowPath, clip: widePath, rule: "nonzero" });
+  assert.deepEqual(wideOnly, { kind: "wider", path: `${widePath} ${narrowPath}`, clip: widePath, rule: "evenodd" });
+  assert.deepEqual(narrowOnly, { kind: "narrower", path: `${widePath} ${narrowPath}`, clip: narrowPath, rule: "evenodd" });
 });
 
 test("an album leaf can be excluded only while exactly one active matched child remains", () => {

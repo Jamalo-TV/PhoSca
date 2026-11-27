@@ -35,6 +35,8 @@ from app.pipeline.protected_regions import album_mark_source_matches
 from app.pipeline.rounded_corner_review import ROUNDED_CORNER_REVIEW
 from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import PhotoRead, ReviewItem
+from app.schemas.pipeline import CompetingPhotoOutline
+from app.services.photo_outline_comparison import photo_outline_comparisons
 from app.services.pipeline import (
     page_fusion_evidence, photo_views_for_current_album_marks, resolve_nested_edge_parent_reviews,
     retire_source_fragment_proposals,
@@ -712,7 +714,9 @@ def _first_url(urls: dict[str, str | None], names: tuple[str, ...]) -> str | Non
     return next((urls.get(name) for name in names if urls.get(name)), None)
 
 
-def _photo_review_payload(photo: ExtractedPhoto | PhotoRead) -> dict:
+def _photo_review_payload(
+    photo: ExtractedPhoto | PhotoRead, comparison: CompetingPhotoOutline | None = None,
+) -> dict:
     metadata = deepcopy(photo.enhancement_applied or {})
     mask = deepcopy(photo.segmentation_mask or {})
     correction = deepcopy(metadata.get("correction") or {})
@@ -749,7 +753,7 @@ def _photo_review_payload(photo: ExtractedPhoto | PhotoRead) -> dict:
     ):
         if name not in confidence_components and correction.get(name) is not None:
             confidence_components[name] = correction[name]
-    return {
+    payload = {
         "photo_id": str(photo.id),
         "bounding_box": deepcopy(photo.bounding_box),
         "segmentation_mask": mask,
@@ -772,6 +776,9 @@ def _photo_review_payload(photo: ExtractedPhoto | PhotoRead) -> dict:
         "variant_urls": urls,
         "variants": review_variants,
     }
+    if comparison is not None:
+        payload["competing_photo_outline"] = comparison.model_dump(mode="json")
+    return payload
 
 
 @router.get("/queue", response_model=list[ReviewItem])
@@ -807,7 +814,9 @@ async def get_review_queue(
                     .order_by(ExtractedPhoto.created_at.asc())
                 )
             ).all()
-            detections = [_photo_review_payload(photo) for photo in photos if not _rejected_detection(photo)]
+            comparisons = photo_outline_comparisons(list(photos))
+            detections = [_photo_review_payload(photo, comparisons.get(photo.id))
+                          for photo in photos if not _rejected_detection(photo)]
             segmentation = ((page.processing_metadata or {}).get("steps") or {}).get("segmentation") or {}
             items.append(
                 ReviewItem(
@@ -831,7 +840,8 @@ async def get_review_queue(
         if album_id:
             query = query.where(ExtractedPhoto.album_id == album_id)
         if photo_id:
-            query = query.where(ExtractedPhoto.id == photo_id)
+            page = select(ExtractedPhoto.page_id).where(ExtractedPhoto.id == photo_id).correlate(None)
+            query = query.where(ExtractedPhoto.page_id == page.scalar_subquery())
         if principal is not None:
             query = query.where(ExtractedPhoto.album.has(tenant_id=principal.tenant_id))
         priority = case(
@@ -847,12 +857,15 @@ async def get_review_queue(
             )
         ).all()
         views = await photo_views_for_current_album_marks(session, list(candidate_photos))
+        comparisons = photo_outline_comparisons(views)
         for photo, view in zip(candidate_photos, views, strict=True):
+            if photo_id and photo.id != photo_id:
+                continue
             if not include_rejected and _rejected_detection(photo):
                 continue
             if view is photo and await _geometry_review_is_current(session, photo):
                 continue
-            payload = _photo_review_payload(view)
+            payload = _photo_review_payload(view, comparisons.get(photo.id))
             pending_contrast = photo.segmentation_confidence is None and contrast_outline_check_pending(photo.enhancement_applied or {})
             review_status = PhotoStatus.review_needed if pending_contrast or payload["motif_review_pending"] else view.status
             items.append(
