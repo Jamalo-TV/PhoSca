@@ -157,6 +157,13 @@ function sameReviewQuad(saved, edited) {
     && saved.every(({ x, y }, index) => x === edited[index].x && y === edited[index].y);
 }
 
+export function savedFullPrintReviewUrl(photo, savedQuad, editedQuad, sizeFields, orientation) {
+  if (!photo?.saved_full_print_review_url || photo.reviewed_non_print || !sameReviewQuad(savedQuad, editedQuad)
+      || sizeFields?.width?.trim() || sizeFields?.height?.trim()
+      || orientation !== (photo.segmentation_mask?.orientation_degrees ?? null)) return null;
+  return photo.saved_full_print_review_url;
+}
+
 export const contrastCrossingTraceHint = "An den orange markierten Stellen ist Bildstruktur auf beiden Seiten der vorgeschlagenen Linie sichtbar. Prüfe dort den Papierrand am Original.";
 export const contrastCrossingTraceStyle = { color: "#f59e0b", contrast: "#78350f", dash: [8, 5] };
 

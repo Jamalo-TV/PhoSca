@@ -34,7 +34,7 @@ from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
 from app.pipeline.protected_regions import album_mark_source_matches
 from app.pipeline.rounded_corner_review import ROUNDED_CORNER_REVIEW
-from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
+from app.pipeline.variants import saved_full_print_review_image_url, variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import PhotoRead, ReviewItem
 from app.schemas.pipeline import CompetingPhotoOutline
 from app.services.photo_outline_comparison import photo_outline_comparisons
@@ -789,6 +789,8 @@ def _photo_review_payload(
     if photo.segmentation_confidence is None and not _rejected_detection(photo):
         if grid_review := manual_paper_grid_count_review(mask, metadata):
             payload["manual_paper_grid_count_review"] = grid_review
+        if saved_preview_url := saved_full_print_review_image_url(photo):
+            payload["saved_full_print_review_url"] = saved_preview_url
     if comparison is not None:
         payload["competing_photo_outline"] = comparison.model_dump(mode="json")
     return payload

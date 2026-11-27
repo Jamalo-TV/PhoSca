@@ -16,6 +16,7 @@ from app.pipeline.edge_prints import capture_edge_requires_review
 from app.pipeline.image_ops import calculate_blur_score
 from app.pipeline.manual_paper_boundary import (
     contrast_outline_check_pending, manual_paper_download_needs_review, manual_scalloped_outline, paper_claims_need_overlap_check,
+    review_source_quads_match,
 )
 from app.pipeline.protected_regions import album_mark_correction_matches
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
@@ -24,6 +25,7 @@ from app.pipeline.release import select_released_variant
 
 FULL_PRINT_REVIEW_PREVIEW = "full_print_preview"
 MOTIF_REVIEW_PREVIEW = "image_only_preview"
+SAVED_FULL_PRINT_REVIEW = "saved_full_print_review"
 CROP_REVIEW_PREVIEWS = {
     FULL_PRINT_REVIEW_PREVIEW: "full_print",
     MOTIF_REVIEW_PREVIEW: "image_only",
@@ -312,6 +314,39 @@ def released_variant_from_photo(photo: Any) -> str:
     if not variants:
         return "original"
     return select_safe_variant(variants, photo_status=getattr(photo, "status", None), metadata=metadata)
+
+
+def saved_full_print_review_asset(photo: Any) -> tuple[str, str] | None:
+    """Expose the current saved whole-print pixels while only the aspect needs review."""
+    if photo.segmentation_confidence is not None or not photo.geometry_valid or photo_is_reviewed_non_print(photo):
+        return None
+    metadata = photo.enhancement_applied or {}
+    correction = metadata.get("correction") or {}
+    whole = (correction.get("crop_modes") or {}).get("full_print") or {}
+    mask = photo.segmentation_mask or {}
+    quad = mask.get("warp_quad")
+    if (whole.get("status") != "review_needed" or whole.get("reason_codes") != ["PRINT_ASPECT_UNCERTAIN"]
+            or whole.get("outline_preview") or mask.get("print_size_mm") or capture_edge_requires_review(mask)
+            or correction.get("status") != "completed" or correction.get("album_page_mark_review")
+            or (correction.get("protected_regions") or {}).get("passed") is not True
+            or not whole.get("shape") or whole["shape"] != correction.get("untrimmed_shape")
+            or not review_source_quads_match(quad, whole.get("warp_quad"))
+            or paper_claims_need_overlap_check(mask, metadata) or contrast_outline_check_pending(metadata)
+            or manual_paper_download_needs_review(metadata, quad) or manual_scalloped_outline(metadata, quad) is not None):
+        return None
+    asset_id = correction.get("untrimmed_asset_id")
+    path = variant_path_from_photo(photo, "source_corrected_untrimmed")
+    if isinstance(asset_id, str) and asset_id and path == correction.get("untrimmed_path") and path and Path(path).is_file():
+        return asset_id, path
+    return None
+
+
+def saved_full_print_review_image_url(photo: Any) -> str | None:
+    asset = saved_full_print_review_asset(photo)
+    if asset is None:
+        return None
+    params = urlencode({"variant": SAVED_FULL_PRINT_REVIEW, "v": asset[0]})
+    return f"/api/v1/photos/{photo.id}/image?{params}"
 
 
 def photo_image_url(photo: Any, variant: str | None = None) -> str:

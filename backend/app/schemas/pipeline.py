@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validat
 from app.models import OCRTextType, PageStatus, PhotoStatus
 from app.pipeline.decisions import motif_geometry_requires_review, photo_is_reviewed_non_print
 from app.pipeline.manual_paper_boundary import manual_paper_grid_count_review
-from app.pipeline.variants import photo_image_url, variant_path_from_photo
+from app.pipeline.variants import photo_image_url, saved_full_print_review_image_url, variant_path_from_photo
 from app.schemas.common import BoundingBox, NormalizedPoint, PrintSizeMM, SegmentationMask, StrictSchema
 
 
@@ -83,6 +83,11 @@ class PhotoRead(BaseModel):
     @property
     def image_url(self) -> str:
         return photo_image_url(self)
+
+    @computed_field
+    @property
+    def saved_full_print_review_url(self) -> str | None:
+        return saved_full_print_review_image_url(self)
 
     @computed_field
     @property

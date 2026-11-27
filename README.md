@@ -977,6 +977,15 @@ auflösbar. Aussagen zur Kamerakalibrierung sind an den SHA-256 der
 Aufnahme gebunden. Solche Ergebnisse einer automatischen Erkennung
 benötigen weiterhin Prüfung.
 
+Wenn ein manuell gespeicherter Zuschnitt bei **Ganzer Abzug** nur noch
+wegen des Seitenverhältnisses in Prüfung ist, zeigt PhoSca **Gespeicherter
+Zuschnitt zur Prüfung**. Die Vorschau zeigt die gespeicherten Bildpixel
+mit dem geschätzten Seitenverhältnis. Miss Breite und Höhe am physischen
+Abzug und speichere beide Masse. Während du Ecken, Masse oder Drehung
+bearbeitest, blendet der Editor die gespeicherte Vorschau aus. Die
+Exportentscheidung erfolgt weiterhin für beide Modi separat.
+[Gespeicherte Prüfvorschau](data/evaluation/README.md#show-the-saved-raster-while-the-physical-aspect-remains-open)
+
 Bei einem gezackten Abzug kann PhoSca eine gemessene Aussenkontur
 und vier zugehörige Ecken im Editor anzeigen. Ein überlappender
 Teilvorschlag bleibt als eigener Prüfpunkt erhalten. Solange

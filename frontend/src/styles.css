@@ -998,6 +998,19 @@ select {
   margin-top: 12px;
 }
 
+.saved-full-print-review {
+  margin: 12px 0 0;
+  width: 100%;
+}
+
+.saved-full-print-review figcaption {
+  padding-top: 8px;
+}
+
+.saved-full-print-review figcaption p {
+  margin: 4px 0 0;
+}
+
 .paper-edge-comparison {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

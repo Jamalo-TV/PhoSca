@@ -29,6 +29,7 @@ import {
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
   embossedAlbumAction, embossedPocketReviewErrors,
   getSourceStripReview, SourceStripOutline, SourceStripReview, offPrintAdvisorySource, useAlbumPageMarkReview,
+  savedPrintReviewHint, savedPrintReviewTitle,
 } from "./CropVariants.jsx";
 import {
   getCompetingPhotoOutline, getCompetingPhotoReviewOutlines,
@@ -37,6 +38,7 @@ import {
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getMergedPrintPairs, getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
+  savedFullPrintReviewUrl,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
@@ -305,6 +307,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const [savedCropUrl, setSavedCropUrl] = useState(""); const [saveError, setSaveError] = useState("");
   const visibleSavedCropUrl = (editingMotif ? item.payload?.variant_urls?.image_only === null : fullPrintHeld)
     ? "" : savedCropUrl;
+  const savedAspectPreview = editable && !editingMotif && !deferredDraft && !reviewedNonPrint && !saving
+    ? savedFullPrintReviewUrl(item.payload, initialOuter(), quad, measurementFields, orientation) : null;
   const [blockedCrop, setBlockedCrop] = useState(null);
   const [magnifierEnabled, setMagnifierEnabled] = useState(true);
   const [magnifier, setMagnifier] = useState({ visible: false, x: 0, y: 0 });
@@ -420,6 +424,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       const savedDegrees = saved.segmentation_mask?.orientation_degrees ?? null;
       setOrientation(savedDegrees);
       setSavedOrientation(savedDegrees);
+      if (!editingMotif && saved.saved_full_print_review_url) {
+        setQuad(initialQuad(saved.segmentation_mask.warp_quad, saved.segmentation_mask.visible_polygon, saved.bounding_box));
+      }
       const cropModes = getCropModes(saved);
       setMotifQuad(cyclicReviewQuad(sanitizeReviewPolygon(getStoredMotifQuad(saved, cropModes?.image_only))));
       const held = wholePrintApprovalHeld(cropModes, saved.crop_download_urls)
@@ -878,6 +885,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
             hint={outlinePreviewHint} outlinePreview={fullPrintMode?.outline_preview} />
         : <LiveCropPreview src={item.preview_url} quad={displayedQuad} savedCropUrl={visibleSavedCropUrl}
             outlinePreviewUrl={editingPreview ? null : editingMotif ? item.payload?.variant_urls?.image_only_preview : fullPrintPreview}
+            savedAspectPreviewUrl={savedAspectPreview}
             outlinePreviewHint={editingMotif ? motifBoundaryReviewHint : outlinePreviewHint}
             measuredAspect={!editingMotif && size ? size.width / size.height : null}
             referenceMatrix={editingMotif ? fullPrintMode.page_to_output : null}
@@ -974,10 +982,14 @@ function drawQuadPreview(canvas, { image, pixels }, quad, measuredAspect, orient
   canvas.getContext("2d", { alpha: false }).putImageData(new ImageData(result.data, result.width, result.height), 0, 0);
 }
 
-function LiveCropPreview({ src, quad, savedCropUrl, outlinePreviewUrl, outlinePreviewHint, measuredAspect, orientation, referenceMatrix }) {
+function LiveCropPreview({ src, quad, savedCropUrl, outlinePreviewUrl, outlinePreviewHint, savedAspectPreviewUrl,
+  measuredAspect, orientation, referenceMatrix }) {
   const canvasRef = useRef(null);
   const [sample, setSample] = useState(null);
-  const previewUrl = savedCropUrl || outlinePreviewUrl;
+  const [failedAspectUrl, setFailedAspectUrl] = useState(null);
+  const aspectUrl = savedAspectPreviewUrl !== failedAspectUrl ? savedAspectPreviewUrl : null;
+  const previewUrl = savedCropUrl || outlinePreviewUrl || aspectUrl;
+  const showingAspect = Boolean(aspectUrl && previewUrl === aspectUrl);
   useEffect(() => {
     if (!src) return;
     const image = new Image();
@@ -992,12 +1004,15 @@ function LiveCropPreview({ src, quad, savedCropUrl, outlinePreviewUrl, outlinePr
     });
     return () => cancelAnimationFrame(frame);
   }, [sample, src, quad, measuredAspect, orientation, previewUrl, referenceMatrix]);
-  const title = savedCropUrl ? "Gerichteter Ausschnitt" : outlinePreviewUrl ? "Abzugsvorschau zur Prüfung" : "Live-Ausschnitt";
+  const title = savedCropUrl ? "Gerichteter Ausschnitt" : outlinePreviewUrl ? "Abzugsvorschau zur Prüfung"
+    : showingAspect ? savedPrintReviewTitle : "Live-Ausschnitt";
   const detail = savedCropUrl ? "Perspektive wurde aus den vier Ecken korrigiert" : outlinePreviewUrl
-    ? outlinePreviewHint || "Vorschau folgt der gezackten Papierkante" : "Vorschau folgt allen vier Ecken live";
-  return <section className={`live-crop-preview ${savedCropUrl ? "rectified" : ""}`}>
+    ? outlinePreviewHint || "Vorschau folgt der gezackten Papierkante"
+    : showingAspect ? savedPrintReviewHint : "Vorschau folgt allen vier Ecken live";
+  return <section className={`live-crop-preview ${savedCropUrl || showingAspect ? "rectified" : ""}`}>
     <header><ZoomIn size={17}/><div><strong>{title}</strong><span>{detail}</span></div></header>
-    {previewUrl ? <img src={previewUrl} alt={title} /> : <canvas ref={canvasRef}/>}
+    {previewUrl ? <img src={previewUrl} alt={title} onError={showingAspect ? () => setFailedAspectUrl(aspectUrl) : undefined} />
+      : <canvas ref={canvasRef}/>}
   </section>;
 }
 
@@ -1106,6 +1121,7 @@ function CropReview({ albumId, goHome }) {
           polygon: mask?.polygon, visible_polygon: mask?.visible_polygon || mask?.polygon,
           warp_quad: cropModes.full_print?.warp_quad || mask?.warp_quad,
           image_quad: mask?.image_quad, print_size_mm: mask?.print_size_mm,
+          saved_full_print_review_url: saved.saved_full_print_review_url,
           orientation: saved.enhancement_applied?.correction?.orientation,
           review_reasons: saved.enhancement_applied?.review_reasons,
           motif_review_pending: saved.motif_review_pending, variant_urls: variantUrls } };

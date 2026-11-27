@@ -70,7 +70,9 @@ from app.pipeline.variants import (
     CROP_REVIEW_PREVIEWS,
     FULL_PRINT_REVIEW_PREVIEW,
     MOTIF_REVIEW_PREVIEW,
+    SAVED_FULL_PRINT_REVIEW,
     released_variant_from_photo,
+    saved_full_print_review_asset,
     variant_path_from_photo,
     variant_urls,
     variants_from_metadata,
@@ -640,6 +642,7 @@ async def get_photo(
 async def get_photo_image(
     photo_id: UUID,
     variant: str | None = Query(default=None, pattern="^[a-zA-Z0-9_-]+$"),
+    v: str | None = Query(default=None),
     session: AsyncSession = Depends(get_async_session),
     principal: Principal | None = Depends(get_principal),
 ) -> FileResponse:
@@ -653,13 +656,18 @@ async def get_photo_image(
     correction = metadata.get("correction") or {}
     mode = (correction.get("crop_modes") or {}).get("full_print") or {}
     rounded_preview = selected_variant == FULL_PRINT_REVIEW_PREVIEW and mode.get("suggested_edge_source") == ROUNDED_CORNER_SOURCE
-    if mark and (selected_variant in {"full_print", "image_only", "source_corrected_trimmed"} or rounded_preview):
+    saved_preview = selected_variant == SAVED_FULL_PRINT_REVIEW
+    if mark and (selected_variant in {"full_print", "image_only", "source_corrected_trimmed"} or rounded_preview or saved_preview):
         page = await session.get(Page, photo.page_id)
         if (page is None or not get_settings().enable_protected_region_guard
                 or not album_mark_correction_matches(mark, photo.segmentation_mask or {}, correction)
                 or not album_mark_source_matches(mark, page.file_hash_sha256, page.processing_metadata)):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
-    selected_path = variant_path_from_photo(photo, selected_variant)
+    if saved_preview:
+        asset = saved_full_print_review_asset(photo)
+        selected_path = asset[1] if asset and asset[0] == v else None
+    else:
+        selected_path = variant_path_from_photo(photo, selected_variant)
     if not selected_path or not Path(selected_path).exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
     preview = selected_variant in CROP_REVIEW_PREVIEWS
@@ -671,7 +679,7 @@ async def get_photo_image(
         media_type="image/png" if preview else "image/jpeg",
         filename=filename,
         content_disposition_type="inline",
-        headers={"Cache-Control": "private, no-store"} if preview or rejected else None,
+        headers={"Cache-Control": "private, no-store"} if preview or saved_preview or rejected else None,
     )
 
 

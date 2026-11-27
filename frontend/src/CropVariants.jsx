@@ -447,6 +447,18 @@ export function CaptureSplitSourceReview({ groups, photos, sourceUrl }) {
   });
 }
 
+export const savedPrintReviewTitle = "Gespeicherter Zuschnitt zur Prüfung";
+export const savedPrintReviewHint = "Das Seitenverhältnis ist geschätzt. Miss Breite und Höhe am physischen Abzug und speichere die Masse.";
+
+export function SavedPrintReview({ url }) {
+  const [failedUrl, setFailedUrl] = useState(null);
+  if (!url || failedUrl === url) return null;
+  return <figure className="saved-full-print-review">
+    <img className="review-crop-preview" src={url} alt={savedPrintReviewTitle} onError={() => setFailedUrl(url)} />
+    <figcaption><strong>{savedPrintReviewTitle}</strong><p>{savedPrintReviewHint}</p></figcaption>
+  </figure>;
+}
+
 function CaptureSplitSourceDetail({ source, group, photos, detail }) {
   const windowClip = useId();
   const [showProposals, setShowProposals] = useState(false);

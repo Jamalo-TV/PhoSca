@@ -2297,6 +2297,22 @@ upload and reprocessing checks. Untrimmed previews are available and both
 crop exports are held. The upload check used lossless PNG copies whose
 working pixels were identical to the WebP sources.
 
+An independent `f2cd216` replay scored the actual 1382 × 1600 front cover
+as one classical and four mixed nonmatches, with every crop in review.
+All four mixed proposals trace parts of the same drawing. Each has
+exactly one native side with at least 0.80 fit support in twelve fixed
+proposal replays across quarter turns and JPEG55, JPEG75 and lossless
+transforms. All other sides have support up to 0.3661. A fitted exterior
+contains every proposal. It also contains a set of twelve genuine prints
+on an occupied spread, whose independently drafted contours each have
+at least three supported sides. Five true controls on other spreads
+have at most one supported side. Three opaque or thin-rim photo inserts
+on the cover retain at least three sides each. A flush same-pixel layer
+can still give the observed shared-cover signal. A separate pulse test
+for the long cover crease overlaps the occupied-page controls after
+rotation and re-encoding. Neither cue is used to suppress candidates.
+The score reports are local under `runs/crop-quality/spiral-cover-controls/`.
+
 Keep the tile experiment isolated until tests distinguish adjacent paper
 from a common print, including multipanel prints and decorative covers.
 The provisional album group, original images, annotations and per-image
@@ -7671,6 +7687,39 @@ the cut on these inputs. Opening with the keyboard or mouse, closing,
 reopening and cancelling make no write requests. The complete count
 review payload stays equal across those operations. Browser receipts
 and screenshots are in `runs/crop-quality/contact-paper-cut-zoom/`.
+
+#### Show the saved raster while the physical aspect remains open
+
+When only `PRINT_ASPECT_UNCERTAIN` remains on a manual whole-print row,
+the geometry editor can show the saved, rectified review JPEG. The
+server checks that the saved source corners match the whole-print mode,
+the current protection passed, the recorded raster shape corresponds
+to the untrimmed whole print and the overlap and paper checks are current.
+The review URL carries the actual untrimmed asset ID. Each request uses
+the page's existing tenant checks, revalidates the preview and matches
+that ID. A missing or obsolete ID returns 404. The JPEG is delivered
+inline with `Cache-Control: private, no-store`. The named export and
+approval checks remain separate.
+
+The pinned JPEG75 contact sheet saves a 609 × 781 review JPEG after
+the count moves 5 → 4 → 1 and the measured outer corners are saved
+without physical dimensions. Desktop previously showed a status hint.
+Mobile previously showed a 561 × 720 live canvas. Both now show the
+175,525-byte saved JPEG in place and after reopening, equal to the
+canonical untrimmed JPEG (`b4c5cb20…`). Changing dimensions, rotation
+or a corner hides that view. Both named downloads and the legacy trim
+return 404, and geometry approval returns 409. Reprocessing keeps the
+same raster and rotates the preview URL. Starting with the geometry edit
+before the count keeps the preview hidden while the old overlap hold
+persists. Only the rechecked aspect-only state exposes it. The source,
+browser and API receipts are local under
+`runs/crop-quality/saved-full-print-review/`.
+
+The eight paired frozen and development reports agree apart from timing.
+The fixed detector run retains 18/18 matches, and the seeded geometry
+run retains 11/11 whole-print and 12/12 motif passes. The saved review
+uses an existing JPEG and adds no render operation. See
+`exact-benchmark-receipt.json` in the same local report directory.
 
 ### Compare the disputed whole contact print
 

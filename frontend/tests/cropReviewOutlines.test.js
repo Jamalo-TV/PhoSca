@@ -6,7 +6,7 @@ import {
   filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
   getFilmGridReviewSeams, getFilmNeighborEdgeIndex, getFragmentReviewOutlines, getMergedPrintPairs,
   getPaperGridOutlineParents, getPaperGridReviewGroups,
-  getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper, paperGridSourceWindows,
+  getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper, paperGridSourceWindows, savedFullPrintReviewUrl,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource,
 } from "../src/cropReviewOutlines.js";
 
@@ -398,4 +398,17 @@ test("paper-grid zoom keeps both ends and the middle of the native cut clear", (
   assert.deepEqual(frameWindows[2].view, [1202, 870, 144, 144]);
   assert.deepEqual(paperGridSourceWindows([line[0], line[0]], 1346, 1014), []);
   assert.deepEqual(paperGridSourceWindows(line, 0, 1014), []);
+});
+
+test("a saved aspect review follows only the unchanged whole-print draft", () => {
+  const savedUrl = "/api/v1/photos/paper/image?variant=saved_full_print_review&v=version";
+  const photo = { saved_full_print_review_url: savedUrl, segmentation_mask: { orientation_degrees: 90 } };
+  const noSize = { width: "", height: "" };
+  assert.equal(savedFullPrintReviewUrl(photo, quad, structuredClone(quad), noSize, 90), savedUrl);
+  const moved = [{ ...quad[0], x: .101 }, ...quad.slice(1)];
+  assert.equal(savedFullPrintReviewUrl(photo, quad, moved, noSize, 90), null);
+  assert.equal(savedFullPrintReviewUrl(photo, quad, quad, { ...noSize, width: "20" }, 90), null);
+  assert.equal(savedFullPrintReviewUrl(photo, quad, quad, noSize, 180), null);
+  assert.equal(savedFullPrintReviewUrl({ ...photo, reviewed_non_print: true }, quad, quad, noSize, 90), null);
+  assert.equal(savedFullPrintReviewUrl({ ...photo, saved_full_print_review_url: null }, quad, quad, noSize, 90), null);
 });

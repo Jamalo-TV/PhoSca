@@ -40,6 +40,20 @@ def original_prediction_mask(metadata: dict) -> dict | None:
     return ((metadata.get("review_provenance") or {}).get("original_prediction") or {}).get("segmentation_mask")
 
 
+def review_source_quads_match(reference: list[dict] | None, *claims: list[dict] | None) -> bool:
+    """Match the same four normalized source corners across a rendering round trip."""
+    try:
+        outline, *compared = [np.float64([(point["x"], point["y"]) for point in quad])
+                              for quad in (reference, *claims)]
+    except (KeyError, TypeError, ValueError):
+        return False
+    if any(quad.shape != (4, 2) or not np.isfinite(quad).all() or np.any((quad < 0) | (quad > 1))
+           for quad in (outline, *compared)):
+        return False
+    orders = [np.roll(cycle, turn, axis=0) for cycle in (outline, outline[::-1]) for turn in range(4)]
+    return all(any(np.allclose(quad, order, atol=1e-6, rtol=0) for order in orders) for quad in compared)
+
+
 def manual_paper_grid_count_review(mask: dict | None, metadata: dict) -> dict | None:
     """Keep count evidence when the reviewer saved the measured parent outline."""
     group = (original_prediction_mask(metadata) or {}).get("paper_grid_review")
@@ -53,21 +67,7 @@ def manual_paper_grid_count_review(mask: dict | None, metadata: dict) -> dict | 
                    for name in ("full_print", "image_only"))):
         return None
 
-    def vertices(values: list[dict]) -> np.ndarray:
-        return np.float64([(point["x"], point["y"]) for point in values])
-
-    try:
-        outline = vertices(group["outline"])
-        claims = (vertices(mask["warp_quad"]), vertices(mask.get("visible_polygon") or mask["polygon"]))
-    except (KeyError, TypeError, ValueError):
-        return None
-    if any(quad.shape != (4, 2) or not np.isfinite(quad).all() or np.any((quad < 0) | (quad > 1))
-           for quad in (outline, *claims)):
-        return None
-    # Allow rounding during the native-to-normalized round trip only. A
-    # reviewer moving an outline can be correcting a separate paper claim.
-    orders = [np.roll(cycle, turn, axis=0) for cycle in (outline, outline[::-1]) for turn in range(4)]
-    if not all(any(np.allclose(quad, order, atol=1e-6, rtol=0) for order in orders) for quad in claims):
+    if not review_source_quads_match(group.get("outline"), mask.get("warp_quad"), mask.get("visible_polygon") or mask.get("polygon")):
         return None
     return group
 

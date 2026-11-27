@@ -3254,7 +3254,28 @@ async def test_measured_print_size_recovers_both_oblique_crops_and_survives_repr
     assert unmeasured.status_code == 200, unmeasured.text
     correction = unmeasured.json()["enhancement_applied"]["correction"]
     assert correction["crop_modes"]["full_print"]["reason_codes"] == ["PRINT_ASPECT_UNCERTAIN"]
-    assert (await client.get(f"{url}/image?variant=full_print")).status_code == 404
+    saved_review = unmeasured.json()["saved_full_print_review_url"]
+    assert saved_review == f'{url}/image?variant=saved_full_print_review&v={correction["untrimmed_asset_id"]}'
+    image_review = await client.get(saved_review)
+    normal_untrimmed = await client.get(f"{url}/image?variant=source_corrected_untrimmed")
+    assert image_review.status_code == normal_untrimmed.status_code == 200
+    assert image_review.headers["content-type"] == "image/jpeg"
+    assert image_review.headers["cache-control"] == "private, no-store"
+    assert image_review.content == normal_untrimmed.content
+    assert (await client.get(saved_review.split("&", 1)[0])).status_code == 404
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
+    geometry, = (await client.get(f"/api/v1/review/queue?type=geometry&photo_id={photo_id}")).json()
+    assert geometry["payload"]["saved_full_print_review_url"] == saved_review
+    approve = await client.post("/api/v1/review/events", json={"task_type": "geometry", "task_id": str(photo_id),
+                                "answer": "correct", "idempotency_key": uuid4().hex})
+    assert approve.status_code == 409
+    reapplied = await client.post(f"{url}/reprocess")
+    assert reapplied.status_code == 200, reapplied.text
+    current = reapplied.json()["saved_full_print_review_url"]
+    assert current and current != saved_review
+    assert (await client.get(saved_review)).status_code == 404
+    assert (await client.get(current)).content == image_review.content
 
     async with get_session_factory()() as session:
         photo = await session.get(ExtractedPhoto, photo_id)
@@ -3275,6 +3296,8 @@ async def test_measured_print_size_recovers_both_oblique_crops_and_survives_repr
     assert correction["aspect_ratio_estimation"]["method"] == "calibrated_camera"
     assert "CAMERA_ASPECT_REVIEW" in correction["crop_modes"]["full_print"]["reason_codes"]
     assert preview_photo["urls"]["full_print"] is None
+    assert preview_photo["saved_full_print_review_url"] is None
+    assert (await client.get(current)).status_code == 404
     assert (await client.get(preview_photo["urls"]["source_corrected"])).status_code == 200
 
     calibrated = await client.patch(f"{url}/bounding-box", json=body)
@@ -3298,6 +3321,7 @@ async def test_measured_print_size_recovers_both_oblique_crops_and_survives_repr
     assert measured.status_code == 200, measured.text
     assert measured.json()["aspect_ratio"] == pytest.approx(1.5)
     assert measured.json()["segmentation_mask"]["print_size_mm"] == size
+    assert measured.json()["saved_full_print_review_url"] is None
     aspect = measured.json()["enhancement_applied"]["correction"]["aspect_ratio_estimation"]
     assert aspect == {"method": "known_print_aspect", "estimated_ratio": pytest.approx(1.5)}
     queue = await client.get("/api/v1/review/queue?type=geometry")

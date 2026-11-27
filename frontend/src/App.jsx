@@ -73,6 +73,7 @@ import {
   embossedAlbumAction, embossedPocketReviewErrors,
   getSourceStripReview, SourceStripReview, sourceStripColor, sourceStripContrastColor,
   offPrintAdvisorySource, useAlbumPageMarkReview,
+  SavedPrintReview,
 } from "./CropVariants.jsx";
 import {
   competingPhotoRegionPaths, competingPhotoRegionStyles, getCompetingPhotoReviewOutlines,
@@ -81,6 +82,7 @@ import {
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getMergedPrintPairs, getPaperJoinReviewGroups, getStoredMotifQuad,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
+  savedFullPrintReviewUrl,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
@@ -2243,6 +2245,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   if (!page) return <EmptyState label="Select a page to review." />;
 
   const currentSave = saveState?.photoId === selectedPhotoId && saveState?.mode === editMode ? saveState : null;
+  const savedAspectPreview = !editingImage && !newPrint && !rejectedDetection && !selectedCountGroup
+    && !currentSave?.saving && !currentSave?.url && !fullPrintPreview
+    ? savedFullPrintReviewUrl(selected, savedShape?.warpQuad, selectedShape?.warpQuad,
+      selectedShape?.printSizeFields, selectedShape?.orientationDegrees) : null;
   return (
     <div className="canvas-wrap">
       <div className="variant-tabs crop-mode-tabs" role="group" aria-label="Zu bearbeitenden Ausschnitt wählen">
@@ -2557,7 +2563,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           {outlinePreviewHint && <p className="crop-mode-status">{outlinePreviewHint}</p>}
         </>
       )}
-      {currentSave && !currentSave.saving && !currentSave.error && !currentSave.url && !currentSave.rejected && (
+      {savedAspectPreview && <SavedPrintReview url={savedAspectPreview} />}
+      {currentSave && !currentSave.saving && !currentSave.error && !currentSave.url && !currentSave.rejected && !savedAspectPreview && (
         <p role="status">Der gespeicherte Ausschnitt muss geprüft werden.</p>
       )}
     </div>
