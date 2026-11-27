@@ -1075,6 +1075,16 @@ Vorschlag. Die Markierungen allein ändern weder die Ecken noch die
 Abzugsanzahl oder den Prüfstatus.
 [Messung durchgehender Bildstruktur](data/evaluation/README.md#show-source-detail-across-an-unsupported-contrast-outline)
 
+Nach der Bestätigung einer solchen Kontrastkontur misst PhoSca den
+Papierrand erneut im Original. Die eingegebenen Ecken bestimmen die
+gespeicherte Papierkontur. Gibt es mehrere plausible Kanten, bleibt
+der Zuschnitt in Prüfung und PhoSca zeigt die messbaren Alternativen an. Bei einem
+klaren, abweichenden Papierrand kann der Editor eine neue Kontur zum
+Laden anbieten. Geprüfte Rundungen lassen sich in einer transparenten
+Vorschau mit dem bisherigen Zuschnitt vergleichen. Ältere bestätigte
+Zuschnitte dieses Typs werden vor dem Download erneut geprüft.
+[Nachprüfung bestätigter Kontrastkonturen](data/evaluation/README.md#recheck-a-confirmed-contrast-outline-in-native-pixels)
+
 | Aktion | Verhalten |
 | --- | --- |
 | Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |

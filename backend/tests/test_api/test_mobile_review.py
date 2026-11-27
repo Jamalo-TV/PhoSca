@@ -2123,9 +2123,12 @@ async def test_saving_coordinates_cannot_release_a_photo_hidden_by_an_album_wind
 
 
 async def test_unsupported_contrast_outline_requires_separate_paper_confirmation(client, monkeypatch):
+    from copy import deepcopy
+
     from app.config import get_settings
     from app.database import get_session_factory
-    from app.models import ExtractedPhoto
+    from app.models import ExtractedPhoto, PhotoStatus
+    from app.pipeline.manual_paper_boundary import MANUAL_CONTRAST_OUTLINE_CHECK, MANUAL_CONTRAST_OUTLINE_REVISION
 
     monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
     monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
@@ -2148,7 +2151,9 @@ async def test_unsupported_contrast_outline_requires_separate_paper_confirmation
         await session.commit()
 
     url = f"/api/v1/photos/{photo_id}"
-    mask = {"source": "manual_quad", "polygon": quad, "warp_quad": quad, "print_size_mm": {"width": 100, "height": 75}}
+    old_visibility = [{"x": p["x"] * .9 + .04, "y": p["y"] * .9 + .04} for p in quad]
+    mask = {"source": "manual_quad", "polygon": quad, "visible_polygon": old_visibility, "warp_quad": quad,
+            "print_size_mm": {"width": 100, "height": 75}}
     for update in (
         {"segmentation_mask": mask},
         {"confirm_print_outline": True},
@@ -2169,8 +2174,39 @@ async def test_unsupported_contrast_outline_requires_separate_paper_confirmation
     assert saved.status_code == 200, saved.text
     details = saved.json()
     assert details["segmentation_confidence"] is None
+    np.testing.assert_allclose(
+        [[point["x"], point["y"]] for point in details["segmentation_mask"]["visible_polygon"]],
+        [[point["x"], point["y"]] for point in quad], atol=1e-7,
+    )
     revisions = details["enhancement_applied"]["review_provenance"]["correction_revisions"]
     assert len(revisions) == 1 and revisions[0]["contrast_print_outline_confirmed"] is True
+    assert details["enhancement_applied"]["correction"][MANUAL_CONTRAST_OUTLINE_CHECK] == MANUAL_CONTRAST_OUTLINE_REVISION
+
+    # A stored crop generated after confirmation but before native rechecking
+    # cannot use legacy ready variants while it waits for reprocessing.
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        metadata = deepcopy(photo.enhancement_applied)
+        metadata["correction"].pop(MANUAL_CONTRAST_OUTLINE_CHECK)
+        for mode in metadata["correction"]["crop_modes"].values():
+            mode.update(status="ready", reason_codes=[])
+        metadata["variants"].update({name: {"path": photo.original_storage_path} for name in (
+            "full_print", "image_only", "source_corrected_trimmed",
+        )})
+        photo.status = PhotoStatus.completed
+        photo.enhancement_applied = metadata
+        await session.commit()
+    for name in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image", params={"variant": name})).status_code == 404
+    rejected = await client.post("/api/v1/review/events", json={
+        "task_type": "geometry", "task_id": str(photo_id), "answer": "correct", "idempotency_key": str(uuid4()),
+    })
+    assert rejected.status_code == 409
+    queue, = (await client.get("/api/v1/review/queue", params={"type": "geometry", "photo_id": str(photo_id)})).json()
+    assert queue["status"] == "review_needed" and queue["payload"]["variant_urls"]["full_print"] is None
+    replay = await client.post(f"{url}/reprocess")
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["enhancement_applied"]["correction"][MANUAL_CONTRAST_OUTLINE_CHECK] == MANUAL_CONTRAST_OUTLINE_REVISION
 
 
 async def _seed_adjacent_manual_addition(monkeypatch):

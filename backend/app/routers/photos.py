@@ -1034,10 +1034,12 @@ async def update_photo_bounding_box(
             and "PRINT_BOUNDARY_UNSUPPORTED" in (full_print.get("reason_codes") or [])
             and not capture_outline_review_required(full_print)
         )
-        if confirm_contrast_outline and (
-            not payload.confirm_print_outline or not explicit or segmentation_mask.get("image_quad") is not None
-        ):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="contrast_print_outline_review_required")
+        if confirm_contrast_outline:
+            if not payload.confirm_print_outline or not explicit or segmentation_mask.get("image_quad") is not None:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="contrast_print_outline_review_required")
+            # The unsupported automatic outline cannot claim paper for the replacement.
+            segmentation_mask["polygon"] = deepcopy(segmentation_mask["warp_quad"])
+            segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask["warp_quad"])
         if full_print.get("suggested_warp_quad") and photo.segmentation_confidence is not None:
             outer = segmentation_mask.get("warp_quad") or []
             previous_outlines = (full_print.get("warp_quad"), original_mask.get("warp_quad") or original_mask.get("polygon"))

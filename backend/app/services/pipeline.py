@@ -63,7 +63,8 @@ from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertice
 from app.pipeline.manual_paper_extent import MANUAL_PAPER_EXTENT_SOURCE
 from app.pipeline.image_ops import calculate_blur_score, load_image, save_jpeg, save_png, sha256_file
 from app.pipeline.manual_paper_boundary import (
-    MANUAL_PAPER_BOUNDARY_REVISION, PAPER_GRID_OVERLAP_REVIEW, hold_overlapping_paper_claim_modes,
+    MANUAL_PAPER_BOUNDARY_REVISION, PAPER_GRID_OVERLAP_REVIEW, confirmed_contrast_outline, contrast_outline_check_pending,
+    hold_overlapping_paper_claim_modes,
     manual_paper_download_needs_review, manual_paper_reference, manual_scalloped_outline, original_prediction_mask,
     overlapping_paper_claims, paper_claim_groups, paper_claim_overlap_checks, paper_claims_need_overlap_check,
     paper_curve_review_reference,
@@ -539,6 +540,7 @@ async def perspective_correction_task_logic(
     run = await get_or_create_run(session, photo.page, settings)
     automatic_detection = photo.segmentation_confidence is not None
     metadata = photo.enhancement_applied or {}
+    contrast_outline = not automatic_detection and confirmed_contrast_outline(metadata)
     mask = photo.segmentation_mask or {}
     page_steps = (photo.page.processing_metadata or {}).get("steps") or {}
     protection_evidence = page_steps.get("protected_regions") or {}
@@ -580,6 +582,7 @@ async def perspective_correction_task_logic(
             and previous_motif.get("scalloped_motif_ownership_revision") != SCALLOPED_PRINT_REVISION)
     )
     if (skip_if_exists and not boundary_recheck and not paper_claim_recheck and not scalloped_recheck and not mark_recheck
+            and not (contrast_outline and contrast_outline_check_pending(metadata))
             and photo.original_storage_path and Path(photo.original_storage_path).exists()):
         full_mode = modes.get("full_print") or {}
         image_mode = modes.get("image_only") or {}
@@ -601,7 +604,7 @@ async def perspective_correction_task_logic(
             }
     stage = await start_stage(session, run, "perspective_correction", input_path=Path(photo.page.storage_path))
 
-    precise_crops = (settings.enable_precise_photo_crops or mask.get("manual_added") is True
+    precise_crops = (settings.enable_precise_photo_crops or mask.get("manual_added") is True or contrast_outline
                      or mask.get(REVIEWED_CROSSING_OUTLINE) is True or bool(mask.get("crossing_print_suggestion"))
                      or bool(mask.get(PARTIAL_PRINT_EXTENT_TRACES))
                      or MERGED_PRINT_PAIR in mask
@@ -695,6 +698,7 @@ async def perspective_correction_task_logic(
             measured_page_references=measured_references,
             neighbor_masks=[*neighbor_masks, *pending_neighbors],
             manual_boundary_reference=manual_boundary,
+            verify_manual_contrast_outline=contrast_outline,
             manual_scalloped_polygon=None if paper_claim_conflicts else scalloped_outline,
             **({"reviewed_album_mark": reviewed_mark} if reviewed_mark else {}),
             **({"previous_manual_crop": previous_manual_crop} if previous_manual_crop is not None else {}),

@@ -2701,6 +2701,51 @@ about 1.15 s for the advisory in one single-thread CPU replay.
 The development source reports and browser captures are under
 `runs/crop-quality/u039-jpeg55/crossing-traces/`.
 
+#### Recheck a confirmed contrast outline in native pixels
+
+An explicit correction of a held automatic contrast outline replaces
+the automatic paper mask with the entered outline. The server's recorded
+confirmation enables a native paper-boundary check. The check measures
+the sides of the entered outline on the original raster. It never
+substitutes its fitted quadrilateral for the user's
+saved corners. Unresolved measurements keep both modes in review.
+Measured competing lines can be shown on the source. The untrimmed
+review view keeps sampling within the submitted quadrilateral.
+
+A clear fit more than 0.75 native pixels from any entered corner also
+requires review. A suggestion is offered only when every side has at
+least 0.90 support and 0.70 corner support and the overlap and content
+checks accept it. This is a positional disagreement threshold. Pixel
+ownership at subpixel distances still depends on the source evidence.
+Two supported rounded-corner arcs can trigger the existing transparent
+whole-print preview. A lone arc carries no new transparency decision.
+Existing saved crops with a confirmation but no native-check record
+stay out of the named downloads and return to the geometry queue
+until reevaluated. Geometry approval and the cropped alias use the
+same guard.
+
+In U039 JPEG55 the manually entered lower-car quadrilateral keeps its
+original coordinates. The two source lines at its lower edge now
+appear in review. Both named exports and the cropped alias remain
+held after reprocessing. A second entered quad on the same paper
+triggers the supported upper-corner comparison. The lower corners
+remain unresolved. An authored full-bleed control passes with its
+exact corners. A one-pixel inset loses 1,316 known source centers
+from that control and now holds both modes with a separate measured
+outline suggestion.
+
+The U039 untrimmed raster was pixel-identical in the before-and-after
+renderer runs. Across nine warm single-thread runs, the median was
+126 ms before and 38 ms after. The ambiguous boundary holds the case
+before the renderer starts motif inference.
+
+A separate development experiment found a more consistent signed
+paper transition for U039 and reduced definite backing taps along its
+straight sides. A strong local shadow can still shift an endpoint by
+about one native pixel. That experiment provides comparison evidence
+for a later change. The source report, normal upload receipts and
+review renders are under `runs/crop-quality/u039-jpeg55/manual-boundary/`.
+
 #### Review a protection margin outside a manually added print
 
 Off-print advisory revision 2 adds a path for a manually added print

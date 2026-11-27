@@ -52,7 +52,8 @@ from app.pipeline.mounted_edge_preview import suggest_mounted_strip_preview
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT, manual_margin_advisory, off_print_advisory_regions
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.manual_paper_boundary import (
-    MANUAL_CAPTURE_OUTLINE_REVIEW, MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION,
+    MANUAL_CAPTURE_OUTLINE_REVIEW, MANUAL_CONTRAST_OUTLINE_CHECK, MANUAL_CONTRAST_OUTLINE_REVISION,
+    MANUAL_PAPER_BOUNDARY_REVIEW, MANUAL_PAPER_BOUNDARY_REVISION,
     check_manual_paper_boundary, shared_rim_cut_segments,
 )
 from app.pipeline.orientation import correct_photo_orientation, rotate_image
@@ -1824,6 +1825,7 @@ def correct_photo_crop(
     previous_manual_crop: dict | None = None,
     manual_neighbor_reference: dict | None = None,
     shared_rim_reference: list[list[dict]] | None = None,
+    verify_manual_contrast_outline: bool = False,
 ) -> CropResult:
     height, width = page_image.shape[:2]
     mask = mask or {}
@@ -1886,6 +1888,18 @@ def correct_photo_crop(
         ],
     )
     src_points, quad_metrics = inspection.quad, inspection.metrics
+    checked_contrast_outline = dual_mode and manual and verify_manual_contrast_outline
+    contrast_outline_suggestion = None
+    if checked_contrast_outline:
+        # Inspect the reviewer geometry in native pixels without moving it.
+        reviewed = order_quad_cyclic(src_points)
+        fitted, edges, reasons = refine_print_boundary(page_image, reviewed, collect_curve_segments=True)
+        if fitted is not None and not reasons and np.linalg.norm(fitted - reviewed, axis=1).max() > .75:
+            reasons = [PRINT_EDGE_CONFIRMATION]
+            if all(edge["support"] >= .90 and (edge["corner_support"] or 0) >= .70 for edge in edges.values()):
+                contrast_outline_suggestion = fitted
+        inspection.boundary.update(edges)
+        inspection.reasons.extend(reason for reason in reasons if reason not in inspection.reasons)
     if dual_mode and not manual and shared_rim_reference and PRINT_SHARED_RIM_UNCERTAIN not in inspection.reasons:
         inspection.reasons.append(PRINT_SHARED_RIM_UNCERTAIN)
     boundary_refinement, full_reasons = inspection.boundary, inspection.reasons.copy()
@@ -2002,6 +2016,7 @@ def correct_photo_crop(
     )
     owned_sampling = dual_mode and (
         set(full_reasons) <= _CROP_PREVIEW_REASONS
+        or checked_contrast_outline
         or mask.get("capture_edge_clipped") is True
         or (stock_suggestion and not set(full_reasons) & {CAPTURE_EDGE_HOLD, "PRINT_POSSIBLY_OCCLUDED"})
     )
@@ -2055,6 +2070,8 @@ def correct_photo_crop(
     }
     if dual_mode:
         metadata.update(boundary_refinement=boundary_refinement, aspect_ratio_estimation=aspect)
+        if checked_contrast_outline:
+            metadata[MANUAL_CONTRAST_OUTLINE_CHECK] = MANUAL_CONTRAST_OUTLINE_REVISION
         if checked_manual_boundary:
             metadata["manual_paper_boundary"] = {
                 "revision": MANUAL_PAPER_BOUNDARY_REVISION, "requires_review": manual_boundary_hold,
@@ -2071,8 +2088,11 @@ def correct_photo_crop(
             metadata["refined_visible_polygon"] = _vertices_on_page(outline, width, height)
             metadata["refined_visibility_source"] = source
         rounded = None
-        if (manual and mask.get("manual_added") is True and protect_regions and protection["passed"]
-                and set(full_reasons) <= {"PRINT_ASPECT_UNCERTAIN"}):
+        corner_review_reasons = {"PRINT_ASPECT_UNCERTAIN"}
+        if checked_contrast_outline:
+            corner_review_reasons.update(("PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN"))
+        if (manual and (mask.get("manual_added") is True or checked_contrast_outline) and protect_regions
+                and protection["passed"] and set(full_reasons) <= corner_review_reasons):
             protected_boxes = []
             for region in regions:
                 if box := region_box_in_pixels(region, width, height):
@@ -2124,6 +2144,13 @@ def correct_photo_crop(
             neighbor_masks=neighbor_masks,
         )
         modes = result.metadata["crop_modes"]
+        if (contrast_outline_suggestion is not None and protection["passed"]
+                and set(full_reasons) <= {PRINT_EDGE_CONFIRMATION, "PRINT_ASPECT_UNCERTAIN"}
+                and not any(_material_print_intersection(contrast_outline_suggestion, cv2.convexHull(neighbor))
+                            for neighbor in neighbor_polygons)
+                and validate_protected_regions(contrast_outline_suggestion, regions, width=width, height=height)["passed"]
+                and _keeps_protected_preview_content(page_image, src_points, contrast_outline_suggestion, regions, protection)):
+            modes["full_print"]["suggested_warp_quad"] = _vertices_on_page(contrast_outline_suggestion, width, height)
         if rounded is not None:
             mode = modes["full_print"]
             mode["suggested_edge_source"] = ROUNDED_CORNER_SOURCE
@@ -2256,7 +2283,7 @@ def correct_photo_crop(
                         result = replace(result, full_print_preview=pixels)
                 except (ValueError, cv2.error, np.linalg.LinAlgError):
                     pass
-        if (competing_segments and not manual and "PRINT_BOUNDARY_AMBIGUOUS" in full_reasons
+        if (competing_segments and (not manual or checked_contrast_outline) and "PRINT_BOUNDARY_AMBIGUOUS" in full_reasons
                 and not full_mode.get("suggested_edge_traces") and not full_mode.get("suggested_warp_quad")
                 and not (mask.get("film_grid_review_seam") or mask.get("paper_grid_review"))
                 and set(full_reasons) - {PARTIAL_PRINT_EXTENT_REVIEW}

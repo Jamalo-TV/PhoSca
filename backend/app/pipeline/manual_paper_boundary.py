@@ -17,6 +17,8 @@ from app.pipeline.scalloped_prints import SCALLOPED_PRINT_CONFLICT
 MANUAL_PAPER_BOUNDARY_REVISION = 2
 MANUAL_PAPER_BOUNDARY_REVIEW = "PRINT_CURVED_OUTLINE_REVIEW"
 MANUAL_CAPTURE_OUTLINE_REVIEW = "PRINT_CAPTURE_OUTLINE_REVIEW"
+MANUAL_CONTRAST_OUTLINE_CHECK = "manual_contrast_outline_check"
+MANUAL_CONTRAST_OUTLINE_REVISION = 1
 PAPER_GRID_OVERLAP_REVIEW = "PAPER_GRID_OVERLAP_REVIEW"
 PAPER_CLAIM_OVERLAP_CHECKS = {
     PAPER_GRID_OVERLAP_REVIEW: ("paper_grid_overlap_revision", 1),
@@ -36,6 +38,20 @@ def paper_claim_groups(mask: dict | None, original_mask: dict | None = None) -> 
 
 def original_prediction_mask(metadata: dict) -> dict | None:
     return ((metadata.get("review_provenance") or {}).get("original_prediction") or {}).get("segmentation_mask")
+
+
+def confirmed_contrast_outline(metadata: dict) -> bool:
+    mask = original_prediction_mask(metadata) or {}
+    if mask.get("detector_source") != "contrast_region":
+        return False
+    revisions = (metadata.get("review_provenance") or {}).get("correction_revisions") or []
+    return any(revision.get("contrast_print_outline_confirmed") is True for revision in revisions)
+
+
+def contrast_outline_check_pending(metadata: dict) -> bool:
+    correction = metadata.get("correction") or {}
+    return (correction.get(MANUAL_CONTRAST_OUTLINE_CHECK) != MANUAL_CONTRAST_OUTLINE_REVISION
+            and confirmed_contrast_outline(metadata))
 
 
 def paper_claim_overlap_checks(groups: dict) -> dict:

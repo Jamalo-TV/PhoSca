@@ -26,7 +26,9 @@ from app.models import (
 from app.pipeline.album_leaf_review import ALBUM_LEAF_COUNT_REVIEW, ALBUM_LEAF_REVIEW_CHILD, ALBUM_LEAF_REVIEW_TRACES
 from app.pipeline.crossing_fallback_review import CROSSING_FALLBACK_COUNT_REVIEW, CROSSING_FALLBACK_TRACES
 from app.pipeline.decisions import is_reviewed_non_print, motif_geometry_requires_review
-from app.pipeline.manual_paper_boundary import PAPER_CLAIM_OVERLAP_CHECKS, paper_claims_need_overlap_check
+from app.pipeline.manual_paper_boundary import (
+    PAPER_CLAIM_OVERLAP_CHECKS, contrast_outline_check_pending, paper_claims_need_overlap_check,
+)
 from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
 from app.pipeline.protected_regions import album_mark_source_matches
@@ -670,6 +672,8 @@ def _completed_review_exists(task_type: str, task_id_column):
 
 async def _geometry_review_is_current(session: AsyncSession, photo: ExtractedPhoto) -> bool:
     metadata = photo.enhancement_applied or {}
+    if photo.segmentation_confidence is None and contrast_outline_check_pending(metadata):
+        return False
     correction = metadata.get("correction") or {}
     full_mode = (correction.get("crop_modes") or {}).get("full_print") or {}
     if (((photo.segmentation_mask or {}).get(MANUAL_MARGIN_CONTEXT) and full_mode.get("status") != "ready")
@@ -849,7 +853,8 @@ async def get_review_queue(
             if view is photo and await _geometry_review_is_current(session, photo):
                 continue
             payload = _photo_review_payload(view)
-            review_status = PhotoStatus.review_needed if payload["motif_review_pending"] else view.status
+            pending_contrast = photo.segmentation_confidence is None and contrast_outline_check_pending(photo.enhancement_applied or {})
+            review_status = PhotoStatus.review_needed if pending_contrast or payload["motif_review_pending"] else view.status
             items.append(
                 ReviewItem(
                     item_type="geometry",
