@@ -54,7 +54,9 @@ from app.pipeline.geometry import (
     quad_from_polygon,
 )
 from app.pipeline.image_ops import normalized_box_to_pixels, pixel_box_to_normalized
-from app.pipeline.merged_print_review import MERGED_PRINT_PAIR, MERGED_PRINT_PAIR_REVIEW, measured_merged_print_pair
+from app.pipeline.merged_print_review import (
+    MERGED_PRINT_PAIR, MERGED_PRINT_PAIR_REVIEW, measured_merged_print_pair, measured_merged_print_with_one_tile,
+)
 from app.pipeline.mounted_prints import mounted_print_evidence
 from app.pipeline.multipanel_prints import (
     FILM_GRID_REVIEW, GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW,
@@ -4755,6 +4757,28 @@ def _nominate_merged_tile_pair(
     return nominees
 
 
+def _nominate_merged_parent_with_one_tile(
+    parents: list[SegmentationDetection], candidates: list[SegmentationDetection], evidence: dict[int, dict[str, float]],
+) -> list[tuple[np.ndarray, list[np.ndarray]]]:
+    tiles = [_detection_polygon(item) for i, item in enumerate(candidates)
+             if item.mask.get("detector_source") == "yolo_onnx_tiled" and item.confidence >= .80 and evidence[i]["score"] >= .80]
+    nominees = []
+    for parent in parents:
+        if (not parent.geometry_valid or not .25 <= parent.confidence <= .38
+                or parent.mask.get("detector_source") != "yolo_onnx" or parent.mask.get("warp_quad")
+                or not .045 <= _score_value(parent, "area_ratio") <= .12):
+            continue
+        original = _detection_polygon(parent)
+        matching = []
+        for polygon in tiles:
+            overlap = normalized_polygon_overlap(polygon, original, raster_size=512)
+            if overlap.first_containment >= .90 and .35 <= overlap.second_containment <= .62:
+                matching.append(polygon)
+        if len(matching) == 1:
+            nominees.append((original, matching))
+    return nominees
+
+
 def _review_merged_tile_pair(
     source: np.ndarray, result: SegmentationResult, parent: np.ndarray, polygons: list[np.ndarray],
 ) -> SegmentationResult:
@@ -4770,11 +4794,20 @@ def _review_merged_tile_pair(
         seeds = [quad_from_polygon(normalized_vertices_to_pixels(poly, width, height))[0] for poly in polygons]
         if any(seed is None for seed in seeds):
             return result
-        pair = measured_merged_print_pair(source, [order_quad_cyclic(seed) for seed in seeds])
+        seeds = [order_quad_cyclic(seed) for seed in seeds]
+        if len(seeds) == 1:
+            parent_seed, _ = quad_from_polygon(normalized_vertices_to_pixels(parent, width, height))
+            if parent_seed is None:
+                return result
+            pair = measured_merged_print_with_one_tile(source, order_quad_cyclic(parent_seed), seeds[0])
+        else:
+            pair = measured_merged_print_pair(source, seeds)
         if pair is None:
             return result
         outlines, lane = pair
         footprints = [pixel_vertices_to_normalized(quad, width, height) for quad in outlines]
+        if len(seeds) == 1 and normalized_polygon_overlap(footprints[1], polygons[0], raster_size=512).iou < .84:
+            return result
         overlaps = [normalized_polygon_overlap(poly, parent, raster_size=512) for poly in footprints]
         if (min(overlap.first_containment for overlap in overlaps) < .96
                 or not .78 <= sum(overlap.second_containment for overlap in overlaps) <= .95):
@@ -4810,6 +4843,8 @@ def _collect_tiled_print_offers(
     if merged_tile_pairs is not None:
         try:
             merged_tile_pairs.extend(_nominate_merged_tile_pair(detections, candidates, evidence))
+            if not merged_tile_pairs:
+                merged_tile_pairs.extend(_nominate_merged_parent_with_one_tile(detections, candidates, evidence))
         except (cv2.error, ValueError, np.linalg.LinAlgError):
             pass  # Optional count guides must preserve ordinary tile offers.
     height, width = source.shape[:2]

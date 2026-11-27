@@ -116,6 +116,26 @@ abfotografierte Reproduktion kann dieselbe Textur zeigen. Deshalb
 bleiben Papierzugehörigkeit, Ecken und beide Zuschnittmodi prüfpflichtig.
 [Gerippter Albumkarton](data/evaluation/README.md#check-a-failed-tile-fit-against-ribbed-backing)
 
+Deckt ein schwacher Ganzseitenvorschlag möglicherweise zwei Abzüge ab,
+kann ein einzelner starker Kachelfund innerhalb dieser Kontur eine
+weitere Prüfung auslösen. PhoSca sucht in der Mitte des gemeinsamen
+Vorschlags nach einer durchgehenden Albumrippe. Die Messung prüft die
+Textur in der Fuge und ihre Fortsetzung auf beiden Seiten. Stützen die
+Originalpixel zwei disjunkte Papierumrisse, zeigt die Anzahlprüfung
+beide Umrisse und die Rippe am vorhandenen Eintrag. Beide Exporte
+bleiben gesperrt, solange die Papierzuordnung ungeklärt ist.
+
+Stimmen die Konturen mit zwei Papierabzügen am Original überein, lädt
+**Umriss 1 laden** oder **Umriss 2 laden** den jeweiligen Entwurf in den
+Editor. Speichere einen Abzug im vorhandenen Eintrag und ergänze den
+zweiten anschliessend. Bei einem gemeinsamen Papierabzug bestätige
+**Beide Motive liegen auf einem gemeinsamen Papierabzug** und setze die
+vier Ecken so, dass beide gemessenen Umrisse vollständig darin liegen.
+PhoSca prüft die gewählte Kontur beim Speichern erneut und protokolliert
+den Papierentscheid. Danach gelten die üblichen Zuschnittprüfungen für
+beide Modi.
+[Prüfung zweier möglicher Abzüge](data/evaluation/README.md#measure-a-possible-pair-with-one-separate-tile-mask)
+
 Blockiert eine einzelne, am Aufnahmerand abgestützte Kontrastkontur
 einen gemessenen Kachelumriss, prüft PhoSca beide am Original. Ist
 der Papierverlauf des Kachelfunds belegt und führt eine Seite der

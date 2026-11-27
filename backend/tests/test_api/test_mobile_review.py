@@ -1404,12 +1404,23 @@ async def test_new_paper_claim_retires_a_merged_pair_keeps_crop_hold(client, mon
         "request_id": str(uuid4()), "warp_quad": pair["outlines"][0],
     })
     assert duplicate.status_code == 409 and duplicate.json()["detail"] == "merged_print_pair_claim_conflict"
+    inset = quad(.21, .25, .71, .47)
+    duplicate = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": inset, "print_size_mm": {"width": 90, "height": 100},
+    })
+    assert (duplicate.status_code, duplicate.json()["detail"]) == (409, "merged_print_pair_claim_conflict")
     added = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
         "request_id": str(uuid4()), "warp_quad": quad(.6, .56, .89, .83),
     })
     assert added.status_code == 201, added.text
     assert (await client.get(url)).json()["segmentation_mask"][MERGED_PRINT_PAIR] is None
     assert len((await client.get(f"/api/v1/albums/{album_id}/photos")).json()) == 2
+    broad = quad(.13, .18, .79, .87)
+    stale = await client.patch(f"{url}/bounding-box", json={
+        "bounding_box": {"x1": .13, "y1": .18, "x2": .79, "y2": .87}, "confirm_merged_print_as_one": True,
+        "segmentation_mask": {"polygon": broad, "warp_quad": broad},
+    })
+    assert (stale.status_code, stale.json()["detail"]) == (409, "merged_print_pair_resolution_required")
     monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "false")
     get_settings.cache_clear()
     refreshed = await client.post(f"{url}/reprocess")
@@ -1418,6 +1429,63 @@ async def test_new_paper_claim_retires_a_merged_pair_keeps_crop_hold(client, mon
     assert all(crop["status"] == "review_needed" and MERGED_PRINT_PAIR_REVIEW in crop["reason_codes"] for crop in modes.values())
     for variant in ("full_print", "image_only", "source_corrected_trimmed"):
         assert (await client.get(f"{url}/image", params={"variant": variant})).status_code == 404
+
+
+@pytest.mark.parametrize("same_paper", [True, False])
+async def test_merged_print_owner_edit_requires_a_current_paper_decision(client, same_paper):
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, Page
+    from app.pipeline.merged_print_review import MERGED_PRINT_PAIR
+
+    _, page_id, owner_id = await _seed_review_data()
+
+    def rect(x1, y1, x2, y2):
+        return [{"x": x, "y": y} for x, y in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))]
+
+    def payload(points):
+        box = {f"{axis}{i}": fn(point[axis] for point in points)
+               for axis in "xy" for i, fn in ((1, min), (2, max))}
+        return {"bounding_box": box, "segmentation_mask": {"polygon": points, "warp_quad": points}}
+
+    whole = rect(.14, .17, .79, .86)
+    first, second = rect(.19, .23, .73, .48), rect(.17, .53, .72, .81)
+    pair = {"outlines": [first, second], "separator": [{"x": .14, "y": .51}, {"x": .79, "y": .51}]}
+    revision = uuid4().hex
+    async with get_session_factory()() as session:
+        owner = await session.get(ExtractedPhoto, owner_id)
+        owner.segmentation_mask = {"source": "yolo_seg_mask", "polygon": whole, MERGED_PRINT_PAIR: pair}
+        page = await session.get(Page, page_id)
+        page.processing_metadata = {"photo_count_revision": revision}
+        await session.commit()
+    url = f"/api/v1/photos/{owner_id}/bounding-box"
+    broad = payload(whole)
+    broad["segmentation_mask"]["print_size_mm"] = {"width": 123, "height": 100}
+    clipped = {**payload(rect(.14, .24, .79, .86)), "confirm_merged_print_as_one": True}
+    clipped_child = payload(rect(.20, .23, .73, .48))
+    clipped_child["segmentation_mask"]["print_size_mm"] = {"width": 133, "height": 100}
+    for request in (broad, clipped, clipped_child, {**payload(first), "confirm_merged_print_as_one": True}):
+        refused = await client.patch(url, json=request)
+        assert (refused.status_code, refused.json()["detail"]) == (409, "merged_print_pair_resolution_required")
+    unrelated = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": rect(.83, .20, .97, .37),
+    })
+    assert unrelated.status_code == 201, unrelated.text
+    reassign = await client.patch(f"/api/v1/photos/{unrelated.json()['id']}/bounding-box", json=payload(first))
+    assert (reassign.status_code, reassign.json()["detail"]) == (409, "merged_print_pair_claim_conflict")
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        owner = await session.get(ExtractedPhoto, owner_id)
+        assert owner.segmentation_mask[MERGED_PRINT_PAIR] == pair
+        before = page.processing_metadata["photo_count_revision"]
+    decided = await client.patch(url, json={**payload(whole if same_paper else first), "confirm_merged_print_as_one": same_paper})
+    assert decided.status_code == 200, decided.text
+    result = decided.json()
+    assert result["id"] == str(owner_id) and MERGED_PRINT_PAIR not in result["segmentation_mask"]
+    rev = result["enhancement_applied"]["review_provenance"]["correction_revisions"][-1]
+    assert rev["merged_print_resolution"] == ("one_shared_print" if same_paper else "one_child")
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        assert page.processing_metadata["photo_count_revision"] != before
 
 
 @pytest.mark.parametrize("comparison", ["displaced_edges", "album_layer", "local_edge"])

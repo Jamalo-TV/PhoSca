@@ -7,6 +7,7 @@ import shutil
 from typing import Annotated
 from uuid import UUID, uuid4, uuid5
 
+import cv2
 from anyio import CapacityLimiter, to_thread
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
@@ -33,7 +34,7 @@ from app.pipeline.edge_trace import measure_edge_trace
 from app.pipeline.embossed_album_pockets import EMBOSSED_CARRIER_PROPOSAL, EMBOSSED_POCKET_PROPOSAL
 from app.pipeline.fragmented_prints import SOURCE_FRAGMENT_PROPOSAL
 from app.pipeline.fusion_ownership import NESTED_EDGE_CONTOUR
-from app.pipeline.geometry import normalized_polygon_overlap
+from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels
 from app.pipeline.image_ops import load_image, normalized_box_to_pixels
 from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_SOURCE
 from app.pipeline.manual_paper_boundary import (
@@ -158,6 +159,41 @@ def _matches_standalone_print_outline(outline: list[dict], proposed: list[dict])
         raster_size=512,
     )
     return match.first_containment >= .55 and match.second_containment >= .75
+
+
+def _matches_merged_print_claim(outline: list[dict], mask: dict) -> bool:
+    if MERGED_PRINT_PAIR not in mask:
+        return False
+    proposed = (mask.get(MERGED_PRINT_PAIR) or {}).get("outlines") or []
+    parent = mask.get("polygon")
+    if any(_matches_standalone_print_outline(outline, part) for part in proposed):
+        return True
+    return bool(parent and _matches_standalone_print_outline(outline, parent))
+
+
+def _resolve_merged_print_outline(mask: dict, payload: BoundingBoxUpdate, edited: dict, width: int, height: int) -> bool:
+    """Check that the edit resolves the current ownership question."""
+    parts = (mask.get(MERGED_PRINT_PAIR) or {}).get("outlines") or []
+    entered = edited.get("warp_quad")
+    if (len(parts) != 2 or payload.segmentation_mask is None or payload.segmentation_mask.warp_quad is None
+            or entered is None or edited.get("image_quad") is not None):
+        return False
+    points = [(point["x"], point["y"]) for point in entered]
+    paper = normalized_vertices_to_pixels(points, width, height)
+    candidates = [[(point["x"], point["y"]) for point in part] for part in parts]
+
+    def encloses(outline: list[tuple[float, float]]) -> bool:
+        corners = normalized_vertices_to_pixels(outline, width, height)
+        return all(cv2.pointPolygonTest(paper, tuple(corner), True) >= -.05 for corner in corners)
+
+    if payload.confirm_merged_print_as_one:
+        parent = mask.get("polygon")
+        return bool(parent and _matches_standalone_print_outline(entered, parent) and all(map(encloses, candidates)))
+    overlaps = [normalized_polygon_overlap(part, points, raster_size=512) for part in candidates]
+    return any(
+        overlap.second_containment >= .75 and other.first_containment <= .02 and encloses(candidate)
+        for candidate, overlap, other in zip(candidates, overlaps, reversed(overlaps), strict=True)
+    )
 
 
 def _matches_contested_tile(photo: ExtractedPhoto, outline: list[dict]) -> bool:
@@ -301,19 +337,20 @@ async def _render_photo_edit(
 
 
 async def _review_overlapping_crops(
-    session: AsyncSession, photo: ExtractedPhoto, width: int, height: int,
+    session: AsyncSession, photo: ExtractedPhoto, width: int, height: int, *, neighbors: list[ExtractedPhoto] | None = None,
 ) -> None:
     mask = photo.segmentation_mask or {}
     quad = mask.get("warp_quad")
     groups = paper_claim_groups(mask, original_prediction_mask(photo.enhancement_applied or {}))
     if quad is None and not groups and not (mask.get("visible_polygon") or mask.get("polygon")):
         return
-    neighbors = await session.scalars(
-        select(ExtractedPhoto)
-        .where(ExtractedPhoto.page_id == photo.page_id, ExtractedPhoto.id != photo.id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    )
+    if neighbors is None:
+        neighbors = (await session.scalars(
+            select(ExtractedPhoto)
+            .where(ExtractedPhoto.page_id == photo.page_id, ExtractedPhoto.id != photo.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )).all()
     for neighbor in neighbors:
         metadata = deepcopy(neighbor.enhancement_applied or {})
         if is_reviewed_non_print(metadata.get("review_rejected_detection"), neighbor.bounding_box, neighbor.segmentation_mask):
@@ -829,11 +866,7 @@ async def create_manual_photo(
     ]
     if any(_matches_contested_tile(photo, quad) for photo in active):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="contested_tile_correction_required")
-    if any(
-        _matches_review_outline(quad, part)
-        for photo in active
-        for part in ((photo.segmentation_mask or {}).get(MERGED_PRINT_PAIR) or {}).get("outlines", [])
-    ):
+    if any(_matches_merged_print_claim(quad, photo.segmentation_mask or {}) for photo in active):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="merged_print_pair_claim_conflict")
     if tiled_offer or fabric_offer:
         claims = [candidate for candidate in pending if candidate["id"] != deferred_id
@@ -1074,6 +1107,16 @@ async def update_photo_bounding_box(
             segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask["warp_quad"])
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    if MERGED_PRINT_PAIR in original_mask:
+        if not _resolve_merged_print_outline(original_mask, payload, segmentation_mask, width, height):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="merged_print_pair_resolution_required")
+        segmentation_mask["polygon"] = deepcopy(segmentation_mask["warp_quad"])
+        segmentation_mask["visible_polygon"] = deepcopy(segmentation_mask["warp_quad"])
+        merged_resolution = "one_shared_print" if payload.confirm_merged_print_as_one else "one_child"
+    elif payload.confirm_merged_print_as_one:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="merged_print_pair_resolution_stale")
+    else:
+        merged_resolution = None
     pending = page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals") or []
     if any(
         candidate.get("reason") == TILED_PRINT_PROPOSAL
@@ -1083,12 +1126,20 @@ async def update_photo_bounding_box(
         for candidate in pending
     ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="pending_tiled_print_confirmation_required")
+    neighbors = await session.scalars(
+        select(ExtractedPhoto).where(ExtractedPhoto.page_id == page.id, ExtractedPhoto.id != photo.id)
+        .with_for_update().execution_options(populate_existing=True)
+    )
+    active_neighbors = [neighbor for neighbor in neighbors if not photo_is_reviewed_non_print(neighbor)]
+    if any(
+        _matches_merged_print_claim(outline, neighbor.segmentation_mask or {})
+        for neighbor in active_neighbors
+        for outline in (segmentation_mask.get("warp_quad"), segmentation_mask.get("visible_polygon"), segmentation_mask.get("polygon"))
+        if outline
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="merged_print_pair_claim_conflict")
     if original_mask.get("crossing_print_suggestion_source") == CONTESTED_TILE_OUTLINE:
-        neighbors = await session.scalars(
-            select(ExtractedPhoto).where(ExtractedPhoto.page_id == page.id, ExtractedPhoto.id != photo.id)
-            .with_for_update().execution_options(populate_existing=True)
-        )
-        claims = _current_paper_claims([neighbor for neighbor in neighbors if not photo_is_reviewed_non_print(neighbor)])
+        claims = _current_paper_claims(active_neighbors)
         claims.extend(pending)
         if tiled_outline_conflicts(segmentation_mask["warp_quad"], claims, width, height):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="contested_tile_claim_conflict")
@@ -1120,6 +1171,8 @@ async def update_photo_bounding_box(
         metadata["review_reasons"] = [
             reason for reason in metadata.get("review_reasons") or [] if reason != "GEOMETRY_REVIEW_WRONG_OBJECT"
         ]
+    if merged_resolution:
+        page.processing_metadata = {**(page.processing_metadata or {}), "photo_count_revision": str(uuid4())}
     metadata.pop("review_rejected_detection", None)
     review_provenance = deepcopy(metadata.get("review_provenance") or {})
     if shared_rim_traces:
@@ -1177,6 +1230,7 @@ async def update_photo_bounding_box(
             "before": before,
             "after": after,
             "source": segmentation_mask.get("source"),
+            **({"merged_print_resolution": merged_resolution} if merged_resolution else {}),
         }
     )
     review_provenance["correction_revisions"] = revisions
@@ -1197,6 +1251,7 @@ async def update_photo_bounding_box(
                 "before": before,
                 "after": after,
                 "prediction_provenance": prediction_provenance,
+                **({"merged_print_resolution": merged_resolution} if merged_resolution else {}),
                 # Retain the legacy fields for existing audit consumers.
                 "bounding_box": box,
                 "segmentation_mask": segmentation_mask,
@@ -1216,7 +1271,7 @@ async def update_photo_bounding_box(
     if (was_non_print or segmentation_mask.get("manual_added") is True
             or paper_claim_groups(segmentation_mask, original_prediction_mask(metadata))
             or edited_claim or edited_polygon):
-        await _review_overlapping_crops(session, photo, width, height)
+        await _review_overlapping_crops(session, photo, width, height, neighbors=active_neighbors)
     await session.flush()
     return await _render_photo_edit(session, photo.id, settings, previous_manual_crop=previous_crop)
 

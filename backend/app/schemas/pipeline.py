@@ -116,6 +116,7 @@ class BoundingBoxUpdate(StrictSchema):
     bounding_box: BoundingBox
     segmentation_mask: ReviewSegmentationMask | None = None
     confirm_print_outline: bool = False
+    confirm_merged_print_as_one: bool = False
     album_page_mark_review_id: Annotated[UUID, Field(strict=False)] | None = None
     album_page_mark_review_indices: list[Annotated[int, Field(ge=0, le=3)]] | None = Field(default=None, min_length=1, max_length=4)
 

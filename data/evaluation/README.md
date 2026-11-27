@@ -2524,6 +2524,70 @@ sequence was blocked at this revision. The follow-up adds an explicit
 The annotated source and receipts are under
 `runs/crop-quality/merged-print-pair-review/`.
 
+#### Measure a possible pair with one separate tile mask
+
+Dense tile revision 11 can also compare two possible prints when only
+one reliable individual mask survives ordinary tile inference. A
+whole-page mask must have confidence 0.25–0.38, valid geometry and
+cover 4.5–12% of the page. The one tile mask must score at least 0.80
+for both confidence and prepared boundary support. At least 90% of
+the tile mask must lie inside the parent and it must cover 35–62% of
+that parent. An ordinary pair with two masks keeps priority. Multiple
+eligible parents or tile masks give no new comparison.
+
+The original decoded raster is checked without another inference pass.
+The parent must have a short-to-long side ratio of 0.42–0.70 and a
+short side of at least 200 native pixels. The single tile occupies
+one end of the parent. The method searches across the middle 43–57%
+of the long axis and trims each end of the search chord by 3.5%, 7%
+or 10.5%. This lets the original rib matcher sample the exposed album
+backing when one side of the parent is close to fabric. At least two
+measurements must agree on the same rib to within 1.75 pixels when
+projected to common endpoints. Conflicting palettes or rib positions
+leave the comparison unresolved.
+
+The other seed uses the parent corners at its far end and the rib at
+its near end. The original pixels must support all four signed backing
+transitions for both seeds. The fits must be disjoint, with at least
+2.5 pixels between each facing line and the crest and a minimum
+combined clearance of 7.5 pixels. The crest must continue beyond both
+children and fall off on both shoulders inside the gap. A common stock
+outline, a conflicting print claim or less than 0.84 fitted-to-raw IoU
+for the tile vetoes the comparison. The existing parent containment
+and combined coverage checks apply.
+
+On U039 both full-resolution JPEG75 and JPEG90 show two candidate
+outlines on the existing car-photo row. Their IoU to the development
+drafts is 0.9500 and 0.9646 for JPEG75, and 0.9450 and 0.9651 for
+JPEG90. The source check took 467 ms and 481 ms median over six warm
+runs per encoding on the shared test host. Flat printed colour, a
+phase-shifted rib and a foreground print covering part of the gap
+fail the source check. Reproductions on a white or dark paper carrier
+that preserve the entire local scene still pass it. The original five spiral
+captures and the prior U039 native suggestion retain their recorded
+active and pending polygons. JPEG55, the downscaled JPEG75 variant
+and the end-to-end quarter-turn derivatives yield no new pair. The
+eight frozen and development comparisons preserve detection and
+both crop-mode metrics.
+
+In real multipart JPEG tests the comparison preserves four active
+rows and two independent pending offers. Repeat analysis and crop
+reprocessing preserve the pair. Both crop modes and the cropped
+alias stay held. Direct geometry approval and duplicate additions
+are refused. To resolve the pair as separate prints, save the current
+row around one complete measured outline and outside the other. To
+confirm one shared sheet, explicitly select that option and submit a
+quad enclosing every measured corner from both outlines. The API
+checks this in native coordinates with a 0.05-pixel tolerance, logs
+the selected paper ownership, and updates the count revision. Both
+interfaces can load either individual outline in the crop editor.
+After a one-child edit, adding the remaining print changes the count
+from four to five. The other two pending offers are preserved and the
+two edited crops without measured geometry still require review.
+
+The replays, source controls and annotated example are under
+`runs/crop-quality/u039-narrow-divider/`.
+
 #### Review a protection margin outside a manually added print
 
 Off-print advisory revision 2 adds a path for a manually added print

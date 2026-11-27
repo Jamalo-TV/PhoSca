@@ -1,5 +1,6 @@
 from dataclasses import replace
 
+import cv2
 import numpy as np
 import pytest
 
@@ -61,3 +62,53 @@ def test_merged_print_outlines_are_advice_on_one_held_row(case):
                for mode in modes.values())
     assert "suggested_warp_quad" not in modes["full_print"]
     assert crop.full_print_preview is None and crop.image_only is None
+
+
+@pytest.mark.parametrize("case", ["observed", "flat_gap", "painted_line", "competing_rib", "multiple_child_masks", "other_owner"])
+def test_one_tile_can_show_a_pair_with_distinct_paper_edges_and_a_rib(case):
+    height, width = 900, 1500
+    y = np.arange(height)
+    lab = np.full((height, width, 3), [201, 129, 144], dtype=np.uint8)
+    lab[..., 0] = (201 + 41 * np.cos(2 * np.pi * (y - 328) / 7))[:, None]
+    lab[75:323, 280:540] = [110, 136, 127]
+    lab[333:596, 279:538] = [104, 135, 127]
+    if case == "flat_gap":
+        lab[323:333, 275:543] = [217, 129, 144]
+    elif case == "painted_line":
+        lab[320:337, 280:538] = [110, 136, 127]
+        lab[326:331, 280:538] = [235, 129, 144]
+    elif case == "competing_rib":
+        lab[318:339, 275:543] = lab[318:339, 600, None]
+    page = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+    scale = np.float32([width - 1, height - 1])
+
+    def detection(native, confidence, source):
+        outline = [{"x": float(x), "y": float(y)} for x, y in np.float32(native) / scale]
+        box = {f"{axis}{i}": fn(point[axis] for point in outline)
+               for axis in "xy" for i, fn in ((1, min), (2, max))}
+        return segmentation.SegmentationDetection(
+            box, {"polygon": outline, "source": "yolo_seg_mask", "detector_source": source, "scores": {"area_ratio": .097}},
+            confidence, .51, True, [],
+        )
+
+    parent = detection([[275, 71], [544, 71], [544, 600], [274, 600]], .28, "yolo_onnx")
+    child = detection([[277, 334], [541, 337], [546, 594], [277, 592]], .84, "yolo_onnx_tiled")
+    views = [child, child] if case == "multiple_child_masks" else [child]
+    nominations = segmentation._nominate_merged_parent_with_one_tile(
+        [parent], views, {i: {"score": .87} for i in range(len(views))},
+    )
+    if case == "multiple_child_masks":
+        assert nominations == []
+        return
+    other = detection([[480, 391], [591, 391], [591, 513], [480, 513]], .89, "yolo_onnx")
+    initial = segmentation.SegmentationResult([parent, other] if case == "other_owner" else [parent], {})
+    nominee, = nominations
+    result = segmentation._review_merged_tile_pair(page, initial, *nominee)
+    if case != "observed":
+        assert result is initial
+        return
+
+    held, = result.detections
+    assert held.mask["polygon"] == parent.mask["polygon"]
+    assert len(held.mask[MERGED_PRINT_PAIR]["outlines"]) == 2
+    assert held.review_reasons == [MERGED_PRINT_PAIR_REVIEW]

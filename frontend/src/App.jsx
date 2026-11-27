@@ -57,7 +57,7 @@ import {
   countGroupReviewError, CountGroupReview, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints,
   borrowedFallbackProposal, captureFabricProposal, filmGridCountHint, filmGridHint, filmGridReason, filmGridRimHint, frameBackingProposal,
   getDeferredPrintEvidence, getDeferredPrintProposals, getDeferredParentCropHints, getSourceEdgeTraces,
-  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, mergedPrintPairHint, missingPrintEdgeHint,
+  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, mergedPrintAsOneLabel, mergedPrintPairHint, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, scannerBackingHint, scannerBackingReason,
@@ -1483,6 +1483,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const crossingOutline = useMemo(() => cyclicQuad(sanitizePolygon(crossingPolygon)), [crossingPolygon]);
   const savedShape = useMemo(() => selected && draftShapeFromPhoto(selected), [selected]);
   const selectedShape = selected && (draftShapes[selected.id] || savedShape);
+  const selectedMergedPair = selected && !rejectedDetection && getMergedPrintPairs([selected])[0];
   const fragmentGroups = useMemo(() => reviewingCount ? getFragmentReviewOutlines(photos) : [], [reviewingCount, photos]);
   const countOutlines = useMemo(() => !newPrint && !editingImage ? fragmentGroups.filter(
     ({ photoIds }) => !selectedShape?.usingOutlineSuggestion || !photoIds.has(selectedPhotoId),
@@ -2031,7 +2032,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     setEditMode("full_print");
     setDraftShapes((current) => ({ ...current, [photo.id]: {
       ...(current[photo.id] || draftShapeFromPhoto(photo)),
-      warpQuad: quad, visiblePolygon: quad, visibleFollowsWarp: true,
+      warpQuad: quad, visiblePolygon: quad, visibleFollowsWarp: true, confirmMergedPrintAsOne: false,
       boundingBox: boundingBoxFromPolygon(quad), imageQuad: null, usingOutlineSuggestion: true,
     } }));
     setSaveState(null);
@@ -2054,7 +2055,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     setSaveState({ photoId: selected.id, mode: editMode, saving: true });
     try {
       const mark = albumMarkReview.confirmation;
-      const result = await onSaveBox(selected.id, box, mask, confirmOuter && !editingImage, mark?.id, mark?.indices);
+      const result = await onSaveBox(selected.id, box, mask, confirmOuter && !editingImage, mark?.id, mark?.indices,
+        Boolean(selectedMergedPair && selectedShape.confirmMergedPrintAsOne && !editingImage));
       albumMarkReview.reset();
       setBlockedCrop(null);
       const url = result.urls?.[editMode] || (!getCropModes(result) && !editingImage ? result.urls?.original : null);
@@ -2375,6 +2377,24 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           {newPrint.error && <p role="alert">{newPrint.error}</p>}
         </div>
       )}
+      {!newPrint && !editingImage && selectedMergedPair && selectedShape && (
+        <div className="manual-print-actions">
+          {selectedMergedPair.outlines.map((outline, index) => (
+            <button key={index} className="text-button compact" type="button" disabled={saveState?.saving}
+              onClick={() => loadPrintOutline(selected, cyclicQuad(sanitizePolygon(outline)))}>
+              Umriss {index + 1} laden
+            </button>
+          ))}
+          <label className="mounted-print-fragment-review">
+            <input type="checkbox" checked={Boolean(selectedShape.confirmMergedPrintAsOne)} disabled={saveState?.saving}
+              onChange={event => {
+                setDraftShapes(current => ({ ...current, [selected.id]: { ...selectedShape, confirmMergedPrintAsOne: event.target.checked } }));
+                setSaveState(null);
+              }} />
+            {mergedPrintAsOneLabel}
+          </label>
+        </div>
+      )}
       {!editingImage && selectedShape && (
         <PrintSizeFields
           value={selectedShape.printSizeFields}
@@ -2468,8 +2488,9 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
   }
 
   async function saveBox(photoId, box, segmentationMask = null, confirmPrintOutline = false,
-    albumMarkReviewId = null, albumMarkReviewIndices = null) {
-    await patchBoundingBox(photoId, box, segmentationMask, confirmPrintOutline, albumMarkReviewId, albumMarkReviewIndices);
+    albumMarkReviewId = null, albumMarkReviewIndices = null, confirmMergedPrintAsOne = false) {
+    await patchBoundingBox(photoId, box, segmentationMask, confirmPrintOutline, albumMarkReviewId, albumMarkReviewIndices,
+      confirmMergedPrintAsOne);
     const [detail] = await Promise.all([getPhoto(photoId), refreshCorrections()]);
     return detail;
   }

@@ -14,7 +14,7 @@ import {
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
   borrowedFallbackProposal, captureFabricProposal, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints, frameBackingProposal,
   getDeferredParentCropHints, getDeferredPrintEvidence, getDeferredPrintProposals, getSourceEdgeTraces,
-  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, mergedPrintPairHint, missingPrintEdgeHint,
+  getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, mergedPrintAsOneLabel, mergedPrintPairHint, missingPrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview, partialMotifSeams,
@@ -260,9 +260,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const [draftTouched, setDraftTouched] = useState(false);
   const saving = geometrySaving || reprocessing;
   const [confirmDeferredDraft, setConfirmDeferredDraft] = useState(false);
+  const [confirmMergedPrintAsOne, setConfirmMergedPrintAsOne] = useState(false);
   const [editMode, setEditMode] = useState("full_print");
   const [motifQuad, setMotifQuad] = useState(storedMotif);
   const editingMotif = canEditMotif && editMode === "image_only";
+  const selectedMergedPair = !reviewedNonPrint && getMergedPrintPairs([item.payload || {}])[0];
   const sourceStrip = editable && !deferredDraft && !editingMotif ? getSourceStripReview(fullPrintMode) : null;
   const albumMark = editable && !editingMotif && !reviewedNonPrint ? markOffer : null;
   const albumMarkReview = useAlbumPageMarkReview(albumMark, item.payload?.photo_id);
@@ -294,6 +296,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     setSaveError("");
     setBlockedCrop(null);
     setDraftTouched(false);
+    setConfirmMergedPrintAsOne(false);
   }, [item.id]);
   const box = quadToBox(quad);
   const validQuad = !editable || isValidQuad(displayedQuad);
@@ -378,9 +381,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       };
       const mark = albumMarkReview.confirmation;
       const saved = await patchBoundingBox(item.payload.photo_id, editingMotif ? sourceBox : box, mask,
-        !editingMotif && (Boolean(printSuggestion) || paperOutlineNeedsConfirmation(fullPrintMode)), mark?.id, mark?.indices);
+        !editingMotif && (Boolean(printSuggestion) || paperOutlineNeedsConfirmation(fullPrintMode)), mark?.id, mark?.indices,
+        Boolean(selectedMergedPair && confirmMergedPrintAsOne && !editingMotif));
       albumMarkReview.reset();
       setBlockedCrop(null);
+      setConfirmMergedPrintAsOne(false);
       const savedDegrees = saved.segmentation_mask?.orientation_degrees ?? null;
       setOrientation(savedDegrees);
       setSavedOrientation(savedDegrees);
@@ -769,6 +774,29 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           onChange={event => setConfirmDeferredDraft(event.target.checked)} />
         {standaloneDraft ? standalonePrintConfirmation : "Beide violett markierten Teilvorschläge gehören zu diesem Abzug."}
       </label>}
+      {!deferredDraft && !editingMotif && selectedMergedPair && <>
+        {selectedMergedPair.outlines.map((outline, index) => (
+          <button key={index} className="magnifier-toggle" type="button" disabled={saving} onClick={() => {
+            const measured = cyclicReviewQuad(sanitizeReviewPolygon(outline));
+            if (!measured) return;
+            setQuad(measured);
+            setUsingOutlineSuggestion(true);
+            setDraftTouched(true);
+            setEditingPreview(true);
+            setConfirmMergedPrintAsOne(false);
+            setSavedCropUrl("");
+            setSaveError("");
+          }}>Umriss {index + 1} laden</button>
+        ))}
+        <label className="mounted-print-fragment-review">
+          <input type="checkbox" checked={confirmMergedPrintAsOne} disabled={saving}
+            onChange={event => {
+              setConfirmMergedPrintAsOne(event.target.checked);
+              setSaveError("");
+            }} />
+          {mergedPrintAsOneLabel}
+        </label>
+      </>}
       <button className="save-crop" onClick={save} disabled={saving
         || (deferredDraft && !confirmDeferredDraft)
         || (editingMotif ? !validMotif : (!validQuad || Boolean(sizeError) || crossingNeedsCorrection))}>

@@ -142,18 +142,12 @@ def _supported_backing_transition(
     return np.cross(np.r_[endpoints[0], 1.], np.r_[endpoints[1], 1.])
 
 
-def measured_ribbed_backing_outline(
-    image: np.ndarray, seed: np.ndarray, claimed: Callable[[np.ndarray], bool],
-) -> np.ndarray | None:
-    """Return a count-review contour with independent backing and rib evidence."""
+def measure_backing_transitions(image: np.ndarray, seed: np.ndarray, palette: np.ndarray) -> np.ndarray | None:
+    """Fit four native transitions with evidence of backing on the outside."""
     height, width = image.shape[:2]
     shortest = float(np.linalg.norm(np.roll(seed, -1, axis=0) - seed, axis=1).min())
     if shortest < 180:
         return None
-    reference = _backing_reference(image, seed, claimed)
-    if reference is None:
-        return None
-    palette, reference_side = reference
     limit = min(44, round(.16 * shortest))
     lines = []
     for start, end in zip(seed, np.roll(seed, -1, axis=0), strict=True):
@@ -164,8 +158,23 @@ def measured_ribbed_backing_outline(
     fitted = _quad_from_lines(np.stack(lines))
     if (fitted is None or not cv2.isContourConvex(fitted) or cv2.contourArea(fitted, oriented=True) <= 0
             or np.max(np.linalg.norm(fitted - seed, axis=1)) > min(52, shortest * .20)
-            or np.any(np.minimum(fitted, np.float32([width - 1, height - 1]) - fitted) < 4)
-            or claimed(fitted)):
+            or np.any(np.minimum(fitted, np.float32([width - 1, height - 1]) - fitted) < 4)):
+        return None
+    return fitted
+
+
+def measured_ribbed_backing_outline(
+    image: np.ndarray, seed: np.ndarray, claimed: Callable[[np.ndarray], bool],
+) -> np.ndarray | None:
+    """Return a count-review contour with independent backing and rib evidence."""
+    if np.linalg.norm(np.roll(seed, -1, axis=0) - seed, axis=1).min() < 180:
+        return None
+    reference = _backing_reference(image, seed, claimed)
+    if reference is None:
+        return None
+    palette, reference_side = reference
+    fitted = measure_backing_transitions(image, seed, palette)
+    if fitted is None or claimed(fitted):
         return None
     for index, (start, end) in enumerate(zip(fitted, np.roll(fitted, -1, axis=0), strict=True)):
         if (index - reference_side) % 2 == 0:

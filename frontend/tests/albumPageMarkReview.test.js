@@ -19,6 +19,7 @@ test("the regular geometry PATCH keeps both album mark offer formats compatible"
   await patchBoundingBox("photo", box, mask, true, "legacy-offer");
   await patchBoundingBox("photo", box, mask, true, "current-offer", [0, 1]);
   await patchBoundingBox("photo", box, mask, false, null, [0, 1]);
+  await patchBoundingBox("photo", box, mask, false, null, null, true);
 
   assert.deepEqual(requests, [
     { path: "/api/v1/photos/photo/bounding-box", method: "PATCH", body: ordinary },
@@ -28,5 +29,6 @@ test("the regular geometry PATCH keeps both album mark offer formats compatible"
       body: { ...ordinary, confirm_print_outline: true, album_page_mark_review_id: "current-offer",
         album_page_mark_review_indices: [0, 1] } },
     { path: "/api/v1/photos/photo/bounding-box", method: "PATCH", body: ordinary },
+    { path: "/api/v1/photos/photo/bounding-box", method: "PATCH", body: { ...ordinary, confirm_merged_print_as_one: true } },
   ]);
 });
