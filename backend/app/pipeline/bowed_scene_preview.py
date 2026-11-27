@@ -155,7 +155,10 @@ def _matches_removed_band(
     fractions = ((centres - stations[0]) @ axis) / (axis @ axis)
     depth = ((stations - stations[0]) @ axis) / (axis @ axis)
     reference = np.column_stack([np.interp(fractions, depth, channel) for channel in gray.T])
-    source = cv2.cvtColor(image[y + top, x + left, None, :], cv2.COLOR_BGR2LAB)[:, 0].astype(np.float32)
+    sample_left, sample_top = max(left - 3, 0), max(top - 3, 0)
+    lab = cv2.cvtColor(image[sample_top:bottom + 3, sample_left:right + 3], cv2.COLOR_BGR2LAB)
+    sample_y, sample_x = y + top - sample_top, x + left - sample_left
+    source = lab[sample_y, sample_x].astype(np.float32)
     if np.any(np.linalg.norm(source - reference, axis=1) > 13):
         return False
     # Compare along the band so the nearby bright edge cannot mimic ink.
@@ -168,10 +171,27 @@ def _matches_removed_band(
     residual = np.min(flanks - source[:, None], axis=1)
     matched = np.linalg.norm(flanks[:, 0] - flanks[:, 1], axis=1) <= 6
     ink = matched & ((residual[:, 0] >= 4) | (residual[:, 2] >= 2))
-    marks = np.zeros_like(mask, dtype=np.uint8)
-    marks[y[ink], x[ink]] = 1
+    if _has_connected_centres(mask.shape, y[ink], x[ink], 4):
+        return False
+
+    # A mark may be lighter than the field or show in a different color.
+    # Check the 2D neighborhood and discount isolated residuals from grain.
+    local = cv2.medianBlur(lab, 7)[sample_y, sample_x]
+    squared = (source - local) ** 2
+    color = squared[:, 1:].sum(axis=1)
+    strong = squared[:, 0] + color >= 64
+    chromatic = color >= 9
+    return not (_has_connected_centres(mask.shape, y[strong], x[strong], 2)
+                or _has_connected_centres(mask.shape, y[chromatic], x[chromatic], 3))
+
+
+def _has_connected_centres(shape: tuple[int, int], y: np.ndarray, x: np.ndarray, minimum: int) -> bool:
+    if len(y) < minimum:
+        return False
+    marks = np.zeros(shape, dtype=np.uint8)
+    marks[y, x] = 1
     _, _, components, _ = cv2.connectedComponentsWithStats(marks, connectivity=8)
-    return not np.any(components[1:, cv2.CC_STAT_AREA] >= 4)
+    return bool(np.any(components[1:, cv2.CC_STAT_AREA] >= minimum))
 
 
 def measure_bowed_scene(

@@ -176,6 +176,21 @@ a source lead.
 [Conservation study](https://faic.wpenginepowered.com/pmg-topics/wp-content/uploads/sites/9/2022/11/T18-142-150-Cattaneo-Formatted.pdf#page=4)
 and [project agreement](https://bncf.cultura.gov.it/wp-content/uploads/2019/11/566.pdf#page=3).
 
+JMU Libraries documents a second acquisition method. Its magnetic
+album `VCCA004_001_009` was scanned with the mounted photographs,
+then the separate set `VCCA004_001_009a` was scanned after removal.
+Both catalog entries carry a Public Domain Mark. The file requests
+returned HTTP 403 from the workspace proxy in the intake run.
+Manawatū Heritage publishes CC BY 4.0 links to original TIFFs for
+two physical Monrad albums, `A25/258 S5V2` and `A25/258 S5V5`.
+Three tested download paths returned the same access error.
+These remain calibration leads with the original bytes and
+individual references pending.
+[Mounted JMU album](https://omeka.lib.jmu.edu/erp/items/show/26520) ·
+[Separate scans](https://omeka.lib.jmu.edu/erp/items/show/26521) ·
+[Monrad S5V2](https://manawatuheritage.pncc.govt.nz/item/8b0880c5-897b-4b7d-b613-1afd9e9b082c) ·
+[Monrad S5V5](https://manawatuheritage.pncc.govt.nz/item/4be99901-52e0-4dd7-a03c-44567b1f43a4).
+
 Validate the real reference files before running the detector on an independent
 split. `--check-references` checks hashes, geometry and review coverage without
 inference. It can prepare a draft before the model or calibration is available.
@@ -2938,6 +2953,61 @@ On that native crop with one OpenCV thread, 24 alternating
 warm runs put the median preview measurement and render at
 64 ms with the band check disabled and 114 ms with it enabled.
 The median paired increment was 48 ms.
+
+#### Preserve local marks in the exterior comparison
+
+Before making the prospective exterior band transparent, PhoSca
+also compares its source centres to a 7 × 7 spatial median in
+OpenCV Lab. It keeps the original pixels if two connected centres
+have a full Lab residual of at least eight units, or three
+connected centres have a chroma residual of at least three units.
+Connectivity includes diagonals. The checks complement the
+earlier along-edge flanks for dark or blue marks. An isolated
+residual can occur in paper grain where the median window crosses
+the pale rim. When either check triggers, the comparison can
+still add the measured image strip and keep all the original
+edge pixels.
+
+An independent counterfactual suite evaluated 357 fixed-proposal
+captures. Under the previous check, 123 variants lost authored
+mark centres still differing from the decoded background by at
+least three units in one BGR channel. The new check retains
+the marks in 13 of those variants and preserves 2,089 of those
+centres. All 28 eligible shadow, grain and clean controls in the
+suite keep their comparison, including the exact Golden 12
+original. A separate sweep of tapered chromatic fibres vetoes
+20 of 93 previously eligible exclusions, all on uncompressed
+inputs. These constructed cases expose one ambiguity. A lower,
+brightness-only threshold protected further marks while
+suppressing the optional comparison on seven of the
+28 eligible controls. It was left out. Larger, weak passages
+and codec-attenuated marks can still go undetected.
+
+In 101 alternating warm single-thread measurements, median
+time inside the band consistency check rose from 2.30 to
+2.39 ms. The full crop and export use their existing geometry
+and review decisions.
+
+Multipart upload of the exact original preserves the comparison
+and the previous 557-centre exclusion. A lossless upload of the
+authored blue-mark control preserves 322 previously hidden
+marked source centres.
+Reprocessing reproduces each preview and the primary JPEG.
+The full-print and motif exports remain in review on both inputs.
+All eight paired benchmark reports match the preceding results
+for detection, crop metrics and review previews.
+
+The lower fold on Golden 12 remains visible. In the dark area
+past the thin pale line, the bottom image transition continues
+within two native pixels of the projected line on 12 of 13
+tested columns. A cut just outside the pale line there would
+remove 1,633 currently visible source centres, including 863 in
+the intervening dark area. The broad outer album field supplies
+six positive-alpha output positions and zero with alpha at
+least 250. A further cut through the intervening area has
+insufficient evidence of physical ownership. The original,
+rendered comparisons, and ledgers are under
+`runs/crop-quality/golden12-fold-next/`.
 
 #### Review a protection margin outside a manually added print
 

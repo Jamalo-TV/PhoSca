@@ -39,11 +39,18 @@ def test_bowed_scene_preview_preserves_image_and_pale_stock():
     add_only = _outline_mask(protected.outline, y.shape) > 0
     np.testing.assert_array_equal(add_only, before | extra)
 
-    written = page.copy()
-    written[right_y:right_y + 2, right_x - 1:right_x + 2] = 139
-    marked = measure_bowed_scene(written, quad, boundary, [])
-    assert marked is not None and marked.outside_trace is None
-    np.testing.assert_array_equal(_outline_mask(marked.outline, y.shape) > 0, add_only)
+    for mark_color in (139, 155, (139, 145, 148)):
+        written = page.copy()
+        written[right_y:right_y + 2, right_x - 1:right_x + 2] = mark_color
+        marked = measure_bowed_scene(written, quad, boundary, [])
+        assert marked is not None and marked.outside_trace is None, mark_color
+        np.testing.assert_array_equal(_outline_mask(marked.outline, y.shape) > 0, add_only)
+
+    grain = page.copy()
+    grain[right_y, right_x] = 155
+    with_grain = measure_bowed_scene(grain, quad, boundary, [])
+    assert with_grain is not None and with_grain.outside_trace is not None
+    np.testing.assert_array_equal(_outline_mask(with_grain.outline, y.shape) > 0, after)
 
     wider_stock = page.copy()
     wider_stock[in_height & (x >= right + 24)] = (192, 169, 126)

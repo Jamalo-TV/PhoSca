@@ -1127,6 +1127,12 @@ geschützte Inhalte lassen die Vorschau bei der Ergänzung des
 Bildstreifens bleiben. Beide Zuschnittmodi bleiben in Prüfung.
 [Messung des äusseren Streifens und Gegenproben](data/evaluation/README.md#compare-a-measured-exterior-band-beyond-a-pale-rim)
 
+PhoSca vergleicht die fraglichen Pixel auch mit ihrer unmittelbaren
+Umgebung. Zusammenhängende Helligkeits- oder Farbabweichungen
+lassen den Rand sichtbar, damit feine Markierungen und Papierstruktur
+im Original geprüft werden können.
+[Messung feiner Randmarkierungen](data/evaluation/README.md#preserve-local-marks-in-the-exterior-comparison)
+
 Wenn sich zwei gehaltene Modellvorschläge stark überdecken und
 der grössere zugleich in einen weiteren offenen Vorschlag reicht,
 kann die Prüfung die Originalmasken vergleichen. Violett liegt
