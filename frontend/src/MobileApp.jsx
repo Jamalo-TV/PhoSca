@@ -19,6 +19,7 @@ import {
   borrowedFallbackProposal, captureFabricProposal, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints, frameBackingProposal,
   getDeferredParentCropHints, getDeferredPrintEvidence, getDeferredPrintProposals, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, mergedPrintAsOneLabel, mergedPrintPairHint, missingPrintEdgeHint,
+  nearCapturePrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview, partialMotifSeams,
@@ -201,7 +202,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     setMeasuredEdge(null);
   }, [item.page_id]);
   const measuredTraces = measuredEdge?.pageId === item.page_id ? measuredEdge?.traces : null;
-  const missingTraces = getSourceEdgeTraces(item.payload?.missing_print_edge_traces);
+  const nearCaptureTraces = getSourceEdgeTraces(item.payload?.near_capture_print_edge_traces);
+  const missingTraces = [...getSourceEdgeTraces(item.payload?.missing_print_edge_traces), ...nearCaptureTraces];
   const visibleTraces = showMissingEdges ? [...missingTraces, ...(measuredTraces || [])] : measuredTraces;
   const sourceBox = item.payload?.bounding_box;
   const detections = sourceBox ? [{ bounding_box: sourceBox, photo_id: item.payload?.photo_id }] : (item.payload?.detections || []);
@@ -711,7 +713,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       </div>
     )}
     {showMissingEdges && missingTraces.length > 0 && (
-      <p className="quad-hint">{missingPrintEdgeHint}
+      <p className="quad-hint">{nearCaptureTraces.length ? nearCapturePrintEdgeHint : missingPrintEdgeHint}
         {!deferredProposals.length && " Einen eigenen Abzug kannst du im Desktop-Editor ergänzen."}
       </p>
     )}
@@ -1249,6 +1251,7 @@ function CropReview({ albumId, goHome }) {
             aria-describedby={value === "correct" ? approvalHint : undefined}
             onClick={() => record(value)}>
             {value === "correct" && (deferredProposals.length || item.payload?.missing_print_edge_traces?.length
+              || item.payload?.near_capture_print_edge_traces?.length
               || countOutlines.length || captureSplitGroups.length || filmGridGroups.length || paperGridGroups.length || paperJoinGroups.length
               || albumLeafGroups.length || mergedPairs.length)
               ? "Anzahl bestätigen" : label}

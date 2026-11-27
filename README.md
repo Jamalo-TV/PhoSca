@@ -89,6 +89,15 @@ zeigen. Ein umschliessender Papierträger oder ein anderer bereits
 beanspruchter Umriss verhindert den neuen Prüfvorschlag.
 [Abzug aus einer gedrehten Ansicht prüfen](data/evaluation/README.md#corroborate-one-rotated-mask-in-a-local-view)
 
+Berührt eine Teilbildmaske genau einen Aufnahmerand, kann PhoSca
+zwei weitere Ausschnitte vergleichen. Bei übereinstimmenden Masken
+prüft es vom Original aus, wo sichtbare Papierkanten verlaufen und
+wo der gerippte Albumkarton bis zum Aufnahmerand reicht. Die
+Anzahlprüfung auf Desktop und Mobil zeigt die belegten Abschnitte
+als offene Linien. Die Ecke am Rand bleibt offen. Der Hinweis
+liefert weder einen Zuschnitt noch eine Bestätigung eines Abzugs.
+[Offene Kanten am Aufnahmerand](data/evaluation/README.md#show-open-print-edges-near-the-capture-boundary)
+
 Ein Kachelvorschlag mit schwächerer Modellkonfidenz und messbarem
 Papierrand kann eine zusätzliche Modellansicht auslösen. PhoSca
 zentriert einen engeren Ausschnitt um diesen Vorschlag. Für einen

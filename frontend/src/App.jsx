@@ -60,6 +60,7 @@ import {
   CompetingPhotoOutlineLegend,
   getDeferredPrintEvidence, getDeferredPrintProposals, getDeferredParentCropHints, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin, mergedPrintAsOneLabel, mergedPrintPairHint, missingPrintEdgeHint,
+  nearCapturePrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, scannerBackingHint, scannerBackingReason,
@@ -1412,8 +1413,12 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     ? blockedCrop.regions : null;
   const pageId = page?.id;
   const measuredTraces = measuredEdge?.pageId === pageId ? measuredEdge?.traces : null;
-  const pendingMissingTraces = page?.processing_metadata?.steps?.segmentation?.missing_print_edge_traces;
-  const missingTraces = useMemo(() => getSourceEdgeTraces(pendingMissingTraces), [pendingMissingTraces]);
+  const segmentation = page?.processing_metadata?.steps?.segmentation;
+  const pendingMissingTraces = segmentation?.missing_print_edge_traces;
+  const nearCaptureTraces = segmentation?.near_capture_print_edge_traces;
+  const missingTraces = useMemo(() => [
+    ...getSourceEdgeTraces(pendingMissingTraces), ...getSourceEdgeTraces(nearCaptureTraces),
+  ], [pendingMissingTraces, nearCaptureTraces]);
   const pendingProposals = page?.processing_metadata?.steps?.segmentation?.fusion?.deferred_print_proposals;
   const deferredProposals = useMemo(() => getDeferredPrintProposals(pendingProposals), [pendingProposals]);
   const activePage = useRef(pageId);
@@ -2247,7 +2252,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {measurementPage && measurementPage === pageId && <EdgeMeasurement key={pageId} pageId={pageId}
         onClose={() => setMeasurementPage(null)} onMeasured={(traces) => setMeasuredEdge({ pageId, traces })} />}
       {!editingImage && showMissingEdges && missingTraces.length > 0 && (
-        <p className="crop-editor-hint">{missingPrintEdgeHint}</p>
+        <p className="crop-editor-hint">{nearCaptureTraces?.length ? nearCapturePrintEdgeHint : missingPrintEdgeHint}</p>
       )}
       {!newPrint && !editingImage && (deferredProposals.length > 0 || mergedPairs.length > 0) && (
         <div className="manual-print-actions">

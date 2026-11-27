@@ -30,6 +30,7 @@ from app.pipeline.manual_paper_boundary import (
     PAPER_CLAIM_OVERLAP_CHECKS, contrast_outline_check_pending, paper_claims_need_overlap_check,
 )
 from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
+from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
 from app.pipeline.protected_regions import album_mark_source_matches
 from app.pipeline.rounded_corner_review import ROUNDED_CORNER_REVIEW
@@ -831,6 +832,8 @@ async def get_review_queue(
                         "detection_count": len(detections), "detections": detections,
                         "photo_count_revision": (page.processing_metadata or {}).get("photo_count_revision"),
                         "missing_print_edge_traces": segmentation.get("missing_print_edge_traces", []),
+                        **({NEAR_CAPTURE_PRINT_TRACES: segmentation[NEAR_CAPTURE_PRINT_TRACES]}
+                           if segmentation.get(NEAR_CAPTURE_PRINT_TRACES) else {}),
                         "deferred_print_proposals": page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals", []),
                     },
                 )

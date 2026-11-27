@@ -65,6 +65,9 @@ from app.pipeline.multipanel_prints import (
     film_grid_review_seam, grid_fragment_on_shared_stock, nested_print_on_shared_stock, paper_grid_review_seam,
     paper_join_review_traces, recover_shared_stock_outline, shared_stock_outline, transparent_film_rim,
 )
+from app.pipeline.near_capture_review import (
+    NEAR_CAPTURE_PRINT_TRACES, near_capture_candidate_turn, near_capture_print_traces, quarter_turn,
+)
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_REVIEW, PARTIAL_PRINT_EXTENT_TRACES, partial_print_extent_traces
 from app.pipeline.print_edges import (
@@ -4418,9 +4421,10 @@ def segment_album_page(
     adjacent_view_pairs = []
     grid_view_pairs = []
     recentered_rotated_tile = []
+    near_capture_views = []
     result = _segment_album_page(
         image, settings, source, tile_offers, partial_tile_seeds, merged_tile_pairs, ribbed_tile_seeds, contrast_review,
-        adjacent_view_pairs, grid_view_pairs, recentered_rotated_tile,
+        adjacent_view_pairs, grid_view_pairs, recentered_rotated_tile, near_capture_views,
     )
     if settings.enable_classical_segmentation_fallback:
         if settings.enable_precise_photo_crops and (
@@ -4494,6 +4498,15 @@ def segment_album_page(
                 review["candidates"] += 1
                 review["recovered_from_recentered_rotation"] = True
             result = SegmentationResult(result.detections, {**result.metadata, "tiled_print_review": review})
+        if near_capture_views and not result.metadata.get("missing_print_edge_traces"):
+            try:
+                traces = near_capture_print_traces(evidence_source, near_capture_views, _tiled_review_claims(result))
+            except (cv2.error, ValueError, np.linalg.LinAlgError):
+                traces = []
+            if traces:
+                result = SegmentationResult(result.detections, {
+                    **result.metadata, NEAR_CAPTURE_PRINT_TRACES: [_normalized_polygon(trace, 1, 1) for trace in traces],
+                })
         if contrast_review:
             (seed, traces), = contrast_review
             matching = [i for i, item in enumerate(result.detections) if _contrast_review_candidate(item)
@@ -5076,6 +5089,7 @@ def _collect_tiled_print_offers(
     partial_tile_seeds: list[list[dict]] | None,
     merged_tile_pairs: list[tuple[np.ndarray, list[np.ndarray]]] | None,
     grid_scouts: list[SegmentationDetection] | None = None,
+    near_capture_scouts: list[tuple[np.ndarray, int]] | None = None,
 ) -> tuple[
     list[list[dict]], tuple[SegmentationDetection, np.ndarray] | None,
     SegmentationDetection | None, SegmentationDetection | None,
@@ -5099,6 +5113,14 @@ def _collect_tiled_print_offers(
                 and candidate.confidence >= .60 and evidence[index]["score"] >= .80
                 and .025 <= _score_value(candidate, "area_ratio") <= .12):
             grid_scouts.append(candidate)
+        if (near_capture_scouts is not None and candidate.geometry_valid
+                and candidate.mask.get("detector_source") == "yolo_onnx_tiled"
+                and candidate.confidence >= .80 and evidence[index]["score"] >= .70
+                and .025 <= _score_value(candidate, "area_ratio") <= .12):
+            polygon = _detection_polygon(candidate)
+            turn = near_capture_candidate_turn(polygon, width, height)
+            if turn is not None:
+                near_capture_scouts.append((polygon, turn))
         strong = candidate.confidence >= .80
         if (candidate.mask.get("detector_source") != "yolo_onnx_tiled"
                 or candidate.confidence < .65 or evidence[index]["score"] < .80
@@ -5195,6 +5217,30 @@ def _recenter_rotated_print(
     return [] if match is None else [seed, match]
 
 
+def _near_capture_tile_views(
+    image: np.ndarray, scouts: list[tuple[np.ndarray, int]],
+    infer: Callable[[np.ndarray], list[SegmentationDetection]],
+) -> list[np.ndarray]:
+    if len(scouts) != 1:
+        return []
+    (polygon, turn), = scouts
+    prepared = np.ascontiguousarray(np.rot90(image, turn))
+    height, width = prepared.shape[:2]
+    polygon = quarter_turn(polygon, turn)
+    center = polygon.mean(axis=0) * np.float32([width - 1, height - 1])
+    offset = np.float32([.02 * width, .025 * height * np.sign(center[1] - (height - 1) / 2)])
+    result = []
+    for position, extent in ((center, (.56, .60)), (center + offset, (.55, .50))):
+        left, top, right, bottom = window = _tile_window(position, width, height, extent)
+        detections = _tile_detections_on_page(infer(prepared[top:bottom, left:right]), window, width, height)
+        matches = [raw for item in detections if item.geometry_valid and item.confidence >= .80
+                   and normalized_polygon_overlap((raw := _detection_polygon(item)), polygon, raster_size=1024).iou >= .80]
+        if len(matches) != 1:
+            return []
+        result.append(quarter_turn(matches[0], (-turn) % 4))
+    return result
+
+
 def _contrast_review_candidate(item: SegmentationDetection) -> bool:
     fusion = item.mask.get("fusion") or {}
     return (
@@ -5233,6 +5279,7 @@ def _segment_album_page(
     adjacent_view_pairs: list[list[tuple[np.ndarray, float]]] | None = None,
     grid_view_pairs: list[list[tuple[np.ndarray, float]]] | None = None,
     recentered_rotated_tile: list[np.ndarray] | None = None,
+    near_capture_views: list[np.ndarray] | None = None,
 ) -> SegmentationResult:
     model_path = Path(settings.yolo_model_path)
     line_budget = min(3 * image.shape[0] * image.shape[1], 12_000_000) if settings.enable_precise_photo_crops else None
@@ -5367,9 +5414,10 @@ def _segment_album_page(
                     try:
                         grid_scouts = []
                         rotated_scouts = []
+                        near_capture_scouts = []
                         direct, retry_seed, unfitted_seed, ribbed_seed = _collect_tiled_print_offers(
                             source, image, detections, model_evidence, lambda frame: infer(frame)[0], inputs,
-                            partial_tile_seeds, merged_tile_pairs, grid_scouts,
+                            partial_tile_seeds, merged_tile_pairs, grid_scouts, near_capture_scouts,
                         )
                         tile_offers.extend(direct)
                         if tile_offers:
@@ -5418,6 +5466,13 @@ def _segment_album_page(
                             recentered_rotated_tile.extend(_recenter_rotated_print(
                                 source, image, rotated_scouts, claims, lambda frame: infer(frame, record_rejections=False)[0], inputs,
                             ))
+                        if near_capture_scouts and near_capture_views is not None:
+                            try:
+                                near_capture_views.extend(_near_capture_tile_views(
+                                    image, near_capture_scouts, lambda frame: infer(frame, record_rejections=False)[0],
+                                ))
+                            except Exception as exc:  # Advice is independent of the detector and crop decisions.
+                                tile_review["near_capture_error"] = str(exc)
                     except Exception as exc:  # Keep earlier proposals if an optional view fails.
                         tile_review["error"] = str(exc)
                     metadata["tiled_print_review"] = {

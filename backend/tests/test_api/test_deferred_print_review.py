@@ -1219,3 +1219,29 @@ async def test_review_can_replace_mounted_fragments_with_one_print(client, monke
     assert {row["id"] for row in (await client.get(photo_list)).json()} == {replacement_id, independent_id, fragment_id}
     for mode in ("full_print", "image_only"):
         assert (await client.get(f"{photo_url}/image", params={"variant": mode})).status_code == 404
+
+
+@pytest.mark.parametrize("kind", ["whole_quad", "partial_quad", "partial_polygon"])
+async def test_a_manually_drawn_outline_can_retire_guide_without_inheriting_geometry(client, kind):
+    from types import SimpleNamespace
+
+    from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES
+    from app.routers.photos import _claim_missing_print_trace
+
+    corners = [{"x": x, "y": y} for x, y in ((.01, .25), (.45, .25), (.45, .75), (.01, .75))]
+    traces = [[corner, corners[(index + 1) % 4]] for index, corner in enumerate(corners)]
+    page = SimpleNamespace(processing_metadata={"steps": {"segmentation": {NEAR_CAPTURE_PRINT_TRACES: traces}}})
+    provenance = {}
+
+    unrelated = [{"x": p["x"] + .50, "y": p["y"]} for p in corners]
+    _claim_missing_print_trace(page, provenance, unrelated, 660, 600)
+    assert page.processing_metadata["steps"]["segmentation"][NEAR_CAPTURE_PRINT_TRACES] == traces
+
+    claim = [{"x": x, "y": y} for x, y in ((.42, .36), (.48, .36), (.48, .61), (.42, .61))]
+    if kind == "partial_polygon":
+        claim.insert(1, {"x": .45, "y": .35})
+        _claim_missing_print_trace(page, provenance, None, 660, 600, polygon=claim)
+    else:
+        _claim_missing_print_trace(page, provenance, claim if kind == "partial_quad" else corners, 660, 600)
+    assert page.processing_metadata["steps"]["segmentation"] == {}
+    assert provenance == {}

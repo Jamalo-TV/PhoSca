@@ -562,6 +562,15 @@ Talbot, Gardner, Quine and Whiting drafts. This preflight adds zero
 verified physical album groups. Its source-only receipt is under
 `runs/crop-quality/recentered-rotation-review/reference-preflight.json`.
 
+The Priscilla Smith Album 8 documentation identifies the same five
+physical cards before and after removal from the mounted leaf. The
+separate front and back views and the named leaf positions provide a
+potential link for motif landmarks. Album windows cover parts of the
+paper boundaries. The native assets and reproduction rights for the
+paired images remain open. Document retrieval in this workspace
+returned HTTP 403. This source has no assigned dataset role.
+[Documented leaf and cards, figures 3.25–3.27](https://fileserver-az.core.ac.uk/download/360554527.pdf)
+
 All 17 archived legacy JPEGs retain the same capture signature. The
 relative `DateTimeOriginal` values follow the numbered page sequence
 across the original train, validation and Golden sets within 242 seconds.
@@ -3051,6 +3060,53 @@ accounts for 1.93 s versus 1.21 s. This is the qualifying page, including
 the additional source measurements.
 Receipts are under `runs/crop-quality/recentered-rotation-review/`.
 
+#### Show open print edges near the capture boundary
+
+On native U008 the mixed detector's standard 70% tile pins an edge
+of the giraffe print to the capture boundary. Its remaining edges
+do not establish a closed outline. Two model views at 56% × 60%
+and 55% × 50% of the source agree at 0.9404 IoU, at confidence
+0.871 and 0.906. Normalized masks nominate the same source region
+without a new whole-page inference call.
+
+At the original scale the material beside the frame shares the palette
+and repeated lightness of independent ribbed backing. The source check
+fits local rails and retains only intervals with distributed signed
+transitions. A nearby active or pending outline vetoes a conflicting
+perimeter, and evidence stations within nine native pixels of a claim
+are excluded. On U008 this leaves eight open intervals on three sides
+and withholds the edge by the upper neighbour. The closest displayed
+endpoint is 11.85 native pixels from the capture frame. The original
+does not establish the exact extent of the corner there.
+
+The new evidence is a page-level overlay in the desktop and mobile
+count review. It supplies no crop quadrilateral or inherited paper
+geometry. Opening it sends no write request. Both surfaces draw
+the same eight source intervals, with three active and three
+previously deferred detections. The ordinary upload and reanalysis
+retain the earlier contours and crop preview bytes. A manually drawn
+draft on the same page intersects a protected region and returns
+`protected_region_cut`. Confirming a different deferred photo leaves
+the eight intervals present and the two named exports held. A separate
+test covers retiring the overlay after an accepted manual outline
+occupies its source witness band, including a partial claim and a
+polygon-only correction. This retirement carries no geometry into the
+saved photo.
+
+With the two observed model masks held fixed, eleven of sixteen
+rotation and JPEG cases regenerate the hint. All ten copies with at
+least three columns removed abstain, as do two physical overlays
+placed across the capture or bottom evidence and a claimed common
+carrier. An optically identical unknown carrier remains ambiguous.
+On the qualifying source, the two bounded inference calls and native
+measurement take a median 0.396 seconds over three warm samples.
+All eight comparison runs preserve the earlier detection and both
+crop-mode measurements.
+
+Both configuration profiles record dense tile revision 16.
+Development receipts are under
+`runs/crop-quality/near-capture-print-review/`.
+
 #### Separate native crop ambiguity from missed detection
 
 The crowd-trained camera-tilt failure keeps the same detected print.
@@ -3079,6 +3135,65 @@ still accepts all 32 one-pixel rim variants and 8 of 32 two-pixel rim
 variants. This is a detector-phase effect and insufficient evidence
 to change the count. The existing explicit paper and motif review
 workflow remains in use for that print.
+
+An additional independent screen uses 30 real development views and
+eight source families. The ready-neighbour paper-stock experiment
+reaches no matching actual renderer case in 97 active contours. Five
+comparable original crops also have aspect uncertainty. In the closest
+examples a blank rim is absent or the peer or corner witness is too
+weak. The synthetic recovery remains a development control.
+
+With the original, sparse, dense and stock models, the native photographed
+contact sheet has one true match from the same classical perimeter.
+They have respectively 3, 4, 5 and 3 extra proposals. At 33% resolution
+and JPEG75 all four miss the paper at scored IoU 0.85, despite a
+separate held editable outline at 0.9885 IoU to the draft. The three
+trained models offer no repeatable ownership advantage on this source.
+The existing sleeve and paper review remains necessary. The tested
+seam expansions also admit pixels from separate papers with narrow
+backing gaps and stay outside the app.
+
+#### Replace old contact layouts with paired physical ownership examples
+
+The fourth development arm keeps the mixed starting checkpoint and
+the stock arm's settings. It replaces 16 inherited procedural train
+views with eight fresh scene pairs. Each pair shares artwork, projection,
+blur, orientation and JPEG settings. One view has a single repeated
+contact print. The other has two papers with an authored gap of one,
+two, three or six pixels before projection. The 80 other training
+rasters, the 20 selection views, the 32 crowd challenge views and
+the eight prospective stock views are identical. Reconstruction verifies
+the new raster, instance, and owner-label hashes. The replaced views
+have 35 instance labels while the new views have 24, so this comparison
+does not isolate the physical ownership cue from the training-instance
+distribution. No new real source enters training or selection.
+
+| Development comparison | Stock | Paired contact |
+| --- | ---: | ---: |
+| Raw fresh contact matches / extras | 7/36 + 88 | 16/36 + 71 |
+| Normal fresh contact matches / extras | 7/36 + 101 | 11/36 + 85 |
+| Normal fresh contacts on an enclosing sheet | 3/12 | 3/12 |
+| Normal fresh contacts on separate papers | 4/24 | 8/24 |
+| Normal photographed contact JPEG75 | 0/1 + 5 | 0/1 + 5 |
+| Frozen normal matches / extras | 18/18 + 1 | 18/18 + 3 |
+| Frozen passing whole prints | 7/11 | 5/11 |
+| Frozen passing motifs | 8/12 | 6/12 |
+| Spiral normal matches / extras | 33/38 + 13 | 23/38 + 15 |
+
+Five of the paired arm's eight raw enclosing-sheet matches fall below
+the threshold during fusion. A direct stage replay finds the model
+mask at 0.867–0.914 IoU and the selected classical edge contour at
+0.784–0.828 on these five sources. The subsequent perimeter stages
+preserve that change. On the real JPEG75 print, the draft whole
+footprint IoU rises from 0.8295 to 0.8496 while the rendered preview
+loses the entire handwritten heading above the first row. Both modes
+remain held. The frozen losses include new cast-shadow and glare crop
+errors. The product model and release policy stay in force.
+
+The ONNX SHA-256 is
+`236796403f8c6f858a906554c4d7529ee7bcc8fa4af0509c73196df350449b05`.
+The training inventory, owner-mask manifests and matched reports are
+under `runs/crop-quality/crowded-print-training/paired-contact-controls/`.
 
 #### Require separate confirmation for an unsupported contrast outline
 

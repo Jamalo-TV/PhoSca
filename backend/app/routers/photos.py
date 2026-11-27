@@ -26,6 +26,7 @@ from app.pipeline.bowed_scene_preview import BOWED_SCENE_PREVIEW
 from app.pipeline.capture_fabric_review import CAPTURE_FABRIC_PROPOSAL
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
 from app.pipeline.crossing_prints import CONTESTED_TILE_OUTLINE, REVIEWED_CROSSING_OUTLINE, reviewed_outline_covers_traces
+from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES, near_capture_guide_conflicts
 from app.pipeline.dark_album_review import DARK_ALBUM_PROPOSAL
 from app.pipeline.decisions import (
     MANUAL_NEIGHBOR_OVERLAP, MOTIF_MARGIN_MARKS_REVIEW, is_reviewed_non_print, photo_is_reviewed_non_print,
@@ -287,19 +288,28 @@ def _geometry_snapshot(photo: ExtractedPhoto) -> dict:
 
 def _claim_missing_print_trace(
     page: Page, review_provenance: dict, quad: list[dict] | None, width: int, height: int,
+    *, polygon: list[dict] | None = None,
 ) -> None:
-    if len(quad or []) != 4:
+    outline = quad or polygon
+    if len(outline or []) < 3:
         return
     metadata = deepcopy(page.processing_metadata or {})
     segmentation = (metadata.get("steps") or {}).get("segmentation") or {}
     traces = segmentation.get("missing_print_edge_traces", [])
-    if not reviewed_outline_covers_traces(quad, traces):
-        return
-    curve = paper_curve_from_review_traces(quad, traces, width, height)
-    if curve is not None:
-        review_provenance["paper_trace_review"] = curve
-    segmentation.pop("missing_print_edge_traces")
-    page.processing_metadata = metadata
+    claims_curve = len(quad or []) == 4 and reviewed_outline_covers_traces(quad, traces)
+    if claims_curve:
+        curve = paper_curve_from_review_traces(quad, traces, width, height)
+        if curve is not None:
+            review_provenance["paper_trace_review"] = curve
+        segmentation.pop("missing_print_edge_traces")
+    open_edges = segmentation.get(NEAR_CAPTURE_PRINT_TRACES, [])
+    claims_open_edges = (
+        reviewed_outline_covers_traces(outline, open_edges) or near_capture_guide_conflicts(outline, open_edges, width, height)
+    )
+    if claims_open_edges:
+        segmentation.pop(NEAR_CAPTURE_PRINT_TRACES)
+    if claims_curve or claims_open_edges:
+        page.processing_metadata = metadata
 
 
 async def _render_photo_edit(
@@ -1247,7 +1257,9 @@ async def update_photo_bounding_box(
             review_provenance.setdefault("backed_edge_review", deepcopy(backed_edge))
     review_provenance.setdefault("original_prediction", before)
     review_provenance.setdefault("prediction_provenance", prediction_provenance)
-    _claim_missing_print_trace(page, review_provenance, segmentation_mask.get("warp_quad"), width, height)
+    _claim_missing_print_trace(
+        page, review_provenance, segmentation_mask.get("warp_quad"), width, height, polygon=segmentation_mask.get("polygon"),
+    )
     revisions = list(review_provenance.get("correction_revisions") or [])
     revisions.append(
         {

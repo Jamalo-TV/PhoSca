@@ -227,6 +227,7 @@ export const captureSplitReviewHint = "Die gestrichelten Linien zeigen einen mö
 export const mergedPrintPairHint = "Die gestrichelten Umrisse zeigen zwei mögliche Abzüge innerhalb eines Vorschlags. Prüfe am Original, ob beide Motive auf demselben Papier liegen.";
 export const mergedPrintAsOneLabel = "Beide Motive liegen auf einem gemeinsamen Papierabzug.";
 export const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
+export const nearCapturePrintEdgeHint = "Die blauen Abschnitte markieren sichtbare Kanten eines möglichen Abzugs am Aufnahmerand. Die Ecke am Rand bleibt offen. Prüfe am Original, ob dort ein eigener Abzug liegt.";
 const curvedMotifReviewReason = "IMAGE_BOUNDARY_CURVED";
 const curvedMotifReviewHint = "Die Motivkante verläuft unregelmässig. Prüfe am Original, welche Bildfelder und Beschriftungen zum Motiv gehören.";
 const markedMotifMarginReason = "IMAGE_MARGIN_MARKS_REVIEW";
