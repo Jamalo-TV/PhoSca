@@ -2876,8 +2876,12 @@ Adding the existing four-side native fit and enclosure checks leaves 4
 real and 10 false outlines. An offline enclosing-perimeter check over
 the union with the known peer rejects 6 of those 10 false candidates
 and preserves all 4 real ones. The four remaining false candidates have
-open ends. The diagnostic uses known peer correspondence. It supplies
-no general peer selection and is not enabled in the app.
+open ends. A separate check selects a unique disjoint 512 peer without
+draft polygons, measures three native rails with the same exterior and
+looks for both long rails to reach the same capture edge. It witnesses
+the carrier in three of those four stress cases and none of the four
+genuine cases. One quality-75 JPEG still has insufficient rail evidence.
+These diagnostic checks are outside the app.
 
 #### Isolate print density in a matched fine-tuning trial
 
@@ -2919,6 +2923,22 @@ from 0.1581 to 0.0677. Three locally ready whole-print candidates and one
 locally ready motif lack verified crop references. Local readiness provides
 no release evidence. Neither checkpoint is adopted.
 
+On a separate set of eight available development views, mixed and dense
+both match 24 of 25 draft paper outlines. The number of extras grows
+from 7 to 12. Four of the added proposals are on the clipped NerdScan
+source. The quality-75 reproduction of the 35-frame contact sheet stays
+unmatched at IoU 0.85, with five extras for mixed and six for dense.
+Both retain the draft paper preview at footprint IoU 0.8295 with 16.77%
+cutoff. These source-limited drafts cannot establish clean motif extent.
+The complete reports and matched comparison are in
+`runs/crop-quality/crowded-print-training/known-real/`.
+
+The dense model's U008 merge propositions also include two separate
+print masks. In a source replay using masks alone to nominate a parent
+and children, the existing merged-pair measurement confirms one
+two-paper ownership conflict, on the left pair already covered by the
+app's review. It does not justify removal of other proposals.
+
 The sparse ONNX SHA-256 is
 `690162aa452ddf77ab0ad2348fdc1a09757ae56ab639f60910c699d9c15b3495`.
 The dense ONNX SHA-256 is
@@ -2939,6 +2959,41 @@ The comparison records per-reference changes in crop state, reasons and
 automatic eligibility. Geometry summaries use the same reference rows
 with measurements from both runs. It also includes native corner and
 landmark error, aspect, cutoff, foreign interpolation counts and timing.
+
+#### Replace eight controls with visibly distinct paper-owned cases
+
+A third arm keeps 88 of the 96 dense training views, the mixed starting
+checkpoint and the same training settings. It replaces just the eight
+common controls with three matched scene pairs and two non-photo album
+covers. Each pair uses the same art on a single enclosing carrier with
+a visible perimeter in one view and on two separate papers with a
+physical gap in the other. The new train roots start at 6624700. The
+eight prospective material views use separate roots starting at 6625700.
+The 20 selection and 32 original challenge views remain byte-identical.
+All three splits and the new material stress set are outside one another
+by source group, source-image hash and procedural art donor.
+
+On the material stress set, the new arm preserves 8 of 9 matches at
+confidence 0.70 and reduces extras from 7 to 3 relative to the dense
+arm. All six separately mounted prints still match. At confidence 0.25,
+it keeps 9 of 9 and adds one extra, from 12 to 13. The original challenge
+contains optically near-identical cover and carrier renderings. At 0.70
+it has 169 of 176 matches as before, but extras rise from 7 to 49 there.
+At 0.25, the dense subset changes from 139/139 + 4 to 138/139 + 6.
+The frozen normal path has 18/18 matches and one extra. Crop passes fall
+to 7/11 and 8/12 from the dense arm's 8/11 and 9/12.
+
+On Spiral, this arm reaches 33 of 38 matches and 13 extras. All three
+additional matches over the dense arm are on U039. Mean whole-print
+draft footprint IoU rises from 0.8542 to 0.9154, and the mean omitted
+draft fraction falls from 0.06768 to 0.04074. Two whole-print rows are
+locally ready, with no verified reference or automatic release.
+
+The trial ONNX is
+`3f8fb0b98def1bda9f3325144f1d6c86dd61084fb275da45f5cd4f54da32170b`.
+Its source inventory, raw controls, training receipt and normal reports
+are in `runs/crop-quality/crowded-print-training/stock-controls/`.
+The arm stays a development experiment.
 
 #### Require separate confirmation for an unsupported contrast outline
 
