@@ -5158,6 +5158,68 @@ comparisons use the authored native-ownership cohort with 36 prints, the
 views. A separate locked field validation and calibration are required for
 a release decision.
 
+The 24 epochs completed. The chosen PyTorch checkpoint SHA-256 is
+`3621b71815d38a6fc04019427e14620fb08faaaf77b459915a1b41a9a0fed334`.
+Its 512-pixel ONNX export with opset 17 and SHA-256
+`7eb23be80a2dd8981d963d4d7fd3262f3e233dba31f09903e02928416fdc9bdb`
+loaded in ONNX Runtime. Training validation reaches 0.779 mask
+mAP50–95 at the final epoch. The separate development results use IoU
+0.85. Each table cell gives matches and extra proposals.
+
+| Cohort | Comparator | Authored union |
+| --- | ---: | ---: |
+| Separate stock challenge, model only | 44/46, 1 extra | 37/46, 60 extras |
+| Native ownership, model only | 9/36, 72 extras | 6/36, 82 extras |
+| Native ownership, hybrid | 8/36, 86 extras | 4/36, 116 extras |
+| Frozen synthetic, hybrid | 18/18, 0 extras | 18/18, 6 extras |
+| Spiral development, hybrid | 6/38, 11 extras | 0/38, 10 extras |
+| Seven real development views, hybrid | 24/24, 2 extras | 22/24, 10 extras |
+| Golden development, hybrid | 29/29, 0 extras | 14/29, 30 extras |
+| Native SteveKM contact sheet, hybrid | 1/1, 3 extras | 1/1, 6 extras |
+| Reduced SteveKM JPEG75, hybrid | 0/1, 5 extras | 0/1, 8 extras |
+
+The comparator is the mixed development detector for every row except
+the frozen comparison, which uses the synthetic-control checkpoint.
+The earlier architecture-only candidate detected 0/46 on the same
+stock test. A separate comparison matches the exact page and reference
+fingerprints. For frozen detection and rendering, the candidate reduces
+passing whole-print and motif crops from 6/11 and 7/12 to 4/11 and 4/12.
+No geometrically passing frozen case newly enters review. Instead, the
+candidate changes the measured geometry or match. The seeded crop-only
+test still passes all 23 references with current product configuration.
+
+The model-only ownership result improves on joined sheets from 3/12 to
+5/12. Separate-print matches fall from 6/24 to 1/24 after the renderer's
+visible contour refinement. In the primary masks, combined separate
+prints rise from three to six and split joined sheets from one to four.
+On the stock challenge the joined subset falls from 12/12 with zero
+extras to 6/12 with 43 extras. The adjacent subset falls from 32/34
+with one extra to 31/34 with 17 extras.
+The held Spiral result contains six weak matches and 32 missing reference
+indices. Looking at the original whole-page model output at score floors
+0.25 and 0.10 gives six and 38 candidates, respectively. The lower floor
+raises matches at IoU 0.50 from two to twelve. At IoU 0.85 both floors
+match zero. This locates failures before final crop generation and
+rules out the tested score change as a sufficient fix for this model.
+The isolated upload of U008 and the U036 cover through the normal route
+with this checkpoint produces one held row per page. A repeat analysis
+reproduces their locations. Working previews return 200 and named full
+and motif exports return 404. The mixed comparator had three and four
+held rows, respectively, on the same pixel inputs.
+
+The mixed model's raw low-score sweep reaches 20/38 at 0.10, with 31
+extras over five Spiral views. At its normal 0.25 floor the equivalent
+raw score is 7/38 with eleven extras. Of the 33 added proposals, 26
+intersect an active or deferred claim or an existing pair alternative.
+Twelve of the thirteen added proposals at IoU 0.85 or above have such
+a conflict. The one remaining plausible outline on U008 fails the
+existing four-side and ribbed-backing measurements. Neither of the two
+extra low-score cover proposals passes. This scoped experiment provides
+no additional source-supported count offers. It points to resolving
+existing counterclaims before testing more new proposals. The
+authored-union weights stay outside the runtime registry. None of these
+comparisons use release or calibration images.
+
 ### Isolate invalid model proposals at the image boundary
 
 An exported stock model reproduced a whole-page parse failure on challenge
