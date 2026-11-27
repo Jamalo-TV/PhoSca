@@ -2219,6 +2219,58 @@ benchmarks still rule out both old transfer arms. The new test isolates
 heading and rim retention and keeps the exposure of adjacent prints as
 a separate measurement.
 
+#### Isolate heading contrast and native sample integration
+
+The four-arm CPU pilot uses the same mixed development starting checkpoint,
+`8fa869a3…`, and the same selection data. Each arm includes 24 fitting
+views with 28 photo instances and 13 selection views with 16 instances.
+Four catalogued CC0 photo-scanned surfaces supply the shared negative
+views. The positive worlds and their ownership masks are authored. The
+four proof roots above, the Stevekm source and the release and calibration
+intakes stay outside fitting and selection. The pilot inventory
+`66492c419800d3e0…` records source groups, acquisition and art provenance,
+hashes, split membership and all shared owner labels. A separate replay
+checked 481 files and found no recorded source, seed or image-hash overlap
+with the ten prior manifests it checked. The warm checkpoint still carries
+its historical provenance limits.
+
+The control learns fixed heading contrast and point-sampled reductions.
+The other arms vary the heading intensity, integrate source pixels with
+`INTER_AREA` at 33%, or apply both changes. The native views retain the
+same encoding. Geometry labels and selection bytes are identical across
+arms. The corrected runner uses three epochs, 512 × 512 input, SGD with
+initial learning rate 0.002, batch and nominal batch size four, seed
+zero, and disabled spatial and colour augmentation. An initial smoke run
+used the framework default nominal batch size of 64, yielding one
+optimizer update. The measured comparison below uses the corrected runs.
+
+All four arms leave the actual JPEG75 contact print below the 0.85 mask
+IoU threshold. They reduce active unmatched proposals from five to two.
+The best regular whole-print crop still retains only 1,496 of 2,162
+sampled heading centres. Both normal crop modes remain in review on this
+source. On the separate 33% authored proof, all four improve from 4/28
+to 15/28 at raw confidence 0.25. All eight separate prints still miss.
+Varying the heading alone produces 15 extras on that cohort, compared
+with 21 for the other three arms. At 0.70 every arm matches 5/28.
+
+The same registered normal-path comparison on frozen synthetic inputs
+falls from 17/18 to 14/18 detections in every arm. The baseline in this
+pilot is the mixed parent. Its passing whole-print and motif counts fall
+from 9/11 and 10/12 to 7/11 and 8/12. This checkpoint comparison is
+separate from the fixed software regression checkpoints.
+
+| Arm | Frozen matches / 18 | Frozen extras | Golden matches / 29 | Golden extras |
+| --- | ---: | ---: | ---: | ---: |
+| Mixed parent | 17 | 4 | 29 | 0 |
+| Control | 14 | 5 | 15 | 18 |
+| Heading contrast | 14 | 4 | 14 | 21 |
+| Integrated reduction | 14 | 4 | 17 | 19 |
+| Both changes | 14 | 5 | 16 | 22 |
+
+The pilot is rejected for deployment. The inventories, hash-checked
+training receipts and both crop-mode reports are in
+`runs/crop-quality/contact-rim-pilot/`.
+
 #### First development replay of a newly supplied spiral album
 
 The album group contains five views, including the illustrated front cover.
@@ -7569,6 +7621,17 @@ one, confirming two paper fragments and then the sleeve. The same mask,
 both mode records and the review JPEG survive the two count decisions.
 The named and trimmed exports return 404. Multipart upload and processing
 took 8.19 s in this single local run. See `lossless-edit-first.json`.
+
+The JPEG75 outline-first route also reached both named exports after
+the separate geometry decisions. A diagnostic 203 × 264 mm paper size
+produced a 609 × 792 whole print. The reviewed motif produced 538 × 783.
+Reprocessing reproduced both JPEGs byte for byte. Both retained all
+1,938 checked heading points, 251,331 checked dark grid points and 315
+anchors across 35 panels. The owner-aware reconstruction found valid
+interpolation support in both crops. JPEG luminance error against that
+reconstruction was 1.36 and 1.48 levels mean absolute error, respectively.
+The diagnostic size supplies the aspect for this test. Both exports
+and their measurement records are local in the same report directory.
 
 All eight frozen and development replays reproduce the non-timing
 reports from `42c2bed`. The locked detector still matches 18/18. The
