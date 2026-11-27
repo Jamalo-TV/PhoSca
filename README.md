@@ -118,6 +118,20 @@ abfotografierte Reproduktion kann dieselbe Textur zeigen. Deshalb
 bleiben Papierzugehörigkeit, Ecken und beide Zuschnittmodi prüfpflichtig.
 [Gerippter Albumkarton](data/evaluation/README.md#check-a-failed-tile-fit-against-ribbed-backing)
 
+Werden bei der Kachelsuche bereits weitere Abzüge gefunden, kann
+PhoSca eine Lücke neben einem fast quadratischen Abzug untersuchen.
+Zwei längliche Vorschläge müssen dieselbe Achse stützen. PhoSca
+projiziert den kleinen Umriss entlang dieser Achse in freie Bereiche
+und prüft jede freie Position in zwei unterschiedlich grossen
+Teilbildern. Beide Ansichten müssen dieselbe Papierfläche stützen.
+Bei abweichenden Kanten prüft PhoSca den Farbwechsel zum Karton
+und ob die Albumrippen vor der Kante enden. Ein gemessener
+gemeinsamer Papierrand oder eine bereits beanspruchte Fläche
+verhindert den Vorschlag. Die Anzahlprüfung zeigt einen möglichen
+zusätzlichen Abzug. Die Bestätigung seiner Anzahl und die Freigabe
+seiner Zuschnitte bleiben getrennte Schritte.
+[Zusatzansichten und Originalmessung](data/evaluation/README.md#confirm-an-unclaimed-print-in-two-local-views)
+
 Deckt ein schwacher Ganzseitenvorschlag möglicherweise zwei Abzüge ab,
 kann ein einzelner starker Kachelfund innerhalb dieser Kontur eine
 weitere Prüfung auslösen. PhoSca sucht in der Mitte des gemeinsamen

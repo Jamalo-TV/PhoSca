@@ -85,8 +85,8 @@ from app.pipeline.segmentation_filter import (
 )
 from app.pipeline.source_fragment_review import source_fragment_role, suggest_source_fragment_group
 from app.pipeline.tile_print_review import (
-    TILED_PRINT_PROPOSAL, opposing_view_print_outlines, ribbed_backing_tile_outline, tile_print_outline,
-    tiled_outline_conflicts,
+    TILED_PRINT_PROPOSAL, measured_adjacent_tile_outline, opposing_view_print_outlines, ribbed_backing_tile_outline,
+    tile_print_outline, tiled_outline_conflicts,
 )
 
 _CLASSICAL_MIN_AREA_RATIO = 0.02
@@ -4414,8 +4414,10 @@ def segment_album_page(
     merged_tile_pairs = []
     ribbed_tile_seeds = []
     contrast_review = []
+    adjacent_view_pairs = []
     result = _segment_album_page(
         image, settings, source, tile_offers, partial_tile_seeds, merged_tile_pairs, ribbed_tile_seeds, contrast_review,
+        adjacent_view_pairs,
     )
     if settings.enable_classical_segmentation_fallback:
         if settings.enable_precise_photo_crops and (
@@ -4464,6 +4466,8 @@ def segment_album_page(
             result = _review_merged_tile_pair(evidence_source, result, *merged_tile_pairs[0])
         if ribbed_tile_seeds:
             result = _offer_ribbed_backing_tile(evidence_source, result, ribbed_tile_seeds[0])
+        if adjacent_view_pairs:
+            result = _offer_adjacent_view_prints(evidence_source, result, adjacent_view_pairs)
         if contrast_review:
             (seed, traces), = contrast_review
             matching = [i for i, item in enumerate(result.detections) if _contrast_review_candidate(item)
@@ -4630,6 +4634,123 @@ def _offer_ribbed_backing_tile(source: np.ndarray, result: SegmentationResult, s
     return SegmentationResult(result.detections, metadata)
 
 
+def _offer_adjacent_view_prints(
+    source: np.ndarray, result: SegmentationResult, pairs: list[list[tuple[np.ndarray, float]]],
+) -> SegmentationResult:
+    started = perf_counter()
+    height, width = source.shape[:2]
+    fusion = result.metadata.get("fusion") or {}
+    pending = list(fusion.get("deferred_print_proposals") or [])
+    claims = _tiled_paper_claims(result.detections) + pending
+    for item in result.detections:
+        if crossing := item.mask.get("crossing_print_suggestion"):
+            claims.append({"polygon": crossing})
+        for outline in (item.mask.get(MERGED_PRINT_PAIR) or {}).get("outlines", ()):
+            claims.append({"polygon": outline})
+    fits = []
+    for pair in pairs:
+        try:
+            if (outline := measured_adjacent_tile_outline(source, pair, claims)) is not None:
+                fits.append(_normalized_polygon(outline, width, height))
+        except (cv2.error, ValueError, np.linalg.LinAlgError):
+            continue
+    # An unresolved competition for the same physical region yields no offer.
+    offers = [outline for i, outline in enumerate(fits)
+              if not tiled_outline_conflicts(outline, [{"polygon": fit} for j, fit in enumerate(fits) if i != j],
+                                             width, height)]
+    review = dict(result.metadata["tiled_print_review"])
+    review["runtime_ms"] = round(review["runtime_ms"] + (perf_counter() - started) * 1000, 2)
+    metadata = {**result.metadata, "tiled_print_review": review}
+    if offers:
+        next_id = max((item["id"] for item in pending), default=-1) + 1
+        pending.extend({"id": next_id + i, "reason": TILED_PRINT_PROPOSAL, "polygon": outline}
+                       for i, outline in enumerate(offers))
+        metadata["fusion"] = {**fusion, "deferred_print_proposals": pending}
+        review["candidates"] += len(offers)
+        review["recovered_from_adjacent_views"] = len(offers)
+    return SegmentationResult(result.detections, metadata)
+
+
+def _tile_window(
+    center: np.ndarray, width: int, height: int, window: tuple[float, float],
+) -> tuple[int, int, int, int]:
+    tile_width, tile_height = round(window[0] * width), round(window[1] * height)
+    left = min(max(round(center[0] - tile_width / 2), 0), width - tile_width)
+    top = min(max(round(center[1] - tile_height / 2), 0), height - tile_height)
+    return left, top, left + tile_width, top + tile_height
+
+
+def _adjacent_tile_search_locations(
+    detections: list[SegmentationDetection], evidence: dict[int, dict[str, float]], width: int, height: int,
+) -> list[tuple[np.ndarray, bool]]:
+    """Project a compact print one row away along the axis shared by the long proposals."""
+    anchors, axes = [], []
+    for index, item in enumerate(detections):
+        if item.review_reasons or not item.geometry_valid or evidence[index]["score"] < .76:
+            continue
+        points = normalized_vertices_to_pixels(_detection_polygon(item), width, height)
+        quad, _ = quad_from_polygon(points)
+        if quad is None:
+            continue
+        quad = order_quad_cyclic(quad)
+        sides = np.float32([quad[1] - quad[0] + quad[2] - quad[3], quad[2] - quad[1] + quad[3] - quad[0]])
+        lengths = np.linalg.norm(sides, axis=1)
+        long_side = lengths.max()
+        if long_side <= 0:
+            continue
+        ratio = lengths.min() / long_side
+        area = cv2.contourArea(quad) / (width * height)
+        if .42 <= ratio <= .70 and .055 <= area <= .16:
+            axes.append(sides[lengths.argmax()] / long_side)
+        elif ratio >= .80 and .035 <= area <= .09:
+            anchors.append((quad, sides, lengths))
+    if len(anchors) != 1 or len(axes) < 2 or any(abs(axis @ axes[0]) < .97 for axis in axes[1:]):
+        return []
+    (quad, sides, lengths), = anchors
+    parallel = np.abs(sides @ axes[0]) / lengths
+    if parallel.max() < .96:
+        return []
+    axis = sides[parallel.argmax()]
+    horizontal = abs(axis[0]) > abs(axis[1])
+    return [(quad + sign * .58 * axis, horizontal) for sign in (1, -1)]
+
+
+def _collect_adjacent_view_pairs(
+    image: np.ndarray, detections: list[SegmentationDetection], evidence: dict[int, dict[str, float]],
+    offers: list[list[dict]], infer: Callable[[np.ndarray], list[SegmentationDetection]],
+    inputs: tuple[np.ndarray, tuple[np.ndarray, float], np.ndarray], acceptance: float,
+) -> list[list[tuple[np.ndarray, float]]]:
+    height, width = image.shape[:2]
+    dims = np.float32([width - 1, height - 1])
+    claims = _tiled_paper_claims(detections) + [{"polygon": outline} for outline in offers]
+    pairs = []
+    for projected, horizontal in _adjacent_tile_search_locations(detections, evidence, width, height):
+        if (np.any(np.minimum(projected, dims - projected) < 4)
+                or tiled_outline_conflicts(_normalized_polygon(projected, width, height), claims, width, height)):
+            continue
+        observations = []
+        for window in ((.56, .60), (.48, .53)):
+            left, top, right, bottom = bounds = _tile_window(
+                projected.mean(axis=0), width, height, window[::-1] if horizontal else window,
+            )
+            matches = []
+            for candidate in _tile_detections_on_page(infer(image[top:bottom, left:right]), bounds, width, height):
+                polygon = _detection_polygon(candidate)
+                if normalized_polygon_overlap(polygon, projected / dims, raster_size=512).iou >= .55:
+                    matches.append((candidate, polygon))
+            if len(matches) != 1:
+                break
+            (candidate, polygon), = matches
+            if (tiled_outline_conflicts(candidate.mask["polygon"], claims, width, height)
+                    or _detection_boundary_evidence(candidate, *inputs)["score"] < .80):
+                break
+            observations.append((polygon, candidate.confidence))
+        if (len(observations) == 2 and max(confidence for _, confidence in observations) >= max(.80, acceptance)
+                and normalized_polygon_overlap(observations[0][0], observations[1][0], raster_size=512).iou >= .90):
+            pairs.append(observations)
+    return pairs
+
+
 def _centered_tile_print_mask(
     image: np.ndarray, original: np.ndarray,
     claims: list[dict], infer: Callable[[np.ndarray], list[SegmentationDetection]],
@@ -4637,12 +4758,9 @@ def _centered_tile_print_mask(
     *, window: tuple[float, float] = (.56, .60),
 ) -> np.ndarray | None:
     height, width = image.shape[:2]
-    tile_width, tile_height = round(window[0] * width), round(window[1] * height)
     center = (original.min(axis=0) + original.max(axis=0)) / 2 * [width - 1, height - 1]
-    left = min(max(round(center[0] - tile_width / 2), 0), width - tile_width)
-    top = min(max(round(center[1] - tile_height / 2), 0), height - tile_height)
-    right, bottom = left + tile_width, top + tile_height
-    candidates = _tile_detections_on_page(infer(image[top:bottom, left:right]), (left, top, right, bottom), width, height)
+    left, top, right, bottom = bounds = _tile_window(center, width, height, window)
+    candidates = _tile_detections_on_page(infer(image[top:bottom, left:right]), bounds, width, height)
     matches = []
     for candidate in candidates:
         polygon = _detection_polygon(candidate)
@@ -4975,6 +5093,7 @@ def _segment_album_page(
     merged_tile_pairs: list[tuple[np.ndarray, list[np.ndarray]]] | None = None,
     ribbed_tile_seeds: list[np.ndarray] | None = None,
     contrast_review: list[tuple[np.ndarray, list[np.ndarray]]] | None = None,
+    adjacent_view_pairs: list[list[tuple[np.ndarray, float]]] | None = None,
 ) -> SegmentationResult:
     model_path = Path(settings.yolo_model_path)
     line_budget = min(3 * image.shape[0] * image.shape[1], 12_000_000) if settings.enable_precise_photo_crops else None
@@ -5141,6 +5260,11 @@ def _segment_album_page(
                                 tile_review["recovered_from_centered_pair"] = True
                         if ribbed_seed is not None and ribbed_tile_seeds is not None:
                             ribbed_tile_seeds.append(_detection_polygon(ribbed_seed))
+                        if tile_offers and adjacent_view_pairs is not None:
+                            adjacent_view_pairs.extend(_collect_adjacent_view_pairs(
+                                image, detections, model_evidence, tile_offers, lambda frame: infer(frame)[0], inputs,
+                                settings.yolo_confidence_threshold,
+                            ))
                     except Exception as exc:  # Keep earlier proposals if an optional view fails.
                         tile_review["error"] = str(exc)
                     metadata["tiled_print_review"] = {

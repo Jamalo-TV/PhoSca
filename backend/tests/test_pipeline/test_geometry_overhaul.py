@@ -122,6 +122,50 @@ def test_partial_dense_tiles_improve_observed_print_and_keep_unobserved_pair(mon
     assert result_evidence[result.index(winner)]["score"] == .85
 
 
+@pytest.mark.parametrize("case", ["confirmed", "competing_mask", "low_scores", "occupied", "conflicting_axes"])
+def test_adjacent_view_retry_requires_a_unique_unclaimed_pair(monkeypatch, case) -> None:
+    from app.pipeline import segmentation
+
+    def box(x1, y1, x2, y2, score=.65):
+        return _detection({"x1": x1, "y1": y1, "x2": x2, "y2": y2}, score, family="model")
+
+    page = np.zeros((1001, 1201, 3), np.uint8)
+    left = box(.06, .10, .24, .60)
+    right = box(.74, .10, .94, .59) if case != "conflicting_axes" else box(.50, .05, .90, .28)
+    anchor = box(.42, .35, .61, .58)
+    evidence = {i: {"score": .90} for i in range(3)}
+    detections = [left, right, anchor]
+    offers = [box(.42, .08, .61, .31).mask["polygon"]]
+    if case == "occupied":
+        offers.append(box(.42, .61, .61, .85).mask["polygon"])
+    expected = np.float32([[504, 617], [732, 617], [732, 847], [504, 847]])
+    calls = []
+
+    def infer(frame):
+        # Only the downward projection is unclaimed. The larger window
+        # reaches the real lower capture boundary.
+        height, width = frame.shape[:2]
+        origin = np.float32([round(618 - width / 2), min(round(731.8 - height / 2), 1001 - height)])
+        scale = np.float32([width - 1, height - 1])
+        low, high = (expected[[0, 2]] - origin) / scale
+        score = .68 if calls or case == "low_scores" else .88
+        calls.append(frame.shape)
+        candidate = box(*low, *high, score)
+        return [candidate, candidate] if case == "competing_mask" else [candidate]
+
+    monkeypatch.setattr(segmentation, "_detection_boundary_evidence", lambda *_: {"score": .91})
+    pairs = segmentation._collect_adjacent_view_pairs(page, detections, evidence, offers, infer, (), .70)
+    if case == "confirmed":
+        first, second = pairs[0]
+        assert len(pairs) == 1 and first[1] == .88 and second[1] == .68
+        assert first[0] == pytest.approx(expected / [1200, 1000])
+        assert second[0] == pytest.approx(first[0])
+    else:
+        assert not pairs
+    expected_calls = {"confirmed": 2, "low_scores": 2, "competing_mask": 1}
+    assert len(calls) == expected_calls.get(case, 0)
+
+
 @pytest.mark.parametrize("case", ["confirmed", "competing_match", "edge_missing", "fit_drift", "existing_claim"])
 def test_centered_tile_retry_requires_unique_native_agreement(case) -> None:
     from app.pipeline import segmentation

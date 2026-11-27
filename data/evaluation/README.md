@@ -2640,6 +2640,91 @@ recoverable crops. The U039 replays and the rendered review preview are
 under `runs/crop-quality/u039-jpeg55/`. The outline is a development
 reference and does not count towards independent release acceptance.
 
+#### Confirm an unclaimed print in two local views
+
+Dense tile revision 13 can look beside an existing near-square model
+proposal after the normal tile path supplies an extra count offer.
+The layout requires one compact proposal covering 3.5–9% of the page
+with a native short-to-long side ratio of at least 0.80, and two or
+more elongated proposals covering 5.5–16% each with ratios in 0.42–0.70.
+Each needs valid geometry and a prepared boundary score of at least
+0.76. The elongated axes agree at absolute cosine 0.97 or higher,
+and the closest compact axis agrees at 0.96 or higher. PhoSca projects
+the compact proposal in both directions by 1.16 times its mean side
+length along that axis. It measures only projections at least four
+native pixels inside the capture and clear of earlier paper claims.
+
+The two local windows cover 56% × 60% and 48% × 53% of the page.
+Their axes transpose when the projected direction is horizontal.
+Each needs a unique mask with at least 0.55 IoU against the projected
+search area and prepared boundary score at least 0.80. The normal
+artificial tile margin applies. The mask scores must reach at least
+0.60 in both views, with one reaching 0.80 and the configured
+acceptance threshold. Their native-coordinate masks must agree at
+IoU 0.90 or higher.
+
+The original pixels must support three matching, unambiguous rails
+within four pixels across both fits. A fourth rail from the higher
+confidence view must be ambiguous and its rival must lie 5–20 native
+pixels outward at both ends. The inner rail requires signed
+backing-to-scene support at 80% of sampled stations. The outer rail
+must have less than 30%. Outside two transverse sides the backing
+has a matching periodic signal that breaks inside the print. Both
+views must then independently support a revised fourth rail within
+four pixels of each other. A measured enclosing four-side perimeter
+or an overlap with a current outline, a pending suggestion or an
+adjacent witness strip blocks the new offer. At most two search
+positions with two model views each are evaluated per page.
+
+On the original U008 development capture, the full page and the four
+ordinary tiles miss the complete swing photograph. The two new masks
+score 0.872 and 0.619 and agree at 0.940 IoU. The verified outline
+reaches 0.97586 IoU and covers 99.53% of the draft polygon on a
+1024-cell scoring raster. The upper projection remains inconclusive.
+U008 keeps all three active rows and its earlier pending print.
+The additional outline is a count suggestion. Its corner accuracy,
+physical aspect and motif footprint still need independently measured
+references.
+
+All 14 independent native replays preserve their active outlines.
+Only the original adds a pending outline. A separate replay tests both
+search directions on 56 encodings and source controls.
+An exact-window reproduction on one wide paper carrier can pass the
+local check when no claim is supplied, because both unprepared search
+windows contain the original pixels. Its overlapping active claim
+blocks the offer in the complete pipeline. A smaller enclosed dark
+carrier also fails the perimeter check. Pale and capture-clipped
+carriers can lack measurable closure. Physical count still requires
+explicit review.
+
+Nine JPEG, downscaling and quarter-turn derivatives of U008 produce
+no additional offer. The other four original spiral pages keep their
+active and pending outlines. The active detector matches 6 of 38 draft
+prints across this five-page development set. The new find is a pending
+count suggestion. In nine alternating warm single-thread runs, the
+median segmentation time on U008 was 2.82 s before the change and
+3.12 s after it. The tile review stage went from 0.87 s to 1.45 s.
+
+In normal multipart upload of a lossless PNG containing U008's exact
+decoded pixels, repeat analysis produces the same four corners and
+count revision. A linked, current and
+explicit paper confirmation adds one row. Exact request replay returns
+the saved row and preserves the other pending offer. Dismissing the
+offers leaves the count at three. After reprocessing and count
+confirmation, the 330 × 317 untrimmed preview is available. Both
+named exports and the legacy trimmed alias remain held with
+`PROJECTIVE_PRINT_OUTLINE_REVIEW`.
+The held preview's rendered footprint has 0.97882 IoU against the
+development paper drawing. The draft flags 45 omitted source centres
+and 1,835 rendered samples with some foreign contribution beyond its
+one-source-pixel tolerance band. The rounded corners still show some
+backing. The motif has no independent transform in this held state.
+The eight frozen and development reports retain their detection,
+mask, crop and review results. Their configuration fingerprints now
+record dense tile revision 13.
+The paired measurements, annotated original and API receipts are
+under `runs/crop-quality/regional-print-review/`.
+
 #### Require separate confirmation for an unsupported contrast outline
 
 The normal JPEG55 upload of U039 produced a held `contrast_region`
