@@ -1405,6 +1405,17 @@ liefert dafür eine Orientierung. Sie wird ausschliesslich in der Prüfung
 angeboten.
 [Motivvergleich beim unteren Hochzeitsabzug](data/evaluation/README.md#recover-a-held-motif-comparison-when-two-paper-sides-have-the-wrong-slant)
 
+Bei «Ganzer Abzug» kann ein schwacher weisser Papierrand ausserhalb
+einer dunklen Motivkante liegen. In der Zuschnittprüfung zeigt PhoSca
+violette Abschnitte, wenn sich zwei benachbarte schwache Übergänge im
+Original messen lassen. Prüfe den Papierrand rundum. Auch Albumkarton und
+Hüllen können ähnliche Linien erzeugen. Bestätige die am Original geprüften
+Papierecken ausdrücklich vor dem Speichern. PhoSca vermisst den Umriss
+erneut und lässt beide Modi in Prüfung, solange die Grenze mehrdeutig bleibt.
+Beansprucht ein anderer Vorschlag den Messstreifen, blendet PhoSca die
+Abschnitte aus. Die Prüfung der Papierkontur bleibt erforderlich.
+[Schwacher Papierrand beim Brautporträt](data/evaluation/README.md#show-two-faint-transitions-beyond-the-image-edge)
+
 | Aktion | Verhalten |
 | --- | --- |
 | Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |

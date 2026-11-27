@@ -240,11 +240,11 @@ def partial_motif_seams(
     return traces
 
 
-def motif_seams_intersect_claim(traces: list[np.ndarray], claim: np.ndarray) -> bool:
+def motif_seams_intersect_claim(traces: list[np.ndarray], claim: np.ndarray, *, margin_px: float = 2.) -> bool:
     """Check each guide's source-pixel buffer, including between measured knots."""
     hull = cv2.convexHull(claim)
     return any(
-        cv2.intersectConvexConvex(cv2.convexHull((trace[:, None] + _GUIDE_MARGIN).reshape(-1, 2)), hull)[0] > 0
+        cv2.intersectConvexConvex(cv2.convexHull((trace[:, None] + _GUIDE_MARGIN * (margin_px / 2.)).reshape(-1, 2)), hull)[0] > 0
         for trace in traces
     )
 

@@ -58,6 +58,7 @@ from app.pipeline.dl_enhancement import dl_enhance_photo
 from app.pipeline.edge_prints import capture_edge_requires_review
 from app.pipeline.enhancement import conservative_enhance_photo, prepare_for_cutout
 from app.pipeline.exif import write_caption_exif
+from app.pipeline.faint_paper_review import FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION
 from app.pipeline.fragmented_prints import SOURCE_FRAGMENT_PROPOSAL
 from app.pipeline.film_neighbor_edge import FILM_NEIGHBOR_EDGE, film_neighbor_edge
 from app.pipeline.fusion_ownership import NESTED_EDGE_CONTOUR, NESTED_EDGE_CONTOUR_REVIEW, deferred_neighbor_masks
@@ -73,6 +74,7 @@ from app.pipeline.manual_paper_boundary import (
     shared_rim_cut_reference,
 )
 from app.pipeline.merged_print_review import MERGED_PRINT_PAIR
+from app.pipeline.motif_comparison import MOTIF_COMPARISON_PAPER_EDIT
 from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_ocr
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
 from app.pipeline.page_plane import MeasuredPrintReference, PrintPagePlane
@@ -572,7 +574,12 @@ async def perspective_correction_task_logic(
     mark_recheck = reviewed_mark and (stale_mark or
         (previous.get("protected_regions") or {}).get("reviewed_album_mark_id") != reviewed_mark["id"])
     modes = previous.get("crop_modes") or {}
-    prior_contact_check = automatic_detection and (modes.get("full_print") or {}).get(CONTACT_PRINT_EDGE_CHECK) is True
+    prior_whole_print = modes.get("full_print") or {}
+    prior_contact_check = automatic_detection and prior_whole_print.get(CONTACT_PRINT_EDGE_CHECK) is True
+    prior_paper_checks = {
+        check: True for check in (FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION, MOTIF_COMPARISON_PAPER_EDIT)
+        if automatic_detection and prior_whole_print.get(check) is True
+    }
     boundary_check = previous.get("manual_paper_boundary") or {}
     boundary_recheck = boundary_needs_review and (
         boundary_check.get("revision") != MANUAL_PAPER_BOUNDARY_REVISION
@@ -608,7 +615,8 @@ async def perspective_correction_task_logic(
             }
     stage = await start_stage(session, run, "perspective_correction", input_path=Path(photo.page.storage_path))
 
-    precise_crops = (settings.enable_precise_photo_crops or mask.get("manual_added") is True or contrast_outline or prior_contact_check
+    precise_crops = (settings.enable_precise_photo_crops or mask.get("manual_added") is True or contrast_outline
+                     or prior_contact_check or bool(prior_paper_checks)
                      or mask.get(REVIEWED_CROSSING_OUTLINE) is True or bool(mask.get("crossing_print_suggestion"))
                      or bool(mask.get(PARTIAL_PRINT_EXTENT_TRACES))
                      or MERGED_PRINT_PAIR in mask
@@ -753,6 +761,7 @@ async def perspective_correction_task_logic(
             }
             if prior_contact_check:
                 metadata["correction"]["crop_modes"]["full_print"][CONTACT_PRINT_EDGE_CHECK] = True
+            metadata["correction"]["crop_modes"]["full_print"].update(prior_paper_checks)
         photo.enhancement_applied = metadata
         session.add(
             AuditLog(entity_type="photo", entity_id=photo.id, action="correction_rejected", details={"reason": reason})
@@ -792,6 +801,11 @@ async def perspective_correction_task_logic(
             whole_print[FILM_NEIGHBOR_EDGE] = evidence
     if crop_modes and prior_contact_check:
         crop_modes["full_print"][CONTACT_PRINT_EDGE_CHECK] = True
+        route_ready_crop_modes_to_review(crop_modes, [PRINT_EDGE_CONFIRMATION])
+    if prior_paper_checks and whole_print and (
+        whole_print.get("status") == "review_needed" or whole_print.get("warp_quad") == prior_whole_print.get("warp_quad")
+    ):
+        whole_print.update(prior_paper_checks)
         route_ready_crop_modes_to_review(crop_modes, [PRINT_EDGE_CONFIRMATION])
     orientation_reason = (correction_metadata.get("orientation") or {}).get("reason_code")
     camera_aspect = page_camera is not None and (

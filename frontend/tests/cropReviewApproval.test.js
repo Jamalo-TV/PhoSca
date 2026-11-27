@@ -59,6 +59,21 @@ test("a held model motif comparison requires separate confirmation of the physic
   assert.equal(contactEdgesNeedRefresh(photo, mode), false);
 });
 
+test("a held faint paper edge needs explicit confirmation even if its guide is retired", () => {
+  const photo = { confidence: .81, segmentation_mask: { detector_source: "yolo_onnx" } };
+  const full = { status: "review_needed", reason_codes: ["PRINT_CORNERS_UNCERTAIN"], faint_paper_review_requires_confirmation: true };
+  assert.equal(contrastOutlineNeedsConfirmation(photo, full), true);
+  assert.equal(contrastOutlineNeedsConfirmation({ ...photo, confidence: null }, full), false);
+  assert.equal(contrastOutlineNeedsConfirmation(photo, { ...full, reason_codes: ["PRINT_AT_CAPTURE_EDGE"] }), false);
+  assert.equal(contactEdgesNeedRefresh(photo, full), false);
+
+  const unrelated = { ...full, faint_paper_review_requires_confirmation: false, suggested_edge_source: "adjacent_faint_paper_steps" };
+  assert.equal(contrastOutlineNeedsConfirmation(photo, unrelated), false);
+  assert.equal(contrastOutlineNeedsConfirmation(photo, { ...full, status: "ready" }), false);
+  const fallback = { ...photo, segmentation_mask: { detector_source: "contrast_region" } };
+  assert.equal(contrastOutlineNeedsConfirmation(fallback, full), false);
+});
+
 test("the current whole-print URL controls geometry approval even when a mode says ready", () => {
   const urls = { full_print: null, full_print_preview: "/comparison", image_only: "/motif" };
   assert.equal(wholePrintApprovalHeld({ full_print: { status: "review_needed" } }, urls), true);

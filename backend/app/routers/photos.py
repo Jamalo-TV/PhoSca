@@ -50,6 +50,9 @@ from app.pipeline.manual_paper_boundary import (
 from app.pipeline.merged_print_review import MERGED_PRINT_PAIR
 from app.pipeline.motif_boundary import PARTIAL_MOTIF_SEAMS
 from app.pipeline.motif_comparison import MEASURED_MOTIF_COMPARISON, MOTIF_COMPARISON_PAPER_EDIT
+from app.pipeline.faint_paper_review import (
+    ADJACENT_FAINT_PAPER_STEPS, FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION, FAINT_PAPER_WITNESS_MARGIN,
+)
 from app.pipeline.motif_margin import HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
@@ -390,6 +393,12 @@ async def _review_overlapping_crops(
             neighbor.enhancement_applied = metadata
         if (full_mode.get("suggested_edge_source") == VISIBLE_SCENE_EDGE and full_mode.get("warp_quad")
                 and review_outline_intersects_claim(full_mode["warp_quad"], mask, width, height)):
+            full_mode.pop("suggested_edge_source", None)
+            full_mode.pop("suggested_edge_traces", None)
+            neighbor.enhancement_applied = metadata
+        if full_mode.get("suggested_edge_source") == ADJACENT_FAINT_PAPER_STEPS and review_traces_intersect_claim(
+            full_mode.get("suggested_edge_traces") or [], mask, width, height, margin_px=FAINT_PAPER_WITNESS_MARGIN,
+        ):
             full_mode.pop("suggested_edge_source", None)
             full_mode.pop("suggested_edge_traces", None)
             neighbor.enhancement_applied = metadata
@@ -1092,8 +1101,9 @@ async def update_photo_bounding_box(
         shared_rim_traces = saved_review.get("shared_rim_cut_traces") or shared_rim_cut_reference(correction)
         explicit = payload.segmentation_mask is not None and payload.segmentation_mask.warp_quad is not None
         detector_source = original_mask.get("detector_source")
-        motif_comparison = detector_source == "yolo_onnx" and full_print.get(MOTIF_COMPARISON_PAPER_EDIT) is True
-        if photo.segmentation_confidence is not None and motif_comparison:
+        measured_paper_edit = detector_source == "yolo_onnx" and full_print.get(MOTIF_COMPARISON_PAPER_EDIT) is True
+        faint_paper = detector_source == "yolo_onnx" and full_print.get(FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION) is True
+        if photo.segmentation_confidence is not None and measured_paper_edit:
             outer = segmentation_mask.get("warp_quad") or []
             motif_mode = (correction.get("crop_modes") or {}).get("image_only") or {}
             if (not explicit or segmentation_mask.get("image_quad") is not None
@@ -1108,7 +1118,7 @@ async def update_photo_bounding_box(
                                 and "PRINT_BOUNDARY_UNSUPPORTED" in (full_print.get("reason_codes") or []))
         confirm_contrast_outline = (
             photo.segmentation_confidence is not None and full_print.get("status") == "review_needed"
-            and (contact_outline or opposing_outline or unsupported_contrast or motif_comparison)
+            and (contact_outline or opposing_outline or unsupported_contrast or measured_paper_edit or faint_paper)
             and not capture_outline_review_required(full_print)
         )
         if confirm_contrast_outline:

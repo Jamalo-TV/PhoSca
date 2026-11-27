@@ -21,6 +21,7 @@ from app.pipeline.crossing_prints import CROSSING_PRINT_REVISION
 from app.pipeline.dark_album_review import DARK_ALBUM_REVIEW_REVISION
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.edge_prints import CAPTURE_EDGE_REVISION
+from app.pipeline.faint_paper_review import FAINT_PAPER_REVIEW_REVISION
 from app.pipeline.fragmented_prints import COMPACT_SCENE_CROSSING_REVISION, FRAGMENTED_PRINT_REVISION
 from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_REVISION
 from app.pipeline.fusion_ownership import FUSION_OWNERSHIP_REVISION
@@ -73,6 +74,9 @@ def crop_validation_profile(settings: Settings) -> dict:
         "crop_sampling": OWNED_BILINEAR if settings.enable_precise_photo_crops else None,
         "page_plane_preview": 2 if settings.enable_precise_photo_crops else None,
         "print_boundary": PRINT_BOUNDARY_REVISION if settings.enable_precise_photo_crops else None,
+        "faint_paper_review": (
+            FAINT_PAPER_REVIEW_REVISION if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+        ),
         "print_outline_suggestion": (
             PRINT_OUTLINE_SUGGESTION_REVISION
             if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None

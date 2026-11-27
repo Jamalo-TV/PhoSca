@@ -52,6 +52,9 @@ from app.pipeline.motif_margin import (
     HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE, held_print_motif_margin_marks, motif_margin_marks,
 )
 from app.pipeline.motif_comparison import MEASURED_MOTIF_COMPARISON, MOTIF_COMPARISON_PAPER_EDIT, measured_motif_comparison
+from app.pipeline.faint_paper_review import (
+    ADJACENT_FAINT_PAPER_STEPS, FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION, FAINT_PAPER_WITNESS_MARGIN, adjacent_faint_paper_steps,
+)
 from app.pipeline.mounted_edge_preview import suggest_mounted_strip_preview
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT, manual_margin_advisory, off_print_advisory_regions
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
@@ -1096,15 +1099,15 @@ def review_outline_intersects_claim(
 
 
 def review_traces_intersect_claim(
-    guides: list[list[dict]], claim: dict, width: int, height: int,
+    guides: list[list[dict]], claim: dict, width: int, height: int, *, margin_px: float = 2.,
 ) -> bool:
     try:
         traces = [normalized_vertices_to_pixels([(p["x"], p["y"]) for p in guide], width, height) for guide in guides]
         visible = _proposal_polygon(claim, width, height)
-        if visible is not None and motif_seams_intersect_claim(traces, visible):
+        if visible is not None and motif_seams_intersect_claim(traces, visible, margin_px=margin_px):
             return True
         paper = _explicit_quad(claim, "warp_quad", width, height)
-        return paper is not None and motif_seams_intersect_claim(traces, paper)
+        return paper is not None and motif_seams_intersect_claim(traces, paper, margin_px=margin_px)
     except (KeyError, TypeError, ValueError, cv2.error):
         return False
 
@@ -2352,6 +2355,23 @@ def correct_photo_crop(
                 full_mode["suggested_edge_traces"] = [_vertices_on_page(trace, width, height) for trace in traces]
                 full_mode["suggested_edge_source"] = POSSIBLE_BACKED_PAPER_EDGE
         uncertain_edges = set(full_reasons)
+        if (enable_classical_retry and not manual and mask.get("source") == "yolo_seg_mask"
+                and mask.get("detector_source") == "yolo_onnx" and protection["passed"]
+                and uncertain_edges == {"PRINT_CORNERS_UNCERTAIN"}
+                and all(mode["status"] == "review_needed" for mode in modes.values())
+                and not any(full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview"))
+                and not any(mask.get(key) for key in ("warp_quad", *_STOCK_REVIEW_CONFLICTS))):
+            try:
+                faint = [_vertices_on_page(trace, width, height) for trace in adjacent_faint_paper_steps(page_image, src_points)]
+                claims = [*(neighbor_masks or []), *(deferred_print_proposals or [])]
+                if faint:
+                    full_mode[FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION] = True
+                    if not any(review_traces_intersect_claim(faint, claim, width, height, margin_px=FAINT_PAPER_WITNESS_MARGIN)
+                               for claim in claims):
+                        full_mode["suggested_edge_traces"] = faint
+                        full_mode["suggested_edge_source"] = ADJACENT_FAINT_PAPER_STEPS
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                pass  # These source spans are optional in the existing corner review.
         slanted = (mask.get("detector_source") == "yolo_onnx"
                    and not any(mask.get(key) for key in _STOCK_REVIEW_CONFLICTS)
                    and uncertain_edges == {"PRINT_OUTER_RIM_UNCERTAIN", "PRINT_BOUNDARY_UNSUPPORTED",

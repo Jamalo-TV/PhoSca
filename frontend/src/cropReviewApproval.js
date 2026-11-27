@@ -9,10 +9,11 @@ export function contrastOutlineNeedsConfirmation(photo, fullPrint) {
   const contact = fullPrint?.contact_print_edge_check_required === true && ["contrast_region", "yolo_onnx"].includes(source);
   const opposingEdges = fullPrint?.opposing_outer_edges_check_required === true && source === "yolo_onnx";
   const motifComparison = fullPrint?.motif_comparison_requires_paper_edit === true && source === "yolo_onnx";
+  const faintPaper = fullPrint?.faint_paper_review_requires_confirmation === true && source === "yolo_onnx";
   const unsupportedContrast = source === "contrast_region" && reasons.includes("PRINT_BOUNDARY_UNSUPPORTED");
   return confidence != null
     && fullPrint?.status === "review_needed"
-    && (contact || opposingEdges || motifComparison || unsupportedContrast)
+    && (contact || opposingEdges || motifComparison || faintPaper || unsupportedContrast)
     && !reasons.includes("PRINT_AT_CAPTURE_EDGE");
 }
 

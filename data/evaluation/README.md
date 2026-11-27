@@ -10049,6 +10049,65 @@ geometry and review results, including 18/18 detections and 23/23 seeded
 recoverable crops. Evidence, replays and source graphics are under
 `runs/crop-quality/u093-measured-motif-comparison/`.
 
+### Show two faint transitions beyond the image edge
+
+Cluster 1 is the upper bridal portrait on U093 and in the wider U065
+capture. Fifty-nine of 80 local scene correspondences fit this match,
+with 0.60 native U093 pixel median residual and 1.50 pixels at p95.
+The white print border is visible to the left and below the motif. The
+early model mask reaches the left region but ends above the lower paper
+edge. The perspective fit follows much stronger image transitions on
+both sides. The existing source-mode reason is `PRINT_CORNERS_UNCERTAIN`.
+
+The current 344 × 495 work raster omits 16,306 source centres relative
+to a directly measured optical stock draft. A draft inset by six native
+pixels still leaves 10,898 centres outside the warp. On the directly
+measured lower motif edge, samples one pixel inside the ink line stay
+within the one-pixel cutoff tolerance. This example shows
+loss of the pale print margin. The complete paper shape and any foreign
+interpolation outside it are sensitive to the draft. Transferring the
+other view's provisional corners differs by 9–19 native U093 pixels.
+
+When both modes have held corner geometry, two adjacent scene edges must
+repeat under a narrow original-pixel fit and show pale material on their
+outside. On each side the new search checks a compact light ridge or dark
+dip against two local flank widths. Evidence must be distributed along
+the run. Competing fits and repeated neighboring ridges suppress the guide.
+The two supported profiles have opposite polarity in this scope and must
+meet near the current corner. PhoSca displays only the measured spans. The
+U093 spans are about 420 native pixels long on the left and 236 below.
+They follow local optical feature centres a few pixels inside a provisional
+outer draft. They are suitable for inspecting the original. At least eight
+pixels of clearance are checked around each span against active and deferred
+claims. A later claim in this collar retires both spans.
+
+The exact source and fixed-mask turns retain both spans in the JPEG95,
+JPEG85, JPEG75 and JPEG55 controls. The search takes about 65 ms of CPU
+time for the exact source on the development runner. The separate frozen bank includes 372
+optical variants. It yields spans for 16 of 20 actual-input derivatives
+and abstains on the broad step, chamfer and overlap families. Supplemental
+printed ridges and pinned sleeve highlights sometimes create the same
+source measurements. A periodic 16-pixel rib that previously passed the
+optical test is suppressed by the repetition check. These controls concern
+geometry guidance. Recognition on new encodings uses a separate replay.
+
+The normal upload preserves all four proposals and every previous crop
+byte. Only the upper portrait gets two open guides. On the previous branch
+desktop or mobile could save the unchanged model outline and expose the
+whole-print JPEG. Now an ordinary unchanged save returns 409. Explicitly
+confirming those same corners leads to a new native check. In U093 that
+check still reports `PRINT_BOUNDARY_AMBIGUOUS`, so named and legacy trimmed
+exports remain unavailable. The confirmation requirement remains after
+withdrawing the guides and reprocessing the stored original. The exact
+upload, rendering, native profiles and UI receipts are under
+`runs/crop-quality/u093-adjacent-faint-paper-review/`.
+
+Across the eight frozen and development benchmark comparisons, the
+instance, geometry, preview and review outcomes are identical to the
+previous branch. The locked run detects all 18 expected prints. Seeded
+geometry passes all 11 recoverable whole-print and 12 recoverable
+image-only crops. No additional benchmark crop enters review.
+
 ### Review a fallback outline crossing the album edge
 
 The same Golden 26 180° JPEG75 development raster has a third false

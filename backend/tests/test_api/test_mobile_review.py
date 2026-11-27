@@ -2394,6 +2394,55 @@ async def test_measured_motif_comparison_requires_a_distinct_confirmed_paper_out
         assert (await client.get(f"{url}/image", params={"variant": variant})).status_code == 404
 
 
+async def test_faint_outward_review_retains_confirmation_after_a_neighbor_claim_and_retry(client, monkeypatch):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.faint_paper_review import ADJACENT_FAINT_PAPER_STEPS, FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    _, page_id, photo_id = await _seed_review_data()
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        quad = photo.segmentation_mask["warp_quad"]
+        box = photo.bounding_box
+        photo.segmentation_mask = {"source": "yolo_seg_mask", "detector_source": "yolo_onnx", "polygon": quad}
+        modes = {name: {"status": "review_needed", "reason_codes": ["PRINT_CORNERS_UNCERTAIN"]}
+                 for name in ("full_print", "image_only")}
+        modes["full_print"].update({
+            "warp_quad": quad, FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION: True,
+            "suggested_edge_source": ADJACENT_FAINT_PAPER_STEPS,
+            "suggested_edge_traces": [[{"x": .20, "y": .18}, {"x": .65, "y": .18}],
+                                      [{"x": .08, "y": .23}, {"x": .08, "y": .62}]],
+        })
+        photo.enhancement_applied = {**photo.enhancement_applied, "correction": {"crop_modes": modes}}
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    request = {"bounding_box": box, "segmentation_mask": {"source": "manual_quad", "polygon": quad, "warp_quad": quad}}
+    unconfirmed = await client.patch(f"{url}/bounding-box", json=request)
+    assert (unconfirmed.status_code, unconfirmed.json()["detail"]) == (409, "contrast_print_outline_review_required")
+
+    neighbor = [{"x": x, "y": y} for x, y in ((.36, .01), (.61, .01), (.61, .13), (.36, .13))]
+    added = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={"request_id": str(uuid4()), "warp_quad": neighbor})
+    assert added.status_code == 201, added.text
+    for reprocess in (False, True):
+        if reprocess:
+            assert (await client.post(f"{url}/reprocess")).status_code == 200
+        full = (await client.get(url)).json()["enhancement_applied"]["correction"]["crop_modes"]["full_print"]
+        assert full[FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION] is True
+        assert "suggested_edge_traces" not in full
+        assert (await client.patch(f"{url}/bounding-box", json=request)).status_code == 409
+
+    confirmed = await client.patch(f"{url}/bounding-box", json={**request, "confirm_print_outline": True})
+    assert confirmed.status_code == 200, confirmed.text
+    for name in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image", params={"variant": name})).status_code == 404
+
+
 @pytest.mark.parametrize(("detector_source", "edge_guide"), [
     ("contrast_region", None), ("contrast_region", "contact"), ("yolo_onnx", "contact"), ("yolo_onnx", "opposing"),
 ])
