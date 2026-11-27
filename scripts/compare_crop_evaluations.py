@@ -44,6 +44,15 @@ def reference_identity(report: dict) -> tuple:
 def compare(baseline: dict, candidate: dict) -> dict:
     if reference_identity(baseline) != reference_identity(candidate):
         raise ValueError("Reports must use the same fixture inventory, split and scoring IoU")
+    matched_input_identities = 0
+    for before, after in zip(baseline["fixtures"], candidate["fixtures"], strict=True):
+        older = before.get("scoring_input_identity")
+        newer = after.get("scoring_input_identity")
+        if older is None or newer is None:
+            continue
+        if older != newer:
+            raise ValueError(f"Scoring input bytes or geometry differ for {before['fixture']!r}")
+        matched_input_identities += 1
     previous, current = reference_rows(baseline), reference_rows(candidate)
     reference_fields = ("verified", "recoverable", "difficulty")
     if (previous.keys() != current.keys() or any(
@@ -101,7 +110,8 @@ def compare(baseline: dict, candidate: dict) -> dict:
             "runtime": report["runtime"],
         }
 
-    return {"baseline": summary(baseline), "candidate": summary(candidate), "crop_modes": modes}
+    return {"baseline": summary(baseline), "candidate": summary(candidate), "crop_modes": modes,
+            "matched_input_identities": matched_input_identities, "fixture_count": len(baseline["fixtures"])}
 
 
 def main() -> None:

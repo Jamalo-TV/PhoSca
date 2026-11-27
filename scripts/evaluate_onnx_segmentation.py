@@ -138,6 +138,31 @@ def _reference_bytes(path: Path, pinned_hash: str | None) -> bytes:
     return payload
 
 
+def _raster_identity(image: np.ndarray) -> str:
+    raster = np.ascontiguousarray(image)
+    digest = sha256(f"{raster.shape}:{raster.dtype.str}:".encode())
+    digest.update(memoryview(raster).cast("B"))
+    return digest.hexdigest()
+
+
+def _scoring_input_identity(image, expected, references) -> dict[str, str]:
+    measurement_fields = ("corners", "shape", "expected_aspect_ratio", "source_landmarks", "landmarks")
+    state_fields = ("recoverable", "verified", "aspect_reference", "native_instance_mask")
+    modes = []
+    for print_references in references:
+        geometry = {}
+        for name, ref in print_references.items():
+            geometry[name] = {
+                **{key: np.asarray(ref[key]).tolist() for key in measurement_fields if ref.get(key) is not None},
+                **{key: ref[key] for key in state_fields if key in ref},
+                "mask_sha256": _raster_identity(ref["mask"]),
+            }
+        modes.append(geometry)
+    reference_payload = json.dumps({"instances": [_points(polygon) for polygon in expected], "modes": modes},
+                                   sort_keys=True, separators=(",", ":"))
+    return {"raster_sha256": _raster_identity(image), "reference_sha256": sha256(reference_payload.encode()).hexdigest()}
+
+
 def _has_disjoint_calibration_holdout(settings, records, detector_profile) -> bool:
     from app.pipeline.training_provenance import disjoint_sources
 
@@ -1196,6 +1221,7 @@ def main() -> None:
                 ))
             fixture = {
                 "fixture": record["id"], "expected": len(expected), "detected": len(detected),
+                "scoring_input_identity": _scoring_input_identity(image, expected, references),
                 "native_instance_mask_count": sum(mask is not None for mask in native_truth_masks),
                 "page_category": record.get("page_category"), "difficulty_tags": record.get("difficulty_tags", []),
                 "source_group": record.get("source_group"), "annotation_provenance": record.get("annotation_provenance"),

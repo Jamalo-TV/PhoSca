@@ -3237,6 +3237,10 @@ Geometry means use reference rows with measurements from both runs. The
 report counts crops that passed before and now enter review despite meeting
 the geometry checks. It includes the validation profiles, native corner and
 landmark errors, aspect, cutoff, foreign interpolation counts and timing.
+Each new evaluator report fingerprints the decoded page pixels and the
+polygons, masks and measurements used for scoring. The comparator refuses
+a mismatch even when fixture names are identical. With older reports it
+states how many fixture fingerprints it could compare.
 
 #### Replace eight controls with visibly distinct paper-owned cases
 

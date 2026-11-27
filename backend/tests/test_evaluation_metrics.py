@@ -41,6 +41,37 @@ def test_crop_report_comparison_shows_geometry_changes_and_new_review_cases() ->
     }
 
 
+@pytest.mark.parametrize("changed_source", [True, False])
+def test_crop_comparison_requires_same_scoring_inputs(changed_source: bool) -> None:
+    import numpy as np
+
+    from scripts.compare_crop_evaluations import compare
+    from scripts.evaluate_onnx_segmentation import _scoring_input_identity
+
+    image = np.zeros((3, 4, 3), dtype=np.uint8)
+    mask = np.ones((3, 4), dtype=np.uint8)
+    outline = [[(0, 0), (1, 0), (1, 1), (0, 1)]]
+    references = [{"full_print": {"mask": mask}}]
+    identity = _scoring_input_identity(image, outline, references)
+    report = {
+        "split": {}, "dataset_manifest_sha256": None, "iou_threshold": .85, "model_sha256": None,
+        "metrics": {"totals": {}}, "runtime": {}, "crop_modes": {}, "crop_mode_availability": {},
+        "fixtures": [{"source_group": None, "fixture": "same-name", "expected": 1,
+                      "annotation_provenance": None, "crop_modes": [], "scoring_input_identity": identity}],
+    }
+    assert compare(report, report)["matched_input_identities"] == 1
+    if changed_source:
+        image[1, 2, 0] = 1
+    else:
+        mask[1, 2] = 0
+    different = _scoring_input_identity(image, outline, references)
+    candidate = {**report, "fixtures": [{**report["fixtures"][0], "scoring_input_identity": different}]}
+    field = "raster_sha256" if changed_source else "reference_sha256"
+    assert [key for key in identity if identity[key] != different[key]] == [field]
+    with pytest.raises(ValueError, match="Scoring input bytes or geometry differ for 'same-name'"):
+        compare(report, candidate)
+
+
 def test_orientation_evaluation_applies_the_reference_correction_after_each_rotation(tmp_path, monkeypatch) -> None:
     from hashlib import sha256
     import json
