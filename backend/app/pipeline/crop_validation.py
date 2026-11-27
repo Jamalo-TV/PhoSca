@@ -34,6 +34,7 @@ from app.pipeline.projective_prints import PROJECTIVE_PRINT_REVISION
 from app.pipeline.protected_regions import PROTECTED_REGION_REVISION
 from app.pipeline.source_strip_review import SOURCE_STRIP_REVIEW_REVISION
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
+from app.pipeline.rounded_corner_review import ROUNDED_CORNER_REVISION
 from app.pipeline.segmentation_filter import SOURCE_CONTOUR_REVISION
 from app.pipeline.source_fragment_review import SOURCE_FRAGMENT_REVIEW_REVISION
 from app.pipeline.training_provenance import (
@@ -150,6 +151,7 @@ def crop_validation_profile(settings: Settings) -> dict:
             SCALLOPED_PRINT_REVISION
             if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
         ),
+        "manual_corner_shape_review": ROUNDED_CORNER_REVISION if settings.enable_protected_region_guard else None,
         "capture_edge_outline": (
             CAPTURE_EDGE_REVISION
             if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None

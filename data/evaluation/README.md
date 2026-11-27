@@ -2451,6 +2451,66 @@ geometry and crop availability results.
 The API receipts and comparison are under
 `runs/crop-quality/manual-outside-margin-review/`.
 
+#### Compare supported corner shapes on a manually added print
+
+Manual corner review revision 1 is evaluated on manually added prints
+with a short side of 150 to 650 native pixels. It requires the active
+protected-region guard and no unresolved protection or paper boundary
+conflict. For each corner, two exposed side bands must agree on the
+warm backing chroma. At least 81% of each band must be within eight
+CIELAB chroma units of the shared backing estimate. The source must
+support a continuous transition on at least seven consecutive rays
+out of twelve. The trace uses the measured positions and allows
+departures from a fixed circle.
+
+The comparison removes a smaller wedge behind each accepted trace,
+with a 2.05-pixel clearance in the near-native local coordinate
+system. The proposed wedges are sampled separately at half-pixel
+spacing. At least 99.5% of those samples must match the backing within
+eight CIELAB chroma units. At least 94% must match the extrapolated
+rib phase within eleven lightness units. The phase comes from three
+exposed columns outside the crop. The comparison needs at least two
+supported corners. Other paper claims and protected regions veto
+intersecting corner evidence. The separate RGBA preview uses the
+existing premultiplied ownership sampler. The paper warp and original
+JPEG are preserved. The comparison covers the recorded rectangle.
+Unmeasured backing and visible paper beyond it require a separate
+check.
+
+The active record retains the corner hold across edits, source proof
+loss and reprocessing. The named crop downloads and legacy cropped
+alias remain unavailable, even when a paper size is supplied or all
+four corners are moved inwards. An overlapping claim invalidates the
+affected corner comparison, while a stale protection confirmation
+also prevents access to that preview. The untrimmed preview is
+available for review. The normal crop acceptance gates stay separate.
+
+On the native U008 source the comparison supports the upper left,
+upper right and lower left corners. A conservative optical agreement
+mask from three separate chroma-threshold fits finds 114
+backing pixels within the original marked rectangle and 70 still
+present in the comparison. The number of output pixels sampling those
+confirmed backing pixels falls from 166 to 115. The comparison loses
+no source pixel within the rectangle that the mask identifies as
+visible paper. At least 265 other visible source pixels lie beyond the
+marked rectangle in this development measurement. The lower right
+corner, the rest of the outer contour and the paper aspect remain
+unresolved. These numbers are optical development measurements.
+Physical verification of the reference outline remains pending.
+
+The native helper agrees on the original and two of eight JPEG
+controls at fixed geometry. A flat rounded design printed on a square
+sheet and a square image reaching the paper edges trigger no offer.
+A paper mount suppresses the affected corner. A facsimile with the
+same local pixels can produce the same review. A low-quality JPEG
+control of a bevel with perturbed corners shows one lost foreground
+center in its comparison. Both export modes stay held.
+The helper took 3.6 ms median and 6.6 ms p95 over 20 warm trials.
+The eight benchmark comparisons match the preceding detection, crop
+metrics and availability outcomes. Native upload, revision, continued
+review and download status are recorded under
+`runs/crop-quality/rounded-corner-review/`.
+
 #### Review fabric along the capture frame
 
 Fusion ownership revision 7 measures otherwise unresolved, aspect-invalid

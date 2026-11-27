@@ -81,6 +81,7 @@ from app.pipeline.protected_regions import (
     OFF_PRINT_ADVISORY, album_mark_matches_quad, album_mark_source_matches, detect_protected_regions, is_advisory_page_face,
     protected_region_digest, protected_region_key, region_box_in_pixels,
 )
+from app.pipeline.rounded_corner_review import ROUNDED_CORNER_SOURCE, ROUNDED_CORNER_WEDGES
 from app.pipeline.quality import segmentation_review_reasons
 from app.pipeline.segmentation import segment_album_page
 from app.pipeline.variants import (
@@ -164,6 +165,7 @@ async def photo_views_for_current_album_marks(
         view.status = PhotoStatus.review_needed
         metadata = deepcopy(view.enhancement_applied)
         correction = metadata.get("correction") or {}
+        retire_rounded_corner_preview(correction)
         (correction.get("protected_regions") or {}).pop("reviewed_album_mark_id", None)
         for mode in (correction.get("crop_modes") or {}).values():
             mode["status"] = "review_needed"
@@ -173,6 +175,16 @@ async def photo_views_for_current_album_marks(
         view.enhancement_applied = metadata
         views.append(view)
     return views
+
+
+def retire_rounded_corner_preview(correction: dict) -> None:
+    full = (correction.get("crop_modes") or {}).get("full_print") or {}
+    if full.get("suggested_edge_source") != ROUNDED_CORNER_SOURCE:
+        return
+    for field in ("outline_preview", "suggested_edge_source", "suggested_edge_traces", ROUNDED_CORNER_WEDGES):
+        full.pop(field, None)
+    correction.pop(f"{FULL_PRINT_REVIEW_PREVIEW}_path", None)
+    correction.pop(f"{FULL_PRINT_REVIEW_PREVIEW}_asset_id", None)
 
 
 def page_fusion_evidence(metadata: dict | None) -> dict:
@@ -844,6 +856,8 @@ async def perspective_correction_task_logic(
         photo.segmentation_mask = {**mask, MANUAL_MARGIN_CONTEXT: {
             "region": mark["region"], "padded_outline": mark["padded_outline"],
         }}
+    if (corners := (full_mode or {}).get(ROUNDED_CORNER_WEDGES)) and ROUNDED_CORNER_WEDGES not in mask:
+        photo.segmentation_mask = {**photo.segmentation_mask, ROUNDED_CORNER_WEDGES: corners}
     if (automatic_detection or manual_margin) and isinstance(protected_regions, list):
         offer = _album_mark_review_offer(photo.page, page_image, stage.id, correction_metadata, protected_regions)
         if offer is not None:

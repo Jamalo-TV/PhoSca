@@ -54,6 +54,7 @@ from app.pipeline.presets import available_presets
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
 from app.pipeline.protected_regions import OFF_PRINT_ADVISORY, ProtectedRegionRemoval, album_mark_matches_quad, album_mark_source_matches
+from app.pipeline.rounded_corner_review import ROUNDED_CORNER_SOURCE, ROUNDED_CORNER_WEDGES
 from app.pipeline.tile_print_review import TILED_PRINT_PROPOSAL, tiled_outline_conflicts
 from app.pipeline.variants import (
     CROP_REVIEW_PREVIEWS,
@@ -75,6 +76,7 @@ from app.services.pipeline import (
     perspective_correction_task_logic,
     photo_views_for_current_album_marks,
     resolve_nested_edge_parent_reviews,
+    retire_rounded_corner_preview,
     retire_source_fragment_proposals,
 )
 
@@ -340,6 +342,11 @@ async def _review_overlapping_crops(
                 metadata["review_reasons"] = list(dict.fromkeys([reason, *(metadata.get("review_reasons") or [])]))
                 neighbor.status = PhotoStatus.review_needed
             neighbor.enhancement_applied = metadata
+        if full_mode.get("suggested_edge_source") == ROUNDED_CORNER_SOURCE and any(
+            review_outline_intersects_claim(scope, mask, width, height) for scope in full_mode.get(ROUNDED_CORNER_WEDGES, [])
+        ):
+            retire_rounded_corner_preview(correction)
+            neighbor.enhancement_applied = metadata
         assisted_previews = (GRID_OUTLINE_REVIEW_SOURCE, POSSIBLE_OVEREXTENDED_PRINT_EDGE, INWARD_CORNER_REVIEW_SOURCE)
         measured_preview = preview_source in MEASURED_PRINT_PREVIEW_SOURCES
         fields = ("source_search_band", "source_inset_band") if measured_preview else ("source_outline",)
@@ -546,8 +553,11 @@ async def get_photo_image(
     if rejected and variant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
     selected_variant = variant or released_variant_from_photo(photo)
-    mark = ((photo.enhancement_applied or {}).get("review_provenance") or {}).get("reviewed_album_mark")
-    if mark and selected_variant in {"full_print", "image_only", "source_corrected_trimmed"}:
+    metadata = photo.enhancement_applied or {}
+    mark = (metadata.get("review_provenance") or {}).get("reviewed_album_mark")
+    mode = (((metadata.get("correction") or {}).get("crop_modes") or {}).get("full_print") or {})
+    rounded_preview = selected_variant == FULL_PRINT_REVIEW_PREVIEW and mode.get("suggested_edge_source") == ROUNDED_CORNER_SOURCE
+    if mark and (selected_variant in {"full_print", "image_only", "source_corrected_trimmed"} or rounded_preview):
         page = await session.get(Page, photo.page_id)
         if (page is None or not get_settings().enable_protected_region_guard
                 or not album_mark_source_matches(mark, page.file_hash_sha256, page.processing_metadata)):
@@ -992,6 +1002,8 @@ async def update_photo_bounding_box(
                 segmentation_mask[flag] = True
         if margin_state := original_mask.get(MANUAL_MARGIN_CONTEXT):
             segmentation_mask[MANUAL_MARGIN_CONTEXT] = deepcopy(margin_state)
+        if corner_state := original_mask.get(ROUNDED_CORNER_WEDGES):
+            segmentation_mask[ROUNDED_CORNER_WEDGES] = deepcopy(corner_state)
         # A paper edit does not settle a separate mark in the proposed motif margin.
         motif_mode = (correction.get("crop_modes") or {}).get("image_only") or {}
         margin_regions = original_mask.get("paper_stock_margin_regions")

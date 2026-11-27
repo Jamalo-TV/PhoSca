@@ -847,6 +847,96 @@ async def test_manual_print_margin_review_keeps_core_and_binds_confirmation(clie
     assert (await exports())[:3] == [404, 404, 404]
 
 
+async def test_manual_corner_shape_remains_in_review_with_dimensions_and_late_claim(client, monkeypatch, rounded_corner_page):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline import perspective
+    from app.pipeline.rounded_corner_review import ROUNDED_CORNER_REVIEW, ROUNDED_CORNER_SOURCE, ROUNDED_CORNER_WEDGES
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
+    get_settings.cache_clear()
+    raster, native, *_ = rounded_corner_page
+    _, page_id, other_id = await _seed_review_data(raster)
+
+    def to_normalized(points):
+        return [{"x": float(x) / 484, "y": float(y) / 484} for x, y in points]
+
+    async with get_session_factory()() as session:
+        other = await session.get(ExtractedPhoto, other_id)
+        other.segmentation_mask = {"polygon": to_normalized([(438, 30), (478, 30), (478, 95), (438, 95)])}
+        await session.commit()
+
+    size = {"width": 123, "height": 124}
+    quad = to_normalized(native)
+    page_url = f"/api/v1/pages/{page_id}/manual-photos"
+    created = await client.post(page_url, json={"request_id": str(uuid4()), "warp_quad": quad})
+    assert created.status_code == 201, created.text
+    photo = created.json()
+    url = f"/api/v1/photos/{photo['id']}"
+    correction = photo["enhancement_applied"]["correction"]
+    mode = correction["crop_modes"]["full_print"]
+    assert mode["outline_preview"]["source"] == ROUNDED_CORNER_SOURCE
+    assert mode["warp_quad"] == correction["warp_quad"]
+    assert 2 <= len(mode["suggested_edge_traces"]) == len(photo["segmentation_mask"][ROUNDED_CORNER_WEDGES]) <= 4
+
+    async def image(mode):
+        return await client.get(f"{url}/image", params={"variant": mode})
+
+    async def codes():
+        return [(await image(name)).status_code for name in (
+            "full_print", "image_only", "source_corrected_trimmed", "source_corrected_untrimmed",
+        )]
+
+    original_preview = await image("source_corrected_untrimmed")
+    preview = await image("full_print_preview")
+    assert preview.status_code == 200 and preview.headers["content-type"] == "image/png"
+    rendered = cv2.imdecode(np.frombuffer(preview.content, np.uint8), cv2.IMREAD_UNCHANGED)
+    assert rendered.shape[2] == 4 and np.any(rendered[:, :, 3] == 0) and np.any(rendered[:, :, 3] == 255)
+    assert await codes() == [404, 404, 404, 200]
+    assert (await image("image_only_preview")).status_code == 404
+    ordinary = await client.post("/api/v1/review/events", json={
+        "task_type": "geometry", "task_id": photo["id"], "answer": "correct", "idempotency_key": str(uuid4()),
+    })
+    assert ordinary.status_code == 409
+    repeated = await client.post(f"{url}/reprocess")
+    assert repeated.status_code == 200
+    assert (await image("source_corrected_untrimmed")).content == original_preview.content
+    assert (await image("full_print_preview")).content == preview.content
+
+    async def save(corners):
+        return await client.patch(f"{url}/bounding-box", json={
+            "bounding_box": {"x1": corners[0]["x"], "y1": corners[0]["y"], "x2": corners[2]["x"], "y2": corners[2]["y"]},
+            "segmentation_mask": {"source": "manual_quad", "polygon": corners, "warp_quad": corners, "print_size_mm": size},
+        })
+
+    saved = await save(quad)
+    assert saved.status_code == 200, saved.text
+    modes = saved.json()["enhancement_applied"]["correction"]["crop_modes"]
+    assert all(mode["status"] == "review_needed" and ROUNDED_CORNER_REVIEW in mode["reason_codes"] for mode in modes.values())
+    assert await codes() == [404, 404, 404, 200]
+    assert (await image("full_print_preview")).status_code == 200
+    inset = to_normalized([(90, 90), (388, 90), (388, 390), (90, 390)])
+    moved = await save(inset)
+    assert moved.status_code == 200 and await codes() == [404, 404, 404, 200]
+    assert (await image("full_print_preview")).status_code == 404
+    assert (await save(quad)).status_code == 200
+    with monkeypatch.context() as context:
+        context.setattr(perspective, "measure_rounded_corners", lambda *_: None)
+        missing = await client.post(f"{url}/reprocess")
+        assert missing.status_code == 200 and await codes() == [404, 404, 404, 200]
+        assert (await image("full_print_preview")).status_code == 404
+
+    assert (await client.post(f"{url}/reprocess")).status_code == 200
+    assert (await image("full_print_preview")).status_code == 200
+    claim = to_normalized([(35, 35), (89, 35), (89, 90), (35, 90)])
+    claimed = await client.post(page_url, json={"request_id": str(uuid4()), "warp_quad": claim})
+    assert claimed.status_code == 201, claimed.text
+    assert (await image("full_print_preview")).status_code == 404
+    assert await codes() == [404, 404, 404, 200]
+
+
 async def test_capture_outline_hold_survives_manual_edit_and_legacy_exports(client, monkeypatch, tmp_path):
     from copy import deepcopy
 

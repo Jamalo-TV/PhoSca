@@ -30,6 +30,7 @@ from app.pipeline.manual_paper_boundary import PAPER_CLAIM_OVERLAP_CHECKS, paper
 from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
 from app.pipeline.protected_regions import album_mark_source_matches
+from app.pipeline.rounded_corner_review import ROUNDED_CORNER_REVIEW
 from app.pipeline.variants import variant_path_from_photo, variant_urls, variants_from_metadata
 from app.schemas import PhotoRead, ReviewItem
 from app.services.pipeline import (
@@ -672,6 +673,7 @@ async def _geometry_review_is_current(session: AsyncSession, photo: ExtractedPho
     correction = metadata.get("correction") or {}
     full_mode = (correction.get("crop_modes") or {}).get("full_print") or {}
     if (((photo.segmentation_mask or {}).get(MANUAL_MARGIN_CONTEXT) and full_mode.get("status") != "ready")
+            or ROUNDED_CORNER_REVIEW in (full_mode.get("reason_codes") or [])
             or any(reason in PAPER_CLAIM_OVERLAP_CHECKS for reason in (full_mode.get("reason_codes") or []))
             or motif_geometry_requires_review(correction)):
         return False

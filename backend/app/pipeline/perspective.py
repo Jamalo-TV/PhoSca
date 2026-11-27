@@ -99,6 +99,9 @@ from app.pipeline.protected_regions import (
     merge_protected_regions, protected_region_key, region_box_in_pixels, removed_protected_regions,
     validate_protected_regions,
 )
+from app.pipeline.rounded_corner_review import (
+    ROUNDED_CORNER_REVIEW, ROUNDED_CORNER_SOURCE, ROUNDED_CORNER_WEDGES, measure_rounded_corners,
+)
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVIEW, SCALLOPED_PRINT_REVISION
 from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE, refine_visible_paper_rim
 from app.pipeline.source_strip_review import source_strip_outline
@@ -2066,6 +2069,27 @@ def correct_photo_crop(
             outline, source = observed
             metadata["refined_visible_polygon"] = _vertices_on_page(outline, width, height)
             metadata["refined_visibility_source"] = source
+        rounded = None
+        if (manual and mask.get("manual_added") is True and protect_regions and protection["passed"]
+                and set(full_reasons) <= {"PRINT_ASPECT_UNCERTAIN"}):
+            protected_boxes = []
+            for region in regions:
+                if box := region_box_in_pixels(region, width, height):
+                    left, top, right, bottom = box
+                    padding = float(region.get("margin_ratio", .08)) * max(right - left, bottom - top)
+                    protected_boxes.append(np.float32([[left - padding, top - padding], [right + padding, top - padding],
+                                                       [right + padding, bottom + padding], [left - padding, bottom + padding]]))
+            rounded = measure_rounded_corners(page_image, src_points, [*neighbor_polygons, *protected_boxes])
+        corner_bounds = []
+        if rounded is not None:
+            for wedge, trace in zip(rounded.wedges, rounded.traces, strict=True):
+                scope = np.vstack([wedge, trace])
+                left, top = scope.min(axis=0)
+                right, bottom = scope.max(axis=0)
+                corner_bounds.append(_vertices_on_page(np.float32([[left, top], [right, top], [right, bottom], [left, bottom]]),
+                                                       width, height))
+        if rounded is not None or (manual and mask.get(ROUNDED_CORNER_WEDGES)):
+            full_reasons.append(ROUNDED_CORNER_REVIEW)
         scalloped_outline = manual_scalloped if manual else visible
         print_outline = scalloped_outline if SCALLOPED_PRINT_REVIEW in full_reasons and protection["passed"] and not (
             {"PRINT_POSSIBLY_OCCLUDED", "POSSIBLE_CONTENT_CUTOFF"} & set(full_reasons)
@@ -2099,8 +2123,20 @@ def correct_photo_crop(
             neighbor_masks=neighbor_masks,
         )
         modes = result.metadata["crop_modes"]
+        if rounded is not None:
+            mode = modes["full_print"]
+            mode["suggested_edge_source"] = ROUNDED_CORNER_SOURCE
+            mode["suggested_edge_traces"] = [_vertices_on_page(trace, width, height) for trace in rounded.traces]
+            mode[ROUNDED_CORNER_WEDGES] = corner_bounds
+            try:
+                preview, evidence = _render_outline_preview(page_image, rounded.outline, np.asarray(mode["page_to_output"]))
+                mode["outline_preview"] = {**evidence, "source": ROUNDED_CORNER_SOURCE}
+                result = replace(result, full_print_preview=preview)
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                pass  # Source traces still show the measured evidence.
         aspect_pending_after_mark_review = (
-            (reviewed_album_mark or {}).get("source") == OFF_PRINT_ADVISORY and full_reasons == ["PRINT_ASPECT_UNCERTAIN"]
+            (reviewed_album_mark or {}).get("source") == OFF_PRINT_ADVISORY
+            and set(full_reasons) - {ROUNDED_CORNER_REVIEW} == {"PRINT_ASPECT_UNCERTAIN"}
         )
         held_by_protection = (not manual and protection.get("review_untrimmed")
                               and set(full_reasons) == {"PRINT_BOUNDARY_AMBIGUOUS", "POSSIBLE_CONTENT_CUTOFF", "PRINT_ASPECT_UNCERTAIN"})

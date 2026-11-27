@@ -229,6 +229,7 @@ const manualNeighborContentLoss = "MANUAL_NEIGHBOR_CONTENT_LOSS";
 const mountedPrintOutlineReason = "MOUNTED_PRINT_OUTLINE_REVIEW";
 const projectivePrintOutlineReason = "PROJECTIVE_PRINT_OUTLINE_REVIEW";
 const darkBackingOutlineReason = "DARK_BACKING_OUTLINE_REVIEW";
+const roundedCornerSource = "measured_print_corner_arcs";
 const printEdgeReviewHints = {
   PRINT_EDGE_CONFIRMATION_REQUIRED: printOutlineSaveHint,
   PRINT_SHADOW_EDGE_REVIEW: "Prüfe die markierte Kante am Original. Achte darauf, wo der Schatten endet und der Abzug beginnt.",
@@ -238,6 +239,7 @@ const printEdgeReviewHints = {
   PRINT_EXTENDED_OUTLINE_REVIEW: "Prüfe die erweiterte Kontur am Original. Setze die Ecken an den Papierrand, damit der ganze Abzug erhalten bleibt.",
   PRINT_BOUNDARY_UNSUPPORTED: "Prüfe den sichtbaren Papierrand am Original. Korrigiere die markierten Ecken, soweit die Kante erkennbar ist.",
   PRINT_BOUNDARY_CURVED: "Die Abzugskante ist gekrümmt. Prüfe am Original, ob der Abzug für eine neue Aufnahme flach aufgelegt werden kann.",
+  PRINT_ROUNDED_CORNER_REVIEW: "Prüfe die Ecken und den gesamten Papierrand am Original. Beide Zuschnitte bleiben in Prüfung.",
   [curvedPrintOutlineReviewReason]: "Die Papierkante braucht eine weitere Prüfung. Setze die Ecken an die sichtbare Aussenkante. Bei einer Wölbung hilft eine neue Aufnahme mit flach liegendem Abzug.",
   [captureOutlineReviewReason]: "Die vollständige Papierkante ist noch unklar. Vergleiche die Ecken mit der Aussenkante im Original. Bei einer verdeckten oder gewölbten Kante hilft eine neue Aufnahme mit sichtbarem Rand rundum.",
   [captureAtEdgeReason]: captureAtEdgeHint,
@@ -577,6 +579,9 @@ export function getMotifMarginMarks(motif) {
 
 export function getPrintOutlinePreviewHint(fullPrint) {
   const preview = fullPrint?.outline_preview;
+  if (preview?.source === roundedCornerSource) {
+    return "Die transparenten Eckbereiche folgen den gemessenen Stellen. Vergleiche die markierten Ecken und alle Seiten mit dem Original.";
+  }
   if (preview?.source === disputedGridPreview) {
     const countHint = preview.projected_grid_cuts?.length
       ? "So sieht der Aussenumriss aus, falls die markierten Teile zum selben Abzug gehören. Die gestrichelten Linien zeigen die Kanten der Teilvorschläge. Vergleiche sie mit dem Original."
@@ -620,7 +625,7 @@ export function getPrintOutlinePreviewHint(fullPrint) {
 export function showsPaperEdgeComparison(fullPrint) {
   return [possibleOverextendedPrintEdge, possibleInwardPrintCorner, possibleBowedPrintEdge,
     possibleDisplacedPrintEdges, possibleAlbumLayerEdge, possibleLocalPrintEdge,
-    "possible_mounted_edge_strip", disputedGridPreview].includes(fullPrint?.outline_preview?.source);
+    "possible_mounted_edge_strip", disputedGridPreview, roundedCornerSource].includes(fullPrint?.outline_preview?.source);
 }
 
 export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outlinePreview }) {

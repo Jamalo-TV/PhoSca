@@ -90,3 +90,24 @@ async def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncGenera
 
     await dispose_engine()
     get_settings.cache_clear()
+
+
+@pytest.fixture
+def rounded_corner_page():
+    import cv2
+
+    height = width = 485
+    rows, columns = np.indices((height, width), dtype=np.float32)
+    backing = np.full((height, width, 3), (185, 128, 144), np.uint8)
+    backing[..., 0] = np.rint(185 + 22 * np.cos(rows * np.pi / 6))
+    quad = np.float32([[75, 75], [403, 75], [403, 405], [75, 405]])
+    rectangle = (columns >= 75) & (columns <= 403) & (rows >= 75) & (rows <= 405)
+    wedges = np.zeros_like(rectangle)
+    radius = 16
+    for x, y in quad:
+        u, v = np.abs(columns - x), np.abs(rows - y)
+        wedges |= (u < radius) & (v < radius) & (np.hypot(u - radius, v - radius) > radius)
+    paper = rectangle & ~wedges
+    raster = backing.copy()
+    raster[paper] = (135, 144, 123)
+    return cv2.cvtColor(raster, cv2.COLOR_LAB2BGR), quad, paper, rectangle, backing

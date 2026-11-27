@@ -704,6 +704,21 @@ Aufnahme, die Ecken und den Stand der Schutz- und Anzahlprüfung gebunden.
 Geometrie- und Inhaltsprüfungen.
 [Beispiel U008](data/evaluation/README.md#review-a-protection-margin-outside-a-manually-added-print)
 
+Bei einem manuell ergänzten Abzug kann PhoSca einzelne gerundete
+Eckkonturen am Original zeigen. Es vergleicht die Farbwechsel am
+möglichen Papierrand mit der Farbe und dem Helligkeitsmuster der
+sichtbaren Albumprägung daneben. Wo beide Hinweise zusammenpassen,
+blendet die zweite Prüfvorschau den gemessenen Eckbereich transparent
+aus. Unklare Bereiche bleiben darin sichtbar. Die bisherige Vorschau
+und die gespeicherten Ecken stehen weiter zum Vergleich bereit.
+
+Die Eckprüfung betrifft beide Zuschnittmodi. Sie bleibt bei späteren
+Änderungen der Ecken, eingetragenen Papiermassen und einer erneuten
+Verarbeitung bestehen. Bei einer konkurrierenden Papierkontur oder
+einer veralteten Schutzbestätigung zieht PhoSca die betroffene
+Vergleichsvorschau zurück. Prüfe auch alle geraden Seiten am Original.
+[Beispiel mit drei gemessenen Ecken](data/evaluation/README.md#compare-supported-corner-shapes-on-a-manually-added-print)
+
 Bei einem zur Prüfung zurückgehaltenen Abzug kann PhoSca einen
 weiteren sichtbaren Bildstreifen ausserhalb des bisherigen Umrisses
 türkis markieren. Es sucht von einer gut belegten Seite aus, prüft
