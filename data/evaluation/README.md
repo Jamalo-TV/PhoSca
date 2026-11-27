@@ -9792,6 +9792,73 @@ Original measurements, normal upload receipts and screenshots are
 stored under `runs/crop-quality/u065-shared-motif-review/`. The physical
 album and its derived cases stay in development.
 
+### Trace an unsupported cut through a compact scene
+
+On the same original U065 raster, the left model proposal has confidence
+0.596. The two classical proposals appear in classical extraction before
+fusion at 0.742 and 0.555. The first lies 99.5% inside the model mask with
+IoU 0.302. Its top and right lines track the visible motif with near-unit
+support. An unsupported diagonal in the proposal crosses several original
+image features. The shorter interior side has insufficient texture for
+an independent continuity observation. The second proposal has IoU
+0.200 and 55.2% of its area inside the model mask. Its lower edge follows
+the album's textured gold strip. The warm band continues past the mask
+with a cross-profile correlation of 0.987 after individual alignment.
+An alternate line-finding method finds rival rails several pixels apart
+and varies under re-encoding. Neither observation establishes ownership.
+
+The upper diagonal is also visible in the separate U093 capture of the
+same print. That registration uses 169 mutually matched landmarks and
+has held-fold median error of 0.51–0.95 and p95 error of 2.23–4.21 U065
+pixels. The two
+nearby physical prints have measured visible image gaps of at least
+20.71 and 16.90 U065 pixels to the large left motif. Actual untrimmed
+review rasters cover 76,169 of 76,255 definitely interior motif centres
+with the model proposal. In the parts it misses, the first classical
+proposal retains another 80 centres near the upper right. The second
+retains another six near the lower left. The physical paper edge and
+aspect still need confirmation. Both modes are held and no motif
+raster is available for separate scoring here.
+
+The advisory considers a classical quadrilateral with one raw model
+parent. At least 97.5% of the candidate must lie inside the parent, with
+IoU between 0.20 and 0.42. In native space the proposal must have two
+adjacent supported sides and one unique unsupported cut with sufficient
+visible texture on both sides. The source sampling uses a 17-pixel-wide
+strip. The usable segment stays at least 13 pixels inside the proposed
+parent and more than 12 pixels from other original proposal outlines.
+At least four distinct connected features must cross the strip at both
+contrast thresholds, separated by at least eight native pixels and
+spread over at least 36% of the sampled interval. The visible line runs
+between the first and last verified crossings. It is a review mark for
+the original contours. Neither physical counts nor warp geometry use it.
+
+The exact native line is about 120 pixels long. Four fixed-mask lossless
+rotations and all four JPEG75 rotations retain the mark. In three of
+four JPEG95 orientations it abstains for insufficient repeated features.
+Distinct-photo and narrow-paper-gap controls suppress the mark. Nearly
+flush, spatially registered layers with the same photographed art and
+some hard shadows can retain the cue. The lower classical hypothesis
+gets no guide in the corresponding runs. A one-thread, fixed-mask
+native replay took about 10 ms per measurement.
+
+Normal upload, desktop and mobile show the original trace in count and
+geometry review. The native raster, initial eight active proposals and
+saved review images match the previous milestone. Both named crop modes
+and the cropped alias are unavailable for the disputed proposal. A
+disposable review run uses the normal explicit wrong-object action.
+That action moves the count from 8 to 7, retires the mark and preserves
+its history. The two lower-right comparison entries remain independently
+reviewable. Saving the unmodified classical quad in a disposable upload
+with diagnostic paper dimensions leaves both named variants and the
+alias held for unresolved neighboring ownership. The desktop editor
+prioritizes a visible selected corner over a sibling's interior area.
+A pointer drag moves that corner without saving or transferring selection.
+All eight frozen and development comparisons preserve their crop and
+detection metrics, including 18/18 frozen detections and 23/23 seeded
+crop passes. Evidence and screenshots are stored under
+`runs/crop-quality/u065-compact-scene-review/`.
+
 ### Review a fallback outline crossing the album edge
 
 The same Golden 26 180° JPEG75 development raster has a third false
@@ -11282,3 +11349,15 @@ retrieved and the release intake is unchanged.
 [Album inventory](https://archiveswest.orbiscascade.org/ark:/80444/xv99202) ·
 [Matted plate](https://www.ohs.org/blog/trapped-in-the-columbia-gorge.cfm) ·
 [Boudoir card](https://staff.digitalcollections.ohs.org/d118-relief-train-passing-the-needles-winter-of-1884-5-columbia-river-or)
+
+The Polish National Digital Archive documents separate acquisitions
+for the Stefan Czarnecki album `3/135/0`. Staff removed the 139 original
+photographs, digitized both faces in 16-bit RGB, reattached the same
+objects, then captured the complete pages as 16-bit TIFFs with an
+object-level reference target. The archive inventory states that the
+economic copyrights have expired. The public portal lists zero scans
+for this accession. Native files, the item-to-leaf crosswalk and the
+terms for those exact master files are still needed to evaluate both
+modes. The rebinding also complicates visibility near the gutter.
+[Digitization report](https://sap.waw.pl/wp-content/uploads/2022/08/43-Wrotek_Dzwigalska_J-Bolesta_M-Pamiec-niewybiorcza.pdf) ·
+[Archive inventory](https://www.nac.gov.pl/wp-content/uploads/2024/07/NAC_SPIS_ZESPOLOW_2024.pdf)

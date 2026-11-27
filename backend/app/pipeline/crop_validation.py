@@ -20,7 +20,7 @@ from app.pipeline.crossing_prints import CROSSING_PRINT_REVISION
 from app.pipeline.dark_album_review import DARK_ALBUM_REVIEW_REVISION
 from app.pipeline.decisions import ReviewReason
 from app.pipeline.edge_prints import CAPTURE_EDGE_REVISION
-from app.pipeline.fragmented_prints import FRAGMENTED_PRINT_REVISION
+from app.pipeline.fragmented_prints import COMPACT_SCENE_CROSSING_REVISION, FRAGMENTED_PRINT_REVISION
 from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_REVISION
 from app.pipeline.fusion_ownership import FUSION_OWNERSHIP_REVISION
 from app.pipeline.model_registry import sha256
@@ -141,6 +141,10 @@ def crop_validation_profile(settings: Settings) -> dict:
         "source_fragment_review": (
             SOURCE_FRAGMENT_REVIEW_REVISION
             if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+        ),
+        "compact_scene_crossing_review": (
+            COMPACT_SCENE_CROSSING_REVISION if settings.enable_precise_photo_crops
+            and settings.enable_classical_segmentation_fallback and visible_model is None else None
         ),
         "dark_album_review": (
             DARK_ALBUM_REVIEW_REVISION if settings.enable_precise_photo_crops

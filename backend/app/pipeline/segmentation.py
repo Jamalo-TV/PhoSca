@@ -36,9 +36,9 @@ from app.pipeline.embossed_album_pockets import (
 from app.pipeline.film_carrier_review import refitted_film_carrier
 from app.pipeline.frame_backing_review import FRAME_BACKING_COUNT_REVIEW, FRAME_BACKING_PROPOSAL, frame_backing_trace
 from app.pipeline.fragmented_prints import (
-    EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
+    COMPACT_SCENE_CROSSING_TRACE, EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
     SOURCE_FRAGMENT_GROUP_REVIEW, SOURCE_FRAGMENT_PROPOSAL,
-    measure_extended_print_outline, measure_fragmented_print, nested_scene_fragment_continuities,
+    compact_scene_crossing_trace, measure_extended_print_outline, measure_fragmented_print, nested_scene_fragment_continuities,
     nested_scene_fragment_with_shared_edges,
     suggest_dark_mounted_outline, suggest_fragmented_outline,
 )
@@ -3920,6 +3920,48 @@ def _flag_shared_motif(image: np.ndarray, result: SegmentationResult) -> Segment
     return SegmentationResult(updated, result.metadata)
 
 
+def _flag_compact_scene_crossings(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    detections = result.detections
+    fusion = result.metadata.get("fusion") or {}
+    if not result.metadata.get("fallback_used") or fusion.get("deferred_print_proposals") or not 2 <= len(detections) <= 12:
+        return result
+    candidates = [i for i, item in enumerate(detections) if item.geometry_valid and not item.review_reasons
+                  and not any(item.mask.get(key) for key in ("warp_quad", "visible_polygon", MERGED_PRINT_PAIR))]
+    parents = [i for i in candidates if detections[i].confidence >= .50
+               and detections[i].mask.get("source") == "yolo_seg_mask"
+               and detections[i].mask.get("detector_source") == "yolo_onnx"]
+    if not parents:
+        return result
+    polygons = [_detection_polygon(item) for item in detections]
+    height, width = image.shape[:2]
+    updated = detections.copy()
+    for index in candidates:
+        item, polygon = detections[index], polygons[index]
+        provenance = item.mask.get("fusion") or {}
+        if (item.confidence < .60 or item.mask.get("source") != "classical_border_quad"
+                or provenance.get("proposal_families") != ["classical"]
+                or len(polygon) != 4 or not cv2.isContourConvex(polygon)):
+            continue
+        matches = [parent for parent in parents if _normalized_box_overlap(detections[parent].bounding_box, item.bounding_box)[3] >= .90
+                   and (overlap := normalized_polygon_overlap(polygons[parent], polygon, raster_size=1024)).second_containment >= .975
+                   and .20 <= overlap.iou <= .42]
+        if len(matches) != 1:
+            continue
+        parent, = matches
+        others = [normalized_vertices_to_pixels(peer, width, height) for peer_index, peer in enumerate(polygons)
+                  if peer_index not in (index, parent)]
+        try:
+            trace = compact_scene_crossing_trace(
+                image, order_quad_cyclic(normalized_vertices_to_pixels(polygon, width, height)),
+                normalized_vertices_to_pixels(polygons[parent], width, height), others,
+            )
+        except (ValueError, cv2.error):
+            continue
+        if trace is not None:
+            updated[index] = replace(item, mask={**item.mask, COMPACT_SCENE_CROSSING_TRACE: _normalized_polygon(trace, width, height)})
+    return SegmentationResult(updated, result.metadata)
+
+
 def _flag_disputed_paper_joins(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
     detections = result.detections
     if not result.metadata.get("fallback_used") or not 2 <= len(detections) <= _MULTIPANEL_GROUP_LIMIT:
@@ -4674,6 +4716,7 @@ def segment_album_page(
             if source is not None:
                 result = _flag_printed_illustration(source, result)
                 result = _flag_shared_motif(source, result)
+                result = _flag_compact_scene_crossings(source, result)
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership

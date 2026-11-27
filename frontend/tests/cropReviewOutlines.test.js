@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  albumLeafSourceWindow, captureSplitSourceWindow, getAlbumLeafReviewGroups, getContrastCrossingTraces,
+  albumLeafSourceWindow, captureSplitSourceWindow, getAlbumLeafReviewGroups, getCompactSceneCrossingTraces, getContrastCrossingTraces,
   competingPhotoRegionPaths, getCompetingPhotoOutline, getCompetingPhotoReviewOutlines,
   filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
   getFilmGridReviewSeams, getFilmNeighborEdgeIndex, getFragmentReviewOutlines, getMergedPrintPairs,
@@ -136,6 +136,24 @@ test("two valid contrast crossing spans are shown only on unchanged held automat
       ...mobile, segmentation_mask: { ...segmentationMask, contrast_crossing_traces },
     })),
   ]) assert.deepEqual(getContrastCrossingTraces(photo, quad, unchanged), []);
+});
+
+test("a compact scene crossing appears only on a current held classical outline", () => {
+  const trace = quad.slice(0, 2);
+  const mask = { source: "classical_border_quad", detector_source: "edge_contour", compact_scene_crossing_trace: trace };
+  const held = { status: "review_needed" };
+  const crop_modes = { full_print: held, image_only: held };
+  const mobile = { confidence: .74, segmentation_mask: mask, crop_modes };
+  const desktop = { segmentation_confidence: .74, segmentation_mask: mask,
+    enhancement_applied: { correction: { crop_modes } } };
+  assert.deepEqual(getCompactSceneCrossingTraces(mobile), [trace]);
+  assert.deepEqual(getCompactSceneCrossingTraces(desktop), [trace]);
+  for (const change of [
+    { reviewed_non_print: true }, { review_reasons: ["GEOMETRY_REVIEW_WRONG_OBJECT"] }, { confidence: null },
+    { crop_modes: { ...crop_modes, image_only: { status: "ready" } } },
+    ...[{ warp_quad: quad }, { source: "yolo_seg_mask" }, { compact_scene_crossing_trace: [quad[0], quad[0]] }]
+      .map(fields => ({ segmentation_mask: { ...mask, ...fields } })),
+  ]) assert.deepEqual(getCompactSceneCrossingTraces({ ...mobile, ...change }), []);
 });
 
 test("a ribbed-paper preview exposes its own contour only on the unchanged held draft", () => {

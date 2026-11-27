@@ -18,6 +18,8 @@ SOURCE_FRAGMENT_GROUP_REVIEW = "SOURCE_FRAGMENT_GROUP_REVIEW"
 FRAGMENTED_PRINT_REVIEW = "FRAGMENTED_PRINT_REVIEW"
 FRAGMENT_OUTLINE_REVIEW = "FRAGMENT_OUTLINE_UNCERTAIN"
 EXTENDED_PRINT_OUTLINE_REVIEW = "PRINT_EXTENDED_OUTLINE_REVIEW"
+COMPACT_SCENE_CROSSING_TRACE = "compact_scene_crossing_trace"
+COMPACT_SCENE_CROSSING_REVISION = 1
 _UNIT = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
 
 
@@ -41,6 +43,77 @@ def _image_continues_across(image: np.ndarray, strip: np.ndarray, width: int) ->
             locations[label] = float(np.median(crossing))
     extended = set(np.intersect1d(labels[8], labels[24])) & locations.keys()
     return len(extended) >= 2 and len(locations) >= 3 and np.ptp(list(locations.values())) >= .40 * width
+
+
+def _crossing_locations(strip: np.ndarray, low: int, high: int) -> list[float]:
+    _, labels = cv2.connectedComponents(cv2.Canny(strip, low, high))
+    before, after = labels[:3], labels[-3:]
+    middle = labels[len(labels) // 2 - 1:len(labels) // 2 + 2]
+    locations = []
+    for component in np.intersect1d(before, after):
+        if not component:
+            continue
+        central = np.nonzero(middle == component)[1]
+        if not len(central):
+            continue
+        start, stop = (float(np.median(np.nonzero(side == component)[1])) for side in (before, after))
+        position = float(np.median(central))
+        if abs(position - (start + stop) / 2) <= 4.5 and abs(start - stop) <= 21:
+            locations.append(position)
+    return sorted(locations)
+
+
+def compact_scene_crossing_trace(
+    image: np.ndarray, fragment: np.ndarray, parent: np.ndarray, other_claims: list[np.ndarray],
+) -> np.ndarray | None:
+    """Locate an unsupported small-scale cut with visible scene continuities.
+
+    This observes pixels on both sides of the cut. Stacked or printed copies
+    can show the same evidence, so it is a review trace only.
+    """
+    edges = np.roll(fragment, -1, axis=0) - fragment
+    lengths = np.linalg.norm(edges, axis=1)
+    if not 80 <= lengths.min() <= 250 or lengths.max() > 650:
+        return None
+    evidence = [_side_line(image, start, start + edge, int(np.clip(round(.027 * length), 5, 10)))
+                for start, edge, length in zip(fragment, edges, lengths, strict=True)]
+    if any(side["ambiguous"] for _, side in evidence):
+        return None
+    strong = [index for index, (line, side) in enumerate(evidence)
+              if line is not None and side["support"] >= .89 and (side.get("corner_support") or 0) >= .75]
+    if len(strong) != 2 or strong[1] - strong[0] == 2:
+        return None
+    height, width = image.shape[:2]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    spans = []
+    for (line, side), start, edge, length in zip(evidence, fragment, edges, lengths, strict=True):
+        if line is not None or side["support"] > .49:
+            continue
+        tangent = edge / length
+        normal = np.float32([-tangent[1], tangent[0]])
+        stations = start + np.arange(0, length, dtype=np.float32)[:, None] * tangent
+        clear = np.array([cv2.pointPolygonTest(parent, tuple(point), True) >= 13 for point in stations])
+        for claim in other_claims:
+            clear &= [cv2.pointPolygonTest(claim, tuple(point), True) < -12 for point in stations]
+        intervals = np.flatnonzero(np.diff(np.r_[False, clear, False])).reshape(-1, 2)
+        for first, last in intervals:
+            if last - first < 85:
+                continue
+            coordinates = stations[None, first:last] + np.arange(-8, 9, dtype=np.float32)[:, None, None] * normal
+            if not ((coordinates >= 0) & (coordinates <= [width - 1, height - 1])).all():
+                continue
+            strip = cv2.remap(gray, coordinates[..., 0].copy(), coordinates[..., 1].copy(), cv2.INTER_LINEAR)
+            moderate = _crossing_locations(strip, 24, 55)
+            strong_contrast = _crossing_locations(strip, 35, 80)
+            repeated = []
+            for position in strong_contrast:
+                if any(abs(position - candidate) < 3 for candidate in moderate) and (
+                    not repeated or position - repeated[-1] >= 8
+                ):
+                    repeated.append(position)
+            if len(repeated) >= 4 and np.ptp(repeated) >= .36 * (last - first):
+                spans.append(stations[[first + round(repeated[0]), first + round(repeated[-1])]])
+    return spans[0] if len(spans) == 1 else None
 
 
 def nested_scene_fragment_continuities(

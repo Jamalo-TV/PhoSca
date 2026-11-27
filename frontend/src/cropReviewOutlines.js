@@ -157,7 +157,7 @@ export function competingPhotoRegionPaths({ wider, narrower }, width, height) {
   ];
 }
 
-function sameReviewQuad(saved, edited) {
+export function sameReviewQuad(saved, edited) {
   return saved?.length === 4 && edited?.length === 4
     && saved.every(({ x, y }, index) => x === edited[index].x && y === edited[index].y);
 }
@@ -180,6 +180,15 @@ export function getContrastCrossingTraces(photo, savedQuad, editedQuad) {
   const traces = photo.segmentation_mask?.contrast_crossing_traces;
   return Array.isArray(traces) && traces.length === 2 && traces.every(line => sourceReviewLine(line)
     && (line[0].x !== line[1].x || line[0].y !== line[1].y)) ? traces : [];
+}
+
+export function getCompactSceneCrossingTraces(photo) {
+  if (!photo || photo.reviewed_non_print || photo.review_reasons?.includes("GEOMETRY_REVIEW_WRONG_OBJECT")) return [];
+  const { segmentation_confidence: confidence = photo.confidence, segmentation_mask: mask } = photo;
+  if (confidence == null || !bothModesHeld(cropModes(photo)) || mask?.warp_quad
+      || mask?.source !== "classical_border_quad" || mask.detector_source !== "edge_contour") return [];
+  const trace = mask.compact_scene_crossing_trace;
+  return sourceReviewLine(trace) && (trace[0].x !== trace[1].x || trace[0].y !== trace[1].y) ? [trace] : [];
 }
 
 export const measuredRibbedPrintOutlineSource = "measured_ribbed_print_outline";

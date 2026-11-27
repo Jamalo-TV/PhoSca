@@ -1357,6 +1357,20 @@ Die Linie ist eine Orientierung für die Korrektur. Speichere die
 Ecken des Abzugs und des Motivs über die jeweiligen Modi.
 [Beispiel am Hochzeitsalbum](data/evaluation/README.md#compare-two-held-proposals-against-a-measured-motif-edge)
 
+Bei einem kleinen klassischen Teilvorschlag kann eine orange
+gestrichelte Linie zeigen, wo die Kontur durch Bilddetails läuft.
+PhoSca sucht die Details beidseits derselben Linie im Original und
+zeigt nur den Abschnitt, an dem mehrere zusammenhängende Details
+bei zwei Kontrastschwellen gefunden werden. Andere erfasste
+Abzüge müssen Abstand zum Messstreifen haben. Prüfe am Original,
+ob ein weiterer Papierabzug vorliegt. Wenn die Vorschläge denselben
+Abzug zeigen, prüfe seinen ganzen Umriss vor dem Entfernen von
+Teilvorschlägen. So lassen sich auch Bilddetails übernehmen, die
+der bisherige Hauptvorschlag abschneidet. Auf Desktop lassen sich
+die Eckgriffe des ausgewählten Abzugs auch dann ziehen, wenn sie
+innerhalb einer anderen sichtbaren Kontur liegen.
+[Gemessener Bildverlauf am linken Hochzeitsabzug](data/evaluation/README.md#trace-an-unsupported-cut-through-a-compact-scene)
+
 | Aktion | Verhalten |
 | --- | --- |
 | Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |

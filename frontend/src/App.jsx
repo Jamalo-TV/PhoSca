@@ -77,12 +77,13 @@ import {
 } from "./CropVariants.jsx";
 import {
   competingPhotoRegionPaths, competingPhotoRegionStyles, getCompetingPhotoReviewOutlines, sharedMotifGuideStyle,
-  contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor, getContrastCrossingTraces, getFilmNeighborEdgeIndex,
+  contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor, getCompactSceneCrossingTraces,
+  getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getMergedPrintPairs, getPaperJoinReviewGroups, getPrintedIllustrationReviewGroups, getStoredMotifQuad,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
-  savedFullPrintReviewUrl,
+  sameReviewQuad, savedFullPrintReviewUrl,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
@@ -1499,7 +1500,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     || (selected?.segmentation_confidence != null && !rejectedDetection
       && selected.segmentation_mask?.printed_illustration_review_id && printedIllustrationReviewHint)
     || (paperGrid && (paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint)) || (fragmentReview && fragmentOutlineHint)
-    || (captureSplitReview && "Prüfe, ob dieser Vorschlag einen eigenen Papierabzug zeigt.")
+    || ((captureSplitReview || getCompactSceneCrossingTraces(selected).length > 0)
+      && "Prüfe, ob dieser Vorschlag einen eigenen Papierabzug zeigt.")
     || (contrastOutlineReview && contrastOutlineReviewHint);
   const fragmentMask = fragmentReview && !rejectedDetection ? selected.segmentation_mask : null;
   const fragmentOutline = useMemo(() => getFragmentOutline(fragmentMask), [fragmentMask]);
@@ -1527,9 +1529,16 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     && confirmedContrastOutline?.quad === selectedShape?.warpQuad;
   const contrastOutlineNeedsCheck = contrastOutlineReview && !contrastOutlineConfirmed;
   const fullPrintMode = rejectedDetection ? null : selectedModes?.full_print;
-  const contrastCrossingTraces = useMemo(() => reviewingGeometry && !newPrint && !editingImage
-    ? getContrastCrossingTraces(selected, savedShape?.warpQuad, selectedShape?.warpQuad) : [],
-  [reviewingGeometry, newPrint, editingImage, selected, savedShape?.warpQuad, selectedShape?.warpQuad]);
+  const contrastCrossingTraces = useMemo(() => {
+    if (newPrint || editingImage || selectedCountGroup) return [];
+    if (reviewingCount) return photos.flatMap(getCompactSceneCrossingTraces);
+    if (!reviewingGeometry) return [];
+    return [
+      ...getContrastCrossingTraces(selected, savedShape?.warpQuad, selectedShape?.warpQuad),
+      ...(sameReviewQuad(savedShape?.warpQuad, selectedShape?.warpQuad) ? getCompactSceneCrossingTraces(selected) : []),
+    ];
+  }, [reviewingGeometry, reviewingCount, newPrint, editingImage, selectedCountGroup, photos, selected, savedShape?.warpQuad,
+    selectedShape?.warpQuad]);
   const sourceStrip = useMemo(() => reviewingGeometry && !newPrint && !editingImage ? getSourceStripReview(fullPrintMode) : null,
     [reviewingGeometry, newPrint, editingImage, fullPrintMode]);
   const printEdgeReviewHint = getPrintEdgeReviewHint(fullPrintMode);
@@ -1711,23 +1720,6 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             context.stroke();
           }
         }
-        context.restore();
-      }
-      if (photo.id === selectedPhotoId && contrastCrossingTraces.length) {
-        const { color, contrast, dash } = contrastCrossingTraceStyle;
-        context.save();
-        context.beginPath();
-        for (const [start, end] of contrastCrossingTraces) {
-          context.moveTo(start.x * canvas.width, start.y * canvas.height);
-          context.lineTo(end.x * canvas.width, end.y * canvas.height);
-        }
-        context.strokeStyle = contrast;
-        context.lineWidth = 4;
-        context.stroke();
-        context.strokeStyle = color;
-        context.lineWidth = 2;
-        context.setLineDash(dash);
-        context.stroke();
         context.restore();
       }
       if (photo.id === selectedPhotoId && sourceStrip) {
@@ -2008,6 +2000,23 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         context.restore();
       }
     }
+    if (contrastCrossingTraces.length) {
+      const { color, contrast, dash } = contrastCrossingTraceStyle;
+      context.save();
+      context.beginPath();
+      for (const [start, end] of contrastCrossingTraces) {
+        context.moveTo(start.x * canvas.width, start.y * canvas.height);
+        context.lineTo(end.x * canvas.width, end.y * canvas.height);
+      }
+      context.strokeStyle = contrast;
+      context.lineWidth = 4;
+      context.stroke();
+      context.strokeStyle = color;
+      context.lineWidth = 2;
+      context.setLineDash(dash);
+      context.stroke();
+      context.restore();
+    }
   }, [alternateOutline, blockedRegions, captureSplitGroups, competingPhotoOutlines, contrastCrossingTraces, countOutlines, crossingOutline, deferredProposals, draftShapes, edgeTraces, editingImage, exposedOverlapEdges, extentEdges, mergedPairs,
     filmEdgeIndex, filmGridGroups, filmGridSeam, fragmentOutline, measuredTraces, paperGrid, paperGridGroups, paperJoinGroups,
     printSuggestion, ribbedReviewOutline,
@@ -2049,7 +2058,11 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       setAddition({ ...newPrint, corners: cyclicQuad(corners) || corners, error: null });
       return;
     }
-    const targets = editingImage && selected
+    const selectedCorners = editingImage ? motifCorners : selectedShape?.warpQuad;
+    const atSelectedCorner = selectedCorners?.some(
+      (corner) => Math.hypot(point.x - corner.x, point.y - corner.y) < 0.025,
+    );
+    const targets = selected && (editingImage || atSelectedCorner)
       ? [selected, ...photos.filter((photo) => photo.id !== selectedPhotoId).reverse()]
       : [...photos].reverse();
     for (const photo of targets) {

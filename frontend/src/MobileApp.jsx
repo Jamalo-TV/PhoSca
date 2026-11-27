@@ -33,7 +33,8 @@ import {
 } from "./CropVariants.jsx";
 import {
   getCompetingPhotoOutline, getCompetingPhotoReviewOutlines,
-  contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor, getContrastCrossingTraces, getFilmNeighborEdgeIndex,
+  contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor, getCompactSceneCrossingTraces,
+  getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
   getMergedPrintPairs, getPaperJoinReviewGroups, getPrintedIllustrationReviewGroups, getStoredMotifQuad, motifFitsPaper,
@@ -283,8 +284,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const selectedCompetingOutline = editable && getCompetingPhotoOutline(item.payload);
   const competingPhotoOutlines = deferredDraft || editingMotif || selectedCountGroup ? [] : editable
     ? selectedCompetingOutline ? [selectedCompetingOutline] : [] : getCompetingPhotoReviewOutlines(detections);
-  const contrastCrossingTraces = editable && contrastOutlineReview && !deferredDraft && !editingMotif
-    ? getContrastCrossingTraces(item.payload, initialOuter(), quad) : [];
+  const contrastCrossingTraces = deferredDraft || editingMotif || selectedCountGroup ? [] : editable
+    ? [
+      ...(contrastOutlineReview ? getContrastCrossingTraces(item.payload, initialOuter(), quad) : []),
+      ...(!draftTouched ? getCompactSceneCrossingTraces(item.payload) : []),
+    ] : detections.flatMap(getCompactSceneCrossingTraces);
   const selectedMergedPair = !reviewedNonPrint && getMergedPrintPairs([item.payload || {}])[0];
   const sourceStrip = editable && !deferredDraft && !editingMotif ? getSourceStripReview(fullPrintMode) : null;
   const albumMark = editable && !editingMotif && !reviewedNonPrint ? markOffer : null;
@@ -647,16 +651,6 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
               strokeDasharray={ribbedPrintOutlineStyle.dash.join(" ")} />
           </g>}
           {!editingMotif && <>{uncertainLine}{alternateOverlay}{paperTraceOverlay}</>}
-          {contrastCrossingTraces.length > 0 && <g aria-hidden="true" fill="none" pointerEvents="none">
-            {contrastCrossingTraces.map(([start, end], index) => {
-              const points = `${start.x * 1000},${start.y * 1000} ${end.x * 1000},${end.y * 1000}`;
-              return <g key={index}>
-                <polyline points={points} stroke={contrastCrossingTraceStyle.contrast} strokeWidth="4" vectorEffect="non-scaling-stroke" />
-                <polyline points={points} stroke={contrastCrossingTraceStyle.color} strokeWidth="2" vectorEffect="non-scaling-stroke"
-                  strokeDasharray={contrastCrossingTraceStyle.dash.join(" ")} />
-              </g>;
-            })}
-          </g>}
           {sourceStrip && <SourceStripOutline edgeOnly={sourceStrip.edgeOnly}
             points={sourceStrip.outline.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />}
           {!editingMotif && getSourceEdgeTraces(fullPrintMode?.exposed_overlap_edge_traces).map((trace, index) => (
@@ -709,6 +703,16 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
             pointerEvents="none" points={region.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />
         ))}
         {Boolean(visibleTraces?.length) && <MeasuredEdgeOverlay traces={visibleTraces} />}
+        {contrastCrossingTraces.length > 0 && <g aria-hidden="true" fill="none" pointerEvents="none">
+          {contrastCrossingTraces.map(([start, end], index) => {
+            const points = `${start.x * 1000},${start.y * 1000} ${end.x * 1000},${end.y * 1000}`;
+            return <g key={index}>
+              <polyline points={points} stroke={contrastCrossingTraceStyle.contrast} strokeWidth="4" vectorEffect="non-scaling-stroke" />
+              <polyline points={points} stroke={contrastCrossingTraceStyle.color} strokeWidth="2" vectorEffect="non-scaling-stroke"
+                strokeDasharray={contrastCrossingTraceStyle.dash.join(" ")} />
+            </g>;
+          })}
+        </g>}
         {competingPhotoOutlines.some(outline => outline.motifGuide) && <SharedMotifGuideOverlay outlines={competingPhotoOutlines} />}
       </svg>
       {magnifier.visible && <div className="crop-magnifier" style={{
@@ -737,6 +741,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     )}
     {countOutlines.length > 0 && <p className="quad-hint" id="mobile-fragment-count-review-hint">{fragmentCountHint}</p>}
     {mergedPairs.length > 0 && <p className="quad-hint" id="mobile-merged-print-pair-hint">{mergedPrintPairHint}</p>}
+    {contrastCrossingTraces.length > 0 && <p className="quad-hint" id="mobile-contrast-crossing-review-hint">{contrastCrossingTraceHint}</p>}
     {competingPhotoOutlines.length > 0 && <CompetingPhotoOutlineLegend id="mobile-competing-photo-outline-hint" mobile
       showMotifGuide={competingPhotoOutlines.some(outline => outline.motifGuide)} />}
     {captureSplitGroups.length > 0 && <p className="quad-hint" id="mobile-capture-split-count-hint">{captureSplitReviewHint}</p>}
@@ -772,7 +777,6 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         && <p className="quad-hint">{paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint}</p>}
       {fragmentReview && <p className="quad-hint">{fragmentOutlineHint}</p>}
       {crossingOutline && <p className="quad-hint">{crossingPrintHint}</p>}
-      {contrastCrossingTraces.length > 0 && <p className="quad-hint" id="mobile-contrast-crossing-review-hint">{contrastCrossingTraceHint}</p>}
       {ribbedReviewOutline && <p className="quad-hint" id="mobile-ribbed-print-outline-hint">{ribbedPrintOutlineHint}</p>}
       {contrastOutlineReview && <p className="quad-hint">{contrastOutlineReviewHint}</p>}
       {!reviewedNonPrint && getDeferredParentCropHints(item.payload?.review_reasons).map(({ id, text }) => (
