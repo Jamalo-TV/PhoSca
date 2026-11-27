@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validat
 
 from app.models import OCRTextType, PageStatus, PhotoStatus
 from app.pipeline.decisions import motif_geometry_requires_review, photo_is_reviewed_non_print
+from app.pipeline.manual_paper_boundary import manual_paper_grid_count_review
 from app.pipeline.variants import photo_image_url, variant_path_from_photo
 from app.schemas.common import BoundingBox, NormalizedPoint, PrintSizeMM, SegmentationMask, StrictSchema
 
@@ -70,6 +71,13 @@ class PhotoRead(BaseModel):
     @property
     def motif_review_pending(self) -> bool:
         return motif_geometry_requires_review(self.enhancement_applied.get("correction"))
+
+    @computed_field
+    @property
+    def manual_paper_grid_count_review(self) -> dict | None:
+        if self.segmentation_confidence is not None or self.reviewed_non_print:
+            return None
+        return manual_paper_grid_count_review(self.segmentation_mask, self.enhancement_applied)
 
     @computed_field
     @property

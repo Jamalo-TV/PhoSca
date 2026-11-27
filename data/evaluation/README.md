@@ -2180,6 +2180,45 @@ handwritten heading. These probes do not support enabling a rotated or
 closer inference retry. Receipts are under
 `runs/crop-quality/real-development-refresh/8241e4c/`.
 
+A separate contrast probe on the same reduced contact captures varies
+only the source pixels outside the measured paper outline. In the
+strongest JPEG75 trial, the taper brightens up to 56 code values across
+a 120-native-pixel outside band. The raw mask crosses the draft IoU
+threshold, from 0.82243 to 0.85273. Of 2,162 sampled dark heading centres,
+it still retains only 1,589, up from 558. The sample uses gray values up
+to 150 inside the same original-source window `(760, 135)–(1208, 177)`,
+above the first image rail. This is a controlled input alteration. The
+ordinary detector and crop geometry keep their original inputs. The
+probe ran 31 settings per encoding on JPEG55, JPEG75 and lossless PNG.
+Reports and scripts are in `contrast-probe/` under
+`runs/crop-quality/contact-paper-edit-first/`.
+
+An independent authored proof set varies heading contrast and upper paper
+margin while keeping the underlying grid, camera and sleeve fixed. It
+contains four independent scene roots, 24 count-scored cases and four
+optically identical flush aliases held outside count scoring. From
+4080 × 3072 it makes a 33% reduction and records exact owner IDs and
+separate heading, rim, motif and sleeve masks. All 420 artifact hashes
+and 1,484,629 sampled inverse-projected owner centres were checked. The
+pinned mixed raw detector at 0.25 matches 4/28 prints in JPEG75. None of
+the eight truly separate prints or four wider-rim sheets match. One
+joined sheet passes at IoU 0.872 and retains 6.06% of its strong heading.
+That case demonstrates the need to score heading retention separately
+from instance IoU. This authored cohort is reserved for development
+comparison, outside all training and release references. Its manifests,
+generator, verification and result are under `header-proof/` in the
+same local report directory.
+
+The previously tested sparse and dense arms both find all 20 joined
+JPEG75 sheets even at confidence 0.70. Each finds two of eight separate
+prints and has 15 extras. At 0.25 the sparse arm finds 22/28 with 22
+extras. The dense arm finds 24/28 with 37 extras. The existing
+architecture-only training run produces no proposals above 0.25 on the
+cohort. These are raw masks. The earlier normal-path and two-mode
+benchmarks still rule out both old transfer arms. The new test isolates
+heading and rim retention and keeps the exposure of adjacent prints as
+a separate measurement.
+
 #### First development replay of a newly supplied spiral album
 
 The album group contains five views, including the illustrated front cover.
@@ -7498,6 +7537,54 @@ The locked detector, seeded geometry and mixed Golden metrics match
 the preceding comparison for both modes. The comparison reports, native
 API replays and visual receipts are local in
 `runs/crop-quality/shared-paper-grid-count/`.
+
+#### Save the measured paper outline before resolving the count
+
+The editor can save the measured outer outline before the reviewer
+resolves the paper count. The server reads the original detector group
+from the recorded prediction. A manual parent remains eligible when its
+saved warp and visible outline match that group, allowing normalized
+rounding up to `1e-6` per axis. Both modes must carry the current
+overlap hold. The other proposals must be the active automatic fragments
+of the same group. The count endpoint still validates the current
+revision and exact IDs under the page lock. A different saved warp or
+visible scope invalidates the previous group for that edit. The check
+also applies to earlier saved geometry that has the same audit record.
+
+On the pinned JPEG75 upload, Desktop and Mobile each saved the measured
+outline and then confirmed the paper and sleeve groups. The count moved
+from five to four to one. The saved geometry is within `3.4e-9` normalized
+units of the recorded outline. The count actions preserve its reviewed
+mask, warps, protection and JPEG bytes. Both named exports and the trimmed
+alias return HTTP 404 in that replay. The reviewer entered no physical
+dimensions. In separate API runs, moving the warp or narrowing only the
+visible scope causes the former paper command to return HTTP 409 and
+retains the disputed fragment. An identical successful command retry
+returns the original event. The browser and API receipts are under
+`runs/crop-quality/contact-paper-edit-first/`.
+
+The lossless derivative of the same capture starts with six proposals.
+After saving the measured outline its count moves from six to four to
+one, confirming two paper fragments and then the sleeve. The same mask,
+both mode records and the review JPEG survive the two count decisions.
+The named and trimmed exports return 404. Multipart upload and processing
+took 8.19 s in this single local run. See `lossless-edit-first.json`.
+
+All eight frozen and development replays reproduce the non-timing
+reports from `42c2bed`. The locked detector still matches 18/18. The
+seeded crop run still passes 11/11 whole prints and 12/12 motifs. The
+manual count change uses the existing holds and adds no new automatic
+proposal or crop. The comparison is in `exact-benchmark-receipt.json`
+in the same local directory.
+
+The cut at approximately `(724, 500)–(1242, 500)` was also tested with
+native slit and flush-stock controls. The aligned margin pulse detects
+11/12 simulated 0.65-pixel slits and 12/12 1.25-pixel slits at an
+exploratory threshold of two Lab units. It also triggers on 12/12
+backing-coloured marks printed on one continuous sheet. Low-contrast
+flush layouts overlap the real source score. The cue does not support
+an automatic physical ownership decision. The 480 source-only probes
+are in the `native-separation` subfolder.
 
 ### Compare the disputed whole contact print
 

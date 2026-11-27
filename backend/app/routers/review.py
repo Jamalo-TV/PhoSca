@@ -27,7 +27,7 @@ from app.pipeline.album_leaf_review import ALBUM_LEAF_COUNT_REVIEW, ALBUM_LEAF_R
 from app.pipeline.crossing_fallback_review import CROSSING_FALLBACK_COUNT_REVIEW, CROSSING_FALLBACK_TRACES
 from app.pipeline.decisions import is_reviewed_non_print, motif_geometry_requires_review
 from app.pipeline.manual_paper_boundary import (
-    PAPER_CLAIM_OVERLAP_CHECKS, contrast_outline_check_pending, paper_claims_need_overlap_check,
+    PAPER_CLAIM_OVERLAP_CHECKS, contrast_outline_check_pending, manual_paper_grid_count_review, paper_claims_need_overlap_check,
 )
 from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
 from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES
@@ -383,20 +383,29 @@ def _confirmed_paper_grid_fragments(payload: MobileReviewAnswer, context: dict) 
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="paper_grid_group_selection_invalid")
 
     active = {str(photo.id): photo for photo in context["photos"]}
-    claims = {photo_id: mask for photo_id, photo in active.items() if photo.segmentation_confidence is not None
-              and isinstance(mask := (photo.segmentation_mask or {}).get("paper_grid_review"), dict)}
+    claims = {}
+    for photo_id, photo in active.items():
+        if photo.segmentation_confidence is not None:
+            claim = (photo.segmentation_mask or {}).get("paper_grid_review")
+        else:
+            claim = manual_paper_grid_count_review(photo.segmentation_mask, photo.enhancement_applied or {})
+        if isinstance(claim, dict):
+            claims[photo_id] = claim
     parent_claim = claims.get(parent_id) or {}
     outline = parent_claim.get("outline")
     group = {photo_id: claim for photo_id, claim in claims.items() if claim.get("outline") == outline}
     if (context["page"].status not in {PageStatus.completed, PageStatus.review_needed}
             or not isinstance(outline, list) or len(outline) != 4 or parent_claim.get("cut") is not None
             or set(group) != {parent_id, *fragment_ids}
-            or any(not isinstance(group[photo_id].get("cut"), list) or len(group[photo_id]["cut"]) != 2
+            or any(active[photo_id].segmentation_confidence is None
+                   or not isinstance(group[photo_id].get("cut"), list) or len(group[photo_id]["cut"]) != 2
                    for photo_id in fragment_ids)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="paper_grid_review_group_stale")
 
     for photo_id in group:
         photo = active[photo_id]
+        if photo.segmentation_confidence is None:
+            continue  # A saved parent has already passed the manual overlap and outline checks.
         metadata = photo.enhancement_applied or {}
         modes = (metadata.get("correction") or {}).get("crop_modes") or {}
         if (PAPER_GRID_REVIEW not in (metadata.get("segmentation_review_reasons") or [])
@@ -777,6 +786,9 @@ def _photo_review_payload(
         "variant_urls": urls,
         "variants": review_variants,
     }
+    if photo.segmentation_confidence is None and not _rejected_detection(photo):
+        if grid_review := manual_paper_grid_count_review(mask, metadata):
+            payload["manual_paper_grid_count_review"] = grid_review
     if comparison is not None:
         payload["competing_photo_outline"] = comparison.model_dump(mode="json")
     return payload

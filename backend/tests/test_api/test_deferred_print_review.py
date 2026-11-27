@@ -510,13 +510,17 @@ async def test_dark_album_count_offer_needs_confirmation_and_then_a_separate_pap
     assert (await client.get(f"{url}/image?variant=source_corrected_untrimmed")).status_code == 200
 
 
-async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for_review(client, monkeypatch):
+def _paper_grid_vertices(left, top, right, bottom):
+    return [{"x": x / 399, "y": y / 259} for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
+
+
+def _paper_grid_bounds(quad):
+    return {"x1": quad[0]["x"], "y1": quad[0]["y"], "x2": quad[2]["x"], "y2": quad[2]["y"]}
+
+
+async def _upload_disputed_paper_grid(client, monkeypatch):
     from app.config import get_settings
-    from app.database import get_session_factory
-    from app.models import ExtractedPhoto, ReviewEvent
-    from app.pipeline.decisions import MOTIF_MARGIN_MARKS_REVIEW
-    from app.pipeline.motif_margin import HELD_PRINT_MOTIF_MARGIN_SOURCE
-    from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, PAPER_GRID_REVIEW
+    from app.pipeline.multipanel_prints import PAPER_GRID_REVIEW
     from app.pipeline.segmentation import SegmentationDetection, SegmentationResult
     from app.services import pipeline
 
@@ -529,16 +533,10 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
     monkeypatch.setattr(pipeline, "run_paddle_ocr", lambda *_: [])
     get_settings.cache_clear()
 
-    def vertices(left, top, right, bottom):
-        return [{"x": x / 399, "y": y / 259} for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
-
-    def bounds(quad):
-        return {"x1": quad[0]["x"], "y1": quad[0]["y"], "x2": quad[2]["x"], "y2": quad[2]["y"]}
-
-    outer = vertices(196, 21, 374, 234)
-    parent = vertices(208, 31, 366, 233)
-    fragments = [vertices(211, 111, 360, 226), vertices(211, 151, 360, 226)]
-    neighbor = vertices(24, 32, 192, 228)
+    outer = _paper_grid_vertices(196, 21, 374, 234)
+    parent = _paper_grid_vertices(208, 31, 366, 233)
+    fragments = [_paper_grid_vertices(211, 111, 360, 226), _paper_grid_vertices(211, 151, 360, 226)]
+    neighbor = _paper_grid_vertices(24, 32, 192, 228)
     detections = []
     for index, polygon in enumerate([parent, *fragments, neighbor]):
         mask = {"source": "classical_border_quad" if index == 0 else "yolo_seg_mask", "polygon": polygon}
@@ -549,7 +547,7 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
             if polygon in fragments:
                 mask["paper_grid_review"]["cut"] = polygon[:2]
             reasons.append(PAPER_GRID_REVIEW)
-        detections.append(SegmentationDetection(bounds(polygon), mask, .81, 1.0, True, reasons))
+        detections.append(SegmentationDetection(_paper_grid_bounds(polygon), mask, .81, 1.0, True, reasons))
     monkeypatch.setattr(pipeline, "segment_album_page", lambda *_, **__: SegmentationResult(detections, {}))
 
     image = np.full((260, 400, 3), 42, np.uint8)
@@ -563,8 +561,17 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
     album_url = f"/api/v1/albums/{album_id}"
     uploaded = await client.post(f"{album_url}/pages/upload", files={"files": ("page.png", png.tobytes(), "image/png")})
     assert uploaded.status_code == 201, uploaded.text
+    return f"/api/v1/review/queue?album_id={album_id}&type=segmentation", outer
 
-    queue_url = f"/api/v1/review/queue?album_id={album_id}&type=segmentation"
+
+async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for_review(client, monkeypatch):
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, ReviewEvent
+    from app.pipeline.decisions import MOTIF_MARGIN_MARKS_REVIEW
+    from app.pipeline.motif_margin import HELD_PRINT_MOTIF_MARGIN_SOURCE
+    from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE
+
+    queue_url, outer = await _upload_disputed_paper_grid(client, monkeypatch)
     task, = (await client.get(queue_url)).json()
     before = task["payload"]
     assert before["detection_count"] == 4
@@ -663,7 +670,7 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
         motif = metadata["correction"]["crop_modes"]["image_only"]
         motif_reasons = motif["reason_codes"].copy()
         motif["margin_mark_source"] = HELD_PRINT_MOTIF_MARGIN_SOURCE
-        motif["margin_mark_regions"] = [vertices(235, 168, 300, 184)]
+        motif["margin_mark_regions"] = [_paper_grid_vertices(235, 168, 300, 184)]
         motif["reason_codes"] = [MOTIF_MARGIN_MARKS_REVIEW, *motif_reasons]
         metadata["review_reasons"] = [MOTIF_MARGIN_MARKS_REVIEW, *metadata["review_reasons"]]
         photo.enhancement_applied = metadata
@@ -676,7 +683,7 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
     restored_polygon = [restored_quad[0], restored_quad[1], {**restored_quad[1], "y": .65},
                         restored_quad[2], restored_quad[3], {**restored_quad[0], "y": .65}]
     restored = await client.patch(f"/api/v1/photos/{fragment_id}/bounding-box", json={
-        "bounding_box": bounds(restored_quad), "segmentation_mask": {"source": "manual_polygon", "polygon": restored_polygon},
+        "bounding_box": _paper_grid_bounds(restored_quad), "segmentation_mask": {"source": "manual_polygon", "polygon": restored_polygon},
     })
     assert restored.status_code == 200 and restored.json()["reviewed_non_print"] is False, restored.text
     assert "warp_quad" not in restored.json()["segmentation_mask"]
@@ -701,10 +708,10 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
                               "answer": "wrong_object", "idempotency_key": uuid4().hex})).status_code == 201
 
     crop = await client.patch(f"{parent_url}/bounding-box", json={
-        "bounding_box": bounds(outer), "confirm_print_outline": True,
+        "bounding_box": _paper_grid_bounds(outer), "confirm_print_outline": True,
         "segmentation_mask": {"source": "manual_quad", "polygon": outer, "warp_quad": outer,
                               "print_size_mm": {"width": 178, "height": 213},
-                              "image_quad": vertices(207, 32, 363, 223)},
+                              "image_quad": _paper_grid_vertices(207, 32, 363, 223)},
     })
     assert crop.status_code == 200, crop.text
     for variant in variants:
@@ -713,7 +720,7 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
 
     restored_quad = next(row["polygon"] for row in linked if row["photo_id"] == fragment_ids[0])
     restored = await client.patch(f"/api/v1/photos/{fragment_ids[0]}/bounding-box", json={
-        "bounding_box": bounds(restored_quad),
+        "bounding_box": _paper_grid_bounds(restored_quad),
         "segmentation_mask": {"source": "manual_quad", "polygon": restored_quad, "warp_quad": restored_quad},
     })
     assert restored.status_code == 200 and restored.json()["reviewed_non_print"] is False
@@ -721,6 +728,66 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
     assert reopened["payload"]["detection_count"] == 3
     assert reopened["payload"]["photo_count_revision"] != event_id
     for variant in variants:
+        assert (await client.get(f"{parent_url}/image?variant={variant}")).status_code == 404
+
+
+async def test_saved_measured_parent_keeps_count_decision_available(client, monkeypatch):
+    queue_url, outer = await _upload_disputed_paper_grid(client, monkeypatch)
+    task, = (await client.get(queue_url)).json()
+    initial = task["payload"]
+    rows = initial["detections"]
+    linked = [row for row in rows if row["segmentation_mask"].get("paper_grid_review")]
+    parent, = [row for row in linked if not row["segmentation_mask"]["paper_grid_review"].get("cut")]
+    parent_id = parent["photo_id"]
+    fragment_ids = [row["photo_id"] for row in linked if row != parent]
+    parent_url = f"/api/v1/photos/{parent_id}"
+    event_url = "/api/v1/review/events"
+    answer = {"task_type": "segmentation", "task_id": task["id"], "answer": "confirm_shared_paper_grid",
+              "reason_code": "same_physical_print", "metadata": {
+                  "photo_count_revision": initial["photo_count_revision"], "paper_grid_parent_id": parent_id,
+                  "paper_grid_fragment_ids": fragment_ids,
+              }}
+
+    async def save(paper):
+        response = await client.patch(f"{parent_url}/bounding-box", json={
+            "confirm_print_outline": True, "bounding_box": _paper_grid_bounds(paper),
+            "segmentation_mask": {"polygon": paper, "warp_quad": paper},
+        })
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    changed = await save(_paper_grid_vertices(199, 22, 374, 234))
+    assert changed["manual_paper_grid_count_review"] is None
+    obsolete = await client.post(event_url, json={**answer, "idempotency_key": uuid4().hex})
+    assert obsolete.status_code == 409 and obsolete.json()["detail"] == "paper_grid_review_group_stale"
+    shaped_task, = (await client.get(queue_url)).json()
+    assert shaped_task["payload"]["detection_count"] == 4
+
+    measured = parent["crop_modes"]["full_print"]["suggested_warp_quad"]
+    corrected = await save(measured)
+    assert corrected["segmentation_confidence"] is None
+    assert corrected["manual_paper_grid_count_review"] == {"outline": outer}
+    assert (await client.get(parent_url)).json()["manual_paper_grid_count_review"] == {"outline": outer}
+    corrected_task, = (await client.get(queue_url)).json()
+    edited_parent, = [row for row in corrected_task["payload"]["detections"] if row["photo_id"] == parent_id]
+    assert edited_parent["manual_paper_grid_count_review"] == {"outline": outer}
+    assert corrected_task["payload"]["photo_count_revision"] == initial["photo_count_revision"]
+    preview_url = f"{parent_url}/image?variant=source_corrected_untrimmed"
+    preview = await client.get(preview_url)
+    assert preview.status_code == 200
+
+    answer["idempotency_key"] = uuid4().hex
+    confirmed = await client.post(event_url, json=answer)
+    assert confirmed.status_code == 201, confirmed.text
+    event_id = confirmed.json()["id"]
+    retry = await client.post(event_url, json=answer)
+    assert retry.json() == {"id": event_id, "saved": True, "duplicate": True}
+    reviewed_task, = (await client.get(queue_url)).json()
+    reviewed = reviewed_task["payload"]
+    assert reviewed["detection_count"] == 2 and reviewed["photo_count_revision"] == event_id
+    assert edited_parent in reviewed["detections"]
+    assert (await client.get(preview_url)).content == preview.content
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
         assert (await client.get(f"{parent_url}/image?variant={variant}")).status_code == 404
 
 

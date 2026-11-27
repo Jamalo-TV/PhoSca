@@ -301,9 +301,14 @@ Bei Abbrechen bleiben alle Vorschläge einzeln prüfbar.
 
 Nach der Bestätigung kannst du auf derselben Seite über **Aussenumriss
 prüfen** die vier gemessenen Ecken des verbleibenden Abzugs laden.
-Der Anzahlentscheid bestätigt die physische Zuordnung. Für **Ganzer
-Abzug** und **Nur Bildmotiv** prüfst und speicherst du die jeweilige
-Geometrie separat.
+Wenn du den gemessenen Aussenumriss zuerst speicherst, kannst du die
+Zusammengehörigkeit anschliessend bestätigen. PhoSca prüft, dass die
+gespeicherte sichtbare Fläche und die vier Ecken weiterhin dem
+gemessenen Umriss entsprechen und beide Modi wegen der Überlappung in
+Prüfung sind. Bei einer abweichenden Kontur müssen die betroffenen
+Vorschläge einzeln geprüft werden. Der Anzahlentscheid bestätigt die
+physische Zuordnung. Für **Ganzer Abzug** und **Nur Bildmotiv** prüfst
+und speicherst du die jeweilige Geometrie separat.
 [Gegenprobe mit einem zweiten Papier](data/evaluation/README.md#confirm-a-shared-paper-grid-in-count-review)
 
 Bei drei verknüpften Vorschlägen für eine mögliche Negativhülle öffnet

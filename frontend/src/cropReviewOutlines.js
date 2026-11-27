@@ -86,7 +86,7 @@ export function captureSplitSourceWindow(traces, width, height) {
 }
 
 function cropModes(photo) {
-  return photo.crop_modes || photo.enhancement_applied?.correction?.crop_modes;
+  return photo?.crop_modes || photo?.enhancement_applied?.correction?.crop_modes;
 }
 
 function bothModesHeld(modes) {
@@ -263,9 +263,10 @@ export function getPaperGridReviewGroups(photos) {
   for (const photo of photos) {
     const id = photo.photo_id ?? photo.id;
     const { segmentation_confidence: confidence = photo.confidence } = photo;
-    if (!id || photo.reviewed_non_print || confidence == null) continue;
-    const review = getPaperGridReview(photo.segmentation_mask);
-    if (!review) continue;
+    if (!id || photo.reviewed_non_print) continue;
+    const manual = confidence == null;
+    const review = getPaperGridReview(manual ? { paper_grid_review: photo.manual_paper_grid_count_review } : photo.segmentation_mask);
+    if (!review || (manual && review.cut)) continue;
     const key = JSON.stringify(review.outline.map(({ x, y }) => [x, y]));
     if (!groups.has(key)) groups.set(key, { key, outline: review.outline, parents: new Set(), cuts: new Map() });
     const group = groups.get(key);
@@ -285,14 +286,13 @@ export function getPaperGridOutlineParents(photos) {
 }
 
 export function getActionablePaperGridReviewGroups(groups, photos) {
-  const modesById = new Map(photos.map((photo) => [
-    photo.photo_id ?? photo.id, cropModes(photo),
-  ]));
+  const photosById = new Map(photos.map(photo => [photo.photo_id ?? photo.id, photo]));
   return groups.filter(({ parents, cuts }) => {
     const [parentId] = parents;
-    const proposed = modesById.get(parentId)?.full_print?.suggested_warp_quad;
+    const parent = photosById.get(parentId);
+    const proposed = cropModes(parent)?.full_print?.suggested_warp_quad ?? parent?.manual_paper_grid_count_review?.outline;
     return cuts.size >= 1 && cuts.size <= 2 && Array.isArray(proposed) && proposed.length === 4 && proposed.every(isNormalizedPoint)
-      && [parentId, ...cuts.keys()].every(id => bothModesHeld(modesById.get(id)));
+      && [parentId, ...cuts.keys()].every(id => bothModesHeld(cropModes(photosById.get(id))));
   });
 }
 

@@ -40,6 +40,38 @@ def original_prediction_mask(metadata: dict) -> dict | None:
     return ((metadata.get("review_provenance") or {}).get("original_prediction") or {}).get("segmentation_mask")
 
 
+def manual_paper_grid_count_review(mask: dict | None, metadata: dict) -> dict | None:
+    """Keep count evidence when the reviewer saved the measured parent outline."""
+    group = (original_prediction_mask(metadata) or {}).get("paper_grid_review")
+    correction = metadata.get("correction") or {}
+    modes = correction.get("crop_modes") or {}
+    overlap_field, overlap_revision = PAPER_CLAIM_OVERLAP_CHECKS[PAPER_GRID_OVERLAP_REVIEW]
+    if (not isinstance(group, dict) or group.get("cut") is not None or not mask
+            or correction.get(overlap_field) != overlap_revision
+            or any((mode := modes.get(name) or {}).get("status") != "review_needed"
+                   or PAPER_GRID_OVERLAP_REVIEW not in (mode.get("reason_codes") or ())
+                   for name in ("full_print", "image_only"))):
+        return None
+
+    def vertices(values: list[dict]) -> np.ndarray:
+        return np.float64([(point["x"], point["y"]) for point in values])
+
+    try:
+        outline = vertices(group["outline"])
+        claims = (vertices(mask["warp_quad"]), vertices(mask.get("visible_polygon") or mask["polygon"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if any(quad.shape != (4, 2) or not np.isfinite(quad).all() or np.any((quad < 0) | (quad > 1))
+           for quad in (outline, *claims)):
+        return None
+    # Allow rounding during the native-to-normalized round trip only. A
+    # reviewer moving an outline can be correcting a separate paper claim.
+    orders = [np.roll(cycle, turn, axis=0) for cycle in (outline, outline[::-1]) for turn in range(4)]
+    if not all(any(np.allclose(quad, order, atol=1e-6, rtol=0) for order in orders) for quad in claims):
+        return None
+    return group
+
+
 def confirmed_contrast_outline(metadata: dict) -> bool:
     mask = original_prediction_mask(metadata) or {}
     if mask.get("detector_source") not in {"contrast_region", "yolo_onnx"}:

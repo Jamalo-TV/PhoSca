@@ -364,3 +364,18 @@ test("an accepted paper-grid count leaves its held parent outline available", ()
   assert.deepEqual(getPaperGridReviewGroups(confirmed), []);
   assert.deepEqual(getPaperGridOutlineParents(confirmed), [parent]);
 });
+
+test("a saved parent can confirm the same measured grid while its active fragment is held", () => {
+  const held = { status: "review_needed" };
+  const parent = { id: "paper", segmentation_confidence: null, manual_paper_grid_count_review: { outline: quad },
+    enhancement_applied: { correction: { crop_modes: { full_print: { ...held, warp_quad: quad }, image_only: held } } } };
+  const child = { photo_id: "first", confidence: .65, segmentation_mask: { paper_grid_review: { outline: quad, cut: quad.slice(0, 2) } },
+    crop_modes: { full_print: held, image_only: held } };
+  const active = [parent, child];
+  const groups = getPaperGridReviewGroups(active);
+  assert.equal(groups.length, 1);
+  assert.deepEqual(getActionablePaperGridReviewGroups(groups, active), groups);
+  assert.deepEqual(getPaperGridOutlineParents(active), []);
+  assert.deepEqual(getPaperGridReviewGroups([{ ...parent, manual_paper_grid_count_review: null }, child]), []);
+  assert.deepEqual(getPaperGridReviewGroups([parent, { ...child, reviewed_non_print: true }]), []);
+});
