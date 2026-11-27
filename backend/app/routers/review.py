@@ -32,6 +32,10 @@ from app.pipeline.manual_paper_boundary import (
 from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
 from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
+from app.pipeline.printed_illustration_review import (
+    PRINTED_ILLUSTRATION_COUNT_REVIEW, PRINTED_ILLUSTRATION_REVIEW_FRAME, PRINTED_ILLUSTRATION_REVIEW_ID,
+    PRINTED_ILLUSTRATION_REVIEW_SIZE, illustration_evidence_id, valid_illustration_frame,
+)
 from app.pipeline.protected_regions import album_mark_source_matches
 from app.pipeline.rounded_corner_review import ROUNDED_CORNER_REVIEW
 from app.pipeline.variants import saved_full_print_review_image_url, variant_path_from_photo, variant_urls, variants_from_metadata
@@ -62,6 +66,10 @@ GROUP_EXCLUSIONS = {
     "exclude_crossing_group": (1, 4, CROSSING_FALLBACK_TRACES, "crossing_group_photo_ids", CROSSING_FALLBACK_COUNT_REVIEW, "crossing"),
     "exclude_album_leaf_group": (
         1, 2, ALBUM_LEAF_REVIEW_TRACES, "album_leaf_group_photo_ids", ALBUM_LEAF_COUNT_REVIEW, "album_leaf",
+    ),
+    "exclude_printed_illustration_group": (
+        PRINTED_ILLUSTRATION_REVIEW_SIZE, 1, PRINTED_ILLUSTRATION_REVIEW_FRAME,
+        "printed_illustration_group_photo_ids", PRINTED_ILLUSTRATION_COUNT_REVIEW, "printed_illustration",
     ),
 }
 CONFIRM_SHARED_PAPER_GRID = "confirm_shared_paper_grid"
@@ -333,7 +341,8 @@ def _validate_enhancement_decision(payload: MobileReviewAnswer, context: dict) -
 
 def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[ExtractedPhoto]:
     size, trace_count, mask_key, request_key, review_reason, name = GROUP_EXCLUSIONS[payload.answer]
-    required_reason = {"film": "film_carrier", "crossing": "non_photo_object", "album_leaf": "non_photo_object"}.get(name)
+    required_reason = {"film": "film_carrier", "crossing": "non_photo_object", "album_leaf": "non_photo_object",
+                       "printed_illustration": "non_photo_object"}.get(name)
     if required_reason and payload.reason_code != required_reason:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{name}_confirmation_required")
     submitted = payload.metadata.get(request_key)
@@ -357,7 +366,7 @@ def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[Extrac
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{name}_review_group_stale")
     if name in ("crossing", "album_leaf") and any(not isinstance(trace, list) or len(trace) != 2 for trace in evidence):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{name}_review_group_stale")
-    if name in ("film", "crossing", "album_leaf"):
+    if name in ("film", "crossing", "album_leaf", "printed_illustration"):
         for photo in selected:
             modes = ((photo.enhancement_applied or {}).get("correction") or {}).get("crop_modes") or {}
             if any((modes.get(mode) or {}).get("status") != "review_needed" for mode in ("full_print", "image_only")):
@@ -369,6 +378,16 @@ def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[Extrac
                     and (photo.segmentation_mask or {}).get("polygon") == child_outline]
         if not isinstance(child_outline, list) or len(child_outline) < 4 or len(children) != 1:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_leaf_review_group_stale")
+    if name == "printed_illustration":
+        frame, = evidence
+        if (len(context["photos"]) != size or not valid_illustration_frame(frame)
+                or page_fusion_evidence(context["page"].processing_metadata).get("deferred_print_proposals")):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="printed_illustration_review_group_stale")
+        masks = [photo.segmentation_mask or {} for photo in selected]
+        expected = illustration_evidence_id(frame, [mask.get("polygon") for mask in masks])
+        if (payload.metadata.get("printed_illustration_evidence_id") != expected
+                or any(mask.get(PRINTED_ILLUSTRATION_REVIEW_ID) != expected for mask in masks)):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="printed_illustration_review_group_stale")
     return selected
 
 
@@ -578,6 +597,7 @@ async def add_review_event(
                 detail="Prüfe die gestrichelten Konturen, bevor du die Anzahl bestätigst.",
             )
         count_review_kind = {"exclude_film_group": "film", "exclude_album_leaf_group": "album_leaf",
+                             "exclude_printed_illustration_group": "printed_illustration",
                              CONFIRM_SHARED_PAPER_GRID: "paper_grid"}.get(payload.answer)
         if count_review_kind:
             count_confirmed = await session.scalar(select(_completed_review_exists("segmentation", Page.id)).where(

@@ -342,6 +342,26 @@ bleibt auf derselben Seite offen. Für einen daneben liegenden
 Papierabzug gelten weiterhin seine eigenen Konturen und Zuschnittregeln.
 [Originalausschnitte und Gegenproben](data/evaluation/README.md#inspect-the-original-before-excluding-a-negative-sleeve)
 
+**Gemeinsame Abbildung prüfen** erscheint auf Desktop und Mobile, wenn
+genau vier automatische Vorschläge stark überlappen und ein gemeinsamer
+Zierrahmen im Original sichtbar ist. PhoSca sucht einen schmalen hellen
+Rand mit vier nach innen gewölbten Ecken. Die Helligkeit und die Farbe
+müssen sich auf beiden Seiten jeder gestützten Stelle vom Rand
+unterscheiden. Eine zweite gut belegte eigene Kante eines Vorschlags
+verhindert den Gruppenhinweis. Die gelbe Linie zeigt den gemessenen
+Zierrahmen. Prüfe am Original, ob jeder der vier Vorschläge denselben
+aufgedruckten Deckelschmuck zeigt. Wenn ein eigener Papierabzug aufliegt
+oder du dir unsicher bist, brich ab und prüfe die Konturen einzeln.
+
+**Alle vier Vorschläge aus der Abzugsliste nehmen** speichert einen
+gemeinsamen Entscheid für genau die vier aktuellen Vorschläge. Bei
+geänderten Konturen, zusätzlichen Vorschlägen, freigegebenen Zuschnitten
+oder einer inzwischen bestätigten Anzahl verlangt PhoSca eine neue
+Prüfung. Die vorherigen Masken und unbeschnittenen Vorschauen stehen
+weiterhin in der Geometrieprüfung zur Verfügung. Prüfe danach die Seite
+und bestätige ihre Anzahl separat.
+[Beispiel des Spiralalbumdeckels](data/evaluation/README.md#review-four-proposals-on-one-illustrated-cover)
+
 Bei zwei strittigen Vorschlägen kann PhoSca kurze, am Original
 gemessene Randabschnitte beidseits der vermuteten Teilung einzeichnen.
 **Gemeinsame Papierkante prüfen** markiert beide Vorschläge. Der

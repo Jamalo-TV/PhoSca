@@ -329,6 +329,8 @@ export function DarkBackingEvidenceLegend({ proposals, mobile = false }) {
   </div>;
 }
 
+export const printedIllustrationReviewHint = "Prüfe am Original, ob die Kontur einen eigenen Papierabzug zeigt oder zur gemeinsamen Abbildung gehört.";
+
 const groupReviewLabels = {
   film: {
     open: "Negativhülle prüfen",
@@ -349,6 +351,11 @@ const groupReviewLabels = {
     open: "Mögliche Albumseite",
     confirm: "Grossen Vorschlag aus der Abzugsliste nehmen",
     prompt: "Entferne den grossen Vorschlag nur, wenn er das Albumblatt zeigt. Prüfe den kleineren Fotoabzug separat. Türkis markiert gemessene Linien am möglichen Albumfalz, Violett den kleineren Vorschlag.",
+  },
+  printed_illustration: {
+    open: "Gemeinsame Abbildung prüfen",
+    confirm: "Alle vier Vorschläge aus der Abzugsliste nehmen",
+    prompt: "Die gelbe Linie folgt dem sichtbaren Zierrahmen. Entferne die vier Vorschläge nur, wenn sie alle Teile derselben Abbildung auf dem Albumdeckel sind. Liegt ein eigener Papierabzug auf oder bleibt es unklar, wähle «Abbrechen».",
   },
   "paper-grid": {
     open: "Zusammengehörigkeit prüfen",
@@ -500,7 +507,7 @@ export function CountGroupReview({ groups, selected, busy, sourceUrl, onSelect, 
   const promptId = useId();
   if (!groups.length) return null;
   const labels = selected && groupReviewLabels[selected.kind];
-  const exclusions = groups.filter(({ kind }) => kind !== "paper-grid" && kind !== "album_leaf");
+  const exclusions = groups.filter(({ kind }) => !["paper-grid", "album_leaf", "printed_illustration"].includes(kind));
   const sharedPaper = groups.filter(({ kind }) => kind === "paper-grid");
   const albumLeaves = groups.filter(({ kind }) => kind === "album_leaf");
   return <div className="count-group-review">
@@ -515,7 +522,8 @@ export function CountGroupReview({ groups, selected, busy, sourceUrl, onSelect, 
       <button type="button" className="text-button" disabled={busy} onClick={() => onSelect(null)}>Abbrechen</button>
     </> : groups.map((group) => {
       const { key, kind } = group;
-      const peers = kind === "paper-grid" ? sharedPaper : kind === "album_leaf" ? albumLeaves : exclusions;
+      const peers = kind === "paper-grid" ? sharedPaper : kind === "album_leaf" ? albumLeaves
+        : kind === "printed_illustration" ? [group] : exclusions;
       return <button key={key} type="button" className="text-button" disabled={busy} onClick={() => onSelect(key)}>
         {`${groupReviewLabels[kind].open}${peers.length > 1 ? ` (${peers.indexOf(group) + 1})` : ""}`}
       </button>;
@@ -546,6 +554,9 @@ export const crossingFallbackTraceStyles = [
 
 export const albumLeafTraceStyle = {
   color: "#67e8f9", contrast: "#164e63", dash: [9, 5], label: "Gemessene Linien am möglichen Albumfalz",
+};
+export const printedIllustrationFrameStyle = {
+  color: "#fcd34d", contrast: "#713f12", dash: [8, 5], label: "Gemessener Zierrahmen einer möglichen gemeinsamen Abbildung",
 };
 export const albumLeafChildStyle = {
   color: "#7e22ce", contrast: "#f3e8ff", dash: [4, 4], label: "Kleinerer Fotoabzug zur Einzelprüfung",

@@ -30,6 +30,7 @@ from app.pipeline.multipanel_prints import MULTIPANEL_PRINT_REVISION
 from app.pipeline.overlap_edge_review import OVERLAP_EDGE_REVIEW_REVISION
 from app.pipeline.print_edges import CLASSICAL_CONTOUR_REFINEMENT_REVISION, PRINT_BOUNDARY_REVISION
 from app.pipeline.print_outline_suggestion import PRINT_OUTLINE_SUGGESTION_REVISION
+from app.pipeline.printed_illustration_review import PRINTED_ILLUSTRATION_REVIEW_REVISION
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_REVISION
 from app.pipeline.protected_regions import PROTECTED_REGION_REVISION
 from app.pipeline.source_strip_review import SOURCE_STRIP_REVIEW_REVISION
@@ -181,6 +182,10 @@ def crop_validation_profile(settings: Settings) -> dict:
         "album_opening_review": ALBUM_OPENING_REVIEW_REVISION if settings.enable_precise_photo_crops else None,
         "album_leaf_count_review": (
             ALBUM_LEAF_REVIEW_REVISION if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+        ),
+        "printed_illustration_review": (
+            PRINTED_ILLUSTRATION_REVIEW_REVISION if settings.enable_precise_photo_crops
+            and settings.enable_classical_segmentation_fallback and visible_model is None else None
         ),
         "orientation_enabled": settings.enable_photo_orientation_correction,
         "orientation_model_sha256": (

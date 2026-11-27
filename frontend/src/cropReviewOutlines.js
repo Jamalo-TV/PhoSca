@@ -246,6 +246,24 @@ export function getPaperJoinReviewGroups(photos) {
   return getTraceReviewGroups(photos, "paper_join_review_traces").filter(({ photoIds }) => photoIds.size === 2);
 }
 
+export function getPrintedIllustrationReviewGroups(photos) {
+  const active = photos.filter(photo => !photo.reviewed_non_print);
+  if (active.length !== 4) return [];
+  const { printed_illustration_review_frame: frames, printed_illustration_review_id: evidenceId } = active[0].segmentation_mask || {};
+  if (!/^[a-f0-9]{64}$/.test(evidenceId ?? "") || !Array.isArray(frames) || frames.length !== 1
+      || !Array.isArray(frames[0]) || frames[0].length < 20 || frames[0].length > 160 || !frames[0].every(isNormalizedPoint)) return [];
+  const serialized = JSON.stringify(frames);
+  const photoIds = new Set(active.map(photo => photo.photo_id ?? photo.id));
+  if (photoIds.size !== 4 || photoIds.has(undefined) || photoIds.has(null) || !active.every(photo => {
+    const { segmentation_confidence: confidence = photo.confidence } = photo;
+    return confidence != null && bothModesHeld(cropModes(photo))
+      && photo.segmentation_mask?.printed_illustration_review_id === evidenceId
+      && JSON.stringify(photo.segmentation_mask?.printed_illustration_review_frame) === serialized;
+  })) return [];
+  return [{ kind: "printed_illustration", evidenceId, key: JSON.stringify([evidenceId, ...[...photoIds].sort()]),
+    frame: frames[0], photoIds }];
+}
+
 export function getCrossingFallbackReviewGroups(photos) {
   return photos.flatMap(photo => {
     const id = photo.photo_id ?? photo.id;

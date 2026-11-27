@@ -6,12 +6,41 @@ import {
   filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
   getFilmGridReviewSeams, getFilmNeighborEdgeIndex, getFragmentReviewOutlines, getMergedPrintPairs,
   getPaperGridOutlineParents, getPaperGridReviewGroups,
-  getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper, paperGridSourceWindows, savedFullPrintReviewUrl,
+  getPaperJoinReviewGroups, getPrintedIllustrationReviewGroups, getStoredMotifQuad, motifFitsPaper, paperGridSourceWindows,
+  savedFullPrintReviewUrl,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource,
 } from "../src/cropReviewOutlines.js";
 
 const quad = [{ x: .1, y: .2 }, { x: .7, y: .2 }, { x: .7, y: .8 }, { x: .1, y: .8 }];
 const mask = { fragment_outline_suggestion: { quad, uncertain_edge: 1 } };
+
+test("a printed illustration group requires all four current automatic held proposals", () => {
+  const frame = Array.from({ length: 24 }, (_, index) => ({
+    x: .5 + .4 * Math.cos(index * Math.PI / 12), y: .5 + .4 * Math.sin(index * Math.PI / 12),
+  }));
+  const held = { status: "review_needed" };
+  const crop_modes = { full_print: held, image_only: held };
+  const evidenceId = "a".repeat(64);
+  const segmentation_mask = { printed_illustration_review_frame: [frame], printed_illustration_review_id: evidenceId };
+  const photos = Array.from({ length: 4 }, (_, index) => ({ photo_id: String(index), confidence: .64,
+    segmentation_mask: structuredClone(segmentation_mask), crop_modes }));
+  const [group] = getPrintedIllustrationReviewGroups(photos);
+  assert.equal(group.kind, "printed_illustration");
+  assert.equal(group.evidenceId, evidenceId);
+  assert.deepEqual(group.photoIds, new Set(["0", "1", "2", "3"]));
+  assert.deepEqual(group.frame, frame);
+  const [first, ...others] = photos;
+  assert.deepEqual(getPrintedIllustrationReviewGroups(others), []);
+  assert.deepEqual(getPrintedIllustrationReviewGroups([...photos, { ...first, photo_id: "new" }]), []);
+  for (const override of [
+    { reviewed_non_print: true },
+    { confidence: null },
+    { crop_modes: { ...crop_modes, image_only: { status: "ready" } } },
+    { segmentation_mask: { ...segmentation_mask, printed_illustration_review_id: "b".repeat(64) } },
+    { segmentation_mask: { ...segmentation_mask, printed_illustration_review_frame: [frame.slice(1)] } },
+    { photo_id: "1" },
+  ]) assert.deepEqual(getPrintedIllustrationReviewGroups([{ ...first, ...override }, ...others]), []);
+});
 
 test("a film-neighbor distinction only applies to its two active held lines", () => {
   const mode = { status: "review_needed", suggested_edge_source: "competing_print_edges",

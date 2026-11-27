@@ -22,7 +22,7 @@ import {
   nearCapturePrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
-  paperJoinReason, paperOutlineRequiresReview, partialMotifSeams,
+  paperJoinReason, paperOutlineRequiresReview, partialMotifSeams, printedIllustrationFrameStyle,
   isNestedFallbackProposal, requiresStandalonePrintFlag, projectivePrintProposal, standalonePrintReviewErrors, tiledPrintProposal,
   scannerBackingHint, scannerBackingReason,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
@@ -36,7 +36,7 @@ import {
   contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor, getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
-  getMergedPrintPairs, getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
+  getMergedPrintPairs, getPaperJoinReviewGroups, getPrintedIllustrationReviewGroups, getStoredMotifQuad, motifFitsPaper,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
   savedFullPrintReviewUrl,
 } from "./cropReviewOutlines.js";
@@ -544,6 +544,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const countGroupOverlay = selectedCountGroup && (
     <g aria-label={selectedCountGroup.kind === "film" ? "Vorschläge zur Prüfung der Negativhülle"
       : selectedCountGroup.kind === "album_leaf" ? "Mögliche Albumseite zur Anzahlprüfung"
+      : selectedCountGroup.kind === "printed_illustration" ? "Mögliche gemeinsame Abbildung zur Anzahlprüfung"
       : selectedCountGroup.kind === "crossing" ? "Schräger Vorschlag zur Anzahlprüfung" : "Vorschläge zur Prüfung der Papierkante"}
       fill="#0e7490" fillOpacity="0.11"
       stroke="#0e7490" strokeWidth="6" pointerEvents="none">
@@ -569,6 +570,12 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           <Shape points={positions} stroke={color} strokeWidth="5" strokeDasharray={dash.map(value => value * 2).join(" ")} />
         </g>;
       })}
+      {selectedCountGroup.kind === "printed_illustration" && <g fill="none" aria-label={printedIllustrationFrameStyle.label}>
+        <polygon points={selectedCountGroup.frame.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
+          stroke={printedIllustrationFrameStyle.contrast} strokeWidth="9" />
+        <polygon points={selectedCountGroup.frame.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")}
+          stroke={printedIllustrationFrameStyle.color} strokeWidth="5" strokeDasharray="16 10" />
+      </g>}
     </g>
   );
   const paperJoinOverlay = paperJoinGroups.map(({ key, traces }) => (
@@ -1073,7 +1080,8 @@ function CropReview({ albumId, goHome }) {
     cyclicReviewQuad(sanitizeReviewPolygon(parent.crop_modes?.full_print?.suggested_warp_quad)));
   const albumLeafGroups = getAlbumLeafReviewGroups(countDetections);
   const countGroups = actionableCountGroups(getActionableFilmGridReviewGroups(filmGridGroups, countDetections), paperJoinGroups,
-    getActionablePaperGridReviewGroups(paperGridGroups, countDetections), [...getCrossingFallbackReviewGroups(countDetections), ...albumLeafGroups]);
+    getActionablePaperGridReviewGroups(paperGridGroups, countDetections), [...getCrossingFallbackReviewGroups(countDetections), ...albumLeafGroups,
+      ...(!deferredProposals.length ? getPrintedIllustrationReviewGroups(countDetections) : [])]);
   const selectedCountGroup = groupSelection?.pageId === item?.id
     ? countGroups.find(({ key }) => key === groupSelection?.key) : null;
   const approvalBlocked = fullPrintHeld || captureReviewPending || paperOutlinePending || deferredParentReviewPending
@@ -1271,7 +1279,8 @@ function CropReview({ albumId, goHome }) {
             disabled={submitting || (value === "correct" && approvalBlocked)}
             aria-describedby={value === "correct" ? approvalHint : undefined}
             onClick={() => record(value)}>
-            {value === "correct" && (deferredProposals.length || item.payload?.missing_print_edge_traces?.length
+            {value === "correct" && type === "segmentation" && (item.payload?.detection_count === 0
+              || deferredProposals.length || item.payload?.missing_print_edge_traces?.length
               || item.payload?.near_capture_print_edge_traces?.length
               || countOutlines.length || captureSplitGroups.length || filmGridGroups.length || paperGridGroups.length || paperJoinGroups.length
               || albumLeafGroups.length || mergedPairs.length)

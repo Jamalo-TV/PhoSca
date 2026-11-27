@@ -66,7 +66,7 @@ import {
   nearCapturePrintEdgeHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
-  paperJoinReason, scannerBackingHint, scannerBackingReason,
+  paperJoinReason, printedIllustrationFrameStyle, printedIllustrationReviewHint, scannerBackingHint, scannerBackingReason,
   isNestedFallbackProposal, requiresStandalonePrintFlag, standalonePrintReviewErrors,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
@@ -80,7 +80,7 @@ import {
   contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor, getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
-  getMergedPrintPairs, getPaperJoinReviewGroups, getStoredMotifQuad,
+  getMergedPrintPairs, getPaperJoinReviewGroups, getPrintedIllustrationReviewGroups, getStoredMotifQuad,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
   savedFullPrintReviewUrl,
 } from "./cropReviewOutlines.js";
@@ -1398,7 +1398,7 @@ const printAdditionErrors = {
 };
 
 function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onConfirmCount, onResolveCountGroup, onReprocess,
-  selectedPhotoId, onSelectPhoto, reviewingCount, reviewingGeometry }) {
+  selectedPhotoId, onSelectPhoto, reviewingCount, countPending, reviewingGeometry }) {
   const canvasRef = useRef(null);
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
@@ -1437,6 +1437,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     && currentCountReview.paperGridEventId === page?.processing_metadata?.photo_count_revision;
   const additionSize = newPrint && parsePrintSize(newPrint.printSizeFields);
   const canAddPhoto = pageImage?.pageId === pageId && ["completed", "review_needed"].includes(page?.status);
+  const activePhotoCount = photos.filter((photo) => !photo.reviewed_non_print).length;
   const selected = photos.find((photo) => photo.id === selectedPhotoId);
   const selectedModes = selected?.crop_modes || getCropModes(selected);
   const contrastOutlineReview = contrastOutlineNeedsConfirmation(selected, selectedModes?.full_print);
@@ -1470,8 +1471,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     }) : [], [reviewingCount, newPrint, editingImage, photos]);
   const countGroups = useMemo(() => actionableCountGroups(getActionableFilmGridReviewGroups(filmGridGroups, photos), paperJoinGroups,
     getActionablePaperGridReviewGroups(paperGridGroups, photos),
-    reviewingCount && !newPrint && !editingImage ? [...getCrossingFallbackReviewGroups(photos), ...getAlbumLeafReviewGroups(photos)] : []),
-  [filmGridGroups, paperJoinGroups, paperGridGroups, photos, reviewingCount, newPrint, editingImage]);
+    reviewingCount && !newPrint && !editingImage ? [...getCrossingFallbackReviewGroups(photos), ...getAlbumLeafReviewGroups(photos),
+      ...(!deferredProposals.length ? getPrintedIllustrationReviewGroups(photos) : [])] : []),
+  [filmGridGroups, paperJoinGroups, paperGridGroups, photos, reviewingCount, newPrint, editingImage, deferredProposals.length]);
   const selectedCountGroup = groupSelection?.pageId === pageId
     ? countGroups.find(({ key }) => key === groupSelection?.key) : null;
   const competingPhotoOutlines = useMemo(() => {
@@ -1494,6 +1496,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     : getDeferredParentCropHints(selected?.enhancement_applied?.segmentation_review_reasons);
   const detectionReviewHint = (crossingReview && crossingPrintHint) || (scannerReview && scannerBackingHint)
     || (overlapReview && clippedOverlapHint) || (filmGridSeam && filmGridHint) || (paperJoinReview && paperJoinHint)
+    || (selected?.segmentation_confidence != null && !rejectedDetection
+      && selected.segmentation_mask?.printed_illustration_review_id && printedIllustrationReviewHint)
     || (paperGrid && (paperGrid.cut ? paperGridFragmentHint : paperGridOuterHint)) || (fragmentReview && fragmentOutlineHint)
     || (captureSplitReview && "Prüfe, ob dieser Vorschlag einen eigenen Papierabzug zeigt.")
     || (contrastOutlineReview && contrastOutlineReviewHint);
@@ -1868,9 +1872,11 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       context.restore();
     }
-    if (selectedCountGroup?.kind === "crossing" || selectedCountGroup?.kind === "album_leaf") {
+    if (["crossing", "album_leaf", "printed_illustration"].includes(selectedCountGroup?.kind)) {
       const isAlbumLeaf = selectedCountGroup.kind === "album_leaf";
-      const evidence = selectedCountGroup.traces.map((points, index) => ({
+      const evidence = selectedCountGroup.kind === "printed_illustration"
+        ? [{ points: selectedCountGroup.frame, closed: true, ...printedIllustrationFrameStyle }]
+        : selectedCountGroup.traces.map((points, index) => ({
         points, ...(isAlbumLeaf ? albumLeafTraceStyle : crossingFallbackTraceStyles[index]),
       }));
       if (isAlbumLeaf) evidence.push({ points: selectedCountGroup.child, closed: true, ...albumLeafChildStyle });
@@ -2280,10 +2286,11 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {!editingImage && showMissingEdges && missingTraces.length > 0 && (
         <p className="crop-editor-hint">{nearCaptureTraces?.length ? nearCapturePrintEdgeHint : missingPrintEdgeHint}</p>
       )}
-      {!newPrint && !editingImage && (deferredProposals.length > 0 || mergedPairs.length > 0) && (
+      {!newPrint && !editingImage && (deferredProposals.length > 0 || mergedPairs.length > 0
+        || (countPending && activePhotoCount === 0)) && (
         <div className="manual-print-actions">
           <p className="crop-editor-hint">
-            {photos.filter((photo) => !photo.reviewed_non_print).length} erfasste Abzüge{deferredProposals.length > 0
+            {activePhotoCount} erfasste Abzüge{deferredProposals.length > 0
               && (deferredProposals.length === 1 ? ", 1 unklarer Vorschlag" : `, ${deferredProposals.length} unklare Vorschläge`)}.
             {deferredProposals.some(({ reason }) => reason === sourceFragmentProposal) && ` ${sourceFragmentCountHint}`}
             {deferredProposals.some(({ reason }) => reason !== sourceFragmentProposal && !standalonePrintNeedsConfirmation(reason))
@@ -2309,7 +2316,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           ))}
           <button className="text-button compact" type="button" onClick={confirmCount}
             disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving
-              || ["paper-grid", "crossing", "album_leaf"].includes(selectedCountGroup?.kind)}>
+              || ["paper-grid", "crossing", "album_leaf", "printed_illustration"].includes(selectedCountGroup?.kind)}>
             {currentCountReview?.saving ? "Anzahl wird gespeichert …" : "Anzahl bestätigen"}
           </button>
         </div>
@@ -2701,6 +2708,7 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
           onResolveCountGroup={resolveCountGroup}
           onReprocess={reprocessSelected}
           reviewingCount={reviewType === "segmentation"}
+          countPending={reviewType === "segmentation" && reviewItems.some(item => item.id === selectedPage?.id)}
           reviewingGeometry={reviewType === "geometry"}
         />
       </section>

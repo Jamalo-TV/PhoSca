@@ -76,6 +76,10 @@ from app.pipeline.print_edges import (
     PRINT_EDGE_CONFIRMATION, _backing_color, _is_pale_stock, line_fit_omits_print_stock, refine_print_boundary,
 )
 from app.pipeline.print_outline_suggestion import suggest_outer_print_outline
+from app.pipeline.printed_illustration_review import (
+    PRINTED_ILLUSTRATION_COUNT_REVIEW, PRINTED_ILLUSTRATION_REVIEW_FRAME, PRINTED_ILLUSTRATION_REVIEW_ID,
+    PRINTED_ILLUSTRATION_REVIEW_SIZE, find_illustration_frame, illustration_evidence_id, valid_illustration_frame,
+)
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL, projective_print_review
 from app.pipeline.protected_regions import validate_protected_regions
 from app.pipeline.quality import evaluate_segmentation_geometry
@@ -3840,6 +3844,44 @@ def _flag_partial_film_grid(image: np.ndarray, result: SegmentationResult) -> Se
     ], result.metadata)
 
 
+def _flag_printed_illustration(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    items = result.detections
+    if (len(items) != PRINTED_ILLUSTRATION_REVIEW_SIZE or not result.metadata.get("fallback_used")
+            or (result.metadata.get("fusion") or {}).get("deferred_print_proposals")
+            or any(not item.geometry_valid or item.review_reasons or item.mask.get("warp_quad") for item in items)
+            or Counter(item.mask.get("detector_source") for item in items) != {"yolo_onnx": 3, "edge_contour": 1}):
+        return result
+    normalized = [_detection_polygon(item) for item in items]
+    if any(normalized_polygon_overlap(first, second).iou < .28 for first, second in combinations(normalized, 2)):
+        return result
+    height, width = image.shape[:2]
+    polygons = [normalized_vertices_to_pixels(polygon, width, height) for polygon in normalized]
+    try:
+        frame = find_illustration_frame(image, polygons)
+        if frame is None:
+            return result
+        for polygon in polygons:
+            quad, method = quad_from_polygon(polygon)
+            if method == "minimum_area_rect":
+                return result
+            # A second supported print side is enough to leave this claim out
+            # of the shared-illustration decision.
+            _, evidence, _ = refine_print_boundary(image, order_quad_cyclic(quad))
+            supports = sorted((side.get("support", 0) for side in evidence.values()), reverse=True)
+            if len(supports) != 4 or supports[0] < .80 or supports[1] > .46:
+                return result
+    except (cv2.error, ValueError, np.linalg.LinAlgError):
+        return result
+    outline = _normalized_polygon(frame, width, height)
+    if not valid_illustration_frame(outline):
+        return result
+    source_id = illustration_evidence_id(outline, [item.mask["polygon"] for item in items])
+    detections = [replace(item, mask={**item.mask, PRINTED_ILLUSTRATION_REVIEW_FRAME: [outline],
+                                    PRINTED_ILLUSTRATION_REVIEW_ID: source_id},
+                          review_reasons=[PRINTED_ILLUSTRATION_COUNT_REVIEW]) for item in items]
+    return SegmentationResult(detections, result.metadata)
+
+
 def _flag_disputed_paper_joins(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
     detections = result.detections
     if not result.metadata.get("fallback_used") or not 2 <= len(detections) <= _MULTIPANEL_GROUP_LIMIT:
@@ -4589,7 +4631,11 @@ def segment_album_page(
                     **item.mask, CONTRAST_CROSSING_TRACES: [_normalized_polygon(span, width, height) for span in traces],
                 })
                 result = SegmentationResult(detections, result.metadata)
-        return _flag_partial_film_grid(evidence_source, result) if settings.enable_classical_segmentation_fallback else result
+        if settings.enable_classical_segmentation_fallback:
+            result = _flag_partial_film_grid(evidence_source, result)
+            if source is not None:
+                result = _flag_printed_illustration(source, result)
+        return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
 

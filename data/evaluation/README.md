@@ -2313,6 +2313,69 @@ for the long cover crease overlaps the occupied-page controls after
 rotation and re-encoding. Neither cue is used to suppress candidates.
 The score reports are local under `runs/crop-quality/spiral-cover-controls/`.
 
+#### Review four proposals on one illustrated cover
+
+The direct WebP of Spiral U036 is 1382 × 1600 native pixels with SHA-256
+`e90f1d0fc555c41dd7dc1b67b725f6aaa1c5e34f7c7def548bbdf0e232a12774`.
+The draft count is zero physical prints. The mixed development configuration
+uses model `1e95a1a90ff897df7099ff80675186ec1d8145f7bb07559fe918b3dd3a6db748`,
+proposal threshold 0.25, acceptance threshold 0.70 and classical fallback.
+Its three model proposals and one classical proposal have pairwise mask IoU
+between 0.35 and 0.83. The original pixels support one fitted side of each
+proposal at 0.80 or above and the second side at 0.3661 or below.
+
+The advisory uses a colour-verified exterior solely to define a 600 × 700
+search chart. A narrow pale ribbon encloses the four proposals at two
+filter scales. The enclosed areas must agree at 0.985
+IoU. On U036 about 90% of stations on the ribbon meet the native contrast
+test, with median CIE Lab lightness gain about 33 and median warmth decline
+about 4.6 across the two flanks. Four inward corners have signed defects
+15.3–16.3 chart pixels deep. The stored 102-point line traces the ribbon in
+the native image, with unsupported gaps capped at 25 chart pixels before
+interpolation. The detector needs the four unedited automatic proposals,
+each with one clearly supported print side and a second side at most 0.46,
+and an empty deferred queue. The classical-only replay still has one held
+proposal, outside the four-proposal advisory.
+
+Twenty perturbations of the fixed proposals keep the same line. Four
+lossless fixed-mask quarter turns reproduce the enclosed area at IoU
+0.9952–1.0 and a 95th-percentile line distance of at most 2.41 native
+pixels after mapping back. Eight JPEG55 and JPEG75 fixed-mask observations
+abstain with ribbon coverage at most 0.824. Three opaque paper inserts
+inside the ribbon each have at least three supported edges and veto
+the linked decision. Three inserts across the ribbon prevent measurement
+of a shared outline. Nine scopes on three occupied Spiral spreads and
+a claim covering the entire album cover also abstain. These are
+fixed-proposal diagnostic replays. Identical observations can come from
+flush separate layers. Only a reviewer can confirm physical assignment.
+
+The ordinary multipart replay uploads a PNG whose decoded pixels match
+the original WebP exactly. It shows four active proposals in both the
+baseline and the updated version. Before the review decision, the same
+four full-print and four motif crops stay in review. No additional
+candidate enters review. The candidate masks,
+crop geometry and untrimmed preview bytes match the baseline. There is
+no positive crop on this cover, so crop IoU, corner error, content loss
+and foreign interpolation metrics are inapplicable. Browser replays on
+desktop and mobile confirm that opening and cancelling the review leaves
+four proposals and creates no event. An explicit joint exclusion takes
+the count from four to zero in one event, preserving all four historical
+masks and previews. The final count is confirmed separately. The named
+and legacy cropped variants stay unavailable. An incomplete selection,
+stale IDs, missing confirmation or unequal evidence identifier is
+rejected, and a retry of the saved event is idempotent.
+
+The late advisory adds a median of about 0.50 s across eight warmed,
+one-thread calls with the decoded original and cached proposals on the
+development machine. Eight frozen and development report comparisons
+retain the same outputs and scores apart from timing and the new crop
+validation profile field. The frozen checks retain 18/18 detections and
+23/23 seeded geometry passes across both modes.
+
+Original measurements, comparison receipts and screenshots are local in
+`runs/crop-quality/spiral-illustration-review/`. This album is development
+evidence.
+
 Keep the tile experiment isolated until tests distinguish adjacent paper
 from a common print, including multipanel prints and decorative covers.
 The provisional album group, original images, annotations and per-image
@@ -11128,3 +11191,15 @@ print files, exact pair identifiers and rights are still needed to
 establish usable pairs. The archive record leads to a login.
 [Archive record](https://pembinamanitouarchive.ca/documents/76806) ·
 [Digitization report, page 6](https://www.mhs.mb.ca/heritage/downloads/expresssummer09.pdf)
+
+The Oregon Historical Society identifies five original plates removed
+from Carleton E. Watkins's *Great Storm of the Winter of 1884–5* album
+`Org. Lot 93.D.2`. The matted plate `D.118` is in Box 7, Folder 2.
+The public same-scene record `OrgLot93_B3F12_D118r` describes a separate
+boudoir card in Box 3, Folder 12. The matted plate still needs an
+independent native capture of its original mounted page, unobscured
+paper-edge evidence and verified reuse terms. No native pair was
+retrieved and the release intake is unchanged.
+[Album inventory](https://archiveswest.orbiscascade.org/ark:/80444/xv99202) ·
+[Matted plate](https://www.ohs.org/blog/trapped-in-the-columbia-gorge.cfm) ·
+[Boudoir card](https://staff.digitalcollections.ohs.org/d118-relief-train-passing-the-needles-winter-of-1884-5-columbia-river-or)
