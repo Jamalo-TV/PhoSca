@@ -2803,6 +2803,45 @@ All eight paired benchmark reports preserve detection, masks,
 crop results and review metadata for the previous inputs. Their
 configuration profile records dense tile revision 14.
 
+#### Compare whole-page detector resolution on dense spreads
+
+At `697069a`, two entries in the local development registry
+register the same mixed ONNX bytes, SHA-256
+`1e95a1a90ff897df7099ff80675186ec1d8145f7bb07559fe918b3dd3a6db748`,
+with NCHW 512 × 512 and 768 × 768 input respectively. The normal
+hybrid evaluator runs both manifests at proposal threshold 0.25,
+acceptance threshold 0.70 and scoring IoU 0.85. Both runs apply the
+same classical, native-source and crop checks. On the five Spiral
+development views, all crop variants remain in review.
+
+| Same detector and inputs | 512 × 512 | 768 × 768 |
+| --- | ---: | ---: |
+| Spiral matches at IoU 0.85 | 6/38 | 26/38 |
+| Spiral extra proposals | 11 | 15 |
+| Frozen synthetic matches | 17/18 | 18/18 |
+| Frozen synthetic extra proposals | 4 | 9 |
+| Frozen synthetic passing recoverable whole prints | 9/11 | 7/11 |
+| Frozen synthetic passing recoverable motifs | 10/12 | 8/12 |
+
+The synthetic rows here compare the same mixed checkpoint at both
+resolutions. The separately frozen synthetic-control checkpoint
+and seeded geometry regression still supply the 18/18 and 23/23
+regression bars. The larger whole-page configuration loses four
+passing recoverable crops and creates five additional frozen extras
+relative to its 512 baseline. It stays a development comparison.
+At the raw detector stage, the same weights and scene pixels rise
+from 7 to 26 correct masks at 768 while extras rise from 11 to 18.
+The dense pages therefore expose a sampling-scale problem before
+the native contour checks. The recorded training and validation
+cohorts have at most four prints per frame, compared with eleven
+or twelve on the open Spiral spreads.
+
+The four complete normal-pipeline reports, local manifests and
+`resolution_pilot.py` are under
+`runs/crop-quality/detector-resolution-pilot/`. The raw resolution
+audit and training source counts are in its `independent/` folder.
+The experiment uses no reserved calibration or release references.
+
 #### Require separate confirmation for an unsupported contrast outline
 
 The normal JPEG55 upload of U039 produced a held `contrast_region`
