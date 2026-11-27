@@ -293,7 +293,10 @@ jeweiligen Freigabebedingungen erfüllt sind.
 **Zusammengehörigkeit prüfen** markiert den Gesamtvorschlag und seine
 Teilvorschläge auf derselben Originalseite. Prüfe an den gepunkteten
 Linien, ob dort eine eigene Papierkante, ein Spalt oder eine aufgelegte
-zweite Schicht zu sehen ist. Wenn alle markierten Bereiche zu einem
+zweite Schicht zu sehen ist. Mit **Trennlinie im Original vergrössern**
+siehst du beide Enden und die Mitte jeder vorgeschlagenen Trennlinie.
+Die Markierungen stehen seitlich, damit die Stelle dazwischen sichtbar
+bleibt. Wenn alle markierten Bereiche zu einem
 Papierabzug gehören, lässt **Als einen Abzug zählen** den Gesamtvorschlag
 in der Liste und entfernt nur seine Teilvorschläge aus der aktiven
 Zählung. PhoSca speichert den Entscheid mit den vorherigen Konturen.

@@ -62,6 +62,23 @@ export function albumLeafSourceWindow(traces, width, height) {
     Math.min(height - boxHeight, Math.max(0, (top + bottom - boxHeight) / 2)), boxWidth, boxHeight], ticks };
 }
 
+export function paperGridSourceWindows(line, width, height) {
+  if (!sourceReviewLine(line) || ![width, height].every(size => Number.isInteger(size) && size > 1)) return [];
+  const [first, last] = line.map(point => sourcePixelCenter(point, width, height));
+  const dx = last[0] - first[0], dy = last[1] - first[1];
+  const length = Math.hypot(dx, dy);
+  if (length <= 1) return [];
+  const span = Math.min(width, height, Math.min(144, Math.max(64, Math.round(.27 * length))));
+  const normal = [-dy / length, dx / length];
+  return [first, [(first[0] + last[0]) / 2, (first[1] + last[1]) / 2], last].map(([x, y]) => ({
+    view: [Math.min(width - span, Math.max(0, Math.round(x - span / 2))),
+      Math.min(height - span, Math.max(0, Math.round(y - span / 2))), span, span],
+    ticks: [[-.39, -.30], [.30, .39]].map(pair => pair.map(fraction => [
+      x + normal[0] * span * fraction, y + normal[1] * span * fraction,
+    ])),
+  }));
+}
+
 export function captureSplitSourceWindow(traces, width, height) {
   if (!Array.isArray(traces) || traces.length !== 2 || !traces.every(sourceReviewLine)
       || ![width, height].every(size => Number.isInteger(size) && size > 1)) return null;

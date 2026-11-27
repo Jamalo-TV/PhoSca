@@ -7586,6 +7586,29 @@ flush layouts overlap the real source score. The cue does not support
 an automatic physical ownership decision. The 480 source-only probes
 are in the `native-separation` subfolder.
 
+#### Inspect the proposed cuts in the original
+
+The shared-paper count dialog offers three square source windows for
+each active proposed cut. They are centred on the first endpoint, the
+midpoint and the second endpoint in the original raster. The window
+size is 27% of the line length, rounded and clamped to 64–144 native
+pixels or the available raster size. Each view is bounded by the
+original image. Two short ticks sit on the normal to the cut, between
+30% and 39% of the window side from its centre. The paper and any
+visible mark between them stay unobscured. The window uses the same
+authenticated page image as the count editor and leaves the count
+and both crop modes in their current states.
+
+On the pinned JPEG75 source the one active cut yields three windows.
+The lossless derivative yields six windows for its two cuts. Desktop
+and Mobile Chromium load the original image with its exact uploaded
+SHA-256 in each window. The centres are within 0.71 native pixels of
+their target. The nearest ticks stand at least 42 native pixels from
+the cut on these inputs. Opening with the keyboard or mouse, closing,
+reopening and cancelling make no write requests. The complete count
+review payload stays equal across those operations. Browser receipts
+and screenshots are in `runs/crop-quality/contact-paper-cut-zoom/`.
+
 ### Compare the disputed whole contact print
 
 The normal print proposals in the 33% JPEG75 and lossless PNG both cut

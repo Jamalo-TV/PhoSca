@@ -704,6 +704,31 @@ select {
   max-width: 520px;
 }
 
+.paper-grid-source-review {
+  flex-basis: 100%;
+  color: #173a33;
+}
+
+.paper-grid-source-review summary {
+  cursor: pointer;
+  width: fit-content;
+  font-weight: 600;
+}
+
+.paper-grid-source-review p {
+  margin: 8px 0;
+}
+
+.paper-grid-source-details {
+  max-width: 600px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.paper-grid-source-details svg { aspect-ratio: 1; }
+.paper-grid-source-details figcaption { overflow-wrap: anywhere; }
+.mobile-shell .paper-grid-source-review summary { min-height: 44px; padding-block: 12px; }
+
 .capture-split-source-review {
   width: 100%;
   max-width: 560px;

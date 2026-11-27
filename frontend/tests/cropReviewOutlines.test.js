@@ -6,7 +6,7 @@ import {
   filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
   getFilmGridReviewSeams, getFilmNeighborEdgeIndex, getFragmentReviewOutlines, getMergedPrintPairs,
   getPaperGridOutlineParents, getPaperGridReviewGroups,
-  getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper,
+  getPaperJoinReviewGroups, getStoredMotifQuad, motifFitsPaper, paperGridSourceWindows,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource,
 } from "../src/cropReviewOutlines.js";
 
@@ -378,4 +378,24 @@ test("a saved parent can confirm the same measured grid while its active fragmen
   assert.deepEqual(getPaperGridOutlineParents(active), []);
   assert.deepEqual(getPaperGridReviewGroups([{ ...parent, manual_paper_grid_count_review: null }, child]), []);
   assert.deepEqual(getPaperGridReviewGroups([parent, { ...child, reviewed_non_print: true }]), []);
+});
+
+test("paper-grid zoom keeps both ends and the middle of the native cut clear", () => {
+  const line = [{ x: 724 / 1345, y: 500 / 1013 }, { x: 1242 / 1345, y: 500 / 1013 }];
+  const windows = paperGridSourceWindows(line, 1346, 1014);
+  assert.deepEqual(windows.map(({ view }) => view), [[655, 431, 140, 140], [914, 431, 140, 140], [1173, 431, 140, 140]]);
+  for (const { ticks } of windows) {
+    assert.ok(ticks[0].every(([, y]) => y <= 458.5));
+    assert.ok(ticks[1].every(([, y]) => y >= 542.5));
+  }
+  const rotated = line.map(({ x, y }) => ({ x: 1 - y, y: x }));
+  const [first] = paperGridSourceWindows(rotated, 1014, 1346);
+  assert.deepEqual(first.view, [444, 655, 140, 140]);
+  assert.ok(first.ticks[0].every(([x]) => x > 553));
+  const atFrame = [{ x: 0, y: 0 }, { x: 1, y: 1 }];
+  const frameWindows = paperGridSourceWindows(atFrame, 1346, 1014);
+  assert.deepEqual(frameWindows[0].view, [0, 0, 144, 144]);
+  assert.deepEqual(frameWindows[2].view, [1202, 870, 144, 144]);
+  assert.deepEqual(paperGridSourceWindows([line[0], line[0]], 1346, 1014), []);
+  assert.deepEqual(paperGridSourceWindows(line, 0, 1014), []);
 });

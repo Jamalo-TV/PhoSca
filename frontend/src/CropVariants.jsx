@@ -3,7 +3,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import {
   albumLeafSourceWindow, captureSplitSourceWindow, competingPhotoRegionPaths, competingPhotoRegionStyles, filmSourceWindow,
   sourcePixelCenter,
-  getFilmNeighborEdgeIndex, getPaperGridReview, measuredRibbedPrintOutlineSource,
+  getFilmNeighborEdgeIndex, getPaperGridReview, measuredRibbedPrintOutlineSource, paperGridSourceWindows,
 } from "./cropReviewOutlines.js";
 
 export const cropModeLabels = {
@@ -401,14 +401,20 @@ function CountGroupSourceDetails({ sourceUrl, group }) {
   if (!source) return null;
   const { width, height } = source;
   const albumLeaf = group.kind === "album_leaf";
-  const details = (albumLeaf ? [
+  const paperGrid = group.kind === "paper-grid";
+  const details = (paperGrid ? [...group.cuts.values()].flatMap((line, index, cuts) =>
+    paperGridSourceWindows(line, width, height).map((window, position) => {
+      const label = ["Erstes Ende", "Mitte", "Zweites Ende"][position];
+      return [cuts.length === 1 ? label : `Trennlinie ${index + 1} · ${label}`, window];
+    })) : albumLeaf ? [
     ["Möglicher Albumfalz im Original", albumLeafSourceWindow(group.traces, width, height)],
   ] : [
     ["Zwischenraum im Raster", filmSourceWindow(group.line, width, height)],
     ["Möglicher durchsichtiger Saum", filmSourceWindow(group.rim, width, height)],
   ]).filter(([, detail]) => detail);
   if (!details.length) return null;
-  return <section className={`count-group-source-details ${albumLeaf ? "album-leaf-source-details" : "film-source-details"}`}
+  const sourceClass = paperGrid ? "paper-grid-source-details" : albumLeaf ? "album-leaf-source-details" : "film-source-details";
+  const figures = <section className={`count-group-source-details ${sourceClass}`}
     aria-label="Vergrösserte Originalausschnitte">
     {details.map(([label, { view, ticks }]) => <figure key={label}>
       <svg viewBox={view.join(" ")} role="img" aria-label={label}>
@@ -423,6 +429,12 @@ function CountGroupSourceDetails({ sourceUrl, group }) {
       <figcaption>{label}</figcaption>
     </figure>)}
   </section>;
+  if (!paperGrid) return figures;
+  return <details className="paper-grid-source-review">
+    <summary>{group.cuts.size === 1 ? "Trennlinie im Original vergrössern" : "Trennlinien im Original vergrössern"}</summary>
+    <p>Prüfe den Bereich zwischen den Markierungen auf eine sichtbare Papierkante oder einen Spalt.</p>
+    {figures}
+  </details>;
 }
 
 export function CaptureSplitSourceReview({ groups, photos, sourceUrl }) {
@@ -482,7 +494,7 @@ export function CountGroupReview({ groups, selected, busy, sourceUrl, onSelect, 
   return <div className="count-group-review">
     {selected ? <>
       <p id={promptId} className="crop-editor-hint" role="status">{labels.prompt}</p>
-      {sourceUrl && (selected.kind === "film" || selected.kind === "album_leaf")
+      {sourceUrl && (selected.kind === "film" || selected.kind === "album_leaf" || selected.kind === "paper-grid")
         && <CountGroupSourceDetails sourceUrl={sourceUrl} group={selected} />}
       <button type="button" className="primary-button" disabled={busy} aria-describedby={promptId}
         onClick={() => onConfirm(selected)}>
