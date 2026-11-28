@@ -908,6 +908,20 @@ anschneidet. Prüfe dort, ob der helle Streifen zum Papierabzug gehört.
 Die Vergleichsansicht speichert keine neuen Ecken. Beide Zuschnittmodi
 bleiben in Prüfung. [Markierung auf Scan 83](data/evaluation/README.md#compare-a-marked-paper-margin-at-a-bright-outer-transition)
 
+Ist nach einer solchen Randerweiterung eine angrenzende Papierseite
+stellenweise sichtbar, kann PhoSca dort offene Prüflinien zeichnen.
+Zwei Suchtiefen müssen denselben Übergang in der Nähe des bereits
+gemessenen Rands finden. Danach prüft PhoSca jede Station am Original.
+Fehlt das Signal oder springt es auf einen anderen Übergang, endet
+die Linie. Die längeren gemessenen Abschnitte nahe den Enden werden
+gestrichelt angezeigt. Dazwischen bleibt die Papierkante offen.
+
+Vergleiche die Linien mit dem Original, bevor du die Ecken setzt.
+Fast gleichfarbiges Nachbarpapier kann denselben Übergang zeigen.
+Wenn eine erfasste Nachbarkontur die Messstelle berührt, blendet
+PhoSca die Prüflinien aus. Du kannst die untere Vergleichsansicht
+weiterhin getrennt prüfen. [Offene linke Kante auf Scan 83](data/evaluation/README.md#show-separated-paper-edge-segments-beside-a-neighboring-print)
+
 Ragt eine Ecke weit über den Abzug hinaus, prüft PhoSca, wo die
 beiden angrenzenden Papierkanten im Original enden. Eine gestützte
 innere Kante kann in der Geometrieprüfung eine zweite Vorschau geben.

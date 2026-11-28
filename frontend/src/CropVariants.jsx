@@ -218,6 +218,7 @@ const sharedPrintRim = "shared_print_rim";
 const sharedPrintRimReason = "PRINT_SHARED_RIM_UNCERTAIN";
 const possibleBackedPaperEdge = "possible_backed_paper_edge";
 const adjacentFaintPaperSteps = "adjacent_faint_paper_steps";
+const openPaperEdgeSpans = "open_paper_edge_spans";
 export const possibleOverextendedPrintEdge = "possible_overextended_print_edge";
 const possibleInwardPrintEdge = "possible_inward_print_edge";
 const visibleSceneEdge = "visible_scene_edge";
@@ -726,6 +727,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
     return "Türkis zeigt einen möglichen Papierrand ausserhalb des Zuschnitts. Prüfe am Original, wo das Fotopapier endet und welcher Abzug oben liegt.";
   }
   if (getSourceEdgeTraces(fullPrint?.suggested_edge_traces).length) {
+    if (fullPrint.suggested_edge_source === openPaperEdgeSpans) {
+      return "Die gestrichelten Abschnitte markieren sichtbare Übergänge am hellen Rand. Prüfe am Original, ob sie zum Papierabzug gehören. Die Lücken und die Ecken bleiben zur Prüfung offen.";
+    }
     if (fullPrint.suggested_edge_source === adjacentFaintPaperSteps) {
       return "Die gestrichelten Abschnitte markieren schwache Übergänge ausserhalb des bisherigen Zuschnitts. Prüfe am Original, ob dort das Fotopapier endet, und verfolge seinen Rand rundum.";
     }

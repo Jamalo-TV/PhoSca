@@ -13114,3 +13114,89 @@ lists for the inherited COCO stage. Those lists supply no image
 raster hashes or physical album assignments. The older configured
 `4d823588…` artifact and warm-start records are still missing locally.
 The comparison supplies no verified release group or calibration fit.
+
+## Show separated paper edge segments beside a neighboring print
+
+On the upper-right print of native Scan 83, the existing working
+outline still clips some pale material on the left. A wide all-side
+fit chooses the neighboring print's right rail. At the selected
+print's top, that line has no corresponding signed end to the verified
+top margin. The true development candidate meets the top transition
+near x2286.51 and y202.96. Farther down, the paper and the material
+between the prints have very similar appearance.
+[Native source and lower comparison](#compare-a-marked-paper-margin-at-a-bright-outer-transition)
+
+The advisory uses the existing pale-margin measurement on the
+adjacent side and requires the two existing crop holds. Two bounded
+outward searches near the supported corner must agree to 0.85 native
+pixels. The measured top line has to support a strong lightness step
+inside that corner and a quiet continuation beyond it. The established
+paper color then anchors the individual station checks. Stations are
+four native pixels apart. A station needs compatible pale interior,
+positive lightness and Lab contrast on both sampling scales, and a
+nearby local transition in the predicted corridor. A missed station
+or a lateral change larger than 2.5 native pixels breaks the line.
+Long contradictory middle evidence vetoes the advisory. Only measured
+runs of at least 80 native pixels in the first 26% or last 30% of the
+side are retained. The format carries separate open polylines.
+
+The native visible intervals are approximately y225–633, 641–745,
+1933–2061 and 2069–2257, with about 830 pixels of traced length in
+total. The roughly 1,188 pixel interval between the upper and lower
+groups has no line. A 16-pixel source buffer protects both the runs
+and the corner witness against active and deferred claims. A later
+claim that enters a witness removes the advisory. A claim in the
+unobserved gap leaves it in place. This only changes source review
+metadata. The outlined working crop and the separate lower PNG keep
+their previously verified pixels and transforms. Both modes remain
+held and the crop exports remain unavailable.
+
+The blinded development bank includes 41 hash-pinned inputs. All
+seven original, JPEG and quarter-turn inputs yield separated source
+guides. Eighteen distinct occlusion, edge-erasure, shifted-stock and
+visible-separation controls abstain. All six checks from other real
+sources abstain. All four claim conflicts abstain. The native mask of
+traced centres has 832 centres, with no trace through the unobserved
+middle band. A near-identical second sheet with a one-pixel separation
+and an exact-raster printed alias can still produce the same source
+transitions. The product describes visible transitions for inspection.
+The replay median on original or derivative positives was about 34 ms
+in the isolated helper. Ten targeted regressions cover the measured
+segments, rotation, missing evidence, conflicting claims and later
+invalidation in the ordinary manual-addition path.
+
+The normal native upload keeps six detections and two count offers.
+Only the upper-right row gains the new source guide fields. The other
+rows, the raw masks, working JPEGs and marked-margin PNG match the
+previous revision. Desktop and mobile display the four dashed lines
+on the original alongside the existing lower comparison. A normal
+geometry approval request still returns HTTP 409. Ordinary reprocessing
+reproduces all guides, masks, held variants and bytes. The helper took
+41 ms during upload and 65 ms during individual reprocessing. The
+full page upload took 167.4 seconds under concurrent benchmark load.
+Ordinary single-photo reprocessing took 5.35 seconds.
+The print-boundary profile advances to revision 17. All eight paired
+benchmark reports retain their earlier scores and crop-mode outcomes.
+The frozen detector matches 18/18 prints. The seeded geometry check
+passes all 11 recoverable whole-print and 12 recoverable motif crops.
+
+The separate U044 calibration intake binds the submitted encoded and
+decoded digests to the exact uploaded archive member. Four distinct
+prints can be inspected on that raster. All 27 images of the two
+provisional source families remain disjoint by encoded and decoded
+hash from the locally verified subsets of the two inherited-model
+lineages and from the complete authored fit. A shared album identity
+still lacks a physical source attestation. The upstream raster and album
+records needed to verify the inherited weights remain incomplete. No
+calibration fit or final-split scoring was performed.
+
+A separate source-only annotation pass measured 1,471 native stations
+around the four U044 prints. The pinned correction drafts are valid,
+non-overlapping masks with a minimum measured separation of 20.02
+native pixels. On draft instance 2 the older top and bottom contours
+sit a median 4.64 and 3.94 pixels inside the observed stock. The new
+outline follows the rounded paper. On instance 1 the strongest inner
+motif transitions compete with the outer paper. Pale sections on
+instance 0 and two lower intervals on instance 3 stay explicitly
+uncertain in the draft. Source preflight pins all four new drafts;
+independent review and physical-group eligibility remain open.

@@ -1617,6 +1617,53 @@ async def test_new_claim_retires_marked_margin_comparison_and_preserves_both_hol
         assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
 
 
+@pytest.mark.parametrize("claim", ["open_segment", "corner_witness", "unobserved_interval"])
+async def test_new_claim_retires_open_paper_guides_only_when_it_enters_their_evidence(client, monkeypatch, tmp_path, claim):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.open_paper_edge import OPEN_PAPER_EDGE_ANCHOR, OPEN_PAPER_EDGE_SPANS
+    from app.pipeline.print_stock import MARKED_PAPER_MARGIN
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    get_settings.cache_clear()
+    _, page_id, photo_id = await _seed_review_data()
+
+    def rect(left, top, right, bottom):
+        return [{"x": x, "y": y} for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
+
+    held = {"status": "review_needed", "reason_codes": ["PRINT_OUTER_RIM_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"]}
+    bottom_comparison = {"source": MARKED_PAPER_MARGIN, "source_outline": rect(.35, .10, .85, .94),
+                         "source_search_band": rect(.35, .86, .85, .94)}
+    traces = [[{"x": .20, "y": top}, {"x": .20, "y": bottom}] for top, bottom in ((.24, .31), (.76, .84))]
+    witness = [{"x": .16, "y": .10}, {"x": .24, "y": .10}]
+    full = {**held, "outline_preview": bottom_comparison, "suggested_edge_source": OPEN_PAPER_EDGE_SPANS,
+            "suggested_edge_traces": traces, OPEN_PAPER_EDGE_ANCHOR: witness}
+    path = tmp_path / "bottom-comparison.png"
+    assert cv2.imwrite(str(path), np.full((60, 40, 3), 225, np.uint8))
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {"source": "yolo_seg_mask", "polygon": rect(.35, .10, .85, .86)}
+        photo.enhancement_applied = {**photo.enhancement_applied, "correction": {
+            "full_print_preview_path": str(path), "crop_modes": {"full_print": full, "image_only": held},
+        }}
+        await session.commit()
+
+    top, bottom = {"open_segment": (.74, .86), "corner_witness": (.04, .14), "unobserved_interval": (.48, .55)}[claim]
+    added = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": rect(.08, top, .23, bottom),
+    })
+    assert added.status_code == 201, added.text
+    url = f"/api/v1/photos/{photo_id}"
+    after = (await client.get(url)).json()["enhancement_applied"]["correction"]["crop_modes"]
+    expected = full if claim == "unobserved_interval" else {**held, "outline_preview": bottom_comparison}
+    assert after == {"full_print": expected, "image_only": held}
+    assert (await client.get(f"{url}/image?variant=full_print_preview")).status_code == 200
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
+
+
 @pytest.mark.parametrize("guide", ["image_only", "outside_motif", "full_print"])
 async def test_new_paper_claim_retires_intersecting_open_crop_guides(client, monkeypatch, guide):
     from app.config import get_settings

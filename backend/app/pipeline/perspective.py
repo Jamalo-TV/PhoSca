@@ -53,6 +53,7 @@ from app.pipeline.motif_margin import (
     HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE, held_print_motif_margin_marks, motif_margin_marks,
 )
 from app.pipeline.motif_comparison import MEASURED_MOTIF_COMPARISON, MOTIF_COMPARISON_PAPER_EDIT, measured_motif_comparison
+from app.pipeline.open_paper_edge import OPEN_PAPER_EDGE_ANCHOR, OPEN_PAPER_EDGE_SPANS, measure_open_paper_edge
 from app.pipeline.faint_paper_review import (
     ADJACENT_FAINT_PAPER_STEPS, FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION, FAINT_PAPER_WITNESS_MARGIN, adjacent_faint_paper_steps,
 )
@@ -2843,13 +2844,13 @@ def correct_photo_crop(
                             result = replace(result, image_only_preview=pixels)
             except (ValueError, cv2.error, np.linalg.LinAlgError):
                 pass  # The measured comparison is optional when the original remains unresolved.
-        if (pale_stock_extension and render_claims is not None and protection["passed"]
-                and set(full_reasons) == {"PRINT_OUTER_RIM_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
-                and all(mode["status"] == "review_needed" for mode in modes.values())
-                and not any(full_mode.get(key) for key in ("outline_preview", "source_strip_review", "suggested_warp_quad"))):
+        held_stock_review = (pale_stock_extension and render_claims is not None and protection["passed"]
+                             and set(full_reasons) == {"PRINT_OUTER_RIM_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
+                             and all(mode["status"] == "review_needed" for mode in modes.values()))
+        stock_claims = [*neighbor_polygons, *(render_claims or [])] if held_stock_review else []
+        if held_stock_review and not any(full_mode.get(key) for key in ("outline_preview", "source_strip_review", "suggested_warp_quad")):
             try:
-                proposal = marked_paper_margin_comparison(page_image, src_points, boundary_refinement,
-                                                         [*neighbor_polygons, *render_claims])
+                proposal = marked_paper_margin_comparison(page_image, src_points, boundary_refinement, stock_claims)
                 if proposal is not None:
                     outline, mark, strip = proposal
                     if _keeps_protected_preview_content(page_image, src_points, outline, regions, protection, area_tolerance=.001):
@@ -2867,6 +2868,18 @@ def correct_photo_crop(
                             result = replace(result, full_print_preview=pixels)
             except (ValueError, cv2.error, np.linalg.LinAlgError):
                 pass  # Keep the existing held working crop if the comparison cannot be measured.
+        if held_stock_review and not any(full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad")):
+            earlier = next(side["review_pale_stock_extension"] for side in boundary_refinement.values()
+                           if isinstance(side, dict) and side.get("review_pale_stock_extension"))
+            try:
+                observed = measure_open_paper_edge(page_image, src_points, earlier, stock_claims)
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                observed = None
+            if observed is not None:
+                traces, anchor = observed
+                full_mode["suggested_edge_source"] = OPEN_PAPER_EDGE_SPANS
+                full_mode["suggested_edge_traces"] = [_vertices_on_page(span, width, height) for span in traces]
+                full_mode[OPEN_PAPER_EDGE_ANCHOR] = _vertices_on_page(anchor, width, height)
         if not manual and POSSIBLE_PRINT_REGIONS in mask:
             for mode in modes.values():
                 if mode["status"] == "ready":

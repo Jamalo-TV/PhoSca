@@ -63,6 +63,7 @@ from app.pipeline.mounted_window_review import (
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.neighboring_print_review import FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_PRINT_EDGE_TRACES, NEIGHBORING_SOURCE_GUIDE
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
+from app.pipeline.open_paper_edge import OPEN_PAPER_EDGE_ANCHOR, OPEN_PAPER_EDGE_MARGIN, OPEN_PAPER_EDGE_SPANS
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_TRACES
 from app.pipeline.perspective import (
     manual_print_intersects, review_outline_intersects_claim, review_traces_intersect_claim, validate_review_quads,
@@ -493,6 +494,15 @@ async def _review_overlapping_crops(
             full_mode.pop("suggested_edge_source", None)
             full_mode.pop("suggested_edge_traces", None)
             neighbor.enhancement_applied = metadata
+        if full_mode.get("suggested_edge_source") == OPEN_PAPER_EDGE_SPANS:
+            traces = list(full_mode.get("suggested_edge_traces") or [])
+            if anchor := full_mode.get(OPEN_PAPER_EDGE_ANCHOR):
+                traces.append(anchor)
+            if review_traces_intersect_claim(traces, mask, width, height, margin_px=OPEN_PAPER_EDGE_MARGIN):
+                full_mode.pop(OPEN_PAPER_EDGE_ANCHOR, None)
+                full_mode.pop("suggested_edge_source", None)
+                full_mode.pop("suggested_edge_traces", None)
+                neighbor.enhancement_applied = metadata
         if full_mode.get("suggested_edge_source") == RIBBED_SCENE_EDGE and any(
             tiled_outline_conflicts(scope, [mask], width, height) for scope in full_mode.get(RIBBED_SCENE_EDGE_SCOPE, [])
         ):
