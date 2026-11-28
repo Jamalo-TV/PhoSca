@@ -12670,3 +12670,64 @@ unresolved. The NYPL catalogue's view of the same composition belongs
 to its own album copy. The source check adds no release group.
 [Wellcome catalogue](https://works.www.wellcomecollection.org/works/akpsjda3) ·
 [Wellcome image](https://iiif.wellcomecollection.org/image/V0028355/full/full/0/default.jpg)
+
+## Compare two visible windows inside broad proposals
+
+Rudge 13 has two separately visible openings in the right column. A
+source-only experiment uses the upper opening's column and the lower
+of two broad model footprints to set a search area. It fits the visible
+sides in original coordinates. After the hypotheses were frozen, the
+upper search box and the lower line intersections matched projected
+stock with 0.946 and 0.813 IoU, respectively. The paper hidden under
+the album remains unmeasured. In local ONNX re-inference at two
+context scales the best stock IoUs were 0.729 and 0.797 across the
+native and recompressed trials, both below the 0.85 detection target.
+A facsimile on one physical sheet
+retains both apparent openings and their texture. A flat dark insert
+can support the edge fits but fails the interior texture test.
+
+The optional `mounted_lower_window_review` is calculated only after
+the existing upper guide is supported. The two independent upper
+source fits supply the column, and the lower of the two retained weak
+model footprints supplies the vertical search range. Each lower
+source sample lies at least 95% inside both weak footprints and must
+clear every other current or deferred claim. Each upper estimate
+seeds a separate lower search. The lower outer and bottom sides each
+need at least 90 native pixels of agreement between the signed source
+fits. An independently supported inner side may also be shown. The
+top stays open. A saved outline intersecting the search scope or its
+measured lines retires only this lower guide. Editing a disjoint
+region leaves it available. Both scopes serve as visual cues and the
+editor takes its crop corners from a separate paper decision.
+
+At 2048 × 1536 the native Rudge 13 count task has the same 203.46-pixel
+upper stroke plus independent 282.2- and 171.4-pixel lower strokes.
+Ordinary JPEG75 supplies lower strokes of 283.3 and 173.6 pixels.
+Ordinary JPEG55 lacks the two required weak footprints and supplies
+no comparison. The native lower measurement took a median 78.3 ms
+over five single-threaded calls. Desktop and mobile Chromium show
+the measurements on the exact uploaded source in the count task.
+Toggling the view makes zero writes. Both crop modes for all five
+original rows stay held and their preview bytes match the baseline.
+The separately registered print on the lower left remains unresolved.
+In the normal API an explicit region outside the lower search area
+preserves both cues. An explicit interior outline which misses both
+drawn lines retires the lower cue, and reprocessing retains that
+decision. A broad false proposal can be removed separately while the
+source observations remain available for inspection.
+
+On all eight frozen software reports the measured detection,
+geometry, crop and review results match the preceding revision. The
+two locked synthetic passes retain 18 of 18 detections and 23 of 23
+recoverable crops. This comparison adds zero automatically ready
+outputs on Rudge 13.
+
+The Jüdisches Museum Berlin catalogue identifies nine physical
+60 × 45 mm prints on page `2014/299/3` of the Fröhlich album. A
+separately catalogued print, `2014/299/8/002`, identifies an exact
+position and paper size on page 8. The checked image route failed to
+return the native page files. Independent motif dimensions and
+asset-specific reuse terms remain unverified. These records add no
+release group.
+[Page 3](https://objekte.jmberlin.de/gobject/jmb-obj-503290) ·
+[Page 8 print](https://objekte.jmberlin.de/gobject/jmb-obj-503301)

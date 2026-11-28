@@ -32,7 +32,7 @@ from app.pipeline.manual_paper_boundary import (
     measured_print_outline_needs_review,
 )
 from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
-from app.pipeline.mounted_window_review import MOUNTED_WINDOW_REVIEW_TRACES
+from app.pipeline.mounted_window_review import MOUNTED_LOWER_WINDOW_REVIEW, MOUNTED_WINDOW_REVIEW_TRACES
 from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES
 from app.pipeline.neighboring_print_review import FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_PRINT_EDGE_TRACES
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
@@ -885,7 +885,7 @@ async def get_review_queue(
                         "missing_print_edge_traces": segmentation.get("missing_print_edge_traces", []),
                         **{key: segmentation[key] for key in (
                             NEAR_CAPTURE_PRINT_TRACES, NEIGHBORING_PRINT_EDGE_TRACES, FOLLOWUP_PRINT_EDGE_GUIDE,
-                            CONTESTED_SCENE_EDGE_TRACES, MOUNTED_WINDOW_REVIEW_TRACES,
+                            CONTESTED_SCENE_EDGE_TRACES, MOUNTED_WINDOW_REVIEW_TRACES, MOUNTED_LOWER_WINDOW_REVIEW,
                         )
                            if segmentation.get(key)},
                         "deferred_print_proposals": page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals", []),

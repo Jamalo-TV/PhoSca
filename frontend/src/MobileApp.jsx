@@ -215,7 +215,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     setMeasuredEdge(null);
   }, [item.page_id]);
   const measuredTraces = measuredEdge?.pageId === item.page_id ? measuredEdge?.traces : null;
-  const { traces: missingTraces, hint: missingPrintEdgeHint, sceneTransition, mountedWindow } = missingPrintReview;
+  const { traces: missingTraces, hint: missingPrintEdgeHint, sceneTransition, mountedWindow, action: missingPrintEdgeAction } = missingPrintReview;
   const visibleTraces = showMissingEdges ? [...missingTraces, ...(measuredTraces || [])] : measuredTraces;
   const sourceBox = item.payload?.bounding_box;
   const detections = sourceBox ? [{ bounding_box: sourceBox, photo_id: item.payload?.photo_id }] : (item.payload?.detections || []);
@@ -806,7 +806,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         {missingTraces.length > 0 && (
           <button className="magnifier-toggle" type="button" aria-pressed={showMissingEdges}
             onClick={() => setShowMissingEdges(!showMissingEdges)}>
-            {mountedWindow ? "Mögliches Albumfenster prüfen" : sceneTransition ? "Farbübergang am Original prüfen" : "Möglichen weiteren Abzug prüfen"}
+            {missingPrintEdgeAction}
           </button>
         )}
         {Boolean(measuredTraces?.length) && <button className="magnifier-toggle" type="button"

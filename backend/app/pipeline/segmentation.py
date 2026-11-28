@@ -63,7 +63,7 @@ from app.pipeline.merged_print_review import (
     measured_merged_print_pair, measured_merged_print_with_one_tile,
 )
 from app.pipeline.mounted_prints import mounted_print_evidence
-from app.pipeline.mounted_window_review import MOUNTED_WINDOW_REVIEW_TRACES, mounted_window_traces
+from app.pipeline.mounted_window_review import MOUNTED_LOWER_WINDOW_REVIEW, MOUNTED_WINDOW_REVIEW_TRACES, mounted_window_traces
 from app.pipeline.multipanel_prints import (
     FILM_GRID_REVIEW, GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW,
     RECOVERED_STOCK_SOURCE,
@@ -4164,15 +4164,18 @@ def _offer_mounted_window_review(source: np.ndarray, result: SegmentationResult)
             return result
         peers = [item for item in result.detections if item is not leaf and all(item is not peer for peer in overlapping)]
         claims = _tiled_review_claims(SegmentationResult(peers, result.metadata))
-        traces = mounted_window_traces(source, normalized_vertices_to_pixels(outline, width, height),
-                                       1 if index else 3, claims, [item.mask for item in overlapping])
+        traces, lower = mounted_window_traces(source, normalized_vertices_to_pixels(outline, width, height),
+                                              1 if index else 3, claims, [item.mask for item in overlapping])
     except (ValueError, cv2.error, np.linalg.LinAlgError):
         return result
     if not traces:
         return result
-    return SegmentationResult(result.detections, {**result.metadata, MOUNTED_WINDOW_REVIEW_TRACES: [
-        _normalized_polygon(trace, width, height) for trace in traces
-    ]})
+    metadata = {**result.metadata, MOUNTED_WINDOW_REVIEW_TRACES: [_normalized_polygon(trace, width, height) for trace in traces]}
+    if lower:
+        metadata[MOUNTED_LOWER_WINDOW_REVIEW] = {
+            key: [_normalized_polygon(points, width, height) for points in values] for key, values in lower.items()
+        }
+    return SegmentationResult(result.detections, metadata)
 
 
 def _offer_projective_print_review(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:

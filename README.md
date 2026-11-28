@@ -1600,6 +1600,16 @@ neuen Abzug oder Zuschnitt. Eine gespeicherte Kontur im Messbereich
 entfernt den Hinweis.
 [Beispiel Rudge 13](data/evaluation/README.md#show-a-visible-album-window-edge-above-overlapping-claims)
 
+Findet PhoSca in Originalmessungen weiter unten verlässliche
+Übergänge an der Aussenseite und am unteren Rand eines zweiten
+Bildbereichs, kann man die beiden Stellen in der Zählprüfung gemeinsam
+einblenden. Das Programm zeichnet nur gemessene Abschnitte. Ein
+einzelner Bogen mit mehreren Bildern kann solche Übergänge ebenfalls
+zeigen. Wenn jemand einen Umriss im unteren Messbereich speichert,
+verschwindet der dortige Hinweis. Der obere Hinweis kann erhalten
+bleiben. Die Markierungen dienen ausschliesslich der Sichtprüfung.
+[Vergleich der beiden Stellen](data/evaluation/README.md#compare-two-visible-windows-inside-broad-proposals)
+
 Ist die Anzahl bei einem automatisch erkannten Vorschlag unklar und
 sind beide Zuschnittmodi in Prüfung, kann man im Zuschnitteditor auf
 Desktop und Mobil dunkle Details des Originals prüfen. Die Ansicht
