@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -368,3 +370,21 @@ def variant_urls(photo: Any) -> dict[str, str | None]:
         name: photo_image_url(photo, name) if variant_path_from_photo(photo, name) else None
         for name in names
     }
+
+
+def geometry_review_revision(photo: Any) -> str:
+    """Identify the source outlines and rendered crop state shown for review."""
+    metadata = photo.enhancement_applied or {}
+    state = {
+        "photo_id": str(photo.id),
+        "bounding_box": photo.bounding_box,
+        "segmentation_mask": photo.segmentation_mask,
+        "geometry_valid": photo.geometry_valid,
+        "correction": metadata.get("correction"),
+        "reviewed_non_print": photo_is_reviewed_non_print(photo),
+        "crops": {name: variant_path_from_photo(photo, name) for name in (
+            "full_print", "image_only", "source_corrected", "source_corrected_untrimmed",
+            "source_corrected_trimmed", *CROP_REVIEW_PREVIEWS,
+        )},
+    }
+    return sha256(json.dumps(state, sort_keys=True, separators=(",", ":")).encode()).hexdigest()

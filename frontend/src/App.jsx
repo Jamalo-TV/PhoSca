@@ -2267,10 +2267,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     const target = { pageId, photoId: selected.id, mode: editMode };
     setSaveState({ ...target, saving: true, rejecting: true });
     try {
-      await onRejectPhoto(selected.id);
+      await onRejectPhoto(selected.id, selected.geometry_review_revision);
       setSaveState({ ...target, rejected: true });
     } catch (error) {
-      setSaveState({ ...target, error: error.message });
+      setSaveState({ ...target, error: cropProtectionErrors[error.message] || error.message });
     }
   }
 
@@ -2705,7 +2705,10 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
     });
     return (reviewType === "geometry" ? reviewPhotos : photos)
       .filter((photo) => photo.page_id === selectedPage?.id)
-      .map((photo) => ({ ...photo, ...(enriched.get(photo.id) || {}) }));
+      .map((photo) => {
+        const review = enriched.get(photo.id);
+        return review?.geometry_review_revision === photo.geometry_review_revision ? { ...photo, ...review } : photo;
+      });
   }, [photos, reviewPhotos, reviewItems, reviewType, selectedPage]);
   const currentPhotoId = pagePhotos.some((photo) => photo.id === selectedPhotoId) ? selectedPhotoId : null;
 
@@ -2752,11 +2755,16 @@ function ReviewView({ albumId, albumStatus, pages, photos, reviewPhotos, selecte
     return detail;
   }
 
-  async function rejectPhoto(photoId) {
-    await submitReviewEvent({
-      task_type: "geometry", task_id: photoId, answer: "wrong_object",
-      idempotency_key: crypto.randomUUID(), metadata: { ui: "desktop" },
-    });
+  async function rejectPhoto(photoId, revision) {
+    try {
+      await submitReviewEvent({
+        task_type: "geometry", task_id: photoId, answer: "wrong_object",
+        idempotency_key: crypto.randomUUID(), metadata: { ui: "desktop", geometry_review_revision: revision },
+      });
+    } catch (error) {
+      if (error.message === "geometry_review_stale") await refreshCorrections().catch(() => {});
+      throw error;
+    }
     await refreshCorrections();
   }
 

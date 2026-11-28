@@ -200,6 +200,7 @@ export const crossingPrintHint = "Prüfe am Original, ob die gestrichelte Kontur
 export const crossingPrintSaveHint = "Korrigiere und speichere zuerst die vier Ecken unter «Ganzer Abzug».";
 export const printOutlineSaveHint = "Prüfe und speichere zuerst die Papierkontur unter «Ganzer Abzug».";
 export const cropProtectionErrors = {
+  geometry_review_stale: "Der Zuschnitt hat sich geändert. Prüfe zuerst die aktualisierte Ansicht.",
   album_page_mark_review_stale: "Die Schutzmarkierung hat sich geändert. Öffne die aktuelle Prüfung erneut.",
   album_page_mark_choices_required: "Bestätige alle markierten Stellen nur, wenn jede davon ausserhalb dieses Abzugs liegt.",
   album_page_mark_outline_changed: "Lass die gemessenen Abzugecken für diese Hintergrundprüfung unverändert.",

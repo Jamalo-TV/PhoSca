@@ -1511,8 +1511,8 @@ verschwinden beide Hinweise. Die Prüfung der Papierkontur bleibt nötig.
 | --- | --- |
 | Anzahl bestätigen | Der `segmentation`-Entscheid bezieht sich auf die Seite. Die `photo_count_revision` und gegebenenfalls die IDs offener Vorschläge müssen zum aktuellen Stand passen. Eine veraltete Bestätigung liefert `409`. |
 | Abzug korrigieren oder ergänzen | `PATCH /api/v1/photos/{id}/bounding-box` setzt die überprüfte Geometrie. `POST /api/v1/pages/{id}/manual-photos` ergänzt einen Abzug. Ungültige Ecken können mit `422` abgelehnt werden. Ein überlappender Vorschlag hält bei ungeklärter Papierzugehörigkeit beide Modi zurück. |
-| Falsches Objekt markieren | `wrong_object` bezieht sich auf die aktuelle Box und Maske. Der Eintrag wird aus der aktiven Anzahl und Kundenansicht entfernt. Die Prüfgeometrie bleibt für die Historie erhalten. |
-| Geometrie vollständig bestätigen | `POST /api/v1/review/events` archiviert den Entscheid zur aktuellen Geometrie. Ist der ganze Abzug gesperrt oder eine echte Motivprüfung offen, liefert `correct` ein `409`. Ein gleichlautender Wiederholungsaufruf mit demselben Idempotenzschlüssel wird als Wiederholung erkannt. |
+| Falsches Objekt markieren | `wrong_object` bezieht sich auf die angezeigte Geometrierevision. Der Eintrag wird aus der aktiven Anzahl und Kundenansicht entfernt. Die Prüfgeometrie bleibt für die Historie erhalten. |
+| Geometrie vollständig bestätigen | `POST /api/v1/review/events` archiviert den Entscheid zur angezeigten Geometrierevision. Ist der ganze Abzug gesperrt oder eine echte Motivprüfung offen, liefert `correct` ein `409`. Ein gleichlautender Wiederholungsaufruf mit demselben Idempotenzschlüssel wird als Wiederholung erkannt. |
 | Erneut berechnen | `POST /api/v1/photos/{id}/reprocess` rendert mit den aktuellen Daten vom gespeicherten Albumoriginal. Eine Neuberechnung allein erledigt keinen historischen Entscheid, dessen Snapshot eine offene Motivprüfung enthält. |
 
 Die Zustände liegen unter `enhancement_applied.correction.crop_modes`,
@@ -1531,6 +1531,18 @@ folgen diesem Vertrag.
 | `original`, `source_corrected` am Foto-Endpunkt | Quellengetreue, bereits perspektivisch korrigierte JPEG-Ansicht. Die unveränderte Albumdatei ist über den Seiten-Endpunkt verfügbar. |
 | `source_corrected_untrimmed` | Entzerrte Quellenansicht für die Kontrolle. Ihre Verfügbarkeit erlaubt keine Freigabe der benannten Modi. |
 | `source_corrected_trimmed` | Alter Name für einen getrimmten Zuschnitt. Beim präzisen Pfad gelten auch die Sperren von `image_only`. |
+
+Jede Geometrieantwort sendet `metadata.geometry_review_revision` aus
+der angezeigten Foto- oder Prüfantwort mit. Die Revision bindet die
+Box, die Quellmaske, die berechnete Geometrie und den aktuellen Zustand
+der Zuschnitte und Vorschauen an den Entscheid. Der Server vergleicht
+sie unter derselben Seiten- und Fotosperre, die auch beim Speichern
+einer Korrektur gilt. Bei fehlender oder veralteter Revision liefert
+er `409 geometry_review_stale`. Der Prüfentscheid wird erst nach
+erneuter Anzeige und Benutzeraktion gespeichert. Ein identischer
+Wiederholungsaufruf zu einem bereits gespeicherten Entscheid liefert
+dessen ursprüngliche Kennung, auch wenn sich der Zuschnitt inzwischen
+geändert hat.
 
 Eine manuelle Geometriekorrektur löscht die automatische
 `segmentation_confidence`. Die Geometrie-, Zuordnungs- und

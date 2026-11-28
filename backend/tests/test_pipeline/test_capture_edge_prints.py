@@ -154,7 +154,9 @@ async def test_nested_capture_candidate_reaches_review_without_a_download(client
         assert (await client.get(f"/api/v1/photos/{candidate['id']}/image?variant={mode}")).status_code == 404
     assert (await client.get(item["payload"]["untrimmed_url"])).status_code == 200
 
-    body = {"task_type": "geometry", "task_id": candidate["id"], "idempotency_key": str(uuid4())}
+    revision = item["payload"]["geometry_review_revision"]
+    body = {"task_type": "geometry", "task_id": candidate["id"], "idempotency_key": str(uuid4()),
+            "metadata": {"geometry_review_revision": revision}}
     events = "/api/v1/review/events"
     assert (await client.post(events, json={**body, "answer": "correct"})).status_code == 409
     if review_action == "manual_correction":
@@ -176,7 +178,7 @@ async def test_nested_capture_candidate_reaches_review_without_a_download(client
         rendered = cv2.imdecode(np.frombuffer(preview.content, np.uint8), cv2.IMREAD_COLOR)
         assert abs(rendered.shape[1] / rendered.shape[0] - 150 / 95) < .02
         return
-    rejected = await client.post(events, json={**body, "answer": "wrong_object", "metadata": {"ui": "desktop"}})
+    rejected = await client.post(events, json={**body, "answer": "wrong_object"})
     assert rejected.status_code == 201, rejected.text
     page_item, = (await client.get(f"{queue}&type=segmentation")).json()
     assert page_item["payload"]["detection_count"] == 2
@@ -457,7 +459,7 @@ async def test_dark_content_on_scanner_backing_is_kept_for_review(client, monkey
     assert preview.status_code == 200
 
 
-async def test_capture_edge_hold_survives_manual_corners_and_review(client, monkeypatch):
+async def test_capture_edge_hold_survives_manual_corners_and_review(submit_geometry_review, client, monkeypatch):
     from app.config import get_settings
     from app.services import pipeline
 
@@ -500,7 +502,7 @@ async def test_capture_edge_hold_survives_manual_corners_and_review(client, monk
         assert revised["crop_download_urls"][mode] is None
         assert (await client.get(f"{url}/image?variant={mode}")).status_code == 404
     assert (await client.get(f"{url}/image?variant=source_corrected_untrimmed")).status_code == 200
-    approval = await client.post("/api/v1/review/events", json={
+    approval = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": photo["id"], "answer": "correct", "idempotency_key": str(uuid4()),
     })
     assert approval.status_code == 409, approval.text

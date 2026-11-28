@@ -22,6 +22,17 @@ class FakeMagic:
 
 
 @pytest.fixture
+def submit_geometry_review(client):
+    async def submit(url, *, json):
+        photo = await client.get(f"/api/v1/photos/{json['task_id']}")
+        assert photo.status_code == 200, photo.text
+        metadata = {**json.get("metadata", {}), "geometry_review_revision": photo.json()["geometry_review_revision"]}
+        return await client.post(url, json={**json, "metadata": metadata})
+
+    return submit
+
+
+@pytest.fixture
 def training_inventory(tmp_path):
     def write(model: Path, checkpoint_digest: str, *, sources=None, **fields):
         inventory = tmp_path / f"{model.name}.training-provenance.json"

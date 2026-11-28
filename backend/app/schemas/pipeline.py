@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, model_seriali
 from app.models import OCRTextType, PageStatus, PhotoStatus
 from app.pipeline.decisions import motif_geometry_requires_review, photo_is_reviewed_non_print
 from app.pipeline.manual_paper_boundary import manual_paper_grid_count_review
-from app.pipeline.variants import photo_image_url, saved_full_print_review_image_url, variant_path_from_photo
+from app.pipeline.variants import geometry_review_revision, photo_image_url, saved_full_print_review_image_url, variant_path_from_photo
 from app.schemas.common import BoundingBox, NormalizedPoint, PrintSizeMM, SegmentationMask, StrictSchema
 
 
@@ -61,6 +61,11 @@ class PhotoRead(BaseModel):
     is_duplicate_of: UUID | None
     enhancement_applied: dict
     status: PhotoStatus
+
+    @computed_field
+    @property
+    def geometry_review_revision(self) -> str:
+        return geometry_review_revision(self)
 
     @computed_field
     @property

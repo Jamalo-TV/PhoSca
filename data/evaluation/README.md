@@ -12358,3 +12358,56 @@ matched and the known real-development files had zero exact overlap
 with the authored fitting corpus. Physical album assignments for all
 development uses still need review, and the checkpoint remains below
 the development quality baseline. This audit adds no release group.
+
+## Keep review actions bound to the displayed crop revision
+
+An ordinary U039 upload reproduced the stale-editor case. Two review
+tabs displayed the same held detection before the other client saved a
+manual paper-outline correction. Desktop and mobile then submitted
+`wrong_object` with their old revision. Both received `409
+geometry_review_stale` and reloaded the edited row. The page still had
+four active detections and no new geometry event. The named full-print
+and motif exports remained held, and the saved untrimmed render stayed
+available with the same bytes.
+
+An independently rendered development control exercised the ready path.
+A 180° edit changed the JPEG hashes for both named modes. Mobile rejected
+the earlier `correct` action, displayed the current orientation, and
+accepted one answer after the fresh view. Repeating that accepted request
+returned the same event ID. The API regression also covers an absent
+revision, rejecting and confirming from an old revision, and replay
+after another edit. These are workflow checks, independent of the
+automatic-release evaluation.
+
+The eight repeated benchmark reports have identical detection, scoring,
+crop-availability and review fields to the preceding branch revision.
+The locked synthetic control retains 18/18 detected prints, and the
+seeded geometry control retains 23/23 recoverable passing crops. Wall
+times varied with concurrent CPU checks.
+
+## U040 upper-left print source check
+
+The ordinary detector already nominated this position in its 70% tile
+view. Its candidate intersected the adjacent wide claim by about 1,385
+native pixel² before fitting and still shared about 31 native pixel²
+after the ordinary fit. An exterior gold rib competes with the scene
+edge in luminance. A directional Lab b transition from gold backing to
+the cooler scene measured about 207 native pixels in two open spans.
+Native and the successful JPEG 75 views preserved that transition.
+JPEG 55 controls lost support. A same-art single sheet also preserved
+the transition, so the evidence does not distinguish a physical paper
+boundary on its own. The ordinary run remained at four active detections
+and three pending suggestions. This probe supplies no new crop or count
+decision.
+
+McCord Stewart Museum catalogues two further distinct public-domain
+physical albums. The Dawson catalogue indexes individually numbered
+prints, and the Red Molson catalogue gives a corrected digital file
+name for mounted material. The exact full-leaf and independently acquired
+print images are still missing. The National Gallery of Australia records
+separate stock and oval motif dimensions for the Watson Kodak album.
+The available catalogue does not establish the native leaf raster or
+item-specific measurement tolerance. These records add no verified
+release group. [Dawson album](https://collections.musee-mccord-stewart.ca/en/objects/111339/album-du-capitaine-dawson-18601875) ·
+[Red Molson album](https://collections.musee-mccord-stewart.ca/en/objects/106649/red-molson-album-photographs-18781879) ·
+[Watson album acquisition](https://nga.gov.au/media/dd/documents/annualreport_07-08.6625245.pdf)

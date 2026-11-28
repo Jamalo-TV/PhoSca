@@ -422,7 +422,7 @@ async def test_edge_trace_reads_the_exif_oriented_source_without_editing_review(
     assert oversized.json()["detail"] == "edge_trace_image_too_large"
 
 
-async def test_rejected_crop_is_hidden_from_album_browsing_and_kept_for_geometry_review(client, monkeypatch):
+async def test_rejected_crop_is_hidden_from_album_browsing_and_kept_for_geometry_review(submit_geometry_review, client, monkeypatch):
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, OCRResult
@@ -444,7 +444,7 @@ async def test_rejected_crop_is_hidden_from_album_browsing_and_kept_for_geometry
     photo_url = f"/api/v1/photos/{photo_id}"
     assert (await client.get(f"{photo_url}/image")).status_code == 200
     assert (await client.get(f"{album_url}/photos")).json()[0]["id"] == str(photo_id)
-    event = await client.post("/api/v1/review/events", json={
+    event = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": str(photo_id), "answer": "wrong_object", "idempotency_key": uuid4().hex,
     })
     assert event.status_code == 201
@@ -938,7 +938,7 @@ async def test_manual_draft_can_explain_a_protected_cut_without_changing_the_pag
         assert await session.scalar(select(AuditLog.id).where(AuditLog.entity_id == photo_id)) is None
 
 
-async def test_manual_print_margin_review_keeps_core_and_binds_confirmation(client, monkeypatch):
+async def test_manual_print_margin_review_keeps_core_and_binds_confirmation(submit_geometry_review, client, monkeypatch):
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, Page
@@ -1017,7 +1017,7 @@ async def test_manual_print_margin_review_keeps_core_and_binds_confirmation(clie
     assert offer(photo)["regions"][0]["requires_edge_alignment"]
     unaligned = await save(wide, offer(photo)["id"], [0])
     assert unaligned.status_code == 422 and unaligned.json()["detail"] == "outside_manual_print_edge_unresolved"
-    ordinary = await client.post("/api/v1/review/events", json={
+    ordinary = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": photo["id"], "answer": "correct", "idempotency_key": str(uuid4()),
     })
     assert ordinary.status_code == 409
@@ -1057,7 +1057,7 @@ async def test_manual_print_margin_review_keeps_core_and_binds_confirmation(clie
     assert (await exports())[:3] == [404, 404, 404]
 
 
-async def test_manual_corner_shape_remains_in_review_with_dimensions_and_late_claim(client, monkeypatch, rounded_corner_page):
+async def test_manual_corner_shape_remains_in_review_with_dimensions_and_late_claim(submit_geometry_review, client, monkeypatch, rounded_corner_page):
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto
@@ -1106,7 +1106,7 @@ async def test_manual_corner_shape_remains_in_review_with_dimensions_and_late_cl
     assert rendered.shape[2] == 4 and np.any(rendered[:, :, 3] == 0) and np.any(rendered[:, :, 3] == 255)
     assert await codes() == [404, 404, 404, 200]
     assert (await image("image_only_preview")).status_code == 404
-    ordinary = await client.post("/api/v1/review/events", json={
+    ordinary = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": photo["id"], "answer": "correct", "idempotency_key": str(uuid4()),
     })
     assert ordinary.status_code == 409
@@ -2011,7 +2011,9 @@ async def test_geometry_review_reopens_a_motif_missed_by_an_old_approval(client,
     assert (await client.get(f"{url}/image?variant=full_print")).status_code == 200
     for mode in ("image_only", "source_corrected_trimmed"):
         assert (await client.get(f"{url}/image?variant={mode}")).status_code == 404
-    blocked = await client.post(event_url, json=payload | {"idempotency_key": uuid4().hex})
+    blocked = await client.post(event_url, json=payload | {"idempotency_key": uuid4().hex, "metadata": {
+        **payload["metadata"], "geometry_review_revision": pending["payload"]["geometry_review_revision"],
+    }})
     assert blocked.status_code == 409 and blocked.json()["detail"] == "motif_geometry_review_required"
     repeated = await client.post(event_url, json=payload)
     assert repeated.status_code == 201 and repeated.json()["duplicate"] is True
@@ -2031,12 +2033,14 @@ async def test_geometry_review_reopens_a_motif_missed_by_an_old_approval(client,
     newer, = (await client.get(queue_url, params=queue)).json()
     assert newer["payload"]["motif_review_pending"] is False
     assert (await client.get(f"{url}/image?variant=image_only")).status_code == 200
-    approved = await client.post(event_url, json=payload | {"idempotency_key": uuid4().hex})
+    approved = await client.post(event_url, json=payload | {"idempotency_key": uuid4().hex, "metadata": {
+        **payload["metadata"], "geometry_review_revision": newer["payload"]["geometry_review_revision"],
+    }})
     assert approved.status_code == 201, approved.text
     assert (await client.get(queue_url, params=queue)).json() == []
 
 
-async def test_disabled_motif_classification_does_not_keep_geometry_review_open(client) -> None:
+async def test_disabled_motif_classification_does_not_keep_geometry_review_open(submit_geometry_review, client) -> None:
     from app.database import get_session_factory
     from app.models import ExtractedPhoto
 
@@ -2052,7 +2056,7 @@ async def test_disabled_motif_classification_does_not_keep_geometry_review_open(
             }},
         }
         await session.commit()
-    accepted = await client.post("/api/v1/review/events", json={
+    accepted = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": str(photo_id), "answer": "correct", "idempotency_key": uuid4().hex,
     })
     assert accepted.status_code == 201, accepted.text
@@ -2073,9 +2077,9 @@ async def test_mobile_review_rejects_answer_from_wrong_task_contract(client) -> 
     assert response.status_code == 422
 
 
-async def test_unsure_geometry_stays_queued_and_event_snapshots_prediction(client) -> None:
+async def test_unsure_geometry_stays_queued_and_event_snapshots_prediction(submit_geometry_review, client) -> None:
     album_id, _, photo_id = await _seed_review_data()
-    response = await client.post(
+    response = await submit_geometry_review(
         "/api/v1/review/events",
         json={
             "task_type": "geometry",
@@ -2106,7 +2110,7 @@ async def test_unsure_geometry_stays_queued_and_event_snapshots_prediction(clien
         assert "GEOMETRY_REVIEW_UNSURE" in photo.enhancement_applied["review_reasons"]
 
 
-async def test_review_event_validates_entity_type_and_idempotency_payload(client) -> None:
+async def test_review_event_validates_entity_type_and_idempotency_payload(submit_geometry_review, client) -> None:
     _, page_id, photo_id = await _seed_review_data()
     wrong_entity = await client.post(
         "/api/v1/review/events",
@@ -2120,7 +2124,7 @@ async def test_review_event_validates_entity_type_and_idempotency_payload(client
     assert wrong_entity.status_code == 404
 
     key = uuid4().hex
-    accepted = await client.post(
+    accepted = await submit_geometry_review(
         "/api/v1/review/events",
         json={
             "task_type": "geometry",
@@ -2129,7 +2133,7 @@ async def test_review_event_validates_entity_type_and_idempotency_payload(client
             "idempotency_key": key,
         },
     )
-    conflict = await client.post(
+    conflict = await submit_geometry_review(
         "/api/v1/review/events",
         json={
             "task_type": "geometry",
@@ -2341,7 +2345,7 @@ async def test_saving_coordinates_cannot_release_a_photo_hidden_by_an_album_wind
 
 
 @pytest.mark.parametrize("with_motif", [False, True], ids=["partial-extension", "measured-motif"])
-async def test_competing_outline_comparison_tracks_current_page_candidates(client, with_motif):
+async def test_competing_outline_comparison_tracks_current_page_candidates(submit_geometry_review, client, with_motif):
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, PhotoStatus
     from app.pipeline.shared_motif_review import SHARED_MOTIF_REVIEW, motif_review_id
@@ -2419,7 +2423,7 @@ async def test_competing_outline_comparison_tracks_current_page_candidates(clien
             other.segmentation_mask = {"source": "manual_quad", "polygon": partial}
             await session.commit()
 
-    removed = await client.post("/api/v1/review/events", json={
+    removed = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": str(wider_id if with_motif else extension_id),
         "answer": "wrong_object", "idempotency_key": uuid4().hex,
     })
@@ -2664,7 +2668,7 @@ async def test_faint_outward_review_retains_confirmation_after_a_neighbor_claim_
 @pytest.mark.parametrize(("detector_source", "edge_guide"), [
     ("contrast_region", None), ("contrast_region", "contact"), ("yolo_onnx", "contact"), ("yolo_onnx", "opposing"),
 ])
-async def test_held_contrast_outline_requires_separate_paper_confirmation(client, monkeypatch, detector_source, edge_guide):
+async def test_held_contrast_outline_requires_separate_paper_confirmation(submit_geometry_review, client, monkeypatch, detector_source, edge_guide):
     from copy import deepcopy
 
     from app.config import get_settings
@@ -2751,7 +2755,7 @@ async def test_held_contrast_outline_requires_separate_paper_confirmation(client
         await session.commit()
     for name in ("full_print", "image_only", "source_corrected_trimmed"):
         assert (await client.get(f"{url}/image", params={"variant": name})).status_code == 404
-    rejected = await client.post("/api/v1/review/events", json={
+    rejected = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": str(photo_id), "answer": "correct", "idempotency_key": str(uuid4()),
     })
     assert rejected.status_code == 409
@@ -3270,7 +3274,7 @@ async def test_concurrent_adjacent_saves_exhibit_a_single_photo(client, monkeypa
     assert len((await client.get(f"/api/v1/albums/{album}/photos")).json()) == 2
 
 
-async def test_add_missed_photo_reopens_count_review_and_supports_both_downloads(client, monkeypatch) -> None:
+async def test_add_missed_photo_reopens_count_review_and_supports_both_downloads(submit_geometry_review, client, monkeypatch) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto
@@ -3342,7 +3346,7 @@ async def test_add_missed_photo_reopens_count_review_and_supports_both_downloads
     assert (await client.get(f"{page_url}/image")).content == source
     assert (await client.post(create_url, json=body)).status_code == 200
 
-    rejected = await client.post(events_url, json={
+    rejected = await submit_geometry_review(events_url, json={
         "task_type": "geometry", "task_id": photo["id"], "answer": "wrong_object",
         "idempotency_key": uuid4().hex,
     })
@@ -3396,7 +3400,7 @@ async def test_new_overlapping_print_reopens_existing_downloads_for_review(clien
 
 
 @pytest.mark.parametrize("render_neighbor", [False, True])
-async def test_ordinary_preview_cannot_export_paper_shared_with_an_active_neighbor(client, monkeypatch, render_neighbor):
+async def test_ordinary_preview_cannot_export_paper_shared_with_an_active_neighbor(submit_geometry_review, client, monkeypatch, render_neighbor):
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, PhotoStatus
@@ -3463,7 +3467,7 @@ async def test_ordinary_preview_cannot_export_paper_shared_with_an_active_neighb
     for _ in range(2):
         assert (await client.post(f"/api/v1/photos/{photo_id}/reprocess")).status_code == 200
         assert await exports(photo_id) == [404, 404, 404, 200]
-    approval = await client.post("/api/v1/review/events", json={
+    approval = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": str(photo_id), "answer": "correct", "idempotency_key": str(uuid4()),
     })
     assert approval.status_code == 409
@@ -3557,7 +3561,7 @@ async def test_avoiding_an_overlap_preserves_visible_content_and_checks_the_orig
 
 
 @pytest.mark.parametrize("claim", ["paper_grid", "scalloped"])
-async def test_measured_crop_stays_held_while_a_linked_proposal_overlaps(client, monkeypatch, claim) -> None:
+async def test_measured_crop_stays_held_while_a_linked_proposal_overlaps(submit_geometry_review, client, monkeypatch, claim) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, PhotoStatus
@@ -3642,7 +3646,7 @@ async def test_measured_crop_stays_held_while_a_linked_proposal_overlaps(client,
     assert confirmed.status_code == 201, confirmed.text
     await held_downloads()
 
-    rejected = await client.post("/api/v1/review/events", json={
+    rejected = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": str(child_id), "answer": "wrong_object", "idempotency_key": uuid4().hex,
     })
     assert rejected.status_code == 201, rejected.text
@@ -3661,7 +3665,7 @@ async def test_measured_crop_stays_held_while_a_linked_proposal_overlaps(client,
     await held_downloads()
     reprocessed = await client.post(f"{parent_url}/reprocess")
     assert reprocessed.status_code == 200 and reprocessed.json()["crop_download_urls"]["full_print"], reprocessed.text
-    approved = await client.post("/api/v1/review/events", json={
+    approved = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": str(parent_id), "answer": "correct", "idempotency_key": uuid4().hex,
     })
     assert approved.status_code == 201, approved.text
@@ -3764,7 +3768,7 @@ async def test_wide_motif_suggestion_requires_explicit_confirmation_before_downl
     assert download and (await client.get(download)).status_code == 200
 
 
-async def test_measured_print_size_recovers_both_oblique_crops_and_survives_reprocessing(client, monkeypatch, tmp_path) -> None:
+async def test_measured_print_size_recovers_both_oblique_crops_and_survives_reprocessing(submit_geometry_review, client, monkeypatch, tmp_path) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, Page
@@ -3815,7 +3819,7 @@ async def test_measured_print_size_recovers_both_oblique_crops_and_survives_repr
         assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
     geometry, = (await client.get(f"/api/v1/review/queue?type=geometry&photo_id={photo_id}")).json()
     assert geometry["payload"]["saved_full_print_review_url"] == saved_review
-    approve = await client.post("/api/v1/review/events", json={"task_type": "geometry", "task_id": str(photo_id),
+    approve = await submit_geometry_review("/api/v1/review/events", json={"task_type": "geometry", "task_id": str(photo_id),
                                 "answer": "correct", "idempotency_key": uuid4().hex})
     assert approve.status_code == 409
     reapplied = await client.post(f"{url}/reprocess")
@@ -3913,10 +3917,32 @@ async def test_measured_print_size_recovers_both_oblique_crops_and_survives_repr
     transformed = renumbered.json()["enhancement_applied"]["correction"]["warp_quad"]
     assert transformed[0] == pytest.approx(outer[-1], abs=1e-6)
 
+    events_url = "/api/v1/review/events"
+    old_revision = payload["geometry_review_revision"]
+    new_revision = renumbered.json()["geometry_review_revision"]
+    current, = (await client.get("/api/v1/review/queue", params={"type": "geometry", "photo_id": str(photo_id)})).json()
+    assert old_revision != new_revision == current["payload"]["geometry_review_revision"]
+    for action in ("wrong_object", "correct"):
+        event = {"task_type": "geometry", "task_id": str(photo_id), "answer": action, "idempotency_key": uuid4().hex}
+        for metadata in ({}, {"geometry_review_revision": old_revision}):
+            rejected = await client.post(events_url, json={**event, "metadata": metadata})
+            assert rejected.status_code == 409 and rejected.json()["detail"] == "geometry_review_stale"
+    assert (await client.get("/api/v1/review/progress")).json()["by_type"] == {}
+    fresh = (await client.get(url)).json()
+    assert not fresh["reviewed_non_print"] and fresh["geometry_review_revision"] == new_revision
+    for mode in ("full_print", "image_only"):
+        assert (await client.get(fresh["crop_download_urls"][mode])).status_code == 200
+    event = {"task_type": "geometry", "task_id": str(photo_id), "answer": "correct", "idempotency_key": uuid4().hex,
+             "metadata": {"geometry_review_revision": new_revision}}
+    accepted = await client.post(events_url, json=event)
+    assert accepted.status_code == 201, accepted.text
+
     motif_edit = await client.patch(f"{url}/bounding-box", json={**body, "segmentation_mask": {
         **mask, "image_quad": vertices(np.float32([[11, 17], [139, 17], [116, 89], [38, 89]])),
     }})
     assert motif_edit.status_code == 200, motif_edit.text
+    retry = await client.post(events_url, json=event)
+    assert retry.status_code == 201 and retry.json() == {"id": accepted.json()["id"], "saved": True, "duplicate": True}
     modes = motif_edit.json()["enhancement_applied"]["correction"]["crop_modes"]
     assert modes["full_print"]["status"] == "ready"
     assert modes["image_only"]["reason_codes"] == ["IMAGE_RECTANGLE_INCONSISTENT"]
@@ -3973,7 +3999,7 @@ async def test_unvalidated_automatic_crop_is_available_only_as_a_review_preview(
     assert (await client.get(available["urls"]["full_print"])).status_code == 200
 
 
-async def test_review_can_remove_a_false_nested_candidate_from_occlusion_evidence(client, monkeypatch) -> None:
+async def test_review_can_remove_a_false_nested_candidate_from_occlusion_evidence(submit_geometry_review, client, monkeypatch) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto
@@ -4013,7 +4039,7 @@ async def test_review_can_remove_a_false_nested_candidate_from_occlusion_evidenc
     assert (await client.patch(f"{nested}/bounding-box", json=nested_edit)).status_code == 200
     assert (await client.get(f"{nested}/image?variant=full_print")).status_code == 404
 
-    rejection = await client.post("/api/v1/review/events", json={
+    rejection = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": str(nested_id), "answer": "wrong_object", "idempotency_key": str(uuid4()),
     })
     assert rejection.status_code == 201, rejection.text
@@ -4032,7 +4058,7 @@ async def test_review_can_remove_a_false_nested_candidate_from_occlusion_evidenc
 @pytest.mark.parametrize("corner_mount", [False, True], ids=["full-print-visible", "motif-only-visible"])
 @pytest.mark.parametrize("with_refiner", [False, True], ids=["primary-detector", "visible-mask-refiner"])
 async def test_automatic_crop_download_requires_current_album_validation(
-    client, monkeypatch, tmp_path, corner_mount, with_refiner, training_inventory,
+    submit_geometry_review, client, monkeypatch, tmp_path, corner_mount, with_refiner, training_inventory,
 ) -> None:
     from app.config import get_settings
     from app.database import get_session_factory
@@ -4244,7 +4270,7 @@ async def test_automatic_crop_download_requires_current_album_validation(
         assert released["full_print"] is None
         assert (await client.get(f"{url}/image?variant=full_print")).status_code == 404
         assert (await client.get(released["source_corrected_untrimmed"])).status_code == 200
-        approval = await client.post("/api/v1/review/events", json={
+        approval = await submit_geometry_review("/api/v1/review/events", json={
             "task_type": "geometry", "task_id": str(photo_id), "answer": "correct", "idempotency_key": uuid4().hex,
         })
         assert approval.status_code == 409
@@ -4283,7 +4309,7 @@ async def test_automatic_crop_download_requires_current_album_validation(
         assert revoked[name] is None
         assert (await client.get(released[name])).status_code == 404
     assert (await client.get(revoked["source_corrected"])).status_code == 200
-    approval = await client.post("/api/v1/review/events", json={
+    approval = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": str(photo_id), "answer": "correct", "idempotency_key": uuid4().hex,
     })
     assert approval.status_code == 409
@@ -4394,7 +4420,7 @@ async def test_curved_motif_preview_is_an_inline_png_and_remains_a_review_asset(
 
 
 @pytest.mark.parametrize("jpeg_caption", [False, True])
-async def test_stock_motif_preview_requires_an_empty_margin_and_keeps_exports_held(client, monkeypatch, jpeg_caption):
+async def test_stock_motif_preview_requires_an_empty_margin_and_keeps_exports_held(submit_geometry_review, client, monkeypatch, jpeg_caption):
     from app.config import get_settings
     from app.pipeline.segmentation import SegmentationDetection, SegmentationResult
     from app.services import pipeline
@@ -4461,7 +4487,7 @@ async def test_stock_motif_preview_requires_an_empty_margin_and_keeps_exports_he
             queue, = (await client.get(f"/api/v1/review/queue?type=geometry&album_id={album_id}")).json()
             assert queue["payload"]["variant_urls"]["image_only_preview"] == preview_url
 
-    approval = await client.post("/api/v1/review/events", json={
+    approval = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": photo["id"], "answer": "correct", "idempotency_key": str(uuid4()),
     })
     assert approval.status_code == 409
@@ -4492,7 +4518,7 @@ async def test_stock_motif_preview_requires_an_empty_margin_and_keeps_exports_he
         assert implicit.status_code == 409 and implicit.json()["detail"] == "print_outline_review_required", implicit.text
 
 
-async def test_full_print_outline_preview_stays_out_of_exports_and_respects_review(client, monkeypatch) -> None:
+async def test_full_print_outline_preview_stays_out_of_exports_and_respects_review(submit_geometry_review, client, monkeypatch) -> None:
     from types import SimpleNamespace
 
     from app.config import get_settings
@@ -4573,7 +4599,7 @@ async def test_full_print_outline_preview_stays_out_of_exports_and_respects_revi
         assert not repair.get("idempotent_replay")
     repaired = (await client.get(url)).json()["urls"]["full_print_preview"]
     assert repaired != preview_url and (await client.get(repaired)).content == preview.content
-    rejected = await client.post("/api/v1/review/events", json={
+    rejected = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": str(photo_id), "answer": "wrong_object", "idempotency_key": str(uuid4()),
     })
     assert rejected.status_code == 201, rejected.text

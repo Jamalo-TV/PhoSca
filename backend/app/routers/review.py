@@ -40,7 +40,10 @@ from app.pipeline.printed_illustration_review import (
 )
 from app.pipeline.protected_regions import album_mark_source_matches
 from app.pipeline.rounded_corner_review import ROUNDED_CORNER_REVIEW
-from app.pipeline.variants import saved_full_print_review_image_url, variant_path_from_photo, variant_urls, variants_from_metadata
+from app.pipeline.variants import (
+    geometry_review_revision, saved_full_print_review_image_url, variant_path_from_photo, variant_urls,
+    variants_from_metadata,
+)
 from app.schemas import PhotoRead, ReviewItem
 from app.schemas.pipeline import CompetingPhotoOutline
 from app.services.photo_outline_comparison import photo_outline_comparisons
@@ -582,6 +585,11 @@ async def add_review_event(
         _validate_idempotent_replay(existing, payload, principal)
         return {"id": existing.id, "saved": True, "duplicate": True}
 
+    if payload.task_type == "geometry":
+        current_geometry, = await photo_views_for_current_crop_checks(session, [context["photo"]])
+        if payload.metadata.get("geometry_review_revision") != geometry_review_revision(current_geometry):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="geometry_review_stale")
+
     if payload.task_type == "segmentation":
         metadata = context["page"].processing_metadata or {}
         page_revision = metadata.get("photo_count_revision")
@@ -614,14 +622,14 @@ async def add_review_event(
 
     if payload.task_type == "geometry" and payload.answer == "correct":
         photo = context["photo"]
-        correction = (photo.enhancement_applied or {}).get("correction") or {}
+        correction = (current_geometry.enhancement_applied or {}).get("correction") or {}
         full_mode = (correction.get("crop_modes") or {}).get("full_print")
         mark = ((photo.enhancement_applied or {}).get("review_provenance") or {}).get("reviewed_album_mark")
         page = context["page"]
         if mark and (not get_settings().enable_protected_region_guard or page is None
                      or not album_mark_source_matches(mark, page.file_hash_sha256, page.processing_metadata)):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="album_page_mark_review_stale")
-        if full_mode and not variant_path_from_photo(photo, "full_print"):
+        if full_mode and not variant_path_from_photo(current_geometry, "full_print"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Adjust the print corners or recapture the page before approving this crop.",
@@ -790,6 +798,7 @@ def _photo_review_payload(
             confidence_components[name] = correction[name]
     payload = {
         "photo_id": str(photo.id),
+        "geometry_review_revision": geometry_review_revision(photo),
         "bounding_box": deepcopy(photo.bounding_box),
         "segmentation_mask": mask,
         "polygon": visible_polygon,

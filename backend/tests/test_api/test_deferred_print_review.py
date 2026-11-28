@@ -330,7 +330,7 @@ async def _upload_source_fragment_review_page(client, monkeypatch, tmp_path):
     return album, queue, task
 
 
-async def test_source_fragment_group_replaces_only_its_two_held_rows(client, monkeypatch, tmp_path):
+async def test_source_fragment_group_replaces_only_its_two_held_rows(submit_geometry_review, client, monkeypatch, tmp_path):
     from app.pipeline.fragmented_prints import SOURCE_FRAGMENT_GROUP_REVIEW, SOURCE_FRAGMENT_PROPOSAL
     from app.routers import photos
 
@@ -385,7 +385,7 @@ async def test_source_fragment_group_replaces_only_its_two_held_rows(client, mon
     replacement_url = f"/api/v1/photos/{replacement['id']}"
     assert (await client.post(f"{replacement_url}/reprocess")).status_code == 200
     assert (await client.get(f"{replacement_url}/image?variant=source_corrected_untrimmed")).status_code == 200
-    assert (await client.post("/api/v1/review/events", json={
+    assert (await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": replacement["id"], "answer": "correct", "idempotency_key": uuid4().hex,
     })).status_code == 409
 
@@ -564,7 +564,7 @@ async def _upload_disputed_paper_grid(client, monkeypatch):
     return f"/api/v1/review/queue?album_id={album_id}&type=segmentation", outer
 
 
-async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for_review(client, monkeypatch):
+async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for_review(submit_geometry_review, client, monkeypatch):
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, ReviewEvent
     from app.pipeline.decisions import MOTIF_MARGIN_MARKS_REVIEW
@@ -651,7 +651,7 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
         assert event.event_metadata["client"] == answer["metadata"]
         assert len(event.event_metadata["snapshot"]["photos"]) == 4
 
-    approve = await client.post(event_url, json={"task_type": "geometry", "task_id": parent_id,
+    approve = await submit_geometry_review(event_url, json={"task_type": "geometry", "task_id": parent_id,
                                 "answer": "correct", "idempotency_key": uuid4().hex})
     assert approve.status_code == 409
 
@@ -704,7 +704,7 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
         **answer["metadata"], "photo_count_revision": task["payload"]["photo_count_revision"],
     }}
     assert (await client.post(event_url, json=refreshed)).status_code == 409
-    assert (await client.post(event_url, json={"task_type": "geometry", "task_id": fragment_id,
+    assert (await submit_geometry_review(event_url, json={"task_type": "geometry", "task_id": fragment_id,
                               "answer": "wrong_object", "idempotency_key": uuid4().hex})).status_code == 201
 
     crop = await client.patch(f"{parent_url}/bounding-box", json={
@@ -791,7 +791,7 @@ async def test_saved_measured_parent_keeps_count_decision_available(client, monk
         assert (await client.get(f"{parent_url}/image?variant={variant}")).status_code == 404
 
 
-async def test_shared_rim_requires_a_paper_edit_before_manual_export(client, monkeypatch):
+async def test_shared_rim_requires_a_paper_edit_before_manual_export(submit_geometry_review, client, monkeypatch):
     from app.config import get_settings
     from app.evaluation.crop_fixtures import synthetic_crop_pages
     from app.pipeline.print_edges import PRINT_SHARED_RIM_UNCERTAIN, SHARED_PRINT_RIM_SOURCE
@@ -856,7 +856,7 @@ async def test_shared_rim_requires_a_paper_edit_before_manual_export(client, mon
         assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
 
     peer, = [row for row in photos if row["id"] != photo["id"]]
-    rejected = await client.post("/api/v1/review/events", json={
+    rejected = await submit_geometry_review("/api/v1/review/events", json={
         "task_type": "geometry", "task_id": peer["id"], "answer": "wrong_object", "idempotency_key": uuid4().hex,
     })
     assert rejected.status_code == 201

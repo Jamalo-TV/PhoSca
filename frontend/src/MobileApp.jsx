@@ -462,7 +462,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         : !held && (saved.crop_download_urls?.full_print
           || `/api/v1/photos/${item.payload.photo_id}/image?variant=original&v=${Date.now()}`);
       setSavedCropUrl(cropUrl || "");
-      onSaved?.(saved);
+      await onSaved?.(saved);
     } catch (error) {
       const protection = protectedCutFeedback(error);
       if (protection) {
@@ -1101,7 +1101,7 @@ function CropReview({ albumId, goHome }) {
   const returnCountId = useRef(null);
   const leavingRef=useRef(false); const goHomeRef=useRef(goHome);
   const queueKey = JSON.stringify([albumId, type, focusedPhotoId]);
-  const load = useCallback(async (signal) => {
+  const load = useCallback(async (signal, staleGeometryId = null) => {
     const rows = await getReviewQueue(albumId || undefined, type, { includeRejected: false, photoId: focusedPhotoId, signal });
     if (signal?.aborted) return;
     const target = focusedPhotoId && rows[0]?.payload;
@@ -1110,8 +1110,12 @@ function CropReview({ albumId, goHome }) {
         && cyclicReviewQuad(sanitizeReviewPolygon(target?.crop_modes?.full_print?.suggested_warp_quad)));
     const countIndex = type === "segmentation" ? rows.findIndex(row => row.id === returnCountId.current) : -1;
     if (type === "segmentation") returnCountId.current = null;
+    const geometryIndex = staleGeometryId ? rows.findIndex(row => row.id === staleGeometryId) : -1;
+    if (validTarget && geometryIndex !== -1) {
+      rows[geometryIndex] = { ...rows[geometryIndex], reloadKey: crypto.randomUUID() };
+    }
     setQueue({ key: queueKey, rows: validTarget ? rows : [] });
-    setIndex(Math.max(0, countIndex));
+    setIndex(Math.max(0, countIndex, geometryIndex));
   }, [albumId, type, focusedPhotoId, queueKey]);
   useEffect(() => {
     const controller = new AbortController();
@@ -1184,27 +1188,27 @@ function CropReview({ albumId, goHome }) {
     if (task.page_id !== item.page_id || !task.payload.competing_photo_outline) return task;
     return { ...task, payload: { ...task.payload, competing_photo_outline: null } };
   }
-  function updateSavedCropModes(saved) {
+  async function updateSavedCropModes(saved) {
     setBlockedCropTaskId(null);
     const cropModes = getCropModes(saved);
-    if (cropModes) {
-      const mask = saved.segmentation_mask;
-      setQueue(current => current?.key === queueKey ? { ...current, rows: current.rows.map(withoutPageOutlineComparison).map(task => {
-        if (task.id !== item.id) return task;
-        const variantUrls = { ...task.payload.variant_urls, ...saved.crop_download_urls };
-        if (!cropModes.full_print?.outline_preview) delete variantUrls.full_print_preview;
-        if (!cropModes.image_only?.outline_preview) delete variantUrls.image_only_preview;
-        return { ...task, payload: { ...task.payload, crop_modes: cropModes, segmentation_mask: mask,
-          correction: saved.enhancement_applied?.correction,
-          bounding_box: saved.bounding_box, confidence: saved.segmentation_confidence,
-          polygon: mask?.polygon, visible_polygon: mask?.visible_polygon || mask?.polygon,
-          warp_quad: cropModes.full_print?.warp_quad || mask?.warp_quad,
-          image_quad: mask?.image_quad, print_size_mm: mask?.print_size_mm,
-          saved_full_print_review_url: saved.saved_full_print_review_url,
-          orientation: saved.enhancement_applied?.correction?.orientation,
-          review_reasons: saved.enhancement_applied?.review_reasons,
-          motif_review_pending: saved.motif_review_pending, variant_urls: variantUrls } };
-      }) } : current);
+    setSubmitting(true);
+    try {
+      const [review] = await getReviewQueue(albumId || undefined, "geometry", { includeRejected: false, photoId: saved.id });
+      const refreshed = review && (review.payload.geometry_review_revision === saved.geometry_review_revision ? review
+        : { ...review, reloadKey: crypto.randomUUID() });
+      setQueue(current => current?.key === queueKey ? { ...current, rows: current.rows.flatMap(task => (
+        task.id === item.id ? (refreshed ? [refreshed] : []) : [withoutPageOutlineComparison(task)]
+      )) } : current);
+      if (refreshed?.reloadKey) {
+        setAnswerError(cropProtectionErrors.geometry_review_stale);
+        return;
+      }
+    } catch {
+      setAnswerError("Die Ecken wurden gespeichert. Die aktuelle Prüfung konnte nicht geladen werden.");
+      await load(undefined, item.id).catch(() => {});
+      return;
+    } finally {
+      setSubmitting(false);
     }
     setMessage(wholePrintApprovalHeld(cropModes, saved.crop_download_urls) || captureRequiresReview(cropModes?.full_print)
       || paperOutlineRequiresReview(cropModes?.full_print)
@@ -1243,6 +1247,7 @@ function CropReview({ albumId, goHome }) {
         metadata.deferred_proposal_ids = deferredProposals.map(({ id }) => id);
       }
     }
+    if (type === "geometry") metadata.geometry_review_revision = item.payload.geometry_review_revision;
     try {
       await submitReviewEvent({
         task_type: type, task_id: item.id, answer: value,
@@ -1263,7 +1268,7 @@ function CropReview({ albumId, goHome }) {
       const recalculate = error.message === "Adjust the print corners or recapture the page before approving this crop.";
       setAnswerError(recalculate ? heldPrintCorrectionHint(fullPrint)
         : error.message === "motif_geometry_review_required" ? motifHint : cropProtectionErrors[error.message] || error.message);
-      await load().catch(() => {});
+      await load(undefined, error.message === "geometry_review_stale" ? item.id : null).catch(() => {});
     } finally {
       setSubmitting(false);
     }
@@ -1306,7 +1311,7 @@ function CropReview({ albumId, goHome }) {
     </p>}
     {item ? <>
       {item.reprocessKey && <p role="status">Abzug neu berechnet. Prüfe die aktualisierte Ansicht.</p>}
-      <DetectionOverlay key={activeDeferredDraft?.requestId || item.reprocessKey || "review"} item={item}
+      <DetectionOverlay key={activeDeferredDraft?.requestId || item.reloadKey || item.reprocessKey || "review"} item={item}
         editable={type === "geometry" || Boolean(activeDeferredDraft)} openPaperOutline={Boolean(focusedPhotoId)}
         countOutlines={countOutlines} captureSplitGroups={captureSplitGroups} mergedPairs={activeDeferredDraft ? [] : mergedPairs}
         filmGridGroups={filmGridGroups} selectedCountGroup={selectedCountGroup} paperGridGroups={paperGridGroups}
