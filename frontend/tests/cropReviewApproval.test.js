@@ -2,8 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   contactEdgesNeedRefresh, contrastOutlineNeedsConfirmation, heldPrintCorrectionHint,
-  measuredOutlineCutoffRequiresReview, measuredOutlineRecheckRequiresReview, wholePrintApprovalHeld,
+  measuredOutlineCutoffRequiresReview, measuredOutlineRecheckRequiresReview, paperOutlineRequiresMovement,
+  wholePrintApprovalHeld,
 } from "../src/cropReviewApproval.js";
+
+test("stacked scene comparisons require an actual paper edit before saving", () => {
+  assert.equal(paperOutlineRequiresMovement({ stacked_scene_requires_paper_edit: true }, false), true);
+  assert.equal(paperOutlineRequiresMovement({ outline_preview: { source: "disputed_paper_grid_outline_review" } }, false), false);
+  assert.equal(paperOutlineRequiresMovement({ motif_comparison_requires_paper_edit: true }, true), true);
+  assert.equal(paperOutlineRequiresMovement({ motif_comparison_requires_paper_edit: true }, false), false);
+});
 
 test("automatically detected contrast outlines with source boundary review need confirmation", () => {
   const photo = { segmentation_confidence: 0.71, segmentation_mask: { detector_source: "contrast_region" } };

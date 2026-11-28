@@ -49,6 +49,7 @@ import { motifUsesPaperAxes, resizeMotifInPaperPlane } from "./cropPreview.js";
 import {
   contactEdgesNeedRefresh, contrastOutlineConfirmation, contrastOutlineNeedsConfirmation, contrastOutlineReviewHint,
   measuredMotifPaperEditHint, measuredOutlineCutoffRequiresReview, measuredOutlineCutoffSource, measuredOutlineRecheckRequiresReview,
+  paperOutlineRequiresMovement,
 } from "./cropReviewApproval.js";
 import { queueUpload, retryQueuedUploads } from "./offlineQueue.js";
 import MobileApp from "./MobileApp.jsx";
@@ -1565,7 +1566,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     && confirmedContrastOutline?.quad === selectedShape?.warpQuad;
   const contrastOutlineNeedsCheck = contrastOutlineReview && !contrastOutlineConfirmed;
   const fullPrintMode = rejectedDetection ? null : selectedModes?.full_print;
-  const motifPaperNeedsMovement = !editingImage && contrastOutlineReview && fullPrintMode?.motif_comparison_requires_paper_edit === true
+  const paperOutlineNeedsMovement = !editingImage && paperOutlineRequiresMovement(fullPrintMode, contrastOutlineReview)
     && sameReviewQuad(savedShape?.warpQuad, selectedShape?.warpQuad);
   const contrastCrossingTraces = useMemo(() => {
     if (newPrint || editingImage || selectedCountGroup) return [];
@@ -2226,7 +2227,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
 
   async function saveSelected() {
     if (!selected || sizeError || needsMotifSelection || crossingNeedsCorrection || needsPrintReview
-        || contrastOutlineNeedsCheck || motifPaperNeedsMovement) return;
+        || contrastOutlineNeedsCheck || paperOutlineNeedsMovement) return;
     const box = editingImage ? selected.bounding_box : selectedShape.boundingBox;
     const mask = editingImage
       ? maskFromShape(savedShape, selectedShape.imageQuad)
@@ -2664,7 +2665,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           {contrastOutlineConfirmation}
         </label>
       )}
-      {!newPrint && !editingImage && motifPaperNeedsMovement &&
+      {!newPrint && !editingImage && paperOutlineNeedsMovement &&
         <p className="crop-editor-hint" id="measured-motif-paper-edit-hint">{measuredMotifPaperEditHint}</p>}
       {!editingImage && selectedShape && (
         <PrintSizeFields
@@ -2685,8 +2686,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       )}
       {!newPrint && <button className="primary-button compact" type="button"
         disabled={!selected || saveState?.saving || Boolean(sizeError) || needsMotifSelection || crossingNeedsCorrection
-          || needsPrintReview || contrastOutlineNeedsCheck || motifPaperNeedsMovement}
-        aria-describedby={motifPaperNeedsMovement ? "measured-motif-paper-edit-hint" : undefined}
+          || needsPrintReview || contrastOutlineNeedsCheck || paperOutlineNeedsMovement}
+        aria-describedby={paperOutlineNeedsMovement ? "measured-motif-paper-edit-hint" : undefined}
         onClick={saveSelected}>
         <Save size={16} />
         {currentSave?.saving && !currentSave.rejecting && !currentSave.checkingEdges ? "Ausschnitt wird berechnet …" : "Zuschnitt speichern"}

@@ -6,7 +6,8 @@ import { motifUsesPaperAxes, projectedCropAspect, resizeMotifInPaperPlane, resam
 import EdgeMeasurement, { MeasuredEdgeOverlay } from "./EdgeMeasurement.jsx";
 import {
   contactEdgesNeedRefresh, contrastOutlineConfirmation, contrastOutlineNeedsConfirmation, contrastOutlineReviewHint,
-  heldPrintCorrectionHint, measuredMotifPaperEditHint, measuredOutlineCutoffRequiresReview, measuredOutlineCutoffSource, wholePrintApprovalHeld,
+  heldPrintCorrectionHint, measuredMotifPaperEditHint, measuredOutlineCutoffRequiresReview, measuredOutlineCutoffSource,
+  paperOutlineRequiresMovement, wholePrintApprovalHeld,
 } from "./cropReviewApproval.js";
 import {
   actionableCountGroups, adjacentPrintHint, albumLeafChildStyle, albumLeafTraceStyle, AlbumPageMarkReview, canEditMobileMotif, captureRequiresReview,
@@ -290,7 +291,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const [confirmedContrastOutline, setConfirmedContrastOutline] = useState(null);
   const contrastOutlineConfirmed = quad != null && confirmedContrastOutline === quad;
   const contrastOutlineNeedsCheck = contrastOutlineReview && !contrastOutlineConfirmed;
-  const motifPaperNeedsMovement = contrastOutlineReview && fullPrintMode?.motif_comparison_requires_paper_edit === true
+  const paperOutlineNeedsMovement = paperOutlineRequiresMovement(fullPrintMode, contrastOutlineReview)
     && sameReviewQuad(initialOuter(), quad);
   const [editMode, setEditMode] = useState("full_print");
   const [motifQuad, setMotifQuad] = useState(storedMotif);
@@ -430,7 +431,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     addEventListener("pointermove", move); addEventListener("pointerup", up); addEventListener("pointercancel", up);
   }
   async function save() {
-    if (contrastOutlineNeedsCheck || motifPaperNeedsMovement) return;
+    if (contrastOutlineNeedsCheck || paperOutlineNeedsMovement) return;
     if (editingMotif ? !validMotif : (!validQuad || sizeError || crossingNeedsCorrection)) return;
     if (deferredDraft && !confirmDeferredDraft) return;
     setSaving(true); setSaveError("");
@@ -970,13 +971,13 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           {contrastOutlineConfirmation}
         </label>
       )}
-      {!deferredDraft && !editingMotif && motifPaperNeedsMovement &&
+      {!deferredDraft && !editingMotif && paperOutlineNeedsMovement &&
         <p className="quad-hint" id="mobile-measured-motif-paper-edit-hint">{measuredMotifPaperEditHint}</p>}
       <button className="save-crop" onClick={save} disabled={saving
         || (deferredDraft && !confirmDeferredDraft)
-        || contrastOutlineNeedsCheck || motifPaperNeedsMovement
+        || contrastOutlineNeedsCheck || paperOutlineNeedsMovement
         || (editingMotif ? !validMotif : (!validQuad || Boolean(sizeError) || crossingNeedsCorrection))}
-        aria-describedby={motifPaperNeedsMovement ? "mobile-measured-motif-paper-edit-hint" : undefined}>
+        aria-describedby={paperOutlineNeedsMovement ? "mobile-measured-motif-paper-edit-hint" : undefined}>
         <Save size={18}/>{geometrySaving ? "Richtet das Bild …" : standaloneDraft ? "Als Abzug erfassen" : sourceFragmentDraft ? "Als einen Abzug speichern"
           : editingMotif ? "Motivzuschnitt speichern" : "Viereck speichern & geraderichten"}
       </button>

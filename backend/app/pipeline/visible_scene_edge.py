@@ -1,13 +1,18 @@
 """Measure an open image transition inside an unsupported detection."""
 
+from collections.abc import Iterator
+
 import cv2
 import numpy as np
 
 from app.pipeline.geometry import order_quad_cyclic
-from app.pipeline.print_edges import _PRINT_SIDES, _edge_band, _line_endpoints, _sample_lab, _side_line
+from app.pipeline.print_edges import _PRINT_SIDES, _edge_band, _line_endpoints, _quad_from_lines, _sample_lab, _side_line
 
 
 VISIBLE_SCENE_EDGE = "visible_scene_edge"
+STACKED_SCENE_COMPARISON = "stacked_scene_comparison"
+STACKED_SCENE_COMPARISON_REVISION = 1
+STACKED_SCENE_PAPER_EDIT = "stacked_scene_requires_paper_edit"
 _UNIT_QUAD = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
 
 
@@ -162,3 +167,117 @@ def suggest_visible_scene_edge(
         if not has_enclosing_perimeter(image, quad, context, short_side):
             candidates.append(spans)
     return candidates[0] if len(candidates) == 1 else []
+
+
+def _refit_scene_line(image: np.ndarray, seed: np.ndarray, short: float) -> np.ndarray | None:
+    fits = []
+    for radius in (round(.007 * short), round(.0092 * short)):
+        line, evidence = _side_line(image, *seed, radius)
+        if line is None or evidence["support"] < .88 or evidence["ambiguous"]:
+            return None
+        fits.append(_line_endpoints(*seed, line))
+    if np.linalg.norm(np.subtract(*fits), axis=1).max() > max(1., .0011 * short):
+        return None
+    return np.mean(np.float32(fits), axis=0)
+
+
+def _displaced_scene_lines(image: np.ndarray, side: np.ndarray, short: float) -> Iterator[np.ndarray]:
+    fractions = np.linspace(.23, .86, 128, dtype=np.float32)
+    spacing = max(1., short / 1300)
+    depths = np.arange(.10 * short, .34 * short, spacing, dtype=np.float32)
+    pixels = _edge_band(image, *side, depths, fractions=fractions)
+    if pixels is None:
+        return
+    columns = np.arange(8, len(depths) - 8)
+    outside = np.median(pixels[:, columns[:, None] + [-7, -5, -3]], axis=2)
+    inside = np.median(pixels[:, columns[:, None] + [2, 3, 4]], axis=2)
+    shoulder = np.linalg.norm(pixels[:, columns + 1] - pixels[:, columns - 1], axis=2)
+    votes = ((outside[..., 0] - inside[..., 0] >= 18) & (shoulder >= 7)
+             & (outside[..., 0] >= 171) & (outside[..., 0] <= 228))
+    slopes = np.linspace(-.046, .046, 59, dtype=np.float32) * short / spacing
+    guesses = np.rint(np.arange(len(columns))[None, :, None]
+                      + slopes[:, None, None] * (fractions - .5)).astype(int).clip(1, len(columns) - 2)
+    support = np.logical_or.reduce([votes[np.arange(len(fractions)), guesses + shift] for shift in (-1, 0, 1)])
+    weakest = np.min([part.mean(axis=2) for part in np.array_split(support, 8, axis=2)], axis=0)
+    coverage = support.mean(axis=2)
+    score = np.where((coverage >= .82) & (weakest >= .27), coverage + .14 * weakest, 0.)
+    direction = side[1] - side[0]
+    tangent = direction / np.linalg.norm(direction)
+    inward = np.float32([-tangent[1], tangent[0]])
+    ends = fractions[[0, -1]]
+    for _ in range(3):
+        slope, depth = np.unravel_index(np.argmax(score), score.shape)
+        if not score[slope, depth]:
+            return
+        shifts = depths[columns[depth]] + slopes[slope] * spacing * (ends - .5)
+        seed = side[0] + ends[:, None] * direction + shifts[:, None] * inward
+        score[:, np.abs(depths[columns] - depths[columns[depth]]) < .013 * short] = 0.
+        if (line := _refit_scene_line(image, seed, short)) is not None:
+            yield line
+
+
+def _stacked_scene_spans(image: np.ndarray, line: np.ndarray, short: float) -> list[np.ndarray]:
+    # Require a pale separator and distinct picture-like pixels beyond it.
+    # A single contrasting transition could be an ordinary image feature.
+    fractions = np.linspace(.035, .965, 128, dtype=np.float32)
+    offsets = np.float32([-169, -146, -118, -97, -75, -54, -45, -33, -27, -22,
+                          -17, -12, -8, -4, -2, 2, 5, 9, 14, 21]) * (short / 2850)
+    band = _edge_band(image, *line, offsets, fractions=fractions)
+    if band is None:
+        return []
+    separator = np.median(band[:, 7:11], axis=1)
+    palette = np.median(separator, axis=0)
+    near = np.median(band[:, 11:14, 0], axis=1)
+    inside = np.median(band[:, 16:20, 0], axis=1)
+    pale = ((separator[:, 0] >= 168) & (np.linalg.norm(separator - palette, axis=1) <= 14)
+            & ((np.linalg.norm(band[:, 7:11] - separator[:, None], axis=2) <= 13).sum(axis=1) >= 3))
+    edge = (near - inside >= 17) & (np.linalg.norm(band[:, 14] - band[:, 15], axis=1) >= 8)
+    contrast = separator[:, None] - band[:, :7]
+    farther = ((contrast[..., 0] >= 27) | (np.linalg.norm(contrast[..., 1:], axis=2) >= 13)).sum(axis=1) >= 3
+    if (pale.mean() < .91 or edge.mean() < .78 or farther.mean() < .34
+            or sum(block.mean() >= .45 for block in np.array_split(farther, 8)) < 2):
+        return []
+    stations = line[0] + fractions[:, None] * (line[1] - line[0])
+    runs = np.flatnonzero(np.diff(np.r_[False, pale & edge, False])).reshape(-1, 2)
+    return [stations[[start, stop - 1]] for start, stop in runs if stop - start >= 12]
+
+
+def measure_stacked_scene_comparison(
+    image: np.ndarray, quad: np.ndarray, boundary: dict,
+) -> tuple[np.ndarray, list[np.ndarray]] | None:
+    """Shorten one side of a held preview where the scan continues into another picture."""
+    short = float(np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min())
+    if short < 850:
+        return None
+    result = None
+    previous = None
+    for index, name in enumerate(_PRINT_SIDES):
+        facts = boundary.get(name) or {}
+        opposite = boundary.get(_PRINT_SIDES[(index + 2) % 4]) or {}
+        if facts.get("ambiguous") or not .42 <= facts.get("support", 0.) < .72 or opposite.get("support", 1.) >= .24:
+            continue
+        a, b = side = quad[[index, (index + 1) % 4]]
+        tangent = (b - a) / np.linalg.norm(b - a)
+        inward = np.float32([-tangent[1], tangent[0]])
+        for measured in _displaced_scene_lines(image, side, short):
+            if previous is not None and np.linalg.norm(measured - previous, axis=1).max() <= 2:
+                continue
+            if not (spans := _stacked_scene_spans(image, measured, short)):
+                continue
+            context = np.vstack((measured, measured - inward * (.05 * short)))
+            if has_enclosing_perimeter(image, quad, context, short):
+                continue
+            if result is not None:
+                return None
+            # Keep a narrow piece of the separator in the review image. A
+            # transition alone does not establish the physical paper edge.
+            retained = measured - inward * (.0035 * short)
+            points = np.column_stack((quad, np.ones(4)))
+            lines = np.cross(points, np.roll(points, -1, axis=0))
+            lines[index] = np.cross(*np.column_stack((retained, np.ones(2))))
+            outline = _quad_from_lines(lines)
+            if outline is None or not cv2.isContourConvex(outline):
+                return None
+            result = outline, spans
+            previous = measured
+    return result

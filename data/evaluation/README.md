@@ -13251,3 +13251,126 @@ values. The two later manual exports and their reprocessed copies
 stayed byte-identical. The comparison PNG also stayed identical.
 The revised working JPEG and the source audit are recorded under
 `/tmp/phosca-stevekm-workflow-current/ui-scope-owned/`.
+
+## Compare a held crop above a second image strip
+
+Native Scan 63 is a 4,960 × 7,014 scan of a flip album with clear
+pockets. The encoded JPEG SHA-256 is
+`5aa1236fc714b79a95c2cb42d3d21603a7aa19f88b7cb31bbb28d7d65470f48f`.
+It is the embedded raster in the pinned photoScanner reference PDF.
+The author lists two visible main photos on this page. Those rough
+quads are development annotations. The stack also exposes small
+parts of other photos.
+
+The registered mixed development model gives two scene proposals.
+Classical fallback adds two broad proposals spanning the album
+backing and pockets. On the lower photo with candles, the raw model
+mask already extends past the visible picture into the lower
+pockets. The stored whole-print preview carries the resulting
+geometry at 3,013 × 2,893. Both modes are held for unsupported edges,
+uncertain corners and uncertain aspect. The original shows a
+different image below a thin, pink band. Independent narrow source
+fits put the visible candle edge near (909.26, 6136.65) and
+(3567.79, 6208.49). The next visible opening is 31–42 pixels
+farther out along that edge.
+
+The upper and lower model masks reach 0.8241 and 0.6289 IoU against
+the rough author contours. Neither meets the usual 0.85 diagnostic
+matching threshold. This review change leaves the detector's masks
+and these scores identical. The two photos are separate review rows.
+
+After the two broad count proposals are rejected and the lower
+photo is processed again, the held-crop comparison can measure
+a side well inside the stored outline. It samples a band 10–34%
+of the shorter outline side inward, then fits the brightness step
+twice in native pixels. The fits have to agree and the original
+must show a pale separator and contrasting image structure beyond
+it. A second distinct supported edge, a measured enclosing outline
+or a current competing claim withholds the comparison. The preview
+keeps a narrow portion of the separator for source evidence and
+passes both the protected-content and perspective checks. Only the
+measured side of the preview is changed. The dashed source trace
+ends where support runs out. The physical corners stay open.
+
+The comparison image is 3,013 × 2,204 and uses only bilinear taps
+inside its outline. Of 139,722 native source centres inspected on
+the candle side of the visible edge, it retains all 139,722. None
+of the 195,129 sampled centres in the next opening is included.
+The old working raster sampled that second strip at 204,731 output
+positions. The comparison samples it at zero positions. It omits
+2,065,529 native centres from the previous rectangle and adds none.
+All 23 protection checks pass.
+
+Against the rough author annotation the continuous footprint IoU
+increases from 0.6391 to 0.8376. Potential draft-only omission grows
+from 1.25% to 1.44%. The lower-left corner comes within 32.6 native
+pixels of the draft, while the upper and right edges still disagree
+with it. The crop's actual paper extent and metric aspect have not
+been established. The comparison does not supply a motif crop.
+
+The independent source replay supported the comparison on all 16
+quarter-turn and PNG/JPEG variants. It abstained with the next
+image removed, with plain sleeve substitutions, and on eight
+Scan 66 and Scan 67 checks using their own side measurements.
+The replay also abstained on fourteen printed-rule controls.
+A larger opaque reproduction can retain the original optical
+sequence. Recomputed source evidence on the tested reproduction
+changed the ordinary boundary decision and withheld the comparison.
+The paper and count decisions continue to need review.
+
+The ordinary upload keeps four active detections and the existing
+images. After one count rejection the conflicting proposal still
+blocks the comparison. Following the second rejection and another
+ordinary photo reprocess, Desktop and Mobile show the shorter
+comparison beside the unchanged working JPEG. Both named exports
+and the trimmed alias stay held. The repeat reprocess took 3.30
+seconds under concurrent evaluation load and produced the same PNG.
+A new manual claim inside the comparison immediately retired
+the PNG and trace. Reprocessing with that claim kept the comparison
+unavailable. Local source, comparison, browser and repeatability
+receipts are under
+`runs/crop-quality/scan-63/stacked-scene/`.
+
+The earlier editor could save the original four corners unchanged.
+Adding dimensions in a subsequent edit exposed a whole-print JPEG
+while the footprint still included the next pocket. The comparison
+now records that the paper corners need an explicit edit. Both
+editors require moving them before saving. The server returns HTTP
+409 for the old footprint with or without dimensions. A conflicting
+claim can retire the comparison and its dashed line. The requirement
+to edit the corners remains bound to the automatic crop during
+subsequent reprocessing.
+
+The validation profile records stacked-scene comparison revision 1.
+Across eight paired benchmark reports the match counts, crop metrics
+and mode availability reproduce the previous revision. This includes
+18 of 18 frozen detector matches and 11 whole-print plus 12 motif
+passes with the frozen starting geometry. There are no new review
+cases in that suite. The real comparison adds one preview to a
+case that was already held.
+
+### Separate source intake during this comparison
+
+The reserved U057 calibration raster reproduces the submitted WebP
+and decoded RGB digests from the verified archive member. The
+source-only measurement pin covers five distinct prints and 2,226
+stations over twenty sides. Opposite-polarity transitions resolve
+4–7 native pixels between instances 2 and 4 at five sampled columns
+and 2–5 pixels between instances 3 and 4 at six columns. The pale
+right edge of instance 2 has an inner lure 4–7 pixels from the
+observed paper. A 48-pixel lower section of instance 3 remains
+uncertain. All five source masks are pinned as drafts. Physical
+album identity, independent confirmation and complete training
+ancestry are still open. No model ran on this raster.
+
+The Yale ArchivesSpace bulk XML at revision `d869646f…` supplies
+physical catalog records for separate collections. Johnston
+`GEN MSS 887` names the positions of four prints on page 6, ref22,
+with digital manifest 16657578. Its catalog advertises three
+images. The exact manifest request returned HTTP 403 in the
+workspace. Barthelmess `WA Photos 404` distinguishes mounted and
+loose prints. Ref102 has a catalog link for one print. The
+available metadata provides no independent paper and motif
+geometry for the same physical print. Neither catalog record
+establishes an eligible release group. No reserved release images
+were opened or scored.

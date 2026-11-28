@@ -96,6 +96,7 @@ from app.pipeline.protected_regions import (
 from app.pipeline.ribbed_scene_edge import ribbed_scene_edge_review
 from app.pipeline.rounded_corner_review import ROUNDED_CORNER_SOURCE, ROUNDED_CORNER_WEDGES
 from app.pipeline.quality import segmentation_review_reasons
+from app.pipeline.visible_scene_edge import STACKED_SCENE_PAPER_EDIT
 from app.pipeline.segmentation import segment_album_page
 from app.pipeline.tile_print_review import CONTESTED_TILE_FOLLOWUP
 from app.pipeline.variants import (
@@ -594,7 +595,7 @@ async def perspective_correction_task_logic(
     prior_whole_print = modes.get("full_print") or {}
     prior_contact_check = automatic_detection and prior_whole_print.get(CONTACT_PRINT_EDGE_CHECK) is True
     prior_paper_checks = {
-        check: True for check in (FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION, MOTIF_COMPARISON_PAPER_EDIT)
+        check: True for check in (FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION, MOTIF_COMPARISON_PAPER_EDIT, STACKED_SCENE_PAPER_EDIT)
         if automatic_detection and prior_whole_print.get(check) is True
     }
     boundary_check = previous.get("manual_paper_boundary") or {}

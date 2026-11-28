@@ -123,7 +123,10 @@ from app.pipeline.rounded_corner_review import (
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVIEW, SCALLOPED_PRINT_REVISION
 from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE, refine_visible_paper_rim
 from app.pipeline.source_strip_review import source_strip_outline
-from app.pipeline.visible_scene_edge import VISIBLE_SCENE_EDGE, suggest_visible_scene_edge
+from app.pipeline.visible_scene_edge import (
+    STACKED_SCENE_COMPARISON, STACKED_SCENE_PAPER_EDIT, VISIBLE_SCENE_EDGE,
+    measure_stacked_scene_comparison, suggest_visible_scene_edge,
+)
 
 _PRINT_BOUNDARY_SOURCE = "physical_print_boundary"
 _PAPER_RIM_SOURCE = "visible_paper_rim"
@@ -2775,6 +2778,32 @@ def correct_photo_crop(
                         full_mode["suggested_edge_traces"] = [_vertices_on_page(measured.trace, width, height)]
                         full_mode["suggested_edge_source"] = POSSIBLE_INWARD_PRINT_EDGE
                         full_mode[INWARD_SCENE_EDGE_SCOPE] = _vertices_on_page(measured.scope, width, height)
+        if (enable_classical_retry and not manual and protection["passed"]
+                and mask.get("source") == "yolo_seg_mask" and mask.get("detector_source") == "yolo_onnx"
+                and set(full_reasons) == {"PRINT_BOUNDARY_UNSUPPORTED", "PRINT_CORNERS_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
+                and all(mode["status"] == "review_needed" for mode in modes.values())
+                and not any(mask.get(key) for key in ("warp_quad", *_STOCK_REVIEW_CONFLICTS))
+                and not any(full_mode.get(key) for key in ("suggested_edge_traces", "suggested_warp_quad", "outline_preview"))):
+            try:
+                claims = [*(neighbor_masks or []), *(deferred_print_proposals or [])]
+                if not any(review_outline_intersects_claim(full_mode["warp_quad"], claim, width, height) for claim in claims):
+                    measured = measure_stacked_scene_comparison(page_image, src_points, boundary_refinement)
+                    if measured is not None:
+                        outline, spans = measured
+                        if _keeps_protected_preview_content(page_image, src_points, outline, regions, protection):
+                            rotation = int(result.metadata["orientation"].get("rotation_degrees") or 0) % 360
+                            comparison = _render_review_quad_preview(
+                                page_image, outline, rotation, neighbor_polygons, regions, camera_matrix, page_plane,
+                                source=STACKED_SCENE_COMPARISON,
+                            )
+                            if comparison is not None:
+                                pixels, full_mode["outline_preview"] = comparison
+                                full_mode[STACKED_SCENE_PAPER_EDIT] = True
+                                full_mode["suggested_edge_source"] = STACKED_SCENE_COMPARISON
+                                full_mode["suggested_edge_traces"] = [_vertices_on_page(span, width, height) for span in spans]
+                                result = replace(result, full_print_preview=pixels)
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                pass  # An unconfirmed source transition cannot replace the ordinary crop.
         classical_contact = (
             mask.get("source") == "classical_border_quad" and mask.get("detector_source") == "contrast_region"
             and {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_CORNERS_UNCERTAIN"} <= uncertain_edges

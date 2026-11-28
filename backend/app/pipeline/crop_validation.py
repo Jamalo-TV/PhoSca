@@ -48,6 +48,7 @@ from app.pipeline.training_provenance import (
     FINAL_SPLIT_ROLES, TrainingProvenance, TrainingProvenanceError,
     disjoint_sources, load_training_provenance, source_index,
 )
+from app.pipeline.visible_scene_edge import STACKED_SCENE_COMPARISON_REVISION
 
 CROP_VALIDATION_SCHEMA = 32
 CROP_VALIDATION_UNAVAILABLE = "CROP_VALIDATION_UNAVAILABLE"
@@ -74,6 +75,10 @@ def crop_validation_profile(settings: Settings) -> dict:
         "precise_photo_crops": settings.enable_precise_photo_crops,
         "crop_sampling": OWNED_BILINEAR if settings.enable_precise_photo_crops else None,
         "page_plane_preview": 2 if settings.enable_precise_photo_crops else None,
+        "stacked_scene_comparison": (
+            STACKED_SCENE_COMPARISON_REVISION
+            if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None
+        ),
         "print_boundary": PRINT_BOUNDARY_REVISION if settings.enable_precise_photo_crops else None,
         "faint_paper_review": (
             FAINT_PAPER_REVIEW_REVISION if settings.enable_precise_photo_crops and settings.enable_classical_segmentation_fallback else None

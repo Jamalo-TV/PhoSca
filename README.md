@@ -1459,6 +1459,21 @@ Ob dort auch das Fotopapier beginnt, muss im Review geklärt werden.
 Ecken, Zuschnitt und Freigabe werden weiterhin separat geprüft.
 [Messung an Scan 66 und Gegenproben](data/evaluation/README.md#show-a-measured-image-transition-inside-a-held-detection)
 
+Bei gestapelten Fototaschen kann ein Modellumriss bis in ein
+zweites sichtbares Bild reichen. Zuerst prüfst du die
+überlappenden Vorschläge in der Anzahlprüfung. Danach kann
+PhoSca bei der erneuten Verarbeitung eine kürzere
+Vergleichsvorschau anbieten. Dafür müssen zwei Messungen
+denselben sichtbaren Bildrand stützen. PhoSca prüft den
+hellen Streifen daneben, die Bildstruktur dahinter, einen
+möglichen grösseren Umriss und die geschützten Bildinhalte.
+Die gestrichelte Linie zeigt den gemessenen Abschnitt im
+Original. Die anderen drei Seiten und das Seitenverhältnis
+brauchen weiterhin Prüfung. Die Korrektur muss die Ecken im
+Original neu setzen. Ergänzte Papiermasse allein lösen
+die Grenzprüfung nicht.
+[Messung am Kerzenfoto auf Scan 63](data/evaluation/README.md#compare-a-held-crop-above-a-second-image-strip)
+
 Liegt ein gekrümmter sichtbarer Bildrand teilweise ausserhalb
 des Zuschnitts, kann PhoSca den belegten Streifen in einer
 transparenten Vergleichsvorschau ergänzen. Dafür müssen der
@@ -2017,6 +2032,15 @@ Beide Zuschnittmodi dieses Rudge-Falls bleiben zur Prüfung zurückgehalten.
   werden danach separat geprüft.
   [Beschriftung und Messwerte](data/evaluation/README.md#locate-native-contact-print-lettering-while-the-paper-is-held) ·
   [Prüfung der Schutzmarkierungen](data/evaluation/README.md#review-multiple-advisory-marks-at-a-measured-paper-edge)
+- **Kerzenfoto in gestapelten Fototaschen.** Die bisherige
+  Vorschau reicht in den nächsten sichtbaren Fotostreifen.
+  Nach der Anzahlprüfung lässt sich ein kürzerer Ausschnitt
+  ansehen. Er erhält alle 139’722 geprüften Quellpixel auf
+  der Bildseite der gemessenen Unterkante. In der bisherigen
+  Vorschau beeinflusste der nächste Streifen 204’731
+  Ausgabepixel. Im Vergleich sind es null. Der rechte Papierrand
+  ist noch offen. Beide Modi bleiben in Prüfung.
+  [Prüfvorschau und Messwerte](data/evaluation/README.md#compare-a-held-crop-above-a-second-image-strip)
 - **Zwei Abzüge auf Golden-Seite 26.** Unten rechts stimmt die
   Fläche von **Ganzer Abzug** nahezu mit der Entwicklungsreferenz
   überein (IoU 0,996). Oben links folgt der Zuschnitt der hellen

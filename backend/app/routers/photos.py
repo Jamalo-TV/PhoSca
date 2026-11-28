@@ -92,7 +92,7 @@ from app.pipeline.variants import (
     variant_urls,
     variants_from_metadata,
 )
-from app.pipeline.visible_scene_edge import VISIBLE_SCENE_EDGE
+from app.pipeline.visible_scene_edge import STACKED_SCENE_COMPARISON, STACKED_SCENE_PAPER_EDIT, VISIBLE_SCENE_EDGE
 from app.schemas import BoundingBoxUpdate, OCRRead, OCRUpdate, PhotoDetail, PhotoRead
 from app.schemas.common import PrintSizeMM
 from app.schemas.pipeline import ManualPhotoCreate
@@ -564,7 +564,8 @@ async def _review_overlapping_crops(
             MEASURED_RIBBED_PRINT_OUTLINE, BOWED_SCENE_PREVIEW, MARKED_PAPER_MARGIN,
         ) else None
         if ((evidence_scope and review_outline_intersects_claim(evidence_scope, mask, width, height, convex_scope=True))
-                or (preview_source in (DISPUTED_GRID_PREVIEW_SOURCE, POSSIBLE_OUTER_PRINT_PREVIEW) and preview.get("source_outline")
+                or (preview_source in (DISPUTED_GRID_PREVIEW_SOURCE, POSSIBLE_OUTER_PRINT_PREVIEW, STACKED_SCENE_COMPARISON)
+                    and preview.get("source_outline")
              and review_outline_intersects_claim(preview["source_outline"], mask, width, height))
                 or (quad is not None and (preview_source in assisted_previews or measured_preview) and any(
                     manual_print_intersects(preview[key], quad, width, height, minimum_overlap_px=1. if measured_preview else None)
@@ -575,7 +576,7 @@ async def _review_overlapping_crops(
                 full_mode.pop("source_strip_review", None)
             correction.pop("album_page_mark_review", None)
             if full_mode.get("suggested_edge_source") in (
-                POSSIBLE_OVEREXTENDED_PRINT_EDGE, BOWED_SCENE_PREVIEW, *MEASURED_PRINT_PREVIEW_SOURCES,
+                POSSIBLE_OVEREXTENDED_PRINT_EDGE, BOWED_SCENE_PREVIEW, STACKED_SCENE_COMPARISON, *MEASURED_PRINT_PREVIEW_SOURCES,
             ):
                 full_mode.pop("suggested_edge_source", None)
                 full_mode.pop("suggested_edge_traces", None)
@@ -1220,9 +1221,10 @@ async def update_photo_bounding_box(
         explicit = payload.segmentation_mask is not None and payload.segmentation_mask.warp_quad is not None
         detector_source = original_mask.get("detector_source")
         measured_paper_edit = detector_source == "yolo_onnx" and full_print.get(MOTIF_COMPARISON_PAPER_EDIT) is True
+        stacked_scene_edit = full_print.get(STACKED_SCENE_PAPER_EDIT) is True
         faint_paper = detector_source == "yolo_onnx" and full_print.get(FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION) is True
         possible_regions = detector_source == "yolo_onnx" and POSSIBLE_PRINT_REGIONS in original_mask
-        if photo.segmentation_confidence is not None and measured_paper_edit:
+        if photo.segmentation_confidence is not None and (measured_paper_edit or stacked_scene_edit):
             outer = segmentation_mask.get("warp_quad") or []
             motif_mode = (correction.get("crop_modes") or {}).get("image_only") or {}
             if (not explicit or segmentation_mask.get("image_quad") is not None

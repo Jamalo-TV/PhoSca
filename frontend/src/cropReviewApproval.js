@@ -4,6 +4,12 @@ export const measuredMotifPaperEditHint = "Setze vor dem Speichern alle vier Eck
 export const measuredOutlineCutoffSource = "measured_print_outline_cutoff";
 export const measuredOutlineCutoffHint = "Der Zuschnitt lässt sichtbare Bereiche innerhalb der gemessenen Papierkontur aus. Setze die Ecken an den sichtbaren Papierrand im Original. Ist der Rand verdeckt oder bleibt er unklar, fotografiere den Abzug einzeln mit sichtbarem Rand.";
 export const measuredOutlineRecheckHint = "Die gemessene Papierkontur muss erneut geprüft werden. Öffne den Zuschnitt, prüfe die Ecken am Original und speichere sie erneut.";
+export const stackedSceneComparison = "stacked_scene_comparison";
+
+export function paperOutlineRequiresMovement(fullPrint, contrastOutlineReview) {
+  return fullPrint?.stacked_scene_requires_paper_edit === true
+    || (contrastOutlineReview && fullPrint?.motif_comparison_requires_paper_edit === true);
+}
 
 export function measuredOutlineCutoffRequiresReview(mode) {
   return mode?.status === "review_needed" && Boolean(mode.reason_codes?.includes("PRINT_MEASURED_OUTLINE_CUTOFF"));

@@ -2,7 +2,7 @@ import { Download } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import {
   measuredOutlineCutoffHint, measuredOutlineCutoffRequiresReview, measuredOutlineCutoffSource,
-  measuredOutlineRecheckHint, measuredOutlineRecheckRequiresReview,
+  measuredOutlineRecheckHint, measuredOutlineRecheckRequiresReview, stackedSceneComparison,
 } from "./cropReviewApproval.js";
 import {
   albumLeafSourceWindow, captureSplitSourceWindow, competingPhotoRegionPaths, competingPhotoRegionStyles, filmSourceWindow,
@@ -650,6 +650,7 @@ export function paperOutlineRequiresReview(fullPrint) {
     || fullPrint.suggested_edge_source === possibleOverextendedPrintEdge
     || fullPrint.suggested_edge_source === possibleInwardPrintEdge
     || fullPrint.suggested_edge_source === visibleSceneEdge
+    || fullPrint.suggested_edge_source === stackedSceneComparison
     || fullPrint.suggested_edge_source === ribbedSceneEdge
     || fullPrint.suggested_edge_source === possibleEmbossedAlbumPaperEdges
     || hasMeasuredEdgeReview(fullPrint, possibleBowedPrintEdge)
@@ -759,6 +760,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
     }
     if (fullPrint.suggested_edge_source === visibleSceneEdge) {
       return "Die gestrichelte Linie markiert einen sichtbaren Übergang ins Bild. Prüfe am Original, ob dort auch das Fotopapier beginnt. Sind die Ecken oder der Rand unter der Hülle verdeckt, hilft eine Aufnahme des frei liegenden Abzugs.";
+    }
+    if (fullPrint.suggested_edge_source === stackedSceneComparison) {
+      return "Die gestrichelte Markierung zeigt den sichtbaren Bildrand vor einem hellen Streifen. Prüfe im Original, welches Papier zu diesem Bild und welches zum Bild dahinter gehört.";
     }
     if (fullPrint.suggested_edge_source === ribbedSceneEdge) {
       return "Violett markiert gemessene Übergänge vom hellen Streifen ins Bild. Prüfe am Original, wo das Fotopapier beginnt und ob der helle Streifen zum Abzug gehört.";
@@ -875,6 +879,9 @@ export function getPrintOutlinePreviewHint(fullPrint) {
   if (preview?.source === possibleAlbumLayerEdge) {
     return "Die Prüfvorschau blendet einen Streifen hinter der beobachteten Linie aus. Der helle Rand direkt am Bild bleibt sichtbar. Prüfe am Original, ob der ausgeblendete Streifen zum Album oder zum Abzug gehört.";
   }
+  if (preview?.source === stackedSceneComparison) {
+    return "Der Vergleich kürzt nur die markierte Seite. Prüfe den hellen Streifen und den gesamten Papierrand im Original. Das Seitenverhältnis bleibt geschätzt.";
+  }
   if (preview?.source === possibleLocalPrintEdge) {
     return "Die Prüfvorschau zeigt den zusätzlichen dunklen Streifen an der Markierung. Vergleiche seine Struktur mit dem Original.";
   }
@@ -905,7 +912,8 @@ export function getPrintOutlinePreviewHint(fullPrint) {
 export function showsPaperEdgeComparison(fullPrint) {
   return [possibleOverextendedPrintEdge, possibleInwardPrintCorner, possibleBowedPrintEdge,
     possibleDisplacedPrintEdges, possibleAlbumLayerEdge, possibleLocalPrintEdge, markedPaperMargin,
-    "possible_mounted_edge_strip", disputedGridPreview, possibleOuterPrintPreview, roundedCornerSource, measuredRibbedPrintOutlineSource, bowedScenePreview]
+    "possible_mounted_edge_strip", disputedGridPreview, possibleOuterPrintPreview, roundedCornerSource,
+    measuredRibbedPrintOutlineSource, bowedScenePreview, stackedSceneComparison]
     .includes(fullPrint?.outline_preview?.source);
 }
 
@@ -915,7 +923,9 @@ export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outl
   const extendedScene = outlinePreview?.source === bowedScenePreview;
   const trimmedScene = extendedScene && outlinePreview.excluded_outer_band;
   const markedMargin = outlinePreview?.source === markedPaperMargin;
+  const stackedScene = outlinePreview?.source === stackedSceneComparison;
   const label = markedMargin ? "Vergleich am markierten Papierrand"
+    : stackedScene ? "Vergleich am sichtbaren Bildrand"
     : trimmedScene ? "Vergleich am Bildrand" : extendedScene ? "Ergänzte Bildfläche"
     : wholeOutline ? "Möglicher Aussenumriss" : "Mögliche Papierkante";
   const { width, height } = outlinePreview?.shape || {};
@@ -929,6 +939,7 @@ export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outl
     <figure>
       <div className="paper-edge-preview-image">
         <img src={possibleUrl} alt={markedMargin ? "Prüfvorschau mit ergänzter Markierung am Papierrand"
+          : stackedScene ? "Prüfvorschau mit kürzerem Rand vor dem Bild dahinter"
           : trimmedScene ? "Prüfvorschau mit ergänztem Bildrand und ausgeblendetem Randbereich"
           : extendedScene ? "Prüfvorschau mit ergänztem sichtbarem Bildstreifen" : wholeOutline
           ? "Prüfvorschau des gesamten möglichen Abzugs" : "Prüfvorschau entlang der möglichen Papierkante"} />

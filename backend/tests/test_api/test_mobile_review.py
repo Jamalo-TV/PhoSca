@@ -2804,6 +2804,33 @@ async def test_measured_motif_comparison_requires_a_distinct_confirmed_paper_out
         assert (await client.get(f"{url}/image", params={"variant": variant})).status_code == 404
 
 
+async def test_stacked_scene_comparison_rejects_saving_unmoved_paper_corners(client):
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.visible_scene_edge import STACKED_SCENE_PAPER_EDIT
+
+    _, _, photo_id = await _seed_review_data()
+    corners = [{"x": x, "y": y} for x, y in ((.16, .19), (.83, .19), (.83, .86), (.16, .86))]
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {"source": "yolo_seg_mask", "detector_source": "yolo_onnx", "polygon": corners}
+        modes = {mode: {"status": "review_needed", "reason_codes": ["PRINT_BOUNDARY_UNSUPPORTED"]}
+                 for mode in ("full_print", "image_only")}
+        modes["full_print"].update(warp_quad=corners, **{STACKED_SCENE_PAPER_EDIT: True})
+        photo.enhancement_applied = {**photo.enhancement_applied, "correction": {"crop_modes": modes}}
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    original = (await client.get(url)).json()
+    for measurements in ({}, {"print_size_mm": {"width": 150, "height": 145}}):
+        response = await client.patch(f"{url}/bounding-box", json={
+            "bounding_box": original["bounding_box"],
+            "segmentation_mask": {"source": "manual_quad", "warp_quad": corners, "polygon": corners, **measurements},
+        })
+        assert response.status_code == 409 and response.json()["detail"] == "print_outline_review_required"
+    assert (await client.get(url)).json() == original
+
+
 async def test_faint_outward_review_retains_confirmation_after_a_neighbor_claim_and_retry(client, monkeypatch):
     from app.config import get_settings
     from app.database import get_session_factory
