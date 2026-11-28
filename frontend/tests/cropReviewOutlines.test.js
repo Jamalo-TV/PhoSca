@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  albumLeafSourceWindow, captureSplitSourceWindow, getAlbumLeafReviewGroups, getCaptureBackgroundReviewTraces,
+  albumLeafSourceWindow, captureSplitSourceWindow, disputedPrintSourceWindow, getAlbumLeafReviewGroups, getCaptureBackgroundReviewTraces,
   getCompactSceneCrossingTraces, getContrastCrossingTraces,
   competingPhotoRegionPaths, getCompetingPhotoOutline, getCompetingPhotoReviewOutlines,
   filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
@@ -16,6 +16,23 @@ import {
 
 const quad = [{ x: .1, y: .2 }, { x: .7, y: .2 }, { x: .7, y: .8 }, { x: .1, y: .8 }];
 const mask = { fragment_outline_suggestion: { quad, uncertain_edge: 1 } };
+
+test("a disputed print shows native context only while both crop modes and the count are unresolved", () => {
+  const held = { status: "review_needed" };
+  const modes = { full_print: held, image_only: held };
+  const reasons = ["PHOTO_COUNT_UNCERTAIN"];
+  const request = { box: { x1: 0, y1: .25, x2: .5, y2: .75 }, width: 201, height: 101, modes, reasons };
+  assert.deepEqual(disputedPrintSourceWindow(request), [0, 17.5, 108.5, 66]);
+  assert.deepEqual(disputedPrintSourceWindow({ ...request, box: { x1: .5, y1: .5, x2: 1, y2: 1 } }),
+    [92.5, 42.5, 108.5, 58.5]);
+  for (const changes of [
+    { box: null }, { box: { ...request.box, x2: -.2 } }, { box: { ...request.box, y2: .251 } },
+    { width: 1 }, { height: undefined }, { reasons: [] },
+    { reasons: [...reasons, "GEOMETRY_REVIEW_WRONG_OBJECT"] },
+    { modes: { full_print: held, image_only: { status: "ready" } } },
+    { modes: { full_print: { status: "ready" }, image_only: held } },
+  ]) assert.equal(disputedPrintSourceWindow({ ...request, ...changes }), null);
+});
 
 test("a review draft must match both saved outlines, the orientation and the dimensions", () => {
   const saved = { warpQuad: quad, imageQuad: null, orientationDegrees: null, printSizeFields: { width: "", height: "" } };

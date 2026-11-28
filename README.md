@@ -1600,6 +1600,19 @@ neuen Abzug oder Zuschnitt. Eine gespeicherte Kontur im Messbereich
 entfernt den Hinweis.
 [Beispiel Rudge 13](data/evaluation/README.md#show-a-visible-album-window-edge-above-overlapping-claims)
 
+Ist die Anzahl bei einem automatisch erkannten Vorschlag unklar und
+sind beide Zuschnittmodi in Prüfung, kann man im Zuschnitteditor auf
+Desktop und Mobil dunkle Details des Originals prüfen. Die Ansicht
+vergrössert den Bereich des Vorschlags mit einem kleinen Saum. Sie
+startet mit der normalen Darstellung. «Schatten aufhellen» hebt die
+dunklen Tonwerte desselben Ausschnitts an. Kratzer und Bildrauschen
+können ebenfalls deutlicher werden. Der Wechsel verändert nur die
+Anzeige im Browser. Bei Unsicherheit kann der Vorschlag in Prüfung
+bleiben. Die Aktion «Falsches Objekt» betrifft den ausgewählten
+Vorschlag und setzt einen aktuellen Prüfstand voraus. Offene
+Geometrieänderungen müssen vorher gespeichert oder verworfen werden.
+[Messung und Gegenproben](data/evaluation/README.md#inspect-dark-source-detail-on-a-disputed-photo)
+
 Eine manuelle Geometriekorrektur löscht die automatische
 `segmentation_confidence`. Die Geometrie-, Zuordnungs- und
 Samplingprüfungen gelten weiterhin. Bei einem Hinweis auf eine

@@ -12570,7 +12570,7 @@ An ordinary Rudge 13 upload with the registered `1e95a1a9` checkpoint
 returned five active rows and no deferred proposals. Four separately
 registered development prints each miss a 0.85 overlap, with best IoUs
 of 0.131, 0.140, 0.384, and 0.376. The current rows include two leaf-scale
-outlines, a dark vacant aperture, and two broad overlapping masks over
+outlines, a dark opening with unresolved contents, and two broad masks over
 much of the right leaf. All ten named crop variants stayed held.
 
 The count review can now show one open 203.46-native-pixel line on the
@@ -12617,3 +12617,56 @@ reuse grant are unresolved. The public exact image request returned
 HTTP 403. This source check adds no release group.
 [Finding aid](https://www.cca.qc.ca/en/archives/237454/fonds-hazen-sise/407902/ciam-iv-cirpac-and-london) ·
 [Print catalogue](https://www.cca.qc.ca/en/search/details/collection/object/489589)
+
+## Inspect dark source detail on a disputed photo
+
+The left opening of the native 2048 × 1536 Rudge 13 development upload
+has a standalone YOLO proposal at confidence 0.333. The source SHA-256
+is `7967940f0fbdcd1c7458a1327308316d872b13cd5d6fd2dfef0294c9ce1e1a6b`.
+The centre has Lab L percentiles 8, 11, and 23 at 10%, 50%, and 90%.
+A torn bright strip crosses part of the lower opening. Its measured
+281.9 native pixel edge and weak interior texture persist at JPEG75,
+JPEG55, and under mild blur. Photographic controls darkened into the
+same opening reproduce the strip and fail the same absolute-texture
+test. The darkest control also matches the opening's local texture
+score. The source leaves the existence of a physical print unresolved.
+
+In geometry review, current automatic rows with `PHOTO_COUNT_UNCERTAIN`
+and both modes held can open a detail of their existing source box.
+The view adds 8% of the longer native side as context, clipped at the
+capture bounds. It uses the native aspect ratio of that exact window.
+The same source window can be displayed with an sRGB
+gamma exponent of 0.4 on the RGB channels. The filter affects only
+the displayed original detail. The panel opens in the neutral state.
+Closing the panel or changing the row or its geometry revision resets
+the view. Desktop uses the existing `Falsches Objekt` action for these
+disputes. The server checks the current row revision and the editor
+requires a clean crop draft. An isolated Rudge 13 API replay returns
+409 for a stale event. An explicit valid event changes the count from
+five to four and the other rows' asset hashes stay equal. The four
+separately registered prints remain unresolved in the detector output.
+Both named exports of the disputed proposal remain held.
+
+The normal native upload and review were exercised in desktop and
+mobile Chromium. The neutral view agrees with the same source pixels
+to a median of one RGB code at display size. The tested dark samples
+gain a median of 67 codes with the filter enabled. Keyboard toggling,
+reset on a different row, and the desktop's unsaved-draft guard were
+checked. Opening and adjusting the view makes no write requests.
+Both named and legacy trimmed export checks stay at HTTP 404. A
+separate explicit desktop decision uses the current revision and
+changes only the selected row and the active count.
+
+The two frozen synthetic runs match the preceding release-gated
+configuration on all fields except timing. The detector run finds all
+18 prints with zero extra proposals. The geometry run retains all
+11 recoverable `full_print` and 12 recoverable `image_only` passes.
+
+The Wellcome catalogue separately documents its physical album
+`24570i` and the public-domain print `14937i`. The exact source asset
+`V0028355` is listed. The full-size request yielded no image bytes.
+A mounted leaf capture and independent paper and motif sizes remain
+unresolved. The NYPL catalogue's view of the same composition belongs
+to its own album copy. The source check adds no release group.
+[Wellcome catalogue](https://works.www.wellcomecollection.org/works/akpsjda3) ·
+[Wellcome image](https://iiif.wellcomecollection.org/image/V0028355/full/full/0/default.jpg)

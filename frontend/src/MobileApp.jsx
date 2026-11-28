@@ -14,6 +14,7 @@ import {
   captureSplitReviewHint, CaptureSplitSourceReview, clippedOverlapHint, clippedOverlapReason, CropOrientationField, cropProtectionErrors, CropVariants,
   CompetingPhotoOutlineLegend, CompetingPhotoOutlineOverlay, SharedMotifGuideOverlay,
   cropModeLabels, crossingFallbackTraceStyles, crossingPrintHint,
+  DisputedPrintSourceReview,
   countGroupReviewError, CountGroupReview, crossingPrintReason, crossingPrintSaveHint, filmGridCountHint, filmGridHint, filmGridRimHint,
   filmGridReason, fragmentCountHint,
   fragmentOutlineHint, fragmentOutlineReason, getCropModes,
@@ -36,6 +37,7 @@ import {
 import {
   getCompetingPhotoOutline, getCompetingPhotoReviewOutlines,
   captureBackgroundTraceStyle, contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor,
+  disputedPrintSourceWindow,
   getCaptureBackgroundReviewTraces, getCompactSceneCrossingTraces,
   getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
@@ -205,6 +207,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const standaloneDraft = standalonePrintNeedsConfirmation(deferredDraft?.reason);
   const [measurementPage, setMeasurementPage] = useState(null);
   const [measuredEdge, setMeasuredEdge] = useState(null);
+  const [sourceSize, setSourceSize] = useState(null);
   const [showMissingEdges, setShowMissingEdges] = useState(false);
   useEffect(() => setShowMissingEdges(false), [item.id]);
   useEffect(() => {
@@ -309,6 +312,12 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   );
   const selectedMergedPair = !reviewedNonPrint && getMergedPrintPairs([item.payload || {}])[0];
   const sourceStrip = editable && !deferredDraft && !editingMotif ? getSourceStripReview(fullPrintMode) : null;
+  const currentSourceSize = sourceSize?.url === item.preview_url ? sourceSize : null;
+  const disputedPrintView = editable && !deferredDraft && !editingMotif && !reviewedNonPrint
+    && item.payload?.confidence != null && disputedPrintSourceWindow({
+      box: sourceBox, width: currentSourceSize?.width, height: currentSourceSize?.height,
+      modes: item.payload?.crop_modes, reasons: item.payload?.review_reasons,
+    });
   const albumMark = editable && !editingMotif && !reviewedNonPrint ? markOffer : null;
   const albumMarkReview = useAlbumPageMarkReview(albumMark, item.payload?.photo_id);
   const displayedQuad = editingMotif ? motifQuad || savedQuad : quad;
@@ -692,6 +701,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       onContextMenu={event=>event.preventDefault()}>
     <div className="review-image-frame">
       <img src={item.preview_url} alt="Zu prüfende Albumseite" draggable="false"
+        onLoad={event => setSourceSize({ url: event.currentTarget.getAttribute("src"),
+          width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
         aria-describedby={overlayHints || undefined} />
       <svg viewBox="0 0 1000 1000" preserveAspectRatio="none">
         {competingPhotoOutlines.length > 0 && <CompetingPhotoOutlineOverlay outlines={competingPhotoOutlines} />}
@@ -856,6 +867,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       ))}
       {printEdgeReviewHint && <p className="quad-hint" id="mobile-print-edge-review-hint">{printEdgeReviewHint}</p>}
       {sourceStrip && <SourceStripReview strip={sourceStrip} sourceUrl={item.preview_url} hintId="mobile-source-strip-review-hint" />}
+      {disputedPrintView && <DisputedPrintSourceReview key={`${item.id}:${item.payload.geometry_review_revision}`}
+        sourceUrl={item.preview_url} view={disputedPrintView} width={currentSourceSize.width} height={currentSourceSize.height} />}
       {!editingMotif && <NeighborContentReview fullPrint={fullPrintMode} sourceUrl={item.preview_url} />}
       {albumMarkReview.bounds.length > 0 && <AlbumPageMarkReview mark={albumMark} review={albumMarkReview}
         sourceUrl={item.preview_url} disabled={saving} />}

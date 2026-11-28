@@ -949,6 +949,13 @@ select {
   font-size: 0.875rem;
 }
 
+.disputed-print-source {
+  display: block;
+  width: min(100%, calc(340px * var(--source-detail-ratio)));
+  height: auto;
+  margin-top: 8px;
+}
+
 .neighbor-content-details {
   display: flex;
   flex-wrap: wrap;

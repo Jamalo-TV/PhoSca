@@ -58,6 +58,7 @@ import {
   captureBackgroundWrongObjectHint, captureSplitReviewHint, CaptureSplitSourceReview,
   clippedOverlapHint, clippedOverlapReason, cropProtectionErrors,
   CropOrientationField, CropVariants, cropModeLabels, getCropModes,
+  DisputedPrintSourceReview,
   albumLeafChildStyle, albumLeafTraceStyle,
   crossingFallbackTraceStyles, crossingPrintHint, crossingPrintReason, crossingPrintSaveHint, fragmentCountHint, fragmentOutlineHint, fragmentOutlineReason,
   countGroupReviewError, CountGroupReview, deferredPrintHint, deferredPrintCountHintId, DeferredPrintReviewHints,
@@ -80,6 +81,7 @@ import {
 import {
   competingPhotoRegionPaths, competingPhotoRegionStyles, getCompetingPhotoReviewOutlines, sharedMotifGuideStyle,
   captureBackgroundTraceStyle, contrastCrossingTraceHint, contrastCrossingTraceStyle, filmNeighborEdgeColor,
+  disputedPrintSourceWindow,
   getCaptureBackgroundReviewTraces, getCompactSceneCrossingTraces,
   getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
@@ -1459,6 +1461,12 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const crossingReview = selected?.segmentation_confidence != null
     && selected.enhancement_applied?.segmentation_review_reasons?.includes(crossingPrintReason);
   const rejectedDetection = Boolean(selected?.reviewed_non_print);
+  const reviewSource = pageImage?.pageId === pageId ? pageImage?.image : null;
+  const disputedPrintView = reviewingGeometry && !newPrint && !editingImage && !rejectedDetection
+    && selected?.segmentation_confidence != null && disputedPrintSourceWindow({
+      box: selected.bounding_box, width: reviewSource?.naturalWidth, height: reviewSource?.naturalHeight,
+      modes: selectedModes, reasons: selected.enhancement_applied?.review_reasons,
+    });
   const filmMask = filmReview && !rejectedDetection ? selected.segmentation_mask : null;
   const filmGridSeam = useMemo(() => getFilmGridSeam(filmMask), [filmMask]);
   const filmGridGroups = useMemo(() => reviewingCount && !newPrint && !editingImage ? getFilmGridReviewSeams(photos) : [],
@@ -1515,7 +1523,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     || ((captureSplitReview || getCompactSceneCrossingTraces(selected).length > 0)
       && "Prüfe, ob dieser Vorschlag einen eigenen Papierabzug zeigt.")
     || (reviewingGeometry && selectedCaptureBackground.length > 0 && captureBackgroundWrongObjectHint)
-    || (contrastOutlineReview && contrastOutlineReviewHint);
+    || (contrastOutlineReview && contrastOutlineReviewHint)
+    || (disputedPrintView && "Prüfe, ob dieser Vorschlag einen eigenen Papierabzug zeigt. Wenn du unsicher bist, lass ihn in Prüfung.");
   const fragmentMask = fragmentReview && !rejectedDetection ? selected.segmentation_mask : null;
   const fragmentOutline = useMemo(() => getFragmentOutline(fragmentMask), [fragmentMask]);
   const suggestedNeighbor = selected?.segmentation_mask?.adjacent_print_suggestion;
@@ -2558,6 +2567,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {motifComparison && <MeasuredMotifReview review={motifComparison} hint={motifBoundaryReviewHint}
         hintId="measured-motif-review-hint" />}
       {ribbedReviewOutline && <p className="crop-editor-hint" id="ribbed-print-outline-hint">{ribbedPrintOutlineHint}</p>}
+      {disputedPrintView && <DisputedPrintSourceReview key={`${selected.id}:${selected.geometry_review_revision}`}
+        sourceUrl={reviewSource.src} view={disputedPrintView} width={reviewSource.naturalWidth} height={reviewSource.naturalHeight} />}
       {!newPrint && detectionReviewHint && !rejectedDetection && (
         <div className="manual-print-actions">
           <p className="crop-editor-hint">{detectionReviewHint}</p>

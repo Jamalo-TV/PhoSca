@@ -1035,6 +1035,37 @@ export function NeighborContentReview({ fullPrint, sourceUrl }) {
   </details>;
 }
 
+export function DisputedPrintSourceReview({ sourceUrl, width, height, view }) {
+  const filter = useId();
+  const [open, setOpen] = useState(false);
+  const [lifted, setLifted] = useState(false);
+  if (!sourceUrl || !view) return null;
+
+  return <details className="neighbor-content-review" onToggle={event => {
+    setOpen(event.currentTarget.open);
+    if (!event.currentTarget.open) setLifted(false);
+  }}>
+    <summary>Dunkle Details im Original prüfen</summary>
+    {open && <>
+      <p>Prüfe, ob im Vorschlag ein Motiv oder der Rand eines eigenen Abzugs sichtbar ist. Die Aufhellung kann auch Kratzer und Bildrauschen betonen.</p>
+      <button className="magnifier-toggle" type="button" aria-pressed={lifted} onClick={() => setLifted(!lifted)}>Schatten aufhellen</button>
+      <svg className="disputed-print-source" role="img" aria-label={lifted ? "Originalausschnitt mit aufgehellten Schatten" : "Unveränderter Originalausschnitt"}
+        viewBox={view.join(" ")} style={{ "--source-detail-ratio": view[2] / view[3] }}>
+        <defs>
+          <filter id={filter} colorInterpolationFilters="sRGB">
+            <feComponentTransfer>
+              <feFuncR type="gamma" amplitude="1" exponent="0.4" offset="0" />
+              <feFuncG type="gamma" amplitude="1" exponent="0.4" offset="0" />
+              <feFuncB type="gamma" amplitude="1" exponent="0.4" offset="0" />
+            </feComponentTransfer>
+          </filter>
+        </defs>
+        <image href={sourceUrl} width={width} height={height} preserveAspectRatio="none" filter={lifted ? `url(#${filter})` : undefined} />
+      </svg>
+    </>}
+  </details>;
+}
+
 export const sourceStripColor = "#22d3ee";
 export const sourceStripContrastColor = "#164e63";
 

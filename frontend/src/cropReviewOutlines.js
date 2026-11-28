@@ -22,6 +22,21 @@ export function sourcePixelCenter({ x, y }, width, height) {
   return [x * (width - 1) + .5, y * (height - 1) + .5];
 }
 
+export function disputedPrintSourceWindow({ box, width, height, modes, reasons }) {
+  if (modes?.full_print?.status !== "review_needed" || modes?.image_only?.status !== "review_needed"
+    || !Array.isArray(reasons) || !reasons.includes("PHOTO_COUNT_UNCERTAIN")
+    || reasons.includes("GEOMETRY_REVIEW_WRONG_OBJECT")
+    || ![width, height].every(size => Number.isInteger(size) && size > 1)) return null;
+  const { x1, y1, x2, y2 } = box || {};
+  if (!isNormalizedPoint({ x: x1, y: y1 }) || !isNormalizedPoint({ x: x2, y: y2 })) return null;
+  const [left, top] = sourcePixelCenter({ x: x1, y: y1 }, width, height);
+  const [right, bottom] = sourcePixelCenter({ x: x2, y: y2 }, width, height);
+  if (right - left < 1 || bottom - top < 1) return null;
+  const padding = .08 * Math.max(right - left, bottom - top);
+  const x = Math.max(0, left - padding), y = Math.max(0, top - padding);
+  return [x, y, Math.min(width, right + padding) - x, Math.min(height, bottom + padding) - y];
+}
+
 export const filmNeighborEdgeColor = "#f59e0b";
 
 export function getFilmNeighborEdgeIndex(fullPrint) {
