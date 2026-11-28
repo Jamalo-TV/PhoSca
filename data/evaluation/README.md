@@ -12797,3 +12797,70 @@ measurements and file-specific reuse terms remain unavailable for
 this review. This source adds no verified release group.
 [Conservation record](https://www.hoover.org/events/askaconservator-day-2023) ·
 [Finding aid](https://oac.cdlib.org/findaid/ark:/13030/c84t6gtv/)
+
+## Recover an unsupported side on ribbed album stock
+
+Native `U039.webp` has 1600 × 1110 pixels and SHA-256
+`d82b6a755c4dfa72a98a3a68251458e6b658b7db57140b40ee00e55adbfedebd`.
+The middle inner-left photograph is draft instance 3 and fusion
+cluster 0 on the normal upload. Under the registered mixed detector,
+the initial and active ten-vertex masks are identical, with 0.9584
+mask IoU against the development draft. The mask-to-quad reduction
+puts the lower right point at x664. The original right edge runs near
+x676–678. The 11-pixel search supports 40.45% of stations. A 29-pixel
+outward-only search supports 11.24% because the line passes through
+the slanted seed near its upper end. Widening every side picks several
+other lines on the album page, so the retry addresses just one side.
+
+The repeat applies to automatic model crops already held for exactly
+one unsupported side after the existing fit and backing retry. It
+keeps the three supported lines. Two wider symmetric searches and
+a fit from the model contour's minimum-area rectangle must agree
+within 0.75 native pixels. The corrected shape must have at least
+98% of its area inside the original model contour's convex hull.
+The exterior and interior on the recovered side and its opposite
+must meet the signed lightness and rib-termination checks, with
+matching exterior colours. The candidate and sampled collars must
+clear current, deferred and alternative claims. Existing protected
+content validation checks the candidate before the normal homography.
+The working raster uses the source-owned sampler. The existing
+unsupported-paper reason holds both modes, and the motif has no
+generated asset for this photo.
+
+| Metric against the U039 development draft | Earlier working raster | Corrected working raster |
+| --- | ---: | ---: |
+| Source footprint IoU | 0.933764 | 0.956224 |
+| Native omissions beyond one pixel | 4,006 | 2,259 |
+| Output pixels with foreign taps beyond one pixel | 59 | 44 |
+| Maximum draft corner difference | 14.54 px | 13.33 px |
+
+The corrected footprint adds 1,747 strict native in-print centres
+with zero new strict foreign centres and zero lost strict in-print
+centres. The residual upper edge, physical aspect and independent
+landmark alignment remain open.
+The fixed native source fits in all four quarter-turn controls.
+JPEG75 and JPEG55 versions abstain with the same fixed seeds. The 21
+overlap replays also abstain. A faint single-sheet reproduction can
+reproduce the native visual clues, so the fit remains held.
+
+An ordinary lossless PNG upload of the native working pixels returns
+four active photos and three deferred proposals. The selected row's
+untrimmed JPEG changes from 268 × 283 to 280 × 298. Its mask and
+the other three rows' crop records and asset bytes match the baseline.
+Ordinary reprocessing reproduces the corrected raster. Both named
+and the legacy trimmed exports return HTTP 404. The exact product
+matrices and recorded sampler reproduce each pre-JPEG working raster
+and the table above. The isolated helper took 31.1 ms median and
+43.3 ms at p95 across 25 warm calls with one OpenCV thread. The
+mobile gallery uses dark review text on its light photo-detail page
+with measured 10.4:1 contrast for both modes. The print-boundary
+profile moves to revision 14. Across the eight paired software
+reports the scoring and availability fields match their baselines.
+The frozen detector retains 18 of 18 detections, and the seeded crop
+reports retain 11 whole-print and 12 motif passes.
+
+The four repeated release preflights still yield zero shared verified
+physical album groups. The locked draft pins two leaves and six
+prints with twelve unverified mode references. The separate local
+calibration draft pins six leaves and 26 outlines with physical-group
+and count review still pending.

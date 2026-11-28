@@ -8,7 +8,8 @@ import numpy as np
 from app.pipeline.album_backing import _repeating_profile
 from app.pipeline.geometry import normalized_vertices_to_pixels, order_quad_cyclic, pixel_vertices_to_normalized
 from app.pipeline.manual_paper_boundary import review_source_quads_match
-from app.pipeline.print_edges import _edge_band, _line_endpoints, _side_line
+from app.pipeline.neighboring_print_review import _ribs_end_at_edge
+from app.pipeline.print_edges import _PRINT_SIDES, _edge_band, _line_endpoints, _replace_quad_side, _side_line
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_OUTLINE_REVIEW
 from app.pipeline.protected_regions import region_box_in_pixels
 from app.pipeline.tile_print_review import CONTESTED_TILE_FOLLOWUP, TILED_PRINT_PROPOSAL, tiled_outline_conflicts
@@ -48,6 +49,74 @@ def _band_scope(side: np.ndarray, first: float, last: float, outer: float, inner
     start, end = side[0] + np.float32([[first], [last]]) * (side[1] - side[0])
     normal = _unit_inward(side)
     return np.float32([start + outer * normal, end + outer * normal, end + inner * normal, start + inner * normal])
+
+
+def recover_ribbed_preview_side(
+    image: np.ndarray, seed: np.ndarray, retained: np.ndarray, visible: np.ndarray,
+    boundary: dict, claims: list[np.ndarray],
+) -> tuple[np.ndarray, dict] | None:
+    """Repair one slanted, unsupported side for a crop that remains in review."""
+    sides = [boundary[name] for name in _PRINT_SIDES]
+    missing = [i for i, side in enumerate(sides) if side["corner_support"] is None]
+    if len(missing) != 1 or any(side["ambiguous"] for side in sides):
+        return None
+    index, = missing
+    next_index = (index + 1) % 4
+    opposite = (index + 2) % 4
+    if (sides[index]["support"] >= .60 or (sides[index].get("outward_search") or {}).get("support", 1) >= .60
+            or any(side["support"] < .85 or side["corner_support"] < .80
+                   for i, side in enumerate(sides) if i != index)):
+        return None
+
+    width, height = image.shape[1::-1]
+    radius = sides[index]["search_radius_px"]
+    wide = radius + max(4, round(.45 * radius))
+    original = seed[[index, next_index]]
+    rectangle = order_quad_cyclic(cv2.boxPoints(cv2.minAreaRect(visible)))
+    aligned = rectangle[[index, next_index]]
+    fits = [_side_line(image, *side, reach) for side, reach in ((original, wide), (original, wide + 2), (aligned, radius))]
+    if any(line is None or evidence["ambiguous"] or evidence["support"] < .90
+           or evidence["corner_support"] < minimum
+           for (line, evidence), minimum in zip(fits, (.80, .80, .60), strict=True)):
+        return None
+    line, evidence = fits[0]
+    candidate = _replace_quad_side(retained, index, line, wide, image.shape)
+    if candidate is None:
+        return None
+    recovered = candidate[[index, next_index]]
+    if any(np.max(np.abs(recovered @ other[:2] + other[2])) > .75 for other, _ in fits[1:]):
+        return None
+    previous = retained[[index, next_index]]
+    shifts = (recovered - previous) @ _unit_inward(previous)
+    if shifts.max() > 1.5 or shifts.min() > -6 or np.ptp(shifts) < 6:
+        return None
+    scale = np.float32([width - 1, height - 1])
+    overlap, _ = cv2.intersectConvexConvex(candidate, cv2.convexHull(visible))
+    if overlap < .98 * cv2.contourArea(candidate):
+        return None
+
+    backing = []
+    witnesses = [candidate]
+    for side in (recovered, candidate[[opposite, (opposite + 1) % 4]]):
+        if not _ribs_end_at_edge(image, *side):
+            return None
+        band = _edge_band(image, *side, [-12, -10, -8, -6, -4, 2, 4, 6, 8], fractions=_STATIONS)
+        if band is None:
+            return None
+        exterior = np.median(band[:, :5], axis=1)
+        interior = np.median(band[:, 5:], axis=1)
+        signed = (exterior[:, 0] >= 155) & (exterior[:, 0] - interior[:, 0] >= 15)
+        if signed.mean() < .92 or min(part.mean() for part in np.array_split(signed, 4)) < .85:
+            return None
+        backing.append(np.median(exterior, axis=0))
+        witnesses.append(_band_scope(side, .07, .93, -15, 10))
+    if np.linalg.norm(backing[0] - backing[1]) > 7 or any(
+        np.any((scope < 0) | (scope > scale)) or any(
+            cv2.intersectConvexConvex(scope, cv2.convexHull(claim))[0] > 1 for claim in claims
+        ) for scope in witnesses
+    ):
+        return None
+    return candidate, {**boundary, _PRINT_SIDES[index]: {**evidence, "review_ribbed_side_fit": True}}
 
 
 def _propose_line(image: np.ndarray, side: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:

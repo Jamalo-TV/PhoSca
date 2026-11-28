@@ -68,6 +68,7 @@ from app.pipeline.manual_paper_boundary import (
 from app.pipeline.orientation import correct_photo_orientation, rotate_image
 from app.pipeline.overlap_edge_review import suggest_exposed_overlap_edges
 from app.pipeline.ribbed_outline_review import MEASURED_RIBBED_PRINT_OUTLINE, measure_ribbed_outline_comparison
+from app.pipeline.ribbed_scene_edge import recover_ribbed_preview_side
 from app.pipeline.page_plane import (
     PRINT_ASPECT_REFERENCE_REVIEW,
     MeasuredPrintReference,
@@ -1659,6 +1660,7 @@ def _inspect_print(
     neighbors: list[np.ndarray], regions: list[dict], *, dual_mode: bool, manual: bool,
     allow_page_face_overlap: bool, protect_regions: bool, enable_classical_retry: bool,
     manual_neighbors: list[dict] | None = None, collect_curve_segments: bool = False,
+    render_claims: list[np.ndarray] | None = None,
 ) -> _PrintInspection:
     height, width = page.shape[:2]
     metrics = _validate_quad(quad, width, height)
@@ -1702,6 +1704,15 @@ def _inspect_print(
                 refined, boundary = pale_backing
                 reasons = []
                 edge_confirmation = True
+        if (render_claims is not None and enable_classical_retry and refined is not None and visible is not None
+                and reasons == ["PRINT_BOUNDARY_UNSUPPORTED"] and mask.get("source") == "yolo_seg_mask"
+                and mask.get("detector_source") == "yolo_onnx"):
+            recovered = recover_ribbed_preview_side(page, quad, refined, visible, boundary, [*neighbors, *render_claims])
+            if recovered is not None:
+                candidate, evidence = recovered
+                if (validate_protected_regions(candidate, regions, width=width, height=height)["passed"]
+                        and _keeps_protected_preview_content(page, refined, candidate, regions, {})):
+                    refined, boundary = candidate, evidence
         if refined is not None and "PRINT_OUTER_RIM_UNCERTAIN" not in reasons:
             refined_protection = validate_protected_regions(refined, regions, width=width, height=height)
             if not refined_protection["passed"] and not _advisory_face_overlap(refined_protection, regions, allow_page_face_overlap):
@@ -1960,11 +1971,22 @@ def correct_photo_crop(
             removed = removed_protected_regions(src_points, inner_edit, regions, width=width, height=height)
             if removed:
                 raise ProtectedRegionRemoval("image_only", removed)
+    render_claims = None
+    if dual_mode and not manual and enable_classical_retry and mask.get("detector_source") == "yolo_onnx":
+        claims = list(deferred_print_proposals or [])
+        for neighbor in neighbor_masks or []:
+            if outline := neighbor.get("warp_quad"):
+                claims.append({"polygon": outline})
+            if alternative := neighbor.get("crossing_print_suggestion"):
+                claims.append({"polygon": alternative})
+            claims.extend({"polygon": outline} for outline in (neighbor.get(MERGED_PRINT_PAIR) or {}).get("outlines", ()))
+        render_claims = [points for claim in claims if (points := _proposal_polygon(claim, width, height)) is not None]
     inspection = _inspect_print(
         page_image, src_points, mask, visible, neighbor_polygons, regions,
         dual_mode=dual_mode, manual=manual, allow_page_face_overlap=allow_page_face_overlap,
         protect_regions=protect_regions, enable_classical_retry=enable_classical_retry,
         collect_curve_segments=True,
+        render_claims=render_claims,
         manual_neighbors=[
             neighbor["warp_quad"] for neighbor in neighbor_masks or []
             if (neighbor.get("manual_added") is True or neighbor.get(REVIEWED_CROSSING_OUTLINE) is True)
@@ -2110,11 +2132,13 @@ def correct_photo_crop(
     stock_suggestion = _pale_backing_review_fit(boundary_refinement) or any(
         isinstance(side, dict) and side.get("review_stock_fit") for side in boundary_refinement.values()
     )
+    ribbed_side_fit = any(isinstance(side, dict) and side.get("review_ribbed_side_fit")
+                          for side in boundary_refinement.values())
     owned_sampling = dual_mode and (
         set(full_reasons) <= _CROP_PREVIEW_REASONS
         or checked_contrast_outline
         or mask.get("capture_edge_clipped") is True
-        or (stock_suggestion and not set(full_reasons) & {CAPTURE_EDGE_HOLD, "PRINT_POSSIBLY_OCCLUDED"})
+        or ((stock_suggestion or ribbed_side_fit) and not set(full_reasons) & {CAPTURE_EDGE_HOLD, "PRINT_POSSIBLY_OCCLUDED"})
     )
     if owned_sampling:
         analysis, supported = warp_owned_crop(page_image, matrix, (target_width, target_height))

@@ -637,6 +637,10 @@ select {
   text-align: center;
 }
 
+.mobile-content .crop-mode-status {
+  color: #24423d;
+}
+
 .crop-download,
 .crop-comparison-toggle {
   display: inline-flex;

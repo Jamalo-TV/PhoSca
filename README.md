@@ -849,6 +849,18 @@ Stelle bleibt zwischen den Linien offen. Die Ecken im Editor sind
 weiterhin die bisher gespeicherten Ecken, bis sie bewusst geändert werden.
 [Beispiel unscharfer Scan](data/evaluation/README.md#show-the-visible-spans-of-an-interrupted-paper-edge)
 
+Verfehlt der erste Fit genau eine Seite eines Modellabzugs auf
+geripptem Albumkarton, kann PhoSca den Arbeitszuschnitt auf dieser
+Seite korrigieren. Zwei symmetrische Suchtiefen und eine anders
+ausgerichtete Kontur müssen dieselbe Kante ergeben. PhoSca prüft im
+Original, wo das Rippenmuster an beiden gegenüberliegenden Seiten
+endet. Der neue Arbeitszuschnitt muss innerhalb der weitgehend
+übereinstimmenden Modellfläche liegen und Abstand zu den Ansprüchen
+anderer Abzüge halten. PhoSca berechnet die Perspektive neu und
+interpoliert nur mit Quellpixeln innerhalb der korrigierten Kontur.
+Beide Zuschnittmodi bleiben zur Prüfung vorgelegt.
+[Arbeitszuschnitt auf U039](data/evaluation/README.md#recover-an-unsupported-side-on-ribbed-album-stock)
+
 Ragt eine Ecke weit über den Abzug hinaus, prüft PhoSca, wo die
 beiden angrenzenden Papierkanten im Original enden. Eine gestützte
 innere Kante kann in der Geometrieprüfung eine zweite Vorschau geben.
