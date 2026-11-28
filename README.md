@@ -2074,6 +2074,15 @@ Beide Zuschnittmodi dieses Rudge-Falls bleiben zur Prüfung zurückgehalten.
   PhoSca einen weiter innen liegenden Übergang zur Kontrolle am
   Original. Beide Modi bleiben in Prüfung.
   [Vergleich und Messwerte](data/evaluation/README.md#show-an-inward-source-transition-below-an-album-edge)
+- **Eng benachbarte Abzüge auf Golden-Seite 10.** Alle fünf Abzüge
+  sind erkannt. Ein Arbeitszuschnitt für **Ganzer Abzug** reicht
+  in den Randbereich des Nachbarfotos. Gegen den Entwicklungsentwurf
+  beträgt der grösste Eckabstand 35,39 Originalpixel. Beide Exporte
+  bleiben in Prüfung. In einer kontrollierten Probe mit zwei
+  getrennten Abzügen folgt der Ganzzuschnitt der stärkeren
+  Nachbarkante und nimmt den Albumzwischenraum mit. Der Motivzuschnitt
+  trifft dort die Referenz. Der Messlauf lässt sich lokal wiederholen.
+  [Nachbarkanten prüfen](data/evaluation/README.md#reproduce-a-crop-that-follows-the-facing-neighbor-edge)
 - **Golden-Seite 26 gedreht und komprimiert.** Alle vier echten
   Abzüge bleiben erfasst. Zwei Teilkonturen innerhalb des oberen
   rechten Abzugs erscheinen zur Anzahlprüfung. Ein dritter

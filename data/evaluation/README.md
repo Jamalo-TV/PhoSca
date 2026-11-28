@@ -13665,3 +13665,84 @@ failed before it reached the image host, and the source check
 found no complete leaf capture before removal that binds the same
 card to its original position. This lead adds zero verified
 release groups. [Album catalogue](https://archival.sl.nsw.gov.au/Details/archive/110321609)
+
+## Reproduce a crop that follows the facing neighbor edge
+
+A deterministic two-print fixture isolates boundary fitting with two
+separate supplied proposals. The paper and motif have exact native
+pixel-centre references. Both prints start in the same raster, with a
+pale backing strip of 2, 5, 10 or 16 pixels between them. The
+first print ends at x439 and the second starts at x440 plus the
+gap. The target seed extends partway into the gap. The peer
+proposal is supplied at its exact physical outline.
+
+```bash
+PYTHONPATH=backend .venv/bin/python scripts/audit_neighbor_crop.py \
+  --output-dir runs/crop-quality/close-neighbor-audit
+```
+
+The selected right line falls on the last album pixel before the
+neighbor. The modes below refer to the crop function's internal
+geometry status. The normal download route still requires the
+release gate.
+
+| Native gap | Full-print internal status | Whole-print IoU | Output pixels receiving foreign weight | Motif IoU | Motif output pixels receiving foreign weight |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 2 px | ready | 0.9944 | 1,068 | 1.0000 | 0 |
+| 5 px | ready | 0.9862 | 2,670 | 1.0000 | 0 |
+| 10 px | ready | 0.9728 | 5,340 | 1.0000 | 0 |
+| 16 px | ready | 0.9572 | 8,544 | 1.0000 | 0 |
+
+All four whole-print footprints preserve every known paper centre
+and contain zero centres from the neighbor. This explains why an
+intersection test against the peer mask misses the failure. Zero
+neighbor pixel ownership alone still permits a strip of album backing
+in the output. The script records corner distances and uses the
+production ownership sampler to count foreign output contributions.
+
+The independent replay varied neighboring paper materials and the
+peer mask position. It found the same failure with bright, dark
+and warm neighboring stock. In one JPEG75 control the untrusted
+rails already caused the existing unsupported-boundary hold in both
+modes. An experimental source check found both rails on some pale
+stock controls by matching the band with album material sampled
+beyond both ends. Signed measurements weaken with smaller
+lightness differences. A separate peer-rail check abstained when
+the peer mask began inside the paper, and a printed band with the
+same palette remains an optical counterexample. The experiment
+supplied no production thresholds or geometry changes.
+
+Four ordinary uploads of the Golden development pages 04, 10, 11
+and 37 matched 12 of 12 expected active prints at mask IoU 0.85.
+Page 04 also presented two deferred proposals. Golden page 10
+matched 5 of 5 with zero extra active proposals. Against the existing
+development outline, the working whole crop for print 2 has IoU
+0.9310, a largest corner distance of 35.39 native pixels, 4,983
+source centres inside the adjacent print's draft and 51,802 output
+positions with foreign weight beyond the one-pixel tolerance.
+There are zero omitted reference centres beyond that tolerance.
+Removing peer inputs only from the renderer leaves the geometry
+and pixels unchanged on all five rows. The occlusion reason drops
+on two rows. Both named variants return 404 on all five rows.
+These are development-draft measurements. The precise physical
+paper boundary in the original still needs independent confirmation.
+
+Two more development uploads use lossless PNG copies of U039 and
+U040. Their twelve-print draft labels yield 3/12 and 2/12 matches,
+respectively, with four active and three deferred proposals each.
+This is an upstream detection gap alongside the crop ownership
+failure. It needs independently measured instance boundaries
+before motivating a geometry repair. The intake did not open
+reserved release images.
+
+The synthetic report, native example and real-page paired replay
+receipts are under `runs/crop-quality/close-neighbor-audit/`.
+The tested product remains the crop implementation at `e75e2e9`.
+
+The Smithsonian catalogue cross-references 24 full-leaf records of
+the Willard Lucy album and separate copy-negative records. Public
+asset probes returned HTTP 403. The visible record cannot establish
+independent capture from the same original paper or the required
+reuse rights. Pepperdine accession 0178 documents later removal of
+prints and scans of original leaves. Exact page–print pairs remain
+unverified. Both records are source leads. [Smithsonian catalogue](https://sova.si.edu/record/nasm.xxxx.1233) · [Pepperdine finding aid](https://oac.cdlib.org/findaid/ark:/13030/c85h7q5t)
