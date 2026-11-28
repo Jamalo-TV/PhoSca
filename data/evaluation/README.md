@@ -13565,3 +13565,103 @@ inventory entries and insufficient information to bind the
 published spread to an exact separate print and reuse rights.
 The collection remains a source lead. The intake confirms zero
 release groups. [Digitization workflow](https://omeka-s.library.illinois.edu/s/illinois-digitization/page/digitizing-brooks-DS)
+
+## Compare two observed scene edges on native Scan 63
+
+After the carrier count is corrected, the previous comparison on
+the candle photo removes the adjacent photograph below. A wide
+pink pocket strip remains on its right. At native resolution
+(4,960 × 7,014), a second comparison can use the visible right scene
+edge. The transition runs approximately from (3580,4267) to
+(3562,6147). Source support is 93.3% for the selected line and
+40.9% for the strongest separated rival. The comparison preserves
+an exterior buffer of about 21 native pixels around the measured
+right line. The top and left rails of the existing comparison stay
+in place. The physical paper edge, corners and printed aspect still
+require confirmation.
+
+The second search runs only when the first edge changes two
+adjacent corners. It tests both adjacent sides for the same chroma
+as the separator, a signed change toward the scene, and one
+supported line across the search window. At least two narrow
+refits must each have at least 67% support and agree within one
+native pixel. Near the join, the scene change must persist before
+the lower boundary and disappear into the separator after it.
+The proposed exterior strip is screened for a different material,
+texture and markings. The existing protected-content and
+owned-sampling checks still apply to both preview candidates.
+The original single-edge comparison remains available after a veto.
+
+The previous PNG is 3,013 × 2,204 and the two-edge comparison
+is 2,644 × 2,194. In the paired native-source footprints, 793,366
+source pixel centres are removed and zero are added. All 111,097
+centres in the surveyed right scene strip, all 21,070 centres in
+the separate upper-right strip and all 139,722 centres along the
+lower scene strip remain included. The surveyed pink pocket
+region contributes to 376,296 output samples in the previous PNG
+and zero in the new PNG. The surveyed lower photo contributes to
+zero samples in both comparisons. Against the existing unverified
+development quadrilateral, the overlap (IoU) improves from 0.838
+to 0.953 and the largest corner distance falls from 410 to 100
+native pixels. Omission against that draft stays 1.44%. The
+measurements use the production inverse map and bilinear ownership
+sampler.
+
+On native Scan 63, the workflow leaves the working 3,013 × 2,893
+JPEG and its warp unchanged. The count review still changes four
+proposals to two only after confirmation. Reprocessing produces
+the same comparison PNG on repeat. Desktop and Mobile display
+four open source traces, including three observed spans on the
+right with gaps of about 192 and 18 native pixels. An unchanged
+corner submission is rejected with HTTP 409 even with a size and
+confirmation. **Full print**, **image only** and the trimmed alias
+all return HTTP 404. In the browser replay, reprocessing took 7.9
+seconds and the ordinary native page upload took 69.4 seconds.
+One independent isolated second-edge measurement took 386 ms.
+
+The second edge is confirmed in all four lossless quarter turns
+with fixed contours. In the fixed-contour crop-local JPEG replay,
+none of the four turns retains the second edge at quality 55 or
+75, and one does at quality 95. In the ordinary full-page replay,
+quality 75 reproduces the previous one-edge PNG byte for byte.
+At quality 55 or 95, the upstream reason requirement already
+prevents the first comparison in both versions. Authored controls
+reject distinct coloured scene strips, a broad full-contrast
+same-chroma insertion and two native text inserts on the tested
+background. Very fine same-chroma lines, a narrow 40-pixel
+same-chroma photo detail and faint same-chroma continuations can
+still pass. The scene-edge measurements supply a comparison for
+manual review. A new source still needs confirmation of picture
+content and paper ownership.
+
+Eight paired reports preserve detection, geometry, quality metrics
+and mode availability. The crop validation profile records
+stacked-scene comparison revision 2. The frozen detection keeps
+18/18 hits and the fixed-geometry benchmark keeps 11/11 recoverable
+whole-print crops and 12/12 recoverable motif crops. The real
+upload and reprocess add no new review holds. Native measurements,
+controls and rendered comparisons are stored locally under
+`runs/crop-quality/scan-63/stacked-scene-right/`.
+
+### Separate source checks
+
+An independent source-only audit of U013 verifies the encoded
+ZIP member `picture-part-1.zip:s-l1600 (48).webp` and decoded
+1,200 × 1,600 raster. Six physically separate prints have only
+3–12 native pixels between selected facing edges. The audit
+measures 2,728 stations along 24 sides. Unsigned edge searches
+can follow an adjacent print for more than 400 native pixels.
+The yellow backing supplies a chroma cue along several seams,
+and a few low-contrast spans stay open in the draft. The physical
+white binder ID and independent reference confirmation remain
+pending. This source did not supply model inputs, a calibration
+fit or a release score.
+
+The Mitchell Library catalogue identifies physical album PXC 831
+with 170 cards and their removal for digitization in September
+2003. The standalone Rose Scott portrait has a documented rights
+status and a published 2,900 × 4,682 version. The local transfer
+failed before it reached the image host, and the source check
+found no complete leaf capture before removal that binds the same
+card to its original position. This lead adds zero verified
+release groups. [Album catalogue](https://archival.sl.nsw.gov.au/Details/archive/110321609)

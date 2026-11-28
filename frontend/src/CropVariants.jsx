@@ -783,7 +783,9 @@ export function getPrintEdgeReviewHint(fullPrint) {
       return "Die gestrichelte Linie markiert einen sichtbaren Übergang ins Bild. Prüfe am Original, ob dort auch das Fotopapier beginnt. Sind die Ecken oder der Rand unter der Hülle verdeckt, hilft eine Aufnahme des frei liegenden Abzugs.";
     }
     if (fullPrint.suggested_edge_source === stackedSceneComparison) {
-      return "Die gestrichelte Markierung zeigt den sichtbaren Bildrand vor einem hellen Streifen. Prüfe im Original, welches Papier zu diesem Bild und welches zum Bild dahinter gehört.";
+      return fullPrint.outline_preview?.second_scene_edge
+        ? "Die gestrichelten Linien zeigen zwei sichtbare Bildränder. Prüfe im Original, wo das Fotopapier endet und welches Bild hinter der Tasche liegt."
+        : "Die gestrichelte Markierung zeigt den sichtbaren Bildrand vor einem hellen Streifen. Prüfe im Original, welches Papier zu diesem Bild und welches zum Bild dahinter gehört.";
     }
     if (fullPrint.suggested_edge_source === ribbedSceneEdge) {
       return "Violett markiert gemessene Übergänge vom hellen Streifen ins Bild. Prüfe am Original, wo das Fotopapier beginnt und ob der helle Streifen zum Abzug gehört.";
@@ -901,7 +903,9 @@ export function getPrintOutlinePreviewHint(fullPrint) {
     return "Die Prüfvorschau blendet einen Streifen hinter der beobachteten Linie aus. Der helle Rand direkt am Bild bleibt sichtbar. Prüfe am Original, ob der ausgeblendete Streifen zum Album oder zum Abzug gehört.";
   }
   if (preview?.source === stackedSceneComparison) {
-    return "Der Vergleich kürzt nur die markierte Seite. Prüfe den hellen Streifen und den gesamten Papierrand im Original. Das Seitenverhältnis bleibt geschätzt.";
+    return preview.second_scene_edge
+      ? "Der Vergleich kürzt beide markierten Seiten. Prüfe die hellen Streifen und den gesamten Papierrand im Original. Das Seitenverhältnis bleibt geschätzt."
+      : "Der Vergleich kürzt nur die markierte Seite. Prüfe den hellen Streifen und den gesamten Papierrand im Original. Das Seitenverhältnis bleibt geschätzt.";
   }
   if (preview?.source === possibleLocalPrintEdge) {
     return "Die Prüfvorschau zeigt den zusätzlichen dunklen Streifen an der Markierung. Vergleiche seine Struktur mit dem Original.";
@@ -960,7 +964,8 @@ export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outl
     <figure>
       <div className="paper-edge-preview-image">
         <img src={possibleUrl} alt={markedMargin ? "Prüfvorschau mit ergänzter Markierung am Papierrand"
-          : stackedScene ? "Prüfvorschau mit kürzerem Rand vor dem Bild dahinter"
+          : stackedScene ? (outlinePreview.second_scene_edge ? "Prüfvorschau mit zwei gekürzten Rändern"
+            : "Prüfvorschau mit kürzerem Rand vor dem Bild dahinter")
           : trimmedScene ? "Prüfvorschau mit ergänztem Bildrand und ausgeblendetem Randbereich"
           : extendedScene ? "Prüfvorschau mit ergänztem sichtbarem Bildstreifen" : wholeOutline
           ? "Prüfvorschau des gesamten möglichen Abzugs" : "Prüfvorschau entlang der möglichen Papierkante"} />

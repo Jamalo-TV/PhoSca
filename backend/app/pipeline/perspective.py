@@ -123,6 +123,7 @@ from app.pipeline.rounded_corner_review import (
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVIEW, SCALLOPED_PRINT_REVISION
 from app.pipeline.segmentation_filter import CONTRAST_COMPONENT_SOURCE, refine_visible_paper_rim
 from app.pipeline.source_strip_review import source_strip_outline
+from app.pipeline.stacked_scene_companion import measure_stacked_scene_companion
 from app.pipeline.visible_scene_edge import (
     STACKED_SCENE_COMPARISON, STACKED_SCENE_PAPER_EDIT, VISIBLE_SCENE_EDGE,
     measure_stacked_scene_comparison, suggest_visible_scene_edge,
@@ -2790,18 +2791,35 @@ def correct_photo_crop(
                     measured = measure_stacked_scene_comparison(page_image, src_points, boundary_refinement)
                     if measured is not None:
                         outline, spans = measured
-                        if _keeps_protected_preview_content(page_image, src_points, outline, regions, protection):
-                            rotation = int(result.metadata["orientation"].get("rotation_degrees") or 0) % 360
-                            comparison = _render_review_quad_preview(
-                                page_image, outline, rotation, neighbor_polygons, regions, camera_matrix, page_plane,
-                                source=STACKED_SCENE_COMPARISON,
-                            )
-                            if comparison is not None:
-                                pixels, full_mode["outline_preview"] = comparison
-                                full_mode[STACKED_SCENE_PAPER_EDIT] = True
-                                full_mode["suggested_edge_source"] = STACKED_SCENE_COMPARISON
-                                full_mode["suggested_edge_traces"] = [_vertices_on_page(span, width, height) for span in spans]
-                                result = replace(result, full_print_preview=pixels)
+                        alternatives = [(outline, spans, False)]
+                        try:
+                            companion = measure_stacked_scene_companion(page_image, src_points, outline)
+                        except (ValueError, cv2.error, np.linalg.LinAlgError):
+                            companion = None
+                        if companion is not None:
+                            adjacent_outline, adjacent_spans = companion
+                            alternatives.insert(0, (adjacent_outline, [*spans, *adjacent_spans], True))
+                        rotation = int(result.metadata["orientation"].get("rotation_degrees") or 0) % 360
+                        for proposed, evidence, second_side in alternatives:
+                            try:
+                                if not _keeps_protected_preview_content(page_image, src_points, proposed, regions, protection):
+                                    continue
+                                comparison = _render_review_quad_preview(
+                                    page_image, proposed, rotation, neighbor_polygons, regions, camera_matrix, page_plane,
+                                    source=STACKED_SCENE_COMPARISON,
+                                )
+                            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                                continue
+                            if comparison is None:
+                                continue
+                            pixels, full_mode["outline_preview"] = comparison
+                            if second_side:
+                                full_mode["outline_preview"]["second_scene_edge"] = True
+                            full_mode[STACKED_SCENE_PAPER_EDIT] = True
+                            full_mode["suggested_edge_source"] = STACKED_SCENE_COMPARISON
+                            full_mode["suggested_edge_traces"] = [_vertices_on_page(span, width, height) for span in evidence]
+                            result = replace(result, full_print_preview=pixels)
+                            break
             except (ValueError, cv2.error, np.linalg.LinAlgError):
                 pass  # An unconfirmed source transition cannot replace the ordinary crop.
         classical_contact = (

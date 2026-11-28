@@ -1485,10 +1485,16 @@ denselben sichtbaren Bildrand stützen. PhoSca prüft den
 hellen Streifen daneben, die Bildstruktur dahinter, einen
 möglichen grösseren Umriss und die geschützten Bildinhalte.
 Die gestrichelte Linie zeigt den gemessenen Abschnitt im
-Original. Die anderen drei Seiten und das Seitenverhältnis
-brauchen weiterhin Prüfung. Die Korrektur muss die Ecken im
-Original neu setzen. Ergänzte Papiermasse allein lösen
-die Grenzprüfung nicht.
+Original. PhoSca kann zusätzlich eine benachbarte Seite kürzen,
+wenn mehrere Messungen denselben Übergang finden, er an der
+ersten Seite endet und der äussere Streifen die Farbe und
+Struktur des Taschenmaterials zeigt. Der Vergleich lässt einen
+schmalen Puffer am Übergang stehen. Die Linien markieren nur
+belegte Abschnitte. Bei widersprüchlichen Messungen bleibt die
+Vorschau mit einer gekürzten Seite. Die physischen Papierränder,
+die Ecken und das Seitenverhältnis brauchen weiterhin Prüfung.
+Die Korrektur muss die Ecken im Original neu setzen. Ergänzte
+Papiermasse allein lösen die Grenzprüfung nicht.
 [Messung am Kerzenfoto auf Scan 63](data/evaluation/README.md#compare-a-held-crop-above-a-second-image-strip)
 
 Liegt ein gekrümmter sichtbarer Bildrand teilweise ausserhalb
@@ -2052,12 +2058,15 @@ Beide Zuschnittmodi dieses Rudge-Falls bleiben zur Prüfung zurückgehalten.
 - **Kerzenfoto in gestapelten Fototaschen.** Die bisherige
   Vorschau reicht in den nächsten sichtbaren Fotostreifen.
   Nach der Anzahlprüfung lässt sich ein kürzerer Ausschnitt
-  ansehen. Er erhält alle 139’722 geprüften Quellpixel auf
-  der Bildseite der gemessenen Unterkante. In der bisherigen
-  Vorschau beeinflusste der nächste Streifen 204’731
-  Ausgabepixel. Im Vergleich sind es null. Der rechte Papierrand
-  ist noch offen. Beide Modi bleiben in Prüfung.
-  [Prüfvorschau und Messwerte](data/evaluation/README.md#compare-a-held-crop-above-a-second-image-strip)
+  ansehen. Die kürzere Unterkante erhält alle 139’722 geprüften
+  Quellpixel auf der Bildseite. Der nächste Fotostreifen
+  beeinflusst darin keine Ausgabepixel mehr. Die zusätzliche
+  Korrektur rechts erhält alle 111’097 geprüften Quellpixel am
+  mittleren rechten Bildrand. Der vermessene Taschenstreifen
+  beeinflusst danach keine Ausgabepixel mehr. Der physische
+  Papierrand ist noch offen. Beide Modi bleiben in Prüfung.
+  [Unterkante](data/evaluation/README.md#compare-a-held-crop-above-a-second-image-strip) ·
+  [Rechter Bildrand und Gegenproben](data/evaluation/README.md#compare-two-observed-scene-edges-on-native-scan-63)
 - **Zwei Abzüge auf Golden-Seite 26.** Unten rechts stimmt die
   Fläche von **Ganzer Abzug** nahezu mit der Entwicklungsreferenz
   überein (IoU 0,996). Oben links folgt der Zuschnitt der hellen

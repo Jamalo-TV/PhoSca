@@ -11,7 +11,7 @@ from app.pipeline.print_edges import _PRINT_SIDES, _edge_band, _line_endpoints, 
 
 VISIBLE_SCENE_EDGE = "visible_scene_edge"
 STACKED_SCENE_COMPARISON = "stacked_scene_comparison"
-STACKED_SCENE_COMPARISON_REVISION = 1
+STACKED_SCENE_COMPARISON_REVISION = 2
 STACKED_SCENE_PAPER_EDIT = "stacked_scene_requires_paper_edit"
 _UNIT_QUAD = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
 
