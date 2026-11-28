@@ -45,7 +45,8 @@ from app.pipeline.inward_corner_review import INWARD_CORNER_REVIEW_SOURCE, sugge
 from app.pipeline.inward_scene_edge import INWARD_SCENE_EDGE_SCOPE, measure_inward_scene_edge
 from app.pipeline.local_print_edge_review import suggest_local_print_edge_preview
 from app.pipeline.motif_boundary import (
-    PARTIAL_MOTIF_SEAMS, close_motif_outline, motif_outline_corners_supported, motif_seams_intersect_claim,
+    OUTSIDE_CROP_SEAM_MARGIN, OUTSIDE_CROP_SEAM_TRACES, PARTIAL_MOTIF_SEAMS, close_motif_outline,
+    motif_outline_corners_supported, motif_seams_intersect_claim,
     partial_motif_seams, trace_motif_boundary,
 )
 from app.pipeline.motif_margin import (
@@ -1541,15 +1542,28 @@ def _dual_crop_result(
                     except (ValueError, cv2.error):
                         pass  # Incomplete preview geometry leaves the measured lines available for review.
     elif trim_border and inner is None and set(full_reasons) == {"PRINT_BOUNDARY_AMBIGUOUS", "PRINT_ASPECT_UNCERTAIN"}:
+        outside_traces = []
         try:
             guides = [_vertices_on_page(trace, page_width, page_height)
-                      for trace in partial_motif_seams(page, full_image, matrix)]
+                      for trace in partial_motif_seams(page, full_image, matrix, outside_crop_traces=outside_traces)]
         except (ValueError, cv2.error, np.linalg.LinAlgError):
             guides = []
         if guides and not any(review_traces_intersect_claim(guides, mask, page_width, page_height)
                               for mask in neighbor_masks or []):
             image_mode["suggested_seam_traces"] = guides
             image_mode["suggested_seam_source"] = PARTIAL_MOTIF_SEAMS
+            if outside_traces:
+                native_boxes = [region_box_in_pixels(region, page_width, page_height)
+                                for region in page_regions] if protect_regions else []
+                protected = [np.float32([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
+                             for x1, y1, x2, y2 in (box for box in native_boxes if box is not None and np.isfinite(box).all())]
+                outside_guides = [_vertices_on_page(trace, page_width, page_height) for trace in outside_traces]
+                if (not any(motif_seams_intersect_claim(outside_traces, box, margin_px=OUTSIDE_CROP_SEAM_MARGIN)
+                            for box in protected)
+                        and not any(review_traces_intersect_claim(outside_guides, claim, page_width, page_height,
+                                                                 margin_px=OUTSIDE_CROP_SEAM_MARGIN)
+                                    for claim in neighbor_masks or [])):
+                    image_mode[OUTSIDE_CROP_SEAM_TRACES] = outside_guides
 
     metadata.update(
         crop_modes={"full_print": full_mode, "image_only": image_mode},

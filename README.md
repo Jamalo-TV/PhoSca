@@ -1576,6 +1576,18 @@ liegen. Der Hinweis erzeugt weder einen Abzugsvorschlag noch einen
 Zuschnitt. Sobald eine gespeicherte Kontur den Messbereich berührt,
 verschwindet der Hinweis.
 
+«Nur Bildmotiv» kann bei ungeklärtem Papierrand offene Kanten am
+Original anzeigen. Sind drei Motivseiten belegt und liegt die vierte
+direkt am Rand des entzerrten Prüfbilds, kann PhoSca auf der
+Originalseite beiderseits dieser Motivkante messen. Die Anzeige
+übernimmt nur hinreichend lange Messabschnitte. Lücken bleiben
+sichtbar. Der acht Pixel breite Abstand zu anderen Konturen und
+geschützten Bereichen wird in den Originalkoordinaten geprüft.
+Speichert jemand eine Nachbarkontur in diesem Bereich, entfernt
+PhoSca die zusätzlichen Linien. Die Hinweise führen zu keiner
+geschlossenen Motivkontur und können keinen Export freigeben.
+[Beispiel U075](data/evaluation/README.md#measure-a-held-motif-side-beyond-the-rectified-preview)
+
 Eine manuelle Geometriekorrektur löscht die automatische
 `segmentation_confidence`. Die Geometrie-, Zuordnungs- und
 Samplingprüfungen gelten weiterhin. Bei einem Hinweis auf eine

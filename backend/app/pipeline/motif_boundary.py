@@ -4,8 +4,11 @@ import cv2
 import numpy as np
 
 from app.pipeline.border_removal import _is_pale_paper, find_physical_border
+from app.pipeline.print_edges import _line_endpoints, _side_line
 
 PARTIAL_MOTIF_SEAMS = "partial_motif_seams"
+OUTSIDE_CROP_SEAM_TRACES = "outside_crop_seam_traces"
+OUTSIDE_CROP_SEAM_MARGIN = 8.
 _SIDES = ("top", "right", "bottom", "left")
 _GUIDE_MARGIN = np.float32([[-2, -2], [-2, 2], [2, -2], [2, 2]])
 
@@ -92,7 +95,7 @@ def _has_competing_step(samples: np.ndarray, offsets: np.ndarray, seam: np.ndarr
 
 def _trace_side(
     image: np.ndarray, start: np.ndarray, end: np.ndarray, paper_color: list[float] | tuple[int, ...],
-    review_fragments: list[np.ndarray] | None,
+    review_fragments: list[np.ndarray] | None, *, collect_interrupted: bool = False,
 ) -> tuple[np.ndarray, float, float, bool, bool] | None:
     tangent = end - start
     length = np.linalg.norm(tangent)
@@ -171,6 +174,8 @@ def _trace_side(
     # of a material change. Derive footprint support from the strong rows alone.
     continuous = bool(np.max(np.diff(np.flatnonzero(np.r_[True, strong_rows, True]))) <= 3)
     competing = _has_competing_step(samples, offsets, optical, strong_rows)
+    if collect_interrupted and not continuous and not competing:
+        record_fragments()
     return polyline, float(np.ptp(detrended) / 2), float(np.max(np.abs(depths))), continuous, competing
 
 
@@ -201,7 +206,8 @@ def trace_motif_boundary(
 
 
 def partial_motif_seams(
-    page: np.ndarray, rectified: np.ndarray, page_to_rectified: np.ndarray,
+    page: np.ndarray, rectified: np.ndarray, page_to_rectified: np.ndarray, *,
+    outside_crop_traces: list[np.ndarray] | None = None,
 ) -> list[np.ndarray]:
     """Find three open editing guides while the paper geometry still needs review."""
     height, width = rectified.shape[:2]
@@ -237,7 +243,53 @@ def partial_motif_seams(
         if not continuous or competing or distance > 2:
             return []
         traces.append(trace)
+    if outside_crop_traces is not None:
+        measured = {edge.edge: edge for edge in edges}
+        missing, = (side for side, name in enumerate(_SIDES) if name not in measured)
+        nearby_stock = [measured[_SIDES[(missing + step) % 4]].rim_bgr for step in (-1, 1)]
+        try:
+            outside_crop_traces.extend(_source_crop_edge_fragments(
+                page, narrow.crop_quad, source, missing, page_to_rectified, (width, height), np.mean(nearby_stock, axis=0).tolist(),
+            ))
+        except (ValueError, cv2.error, np.linalg.LinAlgError):
+            pass  # Keep the three independently measured in-crop guides.
     return traces
+
+
+def _source_crop_edge_fragments(
+    page: np.ndarray, rectified_quad: np.ndarray, source_quad: np.ndarray, side: int, transform: np.ndarray,
+    shape: tuple[int, int], paper_color: list[float],
+) -> list[np.ndarray]:
+    """Measure an interrupted side on the page when its exterior lies outside the held crop."""
+    width, height = shape
+    axis = 1 - side % 2
+    boundary = (0, width - 1, height - 1, 0)[side]
+    endpoints = [side, (side + 1) % 4]
+    if np.max(np.abs(rectified_quad[endpoints, axis] - boundary)) > 1.5:
+        return []
+    start, end = source_quad[endpoints]
+    length = np.linalg.norm(end - start)
+    if length < 120:
+        return []
+    fits = []
+    for radius in (3, 5):
+        line, evidence = _side_line(page, start, end, radius)
+        if (line is None or evidence.get("ambiguous")
+                or min(evidence.get("support", 0), evidence.get("corner_support") or 0) < .85):
+            return []
+        fits.append(np.float32(_line_endpoints(start, end, line)))
+    if np.max(np.linalg.norm(fits[0] - fits[1], axis=1)) > .65:
+        return []
+    projected = cv2.perspectiveTransform(fits[1][None], transform)[0]
+    if np.max(np.abs(projected[:, axis] - boundary)) > 2:
+        return []
+    fragments = []
+    evidence = _trace_side(page, *fits[1], paper_color, fragments, collect_interrupted=True)
+    if evidence is None or evidence[2] > 2 or evidence[3] or evidence[4]:
+        return []
+    lengths = [np.linalg.norm(trace[-1] - trace[0]) for trace in fragments]
+    measured = [trace for trace, span in zip(fragments, lengths, strict=True) if span >= 20]
+    return measured if sum(span for span in lengths if span >= 20) >= .40 * length else []
 
 
 def motif_seams_intersect_claim(traces: list[np.ndarray], claim: np.ndarray, *, margin_px: float = 2.) -> bool:

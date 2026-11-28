@@ -1601,8 +1601,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const missingPaperOutlines = editingImage ? null : fullPrintMode?.neighbor_content_loss_outlines;
   const exposedOverlapEdges = editingImage ? null : fullPrintMode?.exposed_overlap_edge_traces;
   const extentEdges = editingImage ? null : fullPrintMode?.partial_print_extent_traces;
+  const outsideMotifTraces = editingImage && !advisoryMotif && !cutoffPaperTraces ? motifReview?.outside_crop_seam_traces : null;
   const edgeTraces = useMemo(() => [...getSourceEdgeTraces(traces), ...getSourceEdgeTraces([neighborOutline]),
-    ...getSourceEdgeTraces(missingPaperOutlines)], [traces, neighborOutline, missingPaperOutlines]);
+    ...getSourceEdgeTraces(missingPaperOutlines), ...getSourceEdgeTraces(outsideMotifTraces)],
+  [traces, neighborOutline, missingPaperOutlines, outsideMotifTraces]);
   const filmEdgeIndex = editingImage ? null : getFilmNeighborEdgeIndex(fullPrintMode);
   const motifPreview = advisoryMotif ? null : previewMotifUrl;
   const paperPreviewUrl = selected?.variant_urls?.full_print_preview || selected?.urls?.full_print_preview;

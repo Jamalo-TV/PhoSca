@@ -773,6 +773,9 @@ export function getMotifBoundaryReviewHint(motif) {
     return "Orange markiert mögliche Beschriftung auf dem Abzug. Prüfe zuerst die Aussenkante. Berücksichtige danach die gesamte zum Bild gehörende Beschriftung beim Motivzuschnitt.";
   }
   if (motif.suggested_seam_source === partialMotifSeams) {
+    if (getSourceEdgeTraces(motif.outside_crop_seam_traces).length) {
+      return "Einige Abschnitte wurden am Rand der Vorschau direkt im Original gemessen. Prüfe die Lücken und die zugehörige Beschriftung am Original.";
+    }
     return "Eine Motivkante bleibt offen. Prüfe auch ausserhalb der gemessenen Linien, ob dort Bildinhalt oder zugehörige Beschriftung liegt.";
   }
   if (motif.outline_preview?.source === measuredMotifComparisonSource) {

@@ -12506,3 +12506,60 @@ mounted leaf was verified and the public original-resolution request
 returned HTTP 403. This source check adds no release group.
 [Finding aid](https://research.hrc.utexas.edu/fasearch/pdf/01083.pdf) ·
 [Catalogue item](https://hrc.contentdm.oclc.org/digital/collection/p15878coll51/id/33004)
+
+## Measure a held motif side beyond the rectified preview
+
+On the native U075 upload, the upper photo retains the original three
+motif guides and two competing whole-print lines. The measured left
+motif side falls at approximately column zero of the held rectified
+image. The rectified image omits the exterior samples required on that
+side. The original page adds three measured pieces of 225.03, 116.40,
+and 23.28 native pixels. The visible gaps remain open. PhoSca stores
+the pieces in `outside_crop_seam_traces` for the held motif mode.
+
+The new measurement starts only after the existing three-side check
+passes. Both ends of the open side must lie within 1.5 rectified pixels
+of that preview edge. Original-source fits at radii 3 and 5 need at
+least 0.85 body and endpoint support and must agree within 0.65 native
+pixels. The chosen fit must remain within two rectified pixels of the
+same edge. The existing source station sampler requires an interrupted
+transition with no competing step. It keeps contiguous strong runs
+of at least 20 native pixels, at least 40% of the side in aggregate.
+An 8-pixel source band around the measured pieces must clear neighboring
+claims and raw protected boxes. Editing a neighboring claim into that
+band retires the supplemental pieces while preserving the original
+three if their smaller source bands remain clear.
+
+Fixed-geometry JPEG75 exposes a competing left step and JPEG55 and
+blur fail the original three-side gate. The ordinary JPEG75 upload
+abstains from both motif guides for the upper photo because the paper
+boundary is unsupported. A continuous ink panel does
+not add the left pieces. An authored one-sheet print with two weak
+collars still yields genuine optical gaps. The additional lines are
+therefore advisory, with no closed motif geometry or new preview.
+The native upload retains two active rows and five deferred suggestions,
+with both named crop downloads held. The upper paper guidance still
+points to competing lines above the image. The source does not establish
+whether the photo and caption share a physical carrier.
+Across five paired native measurements, the median additional cost of
+the source-side probe was 12.2 ms. Synthetic regressions cover open
+gaps, a continuous ink edge, newer neighbor overlap, and a protected
+source box. The API test verifies removal of the auxiliary pieces
+without losing the three earlier guides.
+The desktop and mobile checks draw six distinct strokes with no write.
+A before/after upload comparison retains the existing masks, crop
+states, and untrimmed review JPEG bytes. The eight repeated benchmarks
+retain their detection, crop, and review scores.
+
+The `1e95a1a9` model lineage audit rehashed 162 distinct local
+training and validation encodings across the two fine-tuning stages
+and seven historical originals. It confirmed that 24 separate stock
+test inputs were absent from both local stages. The publisher checkpoint
+names the YOLO11n segmentation architecture and COCO 2017. The exact
+public segmentation list archive linked by the writer-version config
+has SHA-256 `039d39b6548fa9dbcc1bb84e722953d25ebc04935772805e5d5c7badefcb349b`
+and lists 118,287 train and 5,000 validation filenames. The publisher's
+actual raster hashes, historical album assignments and the complete
+development selection inventory remain unverified. This is lineage
+evidence with zero additional release groups.
+[Publisher dataset configuration](https://github.com/ultralytics/ultralytics/blob/v8.2.100/ultralytics/cfg/datasets/coco.yaml)

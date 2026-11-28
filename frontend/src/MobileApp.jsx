@@ -247,7 +247,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const openMotifGuides = !reviewedNonPrint && motifMode?.status === "review_needed"
     && motifMode.suggested_seam_source === partialMotifSeams;
   const motifTraces = !advisoryMotif && (motifReviewPending || openMotifGuides)
-    ? getSourceEdgeTraces(motifMode?.suggested_seam_traces) : [];
+    ? [...getSourceEdgeTraces(motifMode?.suggested_seam_traces), ...getSourceEdgeTraces(motifMode?.outside_crop_seam_traces)] : [];
   const outlinePreviewHint = getPrintOutlinePreviewHint(fullPrintMode);
   const printSuggestion = cyclicReviewQuad(sanitizeReviewPolygon(fullPrintMode?.suggested_warp_quad));
   const initialPaperOutline = deferredDraft?.polygon || (openPaperOutline && paperGrid?.cut === null && printSuggestion);

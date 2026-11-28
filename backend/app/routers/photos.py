@@ -51,7 +51,7 @@ from app.pipeline.manual_paper_boundary import (
 )
 from app.pipeline.merged_print_review import MERGED_PRINT_PAIR
 from app.pipeline.possible_print_regions import POSSIBLE_PRINT_REGIONS
-from app.pipeline.motif_boundary import PARTIAL_MOTIF_SEAMS
+from app.pipeline.motif_boundary import OUTSIDE_CROP_SEAM_MARGIN, OUTSIDE_CROP_SEAM_TRACES, PARTIAL_MOTIF_SEAMS
 from app.pipeline.motif_comparison import MEASURED_MOTIF_COMPARISON, MOTIF_COMPARISON_PAPER_EDIT
 from app.pipeline.faint_paper_review import (
     ADJACENT_FAINT_PAPER_STEPS, FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION, FAINT_PAPER_WITNESS_MARGIN,
@@ -558,6 +558,12 @@ async def _review_overlapping_crops(
         ):
             motif_mode.pop("suggested_seam_traces", None)
             motif_mode.pop("suggested_seam_source", None)
+            motif_mode.pop(OUTSIDE_CROP_SEAM_TRACES, None)
+            neighbor.enhancement_applied = metadata
+        elif (outside_traces := motif_mode.get(OUTSIDE_CROP_SEAM_TRACES)) and review_traces_intersect_claim(
+            outside_traces, mask, width, height, margin_px=OUTSIDE_CROP_SEAM_MARGIN,
+        ):
+            motif_mode.pop(OUTSIDE_CROP_SEAM_TRACES)
             neighbor.enhancement_applied = metadata
         motif_preview = motif_mode.get("outline_preview") or {}
         motif_outline = motif_preview.get("source_outline")

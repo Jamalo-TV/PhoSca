@@ -1110,6 +1110,63 @@ def test_held_paper_shows_three_open_native_guides_without_motif_warp(open_motif
     assert "suggested_seam_traces" not in result([neighboring_claim]).metadata["crop_modes"]["image_only"]
 
 
+def test_held_motif_uses_only_observed_fragments_of_the_edge_at_the_crop_boundary(open_motif_card) -> None:
+    from app.pipeline.crop_sampling import warp_owned_crop
+    from app.pipeline.motif_boundary import OUTSIDE_CROP_SEAM_TRACES, partial_motif_seams
+    from app.pipeline.perspective import _dual_crop_result
+
+    paper, stock, transform = open_motif_card
+    pad = 28
+    padded = cv2.copyMakeBorder(paper, 0, 0, pad, 0, cv2.BORDER_CONSTANT, value=(198, 209, 215))
+    to_page = np.linalg.inv(transform) @ np.float64([[1., 0, -pad], [0, 1., 0], [0, 0, 1.]])
+
+    def picture(raster):
+        page = cv2.warpPerspective(raster, to_page, (525, 760), borderValue=(73, 126, 130))
+        rectified, supported = warp_owned_crop(page, transform, paper.shape[1::-1])
+        assert supported
+        return page, rectified
+
+    page, rectified = picture(padded)
+    additional = []
+    assert len(partial_motif_seams(page, rectified, transform, outside_crop_traces=additional)) == 3
+    assert not additional  # A continuous ink edge is already compatible with a single sheet.
+
+    padded[284:319, :pad] = paper[284:319, :1]
+    page, rectified = picture(padded)
+    reasons = ["PRINT_BOUNDARY_AMBIGUOUS", "PRINT_ASPECT_UNCERTAIN"]
+
+    def result(neighbor_masks=None, regions=()):
+        return _dual_crop_result(
+            page, rectified, stock, transform, {}, None, reasons,
+            trim_border=True, auto_orient=False, orientation_model_path=None, manual_rotation=None,
+            page_regions=regions, protect_regions=True, owned_sampling=True, neighbors=[], neighbor_masks=neighbor_masks,
+            corner_mount_detected=False, print_outline=None, motif_suggestion=None, print_edge_traces=[],
+        )
+
+    crop = result()
+    full, motif = (crop.metadata["crop_modes"][mode] for mode in ("full_print", "image_only"))
+    assert full["status"] == motif["status"] == "review_needed"
+    assert full["reason_codes"] == motif["reason_codes"] == reasons
+    assert crop.image_only is crop.image_only_preview is None
+    assert np.array_equal(crop.rectified_untrimmed, rectified)
+    left = motif[OUTSIDE_CROP_SEAM_TRACES]
+    assert len(left) == 2
+    for trace in left:
+        native = normalized_vertices_to_pixels([(p["x"], p["y"]) for p in trace], *page.shape[1::-1])
+        measured = cv2.perspectiveTransform(native[None], transform)[0]
+        assert np.max(np.abs(measured[:, 0])) < 2
+        assert not np.any((290 < measured[:, 1]) & (measured[:, 1] < 313))
+
+    claim = cv2.perspectiveTransform(_rect(-15, 200, -5, 228)[None], np.linalg.inv(transform))[0]
+    motif_with_neighbor = result([{"warp_quad": _vertices(claim, page)}]).metadata["crop_modes"]["image_only"]
+    assert motif_with_neighbor["suggested_seam_traces"] == motif["suggested_seam_traces"]
+    assert OUTSIDE_CROP_SEAM_TRACES not in motif_with_neighbor
+    mark = {"type": "face", "source": "verified", "box": dict(zip(("x1", "y1", "x2", "y2"),
+            [*claim.min(axis=0), *claim.max(axis=0)], strict=True))}
+    motif_with_mark = result(regions=[mark]).metadata["crop_modes"]["image_only"]
+    assert OUTSIDE_CROP_SEAM_TRACES not in motif_with_mark
+
+
 @pytest.mark.parametrize("decoration", ["caption", "ruling", "empty_frame"])
 def test_held_motif_guides_abstain_on_paper_decoration(open_motif_card, decoration) -> None:
     from app.pipeline.crop_sampling import warp_owned_crop

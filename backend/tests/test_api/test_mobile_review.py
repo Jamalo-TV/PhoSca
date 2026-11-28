@@ -1550,12 +1550,12 @@ async def test_bowed_source_review_survives_preview_invalidation_and_small_manua
         assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
 
 
-@pytest.mark.parametrize("mode", ["image_only", "full_print"])
-async def test_new_paper_claim_retires_intersecting_open_crop_guides(client, monkeypatch, mode):
+@pytest.mark.parametrize("guide", ["image_only", "outside_motif", "full_print"])
+async def test_new_paper_claim_retires_intersecting_open_crop_guides(client, monkeypatch, guide):
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto
-    from app.pipeline.motif_boundary import PARTIAL_MOTIF_SEAMS
+    from app.pipeline.motif_boundary import OUTSIDE_CROP_SEAM_TRACES, PARTIAL_MOTIF_SEAMS
     from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_REVIEW, PARTIAL_PRINT_EXTENT_TRACES
 
     _, page_id, photo_id = await _seed_review_data()
@@ -1567,10 +1567,13 @@ async def test_new_paper_claim_retires_intersecting_open_crop_guides(client, mon
         [{"x": .75, "y": .77}, {"x": .2, "y": .77}],
     ]
     modes = {"full_print": held, "image_only": held}
+    mode = "image_only" if guide == "outside_motif" else guide
     field = "suggested_seam_traces" if mode == "image_only" else PARTIAL_PRINT_EXTENT_TRACES
     modes[mode] = {**held, field: guides}
     if mode == "image_only":
         modes[mode]["suggested_seam_source"] = PARTIAL_MOTIF_SEAMS
+    if guide == "outside_motif":
+        modes[mode][OUTSIDE_CROP_SEAM_TRACES] = [[{"x": .8, "y": .35}, {"x": .8, "y": .75}]]
     async with get_session_factory()() as session:
         photo = await session.get(ExtractedPhoto, photo_id)
         if mode == "full_print":
@@ -1586,14 +1589,16 @@ async def test_new_paper_claim_retires_intersecting_open_crop_guides(client, mon
     photo_url = f"/api/v1/photos/{photo_id}"
     before = (await client.get(photo_url)).json()["enhancement_applied"]["correction"]["crop_modes"]
     assert before[mode][field] == guides
-    # The new paper intersects only the buffered guide at x = .79.
-    claim = [{"x": x, "y": y} for x, y in ((.8, .25), (.97, .25), (.97, .55), (.8, .55))]
+    # The new paper enters the relevant sampling band without crossing the measured line.
+    left = .83 if guide == "outside_motif" else .8
+    claim = [{"x": x, "y": y} for x, y in ((left, .25), (.97, .25), (.97, .55), (left, .55))]
     added = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
         "request_id": str(uuid4()), "warp_quad": claim,
     })
     assert added.status_code == 201, added.text
     after = (await client.get(photo_url)).json()["enhancement_applied"]["correction"]["crop_modes"]
-    assert after == {"full_print": held, "image_only": held}
+    expected_motif = {**held, field: guides, "suggested_seam_source": PARTIAL_MOTIF_SEAMS} if guide == "outside_motif" else held
+    assert after == {"full_print": held, "image_only": expected_motif}
     for variant in ("full_print", "image_only", "image_only_preview"):
         assert (await client.get(f"{photo_url}/image", params={"variant": variant})).status_code == 404
     if mode == "full_print":
