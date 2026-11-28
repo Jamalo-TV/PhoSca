@@ -1610,6 +1610,18 @@ verschwindet der dortige Hinweis. Der obere Hinweis kann erhalten
 bleiben. Die Markierungen dienen ausschliesslich der Sichtprüfung.
 [Vergleich der beiden Stellen](data/evaluation/README.md#compare-two-visible-windows-inside-broad-proposals)
 
+Auf einer Einsteckseite können zwei ähnlich angeordnete Vorschläge
+auf eine freie Position auf derselben Linie hinweisen. Bleibt die
+engere Suche nach einem vollständigen Papierrand erfolglos, kann
+PhoSca zwei grössere Suchfenster vergleichen. Ein Prüfhinweis braucht
+übereinstimmende Positionsmasken, zwei benachbarte messbare Übergänge
+und auf der Gegenseite einen im Original erkennbaren Wechsel des
+Rippenmusters. Die App zeichnet nur die gemessenen Teilstücke und
+lässt Lücken sichtbar. Wer einen eigenen Abzug erkennt, kann dessen
+vier Papierecken im Editor erfassen. Ein gespeicherter Umriss im
+Messbereich blendet den Hinweis aus.
+[Beispiel U008](data/evaluation/README.md#trace-an-unclaimed-cell-from-two-wider-views)
+
 Ist die Anzahl bei einem automatisch erkannten Vorschlag unklar und
 sind beide Zuschnittmodi in Prüfung, kann man im Zuschnitteditor auf
 Desktop und Mobil dunkle Details des Originals prüfen. Die Ansicht

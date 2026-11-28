@@ -12731,3 +12731,69 @@ asset-specific reuse terms remain unverified. These records add no
 release group.
 [Page 3](https://objekte.jmberlin.de/gobject/jmb-obj-503290) ·
 [Page 8 print](https://objekte.jmberlin.de/gobject/jmb-obj-503301)
+
+## Trace an unclaimed cell from two wider views
+
+The development original `U008.webp` has SHA-256
+`e0f64096b018b54fcd3827d2a13c9eeed40b02f499bf890f924da2bd34ce7eb6`.
+The registered 512-pixel model first returns three active and three
+deferred proposals. The regular neighboring-print position predicts
+one vacant location. The narrower searches fail to fit an independent
+paper outline. At the native 1600 × 1134 resolution, the two wider
+searches use `(117,0,949,567)` and `(93,0,1053,680)` pixel bounds.
+Their model confidences are 0.646 and 0.643, with overlaps of 0.904
+and 0.914 against the development draft. A separate four-side
+experiment achieves 0.972 draft overlap while omitting 1,309 target
+centres and including 1,050 foreign centres. The stored source cue
+uses open segments and the four-side experiment remains diagnostic.
+
+The fallback runs after the existing narrower search in a uniquely
+projected, unclaimed position. The views each require one geometric
+candidate, at least 0.72 overlap with the projected location, model
+confidence 0.60, and prepared-boundary support 0.80. The two masks
+must agree at 0.90 IoU or better and clear the existing initial,
+active, alternative and deferred claims. Native source measurements
+use a matching backing palette in both views. They need at least
+100 native pixels of common signed evidence on the reference side
+and one adjacent side. An independent opposite rib termination must
+also agree across both observations. The original shows two open
+left segments of 154.81 and 28.15 native pixels and one lower segment
+of 129.30 pixels. The upper and right boundaries
+remain unresolved. The source measurements are stored as
+`neighboring_source_guide` and are available in count review. A saved
+paper claim over the scope or the sampled shoulders retires that cue.
+
+A warm single-sheet reproduction with a faint rim reproduces the
+same local model and optical evidence. This leaves physical ownership
+open. The source tool is appropriate for locating visible edges while
+the paper, count, and crop remain subject to a separate decision.
+Both three-level-rim controls abstain in the current stricter source
+guide and retain three active and three deferred proposals. The
+seven-level closed rim loses the unique layout nomination.
+An ordinary JPEG75 replay has no unique vacant-position nomination
+at this source location. The native original is tested through the
+normal upload and both crop export paths using its lossless PNG
+encoding with identical canonical working pixels. That multipart
+payload has SHA-256 `7ef3529516048cf9074e1fa3d70cc467952eb7f9cb7241492e91449306b26ae2`.
+
+The normal desktop and mobile A/B replay shows 11 open segments in
+total, including the previous eight source segments. Both clients
+make zero write requests when toggling the marks. The three active
+objects retain the previous masks, both crop modes, and exact preview
+bytes. Both named and the legacy trimmed exports return HTTP 404.
+An explicit interior outline that misses the strokes makes the new
+guide disappear. Reprocessing preserves that decision and the older
+cues. The additional native search and source pass took 844 ms in
+one instrumented run alongside the regression jobs. The eight
+software benchmark reports preserve the previous numeric results.
+The final locked replay retains 18 of 18 detections and 23 of 23
+passing recoverable crops.
+
+The Hoover Institution documents exact pre-removal page photography,
+physical stock measurement and separate photography of prints from
+the Stafford Album C (`2012C34`, Box 1). The public finding aid
+restricts access. The exact native leaf-to-print pairs, motif
+measurements and file-specific reuse terms remain unavailable for
+this review. This source adds no verified release group.
+[Conservation record](https://www.hoover.org/events/askaconservator-day-2023) ·
+[Finding aid](https://oac.cdlib.org/findaid/ark:/13030/c84t6gtv/)

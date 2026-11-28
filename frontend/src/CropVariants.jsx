@@ -289,6 +289,7 @@ export function getMissingPrintEdgeReview(metadata, compareWindows = true) {
     ? getSourceEdgeTraces(metadata?.mounted_lower_window_review?.traces).filter((trace) => trace.length === 2) : [];
   const otherTraces = [...getSourceEdgeTraces(metadata?.missing_print_edge_traces),
     ...getSourceEdgeTraces(metadata?.neighboring_print_edge_traces).filter((trace) => trace.length === 2),
+    ...getSourceEdgeTraces(metadata?.neighboring_source_guide?.traces).filter((trace) => trace.length === 2),
     ...getSourceEdgeTraces(metadata?.followup_print_edge_guide?.traces).filter((trace) => trace.length === 2)];
   const sceneTransition = sceneTraces.length > 0;
   const lowerWindow = lowerWindowTraces.length > 0;

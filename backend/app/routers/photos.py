@@ -61,7 +61,7 @@ from app.pipeline.mounted_window_review import (
     MOUNTED_LOWER_WINDOW_REVIEW, MOUNTED_WINDOW_REVIEW_TRACES, MOUNTED_WINDOW_SOURCE_MARGIN,
 )
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
-from app.pipeline.neighboring_print_review import FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_PRINT_EDGE_TRACES
+from app.pipeline.neighboring_print_review import FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_PRINT_EDGE_TRACES, NEIGHBORING_SOURCE_GUIDE
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_TRACES
 from app.pipeline.perspective import (
@@ -256,6 +256,8 @@ def _offer_contested_tile_followup(
     segmentation.setdefault("fusion", {})["deferred_print_proposals"] = [
         *pending, {"id": next_id, "reason": TILED_PRINT_PROPOSAL, "source": CONTESTED_TILE_FOLLOWUP, "polygon": deepcopy(outline)},
     ]
+    if _source_guide_claimed(segmentation.get(NEIGHBORING_SOURCE_GUIDE), outline, width, height):
+        segmentation.pop(NEIGHBORING_SOURCE_GUIDE)
     guide = previous.get(FOLLOWUP_PRINT_EDGE_GUIDE) or {}
     if guide.get("traces") and guide.get("witnesses") and not segmentation.get(FOLLOWUP_PRINT_EDGE_GUIDE) and not any(
         tiled_outline_conflicts(witness, [*claims, {"polygon": outline}], width, height)
@@ -338,6 +340,15 @@ def _geometry_snapshot(photo: ExtractedPhoto) -> dict:
     }
 
 
+def _source_guide_claimed(guide: dict | None, outline: list[dict], width: int, height: int) -> bool:
+    if not guide:
+        return False
+    return (
+        reviewed_outline_covers_traces(outline, guide.get("traces", []))
+        or any(tiled_outline_conflicts(witness, [{"polygon": outline}], width, height) for witness in guide.get("witnesses", []))
+    )
+
+
 def _claim_missing_print_trace(
     page: Page, review_provenance: dict, quad: list[dict] | None, width: int, height: int,
     *, polygon: list[dict] | None = None,
@@ -378,13 +389,10 @@ def _claim_missing_print_trace(
     ):
         segmentation.pop(MOUNTED_LOWER_WINDOW_REVIEW)
         changed = True
-    guide = segmentation.get(FOLLOWUP_PRINT_EDGE_GUIDE) or {}
-    if guide and (
-        reviewed_outline_covers_traces(outline, guide.get("traces", []))
-        or any(tiled_outline_conflicts(witness, [{"polygon": outline}], width, height) for witness in guide.get("witnesses", []))
-    ):
-        segmentation.pop(FOLLOWUP_PRINT_EDGE_GUIDE)
-        changed = True
+    for key in (FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_SOURCE_GUIDE):
+        if _source_guide_claimed(segmentation.get(key), outline, width, height):
+            segmentation.pop(key)
+            changed = True
     if changed:
         page.processing_metadata = metadata
 

@@ -120,7 +120,7 @@ async def test_neighboring_source_guide_is_retired_only_by_a_material_manual_cla
     from app.pipeline.contested_scene_edge import CONTESTED_SCENE_EDGE_TRACES
     from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES
     from app.pipeline.mounted_window_review import MOUNTED_LOWER_WINDOW_REVIEW, MOUNTED_WINDOW_REVIEW_TRACES
-    from app.pipeline.neighboring_print_review import FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_PRINT_EDGE_TRACES
+    from app.pipeline.neighboring_print_review import FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_PRINT_EDGE_TRACES, NEIGHBORING_SOURCE_GUIDE
 
     monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
     monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
@@ -137,11 +137,13 @@ async def test_neighboring_source_guide_is_retired_only_by_a_material_manual_cla
     window_traces = [quad(.900, .37, .905, .62)[::3]]
     lower_window = {"traces": [quad(.86, .74, .87, .96)[::3]], "scopes": [quad(.86, .71, .99, .98)]}
     followup_guide = {"traces": [quad(.310, .06, .315, .14)[::3]], "witnesses": [quad(.28, .06, .33, .14)]}
+    neighboring_guide = {"traces": [quad(.85, .74, .86, .96)[::3]], "witnesses": [quad(.85, .71, .99, .98)]}
     async with get_session_factory()() as session:
         page = await session.get(Page, page_id)
         page.processing_metadata = {"steps": {"segmentation": {
             NEIGHBORING_PRINT_EDGE_TRACES: traces, NEAR_CAPTURE_PRINT_TRACES: other_traces,
             FOLLOWUP_PRINT_EDGE_GUIDE: followup_guide,
+            NEIGHBORING_SOURCE_GUIDE: neighboring_guide,
             CONTESTED_SCENE_EDGE_TRACES: scene_traces,
             MOUNTED_WINDOW_REVIEW_TRACES: window_traces,
             MOUNTED_LOWER_WINDOW_REVIEW: lower_window,
@@ -158,6 +160,7 @@ async def test_neighboring_source_guide_is_retired_only_by_a_material_manual_cla
     assert initial[NEIGHBORING_PRINT_EDGE_TRACES] == traces
     assert initial[NEAR_CAPTURE_PRINT_TRACES] == other_traces
     assert initial[FOLLOWUP_PRINT_EDGE_GUIDE] == followup_guide
+    assert initial[NEIGHBORING_SOURCE_GUIDE] == neighboring_guide
     assert initial[CONTESTED_SCENE_EDGE_TRACES] == scene_traces
     assert initial[MOUNTED_WINDOW_REVIEW_TRACES] == window_traces
     assert initial[MOUNTED_LOWER_WINDOW_REVIEW] == lower_window
@@ -167,6 +170,7 @@ async def test_neighboring_source_guide_is_retired_only_by_a_material_manual_cla
     assert separate.status_code == 201, separate.text
     assert (await review_payload())[NEIGHBORING_PRINT_EDGE_TRACES] == traces
     assert FOLLOWUP_PRINT_EDGE_GUIDE not in (await review_payload())
+    assert (await review_payload())[NEIGHBORING_SOURCE_GUIDE] == neighboring_guide
     assert (await review_payload())[CONTESTED_SCENE_EDGE_TRACES] == scene_traces
     assert (await review_payload())[MOUNTED_WINDOW_REVIEW_TRACES] == window_traces
     assert (await review_payload())[MOUNTED_LOWER_WINDOW_REVIEW] == lower_window
@@ -176,6 +180,7 @@ async def test_neighboring_source_guide_is_retired_only_by_a_material_manual_cla
     assert interior.status_code == 201, interior.text
     after_interior = await review_payload()
     assert MOUNTED_LOWER_WINDOW_REVIEW not in after_interior
+    assert NEIGHBORING_SOURCE_GUIDE not in after_interior
     assert after_interior[MOUNTED_WINDOW_REVIEW_TRACES] == window_traces
 
     # Only this part of the saved quad intersects a measured span: no inferred

@@ -74,8 +74,9 @@ from app.pipeline.near_capture_review import (
     NEAR_CAPTURE_PRINT_TRACES, near_capture_candidate_turn, near_capture_print_traces, quarter_turn,
 )
 from app.pipeline.neighboring_print_review import (
-    FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_PRINT_EDGE_TRACES, followup_print_edge_guide, followup_print_position,
-    neighboring_layout_traces, neighboring_print_outline, next_print_position,
+    FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_PRINT_EDGE_TRACES, NEIGHBORING_SOURCE_GUIDE,
+    followup_print_edge_guide, followup_print_position,
+    neighboring_layout_traces, neighboring_print_outline, neighboring_source_guide, next_print_position,
 )
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_REVIEW, PARTIAL_PRINT_EXTENT_TRACES, partial_print_extent_traces
@@ -5109,6 +5110,33 @@ def _measure_neighboring_print(
     return neighboring_print_outline(source, masks, direction, claims)
 
 
+def _measure_neighboring_source_guide(
+    source: np.ndarray, image: np.ndarray, projection: np.ndarray, claims: list[dict],
+    infer: Callable[[np.ndarray], list[SegmentationDetection]],
+) -> dict | None:
+    height, width = source.shape[:2]
+    center = projection.mean(axis=0)
+    projected = pixel_vertices_to_normalized(projection, width, height)
+    dimensions = np.float32([width, height])
+    inward = np.clip(dimensions / 2 - center, -.025 * dimensions, .025 * dimensions)
+    inputs = _boundary_inputs(image)
+    masks = []
+    for anchor, extent in ((center, (.52, .50)), (center + inward, (.60, .60))):
+        left, top, right, bottom = window = _tile_window(anchor, width, height, extent)
+        mapped = _tile_detections_on_page(infer(image[top:bottom, left:right]), window, width, height)
+        matches = [(item, polygon) for item in mapped if normalized_polygon_overlap(
+            (polygon := _detection_polygon(item)), projected, raster_size=1024,
+        ).iou >= .72]
+        if len(matches) != 1:
+            return None
+        (item, polygon), = matches
+        if (not item.geometry_valid or item.confidence < .60 or _detection_boundary_evidence(item, *inputs)["score"] < .80
+                or tiled_outline_conflicts(item.mask["polygon"], claims, width, height)):
+            return None
+        masks.append(polygon)
+    return neighboring_source_guide(source, masks, claims)
+
+
 def _offer_neighboring_print(
     source: np.ndarray, image: np.ndarray, result: SegmentationResult, search: _TileReviewSearch,
 ) -> SegmentationResult:
@@ -5117,6 +5145,7 @@ def _offer_neighboring_print(
     pending = (result.metadata.get("fusion") or {}).get("deferred_print_proposals") or []
     claims = _tiled_review_claims(result) + search.initial_claims
     height, width = source.shape[:2]
+    guide = None
     try:
         position = next_print_position(pending, claims, width, height)
         if position is None:
@@ -5126,10 +5155,15 @@ def _offer_neighboring_print(
             result = _offer_unclaimed_tiled_prints(source, result, [_normalized_polygon(outline, width, height)])
             review["candidates"] += 1
             review["recovered_from_neighboring_prints"] = True
+        elif not result.metadata.get(NEIGHBORING_SOURCE_GUIDE):
+            guide = _measure_neighboring_source_guide(source, image, position[0], claims, search.infer)
     except Exception as exc:  # An optional review view must not affect existing crop decisions.
         review["neighboring_print_error"] = str(exc)
     review["runtime_ms"] = round(review["runtime_ms"] + (perf_counter() - started) * 1000, 2)
-    return SegmentationResult(result.detections, {**result.metadata, "tiled_print_review": review})
+    metadata = {**result.metadata, "tiled_print_review": review}
+    if guide is not None:
+        metadata[NEIGHBORING_SOURCE_GUIDE] = guide
+    return SegmentationResult(result.detections, metadata)
 
 
 def _offer_ribbed_backing_tile(source: np.ndarray, result: SegmentationResult, seed: np.ndarray) -> SegmentationResult:

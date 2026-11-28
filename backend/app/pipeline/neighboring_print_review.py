@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 
 from app.pipeline.album_backing import _backing_reference, _repeating_profile
+from app.pipeline.contested_scene_edge import _common_spans
 from app.pipeline.edge_prints import _photo_texture
 from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels, order_quad_cyclic, quad_from_polygon
 from app.pipeline.near_capture_review import _Rail, _claimed_contours, _signed_stations, _trace_intervals
@@ -16,6 +17,7 @@ from app.pipeline.visible_scene_edge import has_enclosing_perimeter
 
 
 NEIGHBORING_PRINT_EDGE_TRACES = "neighboring_print_edge_traces"
+NEIGHBORING_SOURCE_GUIDE = "neighboring_source_guide"
 FOLLOWUP_PRINT_EDGE_GUIDE = "followup_print_edge_guide"
 
 
@@ -293,6 +295,89 @@ def _open_rail_witness(start: np.ndarray, stop: np.ndarray, exterior: int) -> np
     normal = np.float32([-delta[1], delta[0]]) / np.linalg.norm(delta)
     return np.float32([start - exterior * normal, stop - exterior * normal,
                       stop + 10 * normal, start + 10 * normal])
+
+
+def _neighboring_source_spans(
+    image: np.ndarray, quads: list[np.ndarray], side: int, palette: np.ndarray, contours: list[np.ndarray],
+    *, rib_witness: bool = False,
+) -> list[np.ndarray]:
+    views = []
+    for quad in quads:
+        a, b = quad[[side, (side + 1) % 4]]
+        a, b = a + np.float32([[.08], [.92]]) * (b - a)
+        candidates = []
+        for radius in ((14, 18) if rib_witness else (10, 24, 30)):
+            line, evidence = _side_line(image, a, b, radius)
+            if line is None or evidence["ambiguous"] or evidence["support"] < .82:
+                continue
+            span = np.float32(_line_endpoints(a, b, line))
+            if rib_witness:
+                if _ribs_end_at_edge(image, *span):
+                    candidates.append((line, [span]))
+            else:
+                _, signed = _signed_stations(image, span, palette)
+                if signed.mean() >= .88 and min(block.mean() for block in np.array_split(signed, 4)) >= .70:
+                    candidates.append((line, _trace_intervals(image, _Rail(line, span, evidence["support"], signed),
+                                                               palette, contours)))
+        views.append(candidates)
+    matches = []
+    first, second = views
+    for line, spans in first:
+        for _, other in second:
+            shared = _common_spans(spans, other, contours)
+            length = sum(np.linalg.norm(end - start) for start, end in shared)
+            if length >= 100:
+                matches.append((length, line, shared))
+    if not matches:
+        return []
+    _, _, longest = max(matches, key=lambda match: match[0])
+    return longest if all(np.max(np.abs(np.vstack(longest) @ line[:2] + line[2])) <= 2 for _, line, _ in matches) else []
+
+
+def neighboring_source_guide(image: np.ndarray, polygons: list[np.ndarray], claims: list[dict]) -> dict | None:
+    """Show observed sides of a vacant cell, with an independent opposite rib witness."""
+    if len(polygons) != 2 or normalized_polygon_overlap(*polygons, raster_size=1024).iou < .90:
+        return None
+    height, width = image.shape[:2]
+    scale = np.float32([width - 1, height - 1])
+    seeds = [quad_from_polygon(polygon * scale)[0] for polygon in polygons]
+    if any(seed is None for seed in seeds):
+        return None
+    quads = [order_quad_cyclic(seed) for seed in seeds]
+    if any(np.min(np.minimum(quad, scale - quad)) < 24 or not _photo_texture(image, quad) for quad in quads):
+        return None
+    contours = _claimed_contours(claims, width, height, 0)
+
+    def claimed(polygon):
+        return any(cv2.intersectConvexConvex(polygon, contour)[0] > 1 for contour in contours)
+
+    scope = cv2.convexHull(np.vstack(quads))[:, 0]
+    if claimed(scope):
+        return None
+    references = [_backing_reference(image, quad, claimed) for quad in quads]
+    if any(reference is None for reference in references):
+        return None
+    (palette, side), (second_palette, second_side) = references
+    if side != second_side or np.linalg.norm(palette - second_palette) > 6:
+        return None
+    opposite = _neighboring_source_spans(image, quads, (side + 2) % 4, palette, contours, rib_witness=True)
+    if not opposite:
+        return None
+    measured = [_neighboring_source_spans(image, quads, index, palette, contours)
+                for index in (side, (side - 1) % 4, (side + 1) % 4)]
+    if not measured[0] or bool(measured[1]) == bool(measured[2]):
+        return None
+    spans = [span for pieces in measured for span in pieces]
+    # Include the entire sampled shoulders and the position in claim retirement.
+    witnesses = [scope, *(_open_rail_witness(*span, 9) for span in spans),
+                 *(_open_rail_witness(*span, 15) for span in opposite)]
+    if any(claimed(polygon) or np.min(np.minimum(polygon, scale - polygon)) < 1 for polygon in witnesses):
+        return None
+    shortest = np.linalg.norm(np.roll(quads[0], -1, axis=0) - quads[0], axis=1).min()
+    if has_enclosing_perimeter(image, quads[0], scope, shortest, search_margin=.65, maximum_area_ratio=3.8):
+        return None
+    return {"traces": [_normalized(span / scale) for span in spans],
+            "witnesses": [_normalized(polygon / scale) for polygon in witnesses]}
 
 
 def followup_print_edge_guide(

@@ -5,7 +5,8 @@ import pytest
 from app.pipeline.geometry import order_quad_cyclic
 from app.pipeline.near_capture_review import quarter_turn
 from app.pipeline.neighboring_print_review import (
-    followup_print_edge_guide, followup_print_position, neighboring_layout_traces, neighboring_print_outline, next_print_position,
+    followup_print_edge_guide, followup_print_position, neighboring_layout_traces, neighboring_print_outline,
+    neighboring_source_guide, next_print_position,
 )
 from app.pipeline.tile_print_review import TILED_PRINT_PROPOSAL
 
@@ -62,6 +63,41 @@ def test_followup_guide_keeps_only_three_open_sides_with_unclaimed_witnesses(con
     np.testing.assert_allclose(endpoints[0][:, 0], 527, atol=1.)
     np.testing.assert_allclose(endpoints[1][:, 1], 430, atol=1.)
     np.testing.assert_allclose(endpoints[2][:, 0], 250, atol=1.)
+
+
+@pytest.mark.parametrize("condition", ["two_sides", "phase_claim", "missing_ribs", "claimed_cell", "different_masks"])
+def test_source_guide_requires_two_matching_warm_sides_and_an_independent_rib_witness(condition):
+    height, width = 660, 770
+    y, x = np.indices((height, width))
+    lab = np.full((height, width, 3), [207, 129, 143], dtype=np.uint8)
+    lab[..., 0] = 207 + 36 * np.cos(2 * np.pi * y / 11)
+    # A cool strip retains the ribs on the right. Only the warm sides can be drawn.
+    lab[:, 528:, 1:] = [137, 120]
+    scene = lab[:431, 250:528]
+    scene[..., 1:] = [136, 120]
+    scene[..., 0] = (95 + 12 * np.sin(.25 * x + .33 * y) + 10 * np.sin(.44 * x - .11 * y))[:431, 250:528]
+    scale = np.float32([width - 1, height - 1])
+    masks = [np.float32([[251, 130], [526, 131], [526, 433], [249, 433]]) / scale,
+             np.float32([[249, 132], [530, 131], [529, 433], [251, 430]]) / scale]
+    claims = []
+    if condition == "phase_claim":
+        claims = [{"polygon": _outline(_rect(532, 145, 543, 419) / scale)}]
+    elif condition == "missing_ribs":
+        lab[:, 528:, 0] = 207
+    elif condition == "claimed_cell":
+        claims = [{"polygon": _outline(_rect(305, 179, 410, 315) / scale)}]
+    elif condition == "different_masks":
+        masks[1] += np.float32([31, 0]) / scale
+
+    guide = neighboring_source_guide(cv2.cvtColor(lab, cv2.COLOR_LAB2BGR), masks, claims)
+
+    if condition != "two_sides":
+        assert guide is None
+        return
+    left, bottom = [np.float32([(p["x"], p["y"]) for p in trace]) * scale for trace in guide["traces"]]
+    np.testing.assert_allclose(left[:, 0], 250, atol=1.)
+    np.testing.assert_allclose(bottom[:, 1], 430, atol=1.)
+    assert len(guide["witnesses"]) == 4
 
 
 @pytest.mark.parametrize("case", ["vacant", "claimed", "wrong_pitch", "two_positions"])
