@@ -70,6 +70,7 @@ from app.pipeline.perspective import (
 from app.pipeline.presets import available_presets
 from app.pipeline.print_edges import OPPOSING_OUTER_EDGES_CHECK
 from app.pipeline.print_outline_suggestion import POSSIBLE_OUTER_PRINT_PREVIEW, POSSIBLE_OVEREXTENDED_PRINT_EDGE
+from app.pipeline.print_stock import MARKED_PAPER_MARGIN
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_PROPOSAL
 from app.pipeline.protected_regions import (
     OFF_PRINT_ADVISORY, ProtectedRegionCut, ProtectedRegionRemoval, album_mark_correction_matches, album_mark_matches_quad,
@@ -550,7 +551,7 @@ async def _review_overlapping_crops(
         measured_preview = preview_source in MEASURED_PRINT_PREVIEW_SOURCES
         fields = ("source_search_band", "source_inset_band") if measured_preview else ("source_outline",)
         evidence_scope = preview.get("source_search_band") if preview_source in (
-            MEASURED_RIBBED_PRINT_OUTLINE, BOWED_SCENE_PREVIEW,
+            MEASURED_RIBBED_PRINT_OUTLINE, BOWED_SCENE_PREVIEW, MARKED_PAPER_MARGIN,
         ) else None
         if ((evidence_scope and review_outline_intersects_claim(evidence_scope, mask, width, height, convex_scope=True))
                 or (preview_source in (DISPUTED_GRID_PREVIEW_SOURCE, POSSIBLE_OUTER_PRINT_PREVIEW) and preview.get("source_outline")
@@ -560,6 +561,8 @@ async def _review_overlapping_crops(
                     for key in fields if preview.get(key)
                 ))):
             full_mode.pop("outline_preview")
+            if preview_source == MARKED_PAPER_MARGIN:
+                full_mode.pop("source_strip_review", None)
             correction.pop("album_page_mark_review", None)
             if full_mode.get("suggested_edge_source") in (
                 POSSIBLE_OVEREXTENDED_PRINT_EDGE, BOWED_SCENE_PREVIEW, *MEASURED_PRINT_PREVIEW_SOURCES,

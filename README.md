@@ -892,6 +892,22 @@ Ecken und das Seitenverhältnis im Original. Falls der Rand verdeckt
 bleibt, hilft eine Aufnahme mit rundum sichtbarem Papierrand.
 [Arbeitszuschnitt auf Scan 83](data/evaluation/README.md#recover-a-pale-paper-margin-without-cutting-prior-content)
 
+Schneidet der Arbeitszuschnitt auf der gegenüberliegenden Seite eine
+dunkle Markierung im hellen Papier an, kann PhoSca einen separaten
+Vergleich anzeigen. Dazu muss die mögliche Papierkante im Original
+bei zwei Suchtiefen übereinstimmen und an einer gemessenen Ecke enden.
+Die Markierung muss zusammenhängen und auf beiden Seiten der
+bisherigen Schnittlinie von ähnlich hellem Papier umgeben sein. Eine
+sichtbare weitere Materialkante oder eine konkurrierende Kontur im
+zusätzlichen Streifen verhindert den Vergleich.
+
+In der Zuschnittprüfung stehen die bisherige Vorschau und der
+erweiterte Vergleich nebeneinander. Ein Ausschnitt aus dem Original
+markiert die Stelle, an der die bestehende Kante die Markierung
+anschneidet. Prüfe dort, ob der helle Streifen zum Papierabzug gehört.
+Die Vergleichsansicht speichert keine neuen Ecken. Beide Zuschnittmodi
+bleiben in Prüfung. [Markierung auf Scan 83](data/evaluation/README.md#compare-a-marked-paper-margin-at-a-bright-outer-transition)
+
 Ragt eine Ecke weit über den Abzug hinaus, prüft PhoSca, wo die
 beiden angrenzenden Papierkanten im Original enden. Eine gestützte
 innere Kante kann in der Geometrieprüfung eine zweite Vorschau geben.

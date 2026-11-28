@@ -229,6 +229,7 @@ const possibleBowedPrintEdge = "possible_bowed_print_edge";
 const possibleDisplacedPrintEdges = "possible_displaced_print_edges";
 const possibleAlbumLayerEdge = "possible_album_layer_edge";
 const possibleLocalPrintEdge = "possible_local_print_edge";
+const markedPaperMargin = "possible_marked_paper_margin";
 const disputedGridPreview = "disputed_paper_grid_outline_review";
 const possibleOuterPrintPreview = "possible_outer_print_preview";
 const curvedPrintOutlineReviewReason = "PRINT_CURVED_OUTLINE_REVIEW";
@@ -842,6 +843,9 @@ export function getMotifMarginMarks(motif) {
 
 export function getPrintOutlinePreviewHint(fullPrint) {
   const preview = fullPrint?.outline_preview;
+  if (preview?.source === markedPaperMargin) {
+    return "Der Vergleich zeigt mehr von der dunklen Markierung am hellen Rand. Prüfe am Original, ob der ergänzte Streifen zum Abzug gehört. Das Seitenverhältnis bleibt geschätzt.";
+  }
   if (preview?.source === measuredRibbedPrintOutlineSource) {
     return "Vergleiche beide Vorschauen mit dem Original und prüfe die Bilddetails am Papierrand. Die vier Ecken bleiben in Prüfung.";
   }
@@ -896,7 +900,7 @@ export function getPrintOutlinePreviewHint(fullPrint) {
 
 export function showsPaperEdgeComparison(fullPrint) {
   return [possibleOverextendedPrintEdge, possibleInwardPrintCorner, possibleBowedPrintEdge,
-    possibleDisplacedPrintEdges, possibleAlbumLayerEdge, possibleLocalPrintEdge,
+    possibleDisplacedPrintEdges, possibleAlbumLayerEdge, possibleLocalPrintEdge, markedPaperMargin,
     "possible_mounted_edge_strip", disputedGridPreview, possibleOuterPrintPreview, roundedCornerSource, measuredRibbedPrintOutlineSource, bowedScenePreview]
     .includes(fullPrint?.outline_preview?.source);
 }
@@ -906,7 +910,9 @@ export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outl
   const wholeOutline = wholeGrid || [measuredRibbedPrintOutlineSource, possibleOuterPrintPreview].includes(outlinePreview?.source);
   const extendedScene = outlinePreview?.source === bowedScenePreview;
   const trimmedScene = extendedScene && outlinePreview.excluded_outer_band;
-  const label = trimmedScene ? "Vergleich am Bildrand" : extendedScene ? "Ergänzte Bildfläche"
+  const markedMargin = outlinePreview?.source === markedPaperMargin;
+  const label = markedMargin ? "Vergleich am markierten Papierrand"
+    : trimmedScene ? "Vergleich am Bildrand" : extendedScene ? "Ergänzte Bildfläche"
     : wholeOutline ? "Möglicher Aussenumriss" : "Mögliche Papierkante";
   const { width, height } = outlinePreview?.shape || {};
   const cuts = wholeGrid && width > 1 && height > 1
@@ -918,7 +924,8 @@ export function PaperEdgePreviewComparison({ currentUrl, possibleUrl, hint, outl
     </figure>
     <figure>
       <div className="paper-edge-preview-image">
-        <img src={possibleUrl} alt={trimmedScene ? "Prüfvorschau mit ergänztem Bildrand und ausgeblendetem Randbereich"
+        <img src={possibleUrl} alt={markedMargin ? "Prüfvorschau mit ergänzter Markierung am Papierrand"
+          : trimmedScene ? "Prüfvorschau mit ergänztem Bildrand und ausgeblendetem Randbereich"
           : extendedScene ? "Prüfvorschau mit ergänztem sichtbarem Bildstreifen" : wholeOutline
           ? "Prüfvorschau des gesamten möglichen Abzugs" : "Prüfvorschau entlang der möglichen Papierkante"} />
         {cuts.length > 0 && <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Mögliche Trennkanten der Teilvorschläge">
@@ -1082,9 +1089,10 @@ export function getSourceStripReview(fullPrint) {
   if (fullPrint?.status !== "review_needed" || !review) return null;
   const { width, height } = review.source_size || {};
   const edgeOnly = review.source === "measured_inset_paper_edge";
+  const markedMargin = review.source === markedPaperMargin;
   const [outline] = getSourceEdgeTraces([edgeOnly ? review.source_trace : review.source_outline]);
   return Number.isFinite(width) && Number.isFinite(height) && width > 1 && height > 1 && outline?.length === (edgeOnly ? 2 : 4)
-    ? { width, height, outline, edgeOnly } : null;
+    ? { width, height, outline, edgeOnly, markedMargin } : null;
 }
 
 export function SourceStripOutline({ points, edgeOnly }) {
@@ -1097,7 +1105,7 @@ export function SourceStripOutline({ points, edgeOnly }) {
 }
 
 export function SourceStripReview({ strip, sourceUrl, hintId }) {
-  const { width, height, outline, edgeOnly } = strip;
+  const { width, height, outline, edgeOnly, markedMargin } = strip;
   const points = outline.map(({ x, y }) => [x * (width - 1), y * (height - 1)]);
   const xs = points.map(([x]) => x), ys = points.map(([, y]) => y);
   const stripWidth = Math.max(...xs) - Math.min(...xs);
@@ -1107,12 +1115,16 @@ export function SourceStripReview({ strip, sourceUrl, hintId }) {
   const top = Math.max(0, Math.min(...ys) - Math.max(edgeOnly ? 14 : 96, 2 * stripHeight, stripWidth / 3));
   const right = Math.min(width, Math.max(...xs) + lateralPad);
   const bottom = Math.min(height, Math.max(...ys) + Math.max(24, .5 * stripHeight));
-  return <section className="neighbor-content-review" aria-label={edgeOnly ? "Papierkante im Original prüfen" : "Möglicher Bildstreifen im Original"}>
-    <p id={hintId}>{edgeOnly
+  return <section className="neighbor-content-review" aria-label={markedMargin ? "Markierung am Papierrand im Original"
+    : edgeOnly ? "Papierkante im Original prüfen" : "Möglicher Bildstreifen im Original"}>
+    <p id={hintId}>{markedMargin
+      ? "Die Markierung läuft über die bisherige Zuschnittkante hinaus. Verfolge am Original den hellen Papierrand bis zur Ecke."
+      : edgeOnly
       ? "Prüfe am Original den markierten Abschnitt knapp ausserhalb des gespeicherten Umrisses. Vergleiche dort die Papierkante mit der Albumprägung daneben."
       : "Prüfe am Original, ob der markierte Streifen zum Abzug gehört. Wenn der Albumkarton Bildinhalt verdeckt, verwende eine unverdeckte Aufnahme."}</p>
     <svg className="source-strip-detail" viewBox={[left, top, right - left, bottom - top].join(" ")}
-      role="img" aria-label={edgeOnly ? "Markierter Kantenabschnitt mit Umgebung im Original" : "Markierter Streifen mit Umgebung im Original"}>
+      role="img" aria-label={markedMargin ? "Markierung und umgebendes Originalpapier"
+        : edgeOnly ? "Markierter Kantenabschnitt mit Umgebung im Original" : "Markierter Streifen mit Umgebung im Original"}>
       <image href={sourceUrl} width={width} height={height} />
       <SourceStripOutline edgeOnly={edgeOnly} points={points.map(([x, y]) => `${x},${y}`).join(" ")} />
     </svg>

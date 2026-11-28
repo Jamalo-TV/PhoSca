@@ -13032,3 +13032,85 @@ The earlier local left-side draft also followed the neighboring print
 for part of its length. Neither that draft nor the lower comparison
 provides an independently measured full paper aspect or motif reference.
 This source remains in development.
+
+## Compare a marked paper margin at a bright outer transition
+
+The upper-right Scan 83 working crop contains 400 of the 1,004
+centres of a dark connected mark. The source patch at x4598–4641,
+y2500–2591 uses the largest native Lab L<152 component for this
+measurement. The measured lower transition is brighter toward the
+exterior. The original fit can recover the line near y2591–2592 at
+two search radii. A neighboring line that meets this rail independently
+supports one corner. The extension preserves the old side lines and
+adds 45.0–76.5 native pixels to the lower extent. The left side and
+the physical aspect remain unresolved.
+[Original and working raster](#recover-a-pale-paper-margin-without-cutting-prior-content)
+
+The comparison requires an existing measured pale-paper working edge
+opposite the new rail and both original crop holds. A dark connected
+mark must cross the old cut, end two to twenty native pixels from the
+proposed rail, and have a compatible pale collar on both sides of the
+old cut. The secondary brightness transition must stop at the corner.
+The untouched half-planes must retain all prior source centres.
+Before rendering, current and deferred claims are checked against the
+additional strip and the normal protected-content validation runs
+on the comparison. A later claim entering the strip invalidates both
+the PNG and its detail guide. The working crop stays available for
+ordinary review.
+
+The added band is tested for two-sided local Lab changes. A plausible
+interposed stripe has similar pale flanks whose changes point in the
+same direction away from the central sample. The linear-path check
+allows oblique as well as parallel tracks and vetoes a comparison
+when at least 19 of 26 consecutive stations six native pixels apart
+show this evidence. This also reacts to some fine shadows and printed
+rules. It cannot establish ownership of flush paper with the same
+appearance. The full helper abstained on 36 independent authored
+gap variants and 16 earlier wedge variants. The seam test alone
+flagged 32 and 15, respectively. It retained the original native and
+JPEG95 comparison. Fixed-region JPEG75 and JPEG55 lack enough corner
+support for the comparison. Four fixed-outline quarter turns retain
+the native comparison. Calibration and final acceptance did not
+use these measurements.
+
+| Measured output | Working crop | Comparison PNG |
+| --- | ---: | ---: |
+| Rendered dimensions | 2,332 × 2,345 | 2,332 × 2,391 |
+| Effective source centres | 5,355,889 | 5,493,859 |
+| Centres in the dark mark | 400 | 1,004 |
+
+The recorded matrices and owned sampler reconstruct both BGR rasters
+exactly. The comparison adds 137,970 source centres and loses zero.
+The ordinary native upload retains six active detections, two count
+offers and identical working JPEGs. Only the upper-right row gains a
+comparison PNG and an original-detail guide. Both named exports, the
+legacy trimmed export and the motif preview stay unavailable. An
+unchanged geometry approval returns HTTP 409. Desktop and mobile
+review display the comparison and the zoomed original mark. The
+gallery displays the working crop. Upload took 74.5 seconds and
+ordinary reprocessing reproduced the same comparison in 7.77 seconds.
+Seven targeted regression cases cover the marked crop, missing and
+split marks, two gap geometries, pending claims and later invalidation.
+The print-boundary validation profile moves to revision 16. The eight
+paired benchmark reports match their earlier scores and review counts.
+The frozen detector matches 18/18 prints. The seeded end-to-end geometry
+checks pass 11/11 whole-print and 12/12 motif crops.
+
+A source-only follow-up on the left measures two separated parts with
+supported palette and lightness transitions near y230–776 and
+y1934–2260. The rival line from the neighboring print fails the same
+support test in the native and three JPEG controls. The interval between
+the two parts remains uncertain. The measurements are development
+evidence for a future left-edge guide and do not change this preview.
+
+An offline provenance audit separately rechecked all 265 image and
+label pairs of architecture-only candidate `7eb23be8…`. The pinned
+loader caches agree with the recorded 200 training and 65 validation
+paths and split groups. The training checkpoint stores random
+initialization and no resume. The candidate still falls short of
+the real-development baseline. The local comparator `1e95a1a9…`
+has matching loader inventories for the local fitting stages and
+lists for the inherited COCO stage. Those lists supply no image
+raster hashes or physical album assignments. The older configured
+`4d823588…` artifact and warm-start records are still missing locally.
+The comparison supplies no verified release group or calibration fit.

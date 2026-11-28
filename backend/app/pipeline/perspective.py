@@ -109,7 +109,7 @@ from app.pipeline.print_outline_suggestion import (
     suggest_outer_print_outline, suggest_overextended_print_outline, suggest_slanted_print_edge_comparison,
     verify_print_edge_at_claim, visible_gap_at_unchanged_claim,
 )
-from app.pipeline.print_stock import find_outer_stock_candidate, recover_pale_stock_preview
+from app.pipeline.print_stock import MARKED_PAPER_MARGIN, find_outer_stock_candidate, marked_paper_margin_comparison, recover_pale_stock_preview
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_OUTLINE_REVIEW
 from app.pipeline.protected_regions import (
     OFF_PRINT_ADVISORY, ProtectedRegionCut, ProtectedRegionRemoval, detect_protected_regions, is_advisory_page_face,
@@ -2843,6 +2843,30 @@ def correct_photo_crop(
                             result = replace(result, image_only_preview=pixels)
             except (ValueError, cv2.error, np.linalg.LinAlgError):
                 pass  # The measured comparison is optional when the original remains unresolved.
+        if (pale_stock_extension and render_claims is not None and protection["passed"]
+                and set(full_reasons) == {"PRINT_OUTER_RIM_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"}
+                and all(mode["status"] == "review_needed" for mode in modes.values())
+                and not any(full_mode.get(key) for key in ("outline_preview", "source_strip_review", "suggested_warp_quad"))):
+            try:
+                proposal = marked_paper_margin_comparison(page_image, src_points, boundary_refinement,
+                                                         [*neighbor_polygons, *render_claims])
+                if proposal is not None:
+                    outline, mark, strip = proposal
+                    if _keeps_protected_preview_content(page_image, src_points, outline, regions, protection, area_tolerance=.001):
+                        rotation = int(result.metadata["orientation"].get("rotation_degrees") or 0) % 360
+                        # The source fit already checked all claims against the added strip.
+                        preview = _render_review_quad_preview(page_image, outline, rotation, [], regions, camera_matrix,
+                                                              page_plane, source=MARKED_PAPER_MARGIN)
+                        if preview is not None:
+                            pixels, comparison = preview
+                            full_mode["outline_preview"] = {**comparison, "source_search_band": _vertices_on_page(strip, width, height)}
+                            full_mode["source_strip_review"] = {
+                                "source": MARKED_PAPER_MARGIN, "source_size": {"width": width, "height": height},
+                                "source_outline": _vertices_on_page(mark, width, height),
+                            }
+                            result = replace(result, full_print_preview=pixels)
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                pass  # Keep the existing held working crop if the comparison cannot be measured.
         if not manual and POSSIBLE_PRINT_REGIONS in mask:
             for mode in modes.values():
                 if mode["status"] == "ready":

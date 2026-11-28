@@ -5,11 +5,13 @@ from collections.abc import Iterator
 import cv2
 import numpy as np
 
+from app.pipeline.crop_sampling import _outline_mask
 from app.pipeline.print_edges import _edge_band, _line_endpoints, _replace_quad_side, _side_line
 
 
 _RECTANGLE = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
 _SIDE_NAMES = ("top", "right", "bottom", "left")
+MARKED_PAPER_MARGIN = "possible_marked_paper_margin"
 
 
 def _project(points: np.ndarray, transform: np.ndarray) -> np.ndarray:
@@ -305,3 +307,175 @@ def recover_pale_stock_preview(
             candidates.append((expanded, {"side": name, "companion": _SIDE_NAMES[companion],
                                            "depth_px": np.round(outward_depth, 3).tolist()}))
     return candidates[0] if len(candidates) == 1 else None
+
+
+def _interposed_stock_seam(image: np.ndarray, new: np.ndarray, old: np.ndarray) -> bool:
+    """Find a narrow material stripe between pale flanks along straight or oblique paths."""
+    start, stop = new
+    length = float(np.linalg.norm(stop - start))
+    tangent = (stop - start) / length
+    normal = np.float32([-tangent[1], tangent[0]])
+    stations = np.arange(16, length - 16, 6, dtype=np.float32)
+    old_edge = old[1] - old[0]
+    fraction = (stations - (old[0] - start) @ tangent) / (old_edge @ tangent)
+    reach = (old[0] - start) @ normal + fraction * (old_edge @ normal)
+    offsets = np.arange(0, int(reach.max()) + 1, .5, dtype=np.float32)
+    lab = _edge_band(image, *new, offsets, fractions=stations / length)
+    if lab is None or len(offsets) < 30:
+        return True
+    mid = np.arange(14, len(offsets) - 14)
+    center = np.median(lab[:, mid[:, None] + np.arange(-1, 2)], axis=2)
+    stripe = np.zeros(center.shape[:2], bool)
+    for near, far in ((3, 7), (6, 12)):
+        flank = np.arange(near, far + 1)
+        before = np.median(lab[:, mid[:, None] - flank], axis=2)
+        after = np.median(lab[:, mid[:, None] + flank], axis=2)
+        a, b = center - before, center - after
+        first, second = np.linalg.norm(a, axis=2), np.linalg.norm(b, axis=2)
+        stripe |= ((first >= 3) & (second >= 3) & ((a * b).sum(axis=2) >= .55 * first * second)
+                   & (np.linalg.norm(before - after, axis=2) <= 8.5)
+                   & (np.minimum(before[..., 0], after[..., 0]) >= 203))
+    stripe &= offsets[mid][None] <= reach[:, None] - 3
+    first, last = np.meshgrid(
+        np.arange(2., reach[0] - 2.9, .75, dtype=np.float32),
+        np.arange(2., reach[-1] - 2.9, .75, dtype=np.float32), indexing="ij",
+    )
+    plausible = np.abs(first - last) < max(18., min(72., .041 * length))
+    along = (stations - stations[0]) / (stations[-1] - stations[0])
+    columns = np.arange(len(stations))[None]
+    endpoints = np.column_stack((first[plausible], last[plausible]))
+    for start in range(0, len(endpoints), 256):
+        starts, stops = endpoints[start:start + 256].T
+        paths = starts[:, None] * (1 - along) + stops[:, None] * along
+        indices = np.rint((paths - 7.) * 2).astype(np.int32)
+        hit = np.zeros(indices.shape, bool)
+        for shift in (-1, 0, 1):
+            row = indices + shift
+            hit |= ((row >= 0) & (row < stripe.shape[1])
+                    & stripe[columns, row.clip(0, stripe.shape[1] - 1)])
+        hit &= paths <= reach[None] - 3
+        counts = np.pad(hit.cumsum(axis=1, dtype=np.int32), ((0, 0), (1, 0)))
+        if np.any(counts[:, 26:] - counts[:, :-26] >= 19):
+            return True
+    return False
+
+
+def _bright_exterior_cap(image: np.ndarray, rail: np.ndarray, other: np.ndarray, *, at_end: bool) -> bool:
+    for side, terminal, samples in (
+        (rail, at_end, [-8, -5, -3, 4, 6, 8]),
+        (other, not at_end, [-8, -5, -3, 7, 9, 11]),
+    ):
+        points = np.r_[np.arange(12., 49., 2.), -np.arange(12., 49., 2.)] / np.linalg.norm(side[1] - side[0])
+        band = _edge_band(image, *side, samples, fractions=np.float32(1 - points if terminal else points))
+        if band is None:
+            return False
+        outer, inner = (np.median(pixels[..., 0], axis=1) for pixels in np.split(band, 2, axis=1))
+        near, past = np.split(outer - inner, 2)
+        if np.median(near) < 18 or np.quantile(near, .10) < 12 or abs(np.median(past)) > 8:
+            return False
+    return True
+
+
+def _cut_stock_mark(
+    image: np.ndarray, quad: np.ndarray, expanded: np.ndarray, rail: np.ndarray, cap: np.ndarray, *,
+    at_end: bool, depth: float, palette: np.ndarray,
+) -> np.ndarray | None:
+    tangent = rail[1] - rail[0]
+    tangent /= np.linalg.norm(tangent)
+    normal = np.float32([-tangent[1], tangent[0]])
+    along = -tangent if at_end else tangent
+    corners = cap + np.float32([[-12, -10], [120, -10], [120, depth + 40], [-12, depth + 40]]) @ np.vstack((along, normal))
+    low = np.floor(corners.min(axis=0)).astype(int)
+    high = np.ceil(corners.max(axis=0)).astype(int) + 1
+    if np.any(low < 0) or np.any(high > np.array(image.shape[1::-1])):
+        return None
+    left, top = low
+    right, bottom = high
+    lab = cv2.cvtColor(image[top:bottom, left:right], cv2.COLOR_BGR2Lab)
+    old = _outline_mask(quad.astype(np.float64) - low, lab.shape[:2]) > 0
+    new = _outline_mask(expanded.astype(np.float64) - low, lab.shape[:2]) > 0
+    dark = np.uint8(lab[..., 0] < palette[0] - 73)
+    _, labels, stats, _ = cv2.connectedComponentsWithStats(dark)
+    proposals = []
+    for label, (x, y, width, height, area) in enumerate(stats[1:], 1):
+        narrow, long = sorted((width, height))
+        if not (area >= 120 and 3 <= narrow <= 34 and 1.65 * narrow <= long <= 118):
+            continue
+        mark = labels == label
+        if not (.13 <= old[mark].mean() <= .85 and new[mark].all()):
+            continue
+        points = np.column_stack(np.nonzero(mark)[::-1]) + low
+        if not 2 <= np.min((points - rail[0]) @ normal) <= 20:
+            continue
+        binary_mark = np.uint8(mark)
+        outer_ring = cv2.dilate(binary_mark, np.ones((21, 21), np.uint8)) != 0
+        inner_ring = cv2.dilate(binary_mark, np.ones((7, 7), np.uint8)) != 0
+        surrounding = outer_ring & ~inner_ring & new
+        collar = [lab[surrounding & part] for part in (old, ~old)]
+        if any(len(side) < 60 or np.mean((side[:, 0] >= 199) & (np.linalg.norm(side[:, 1:] - palette[1:], axis=1) <= 10)) < .70
+               for side in collar):
+            continue
+        x1, y1 = np.maximum([left, top], [x + left - 13, y + top - 12])
+        x2, y2 = np.minimum([right - 1, bottom - 1], [x + left + width + 12, y + top + height + 14])
+        proposals.append(np.float32([[x1, y1], [x2, y1], [x2, y2], [x1, y2]]))
+    return proposals[0] if len(proposals) == 1 else None
+
+
+def marked_paper_margin_comparison(
+    image: np.ndarray, quad: np.ndarray, boundary: dict, claims: list[np.ndarray],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """Propose a separate held comparison that includes a mark cut by the working outline."""
+    earlier = [index for index, name in enumerate(_SIDE_NAMES) if (boundary.get(name) or {}).get("review_pale_stock_extension")]
+    if len(earlier) != 1:
+        return None
+    index = (earlier[0] + 2) % 4
+    after = (index + 1) % 4
+    outward = (boundary.get(_SIDE_NAMES[index]) or {}).get("outward_search") or {}
+    if not outward.get("print_rim_supported"):
+        return None
+    radius = outward["search_radius_px"]
+    old = quad[[index, after]]
+    fits = [_side_line(image, *old, reach, outward_only=True) for reach in (radius, max(8, radius - 18))]
+    if any(line is None or evidence["ambiguous"] or evidence["support"] < .96 or evidence["corner_support"] < .92
+           for line, evidence in fits):
+        return None
+    line = fits[0][0]
+    rail = np.float32(_line_endpoints(*old, line))
+    direction = rail[1] - rail[0]
+    depth = (old - rail) @ (np.float32([-direction[1], direction[0]]) / np.linalg.norm(direction))
+    if not (28 <= depth.min() <= depth.max() <= 105) or np.max(np.abs(rail @ fits[1][0][:2] + fits[1][0][2])) > .75:
+        return None
+    band = _edge_band(image, *rail, [-7, -5, -3, 3, 5, 7], fractions=np.linspace(.035, .965, 176, dtype=np.float32))
+    if band is None:
+        return None
+    outside, inside = (np.median(samples, axis=1) for samples in np.split(band, 2, axis=1))
+    supported = (inside[:, 0] >= 212) & (outside[:, 0] - inside[:, 0] >= 13)
+    if supported.mean() < .94 or min(part.mean() for part in np.array_split(supported, 4)) < .86:
+        return None
+    palette = np.median(inside, axis=0)
+    if np.linalg.norm(palette[1:] - 128) > 28 or not _continuous_pale_extension(image, rail, depth.min(), palette):
+        return None
+    expanded = _expand_stock_side(quad, index, line, radius, image.shape)
+    if expanded is None or _claimed_stock_addition(quad, expanded, claims):
+        return None
+    new = expanded[[index, after]]
+    marks = []
+    for companion in ((index - 1) % 4, after):
+        indices = [companion, (companion + 1) % 4]
+        reach = boundary[_SIDE_NAMES[companion]]["search_radius_px"]
+        adjacent, evidence = _side_line(image, *quad[indices], reach)
+        if adjacent is None or evidence["ambiguous"] or evidence["support"] < .91 or evidence["corner_support"] < .82:
+            continue
+        cap_fit = _replace_quad_side(expanded, companion, adjacent, reach, image.shape)
+        if cap_fit is None or np.linalg.norm(cap_fit[indices] - expanded[indices], axis=1).max() > 12:
+            continue
+        at_end = companion == after
+        if _bright_exterior_cap(image, cap_fit[[index, after]], cap_fit[indices], at_end=at_end):
+            cap = cap_fit[after if at_end else index]
+            mark = _cut_stock_mark(image, quad, expanded, new, cap, at_end=at_end, depth=float(depth.min()), palette=palette)
+            if mark is not None:
+                marks.append(mark)
+    if len(marks) != 1 or _interposed_stock_seam(image, new, old):
+        return None
+    added_strip = np.float32([old[0], new[0], new[1], old[1]])
+    return expanded, marks[0], added_strip

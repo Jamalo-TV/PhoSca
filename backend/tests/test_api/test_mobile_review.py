@@ -1573,6 +1573,50 @@ async def test_bowed_source_review_survives_preview_invalidation_and_small_manua
         assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
 
 
+async def test_new_claim_retires_marked_margin_comparison_and_preserves_both_holds(client, monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto
+    from app.pipeline.print_stock import MARKED_PAPER_MARGIN
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "false")
+    get_settings.cache_clear()
+    _, page_id, photo_id = await _seed_review_data()
+
+    def rect(left, top, right, bottom):
+        return [{"x": x, "y": y} for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
+
+    artifact = tmp_path / "marked-margin.png"
+    assert cv2.imwrite(str(artifact), np.full((20, 50, 3), 225, np.uint8))
+    held = {"status": "review_needed", "reason_codes": ["PRINT_OUTER_RIM_UNCERTAIN", "PRINT_ASPECT_UNCERTAIN"]}
+    async with get_session_factory()() as session:
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {"source": "yolo_seg_mask", "polygon": rect(.1, .2, .8, .80)}
+        photo.enhancement_applied = {**photo.enhancement_applied, "correction": {
+            "full_print_preview_path": str(artifact),
+            "crop_modes": {"image_only": held, "full_print": {
+                **held, "outline_preview": {"source": MARKED_PAPER_MARGIN, "source_outline": rect(.1, .2, .8, .94),
+                                            "source_search_band": rect(.1, .8, .8, .94)},
+                "source_strip_review": {"source": MARKED_PAPER_MARGIN, "source_outline": rect(.69, .76, .78, .93)},
+            }},
+        }}
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    asset = f"{url}/image?variant=full_print_preview"
+    assert (await client.get(asset)).status_code == 200
+    added = await client.post(f"/api/v1/pages/{page_id}/manual-photos", json={
+        "request_id": str(uuid4()), "warp_quad": rect(.13, .84, .46, .96),
+    })
+    assert added.status_code == 201, added.text
+    after = (await client.get(url)).json()["enhancement_applied"]["correction"]
+    assert after["crop_modes"] == {"full_print": held, "image_only": held}
+    assert (await client.get(asset)).status_code == 404
+    for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+        assert (await client.get(f"{url}/image?variant={variant}")).status_code == 404
+
+
 @pytest.mark.parametrize("guide", ["image_only", "outside_motif", "full_print"])
 async def test_new_paper_claim_retires_intersecting_open_crop_guides(client, monkeypatch, guide):
     from app.config import get_settings

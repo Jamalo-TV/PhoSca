@@ -1,3 +1,4 @@
+from copy import deepcopy
 from pathlib import Path
 
 import cv2
@@ -9,7 +10,7 @@ from app.pipeline.decisions import MOTIF_MARGIN_MARKS_REVIEW
 from app.pipeline.geometry import normalized_vertices_to_pixels
 from app.pipeline.perspective import correct_photo_crop, validate_review_quads
 from app.pipeline.print_edges import refine_print_boundary
-from app.pipeline.print_stock import recover_pale_stock_preview
+from app.pipeline.print_stock import MARKED_PAPER_MARGIN, marked_paper_margin_comparison, recover_pale_stock_preview
 
 
 def _vertices(points, image):
@@ -90,6 +91,77 @@ def test_pale_stock_working_raster_does_not_reclassify_a_neighbor(
     assert full["reason_codes"] == motif["reason_codes"] == expected
     assert full.get("sampling") == (None if occluded else OWNED_BILINEAR)
     assert result.image_only is None and result.image_only_preview is None
+
+
+@pytest.fixture
+def marked_pale_margin():
+    page = np.full((940, 970, 3), (84, 72, 53), np.uint8)
+    page[744:] = (248, 251, 253)
+    page[125:821, 100:761] = (217, 226, 234)
+    page[195:732, 150:730] = (150, 116, 94)
+    page[756:808, 743:756] = (35, 41, 39)
+    return page, _rect(125, 125, 760, 779)
+
+
+def test_marked_margin_comparison_is_separate_and_preserves_both_holds(marked_pale_margin, monkeypatch):
+    from app.pipeline import perspective
+    from app.pipeline.crop_sampling import _outline_mask
+
+    page, current = marked_pale_margin
+    seed = _rect(125, 166, 760, 779)
+    refined, evidence, _ = refine_print_boundary(page, seed)
+    monkeypatch.setattr(perspective, "refine_print_boundary", lambda *_args, **_kwargs: (
+        refined, deepcopy(evidence), ["PRINT_OUTER_RIM_UNCERTAIN"],
+    ))
+    monkeypatch.setattr(perspective, "_outer_contour_hypothesis", lambda *_args: None)
+    dimensions = perspective._crop_dimensions
+
+    def held_aspect(*args, **kwargs):
+        width, height, aspect, _ = dimensions(*args, **kwargs)
+        return width, height, aspect, ["PRINT_ASPECT_UNCERTAIN"]
+
+    monkeypatch.setattr(perspective, "_crop_dimensions", held_aspect)
+    mask = {"source": "yolo_seg_mask", "detector_source": "yolo_onnx", "polygon": _vertices(seed, page)}
+    box = _box(125, 166, 760, 779, page)
+    with monkeypatch.context() as baseline:
+        baseline.setattr(perspective, "marked_paper_margin_comparison", lambda *_args: None)
+        original = _crop(page, box, mask, dual_mode=True, enable_classical_retry=True)
+    compared = _crop(page, box, mask, dual_mode=True, enable_classical_retry=True)
+    modes = compared.metadata["crop_modes"]
+    full = dict(modes["full_print"])
+    preview = full.pop("outline_preview")
+    assert full.pop("source_strip_review")["source"] == preview["source"] == MARKED_PAPER_MARGIN
+    assert {**modes, "full_print": full} == original.metadata["crop_modes"]
+    assert all(mode["status"] == "review_needed" for mode in modes.values())
+    np.testing.assert_array_equal(compared.rectified_untrimmed, original.rectified_untrimmed)
+    assert compared.image_only is None and compared.image_only_preview is None
+    assert compared.full_print_preview.shape == (696, 636, 3)
+    assert preview["sampling"] == OWNED_BILINEAR
+    outline = np.float64([(p["x"] * 969, p["y"] * 939) for p in preview["source_outline"]])
+    revised = _outline_mask(outline, page.shape[:2]) > 0
+    assert not ((_outline_mask(current.astype(np.float64), page.shape[:2]) > 0) & ~revised).any()
+    assert revised[756:808, 743:756].all()
+
+
+@pytest.mark.parametrize("case", ["missing_mark", "separated_mark", "parallel_stock", "oblique_stock", "claimed_strip"])
+def test_marked_margin_requires_a_continuous_unclaimed_paper_strip(marked_pale_margin, case):
+    from app.pipeline.print_stock import _interposed_stock_seam
+
+    page, quad = marked_pale_margin
+    if case == "missing_mark":
+        page[756:808, 743:756] = (217, 226, 234)
+    elif case == "separated_mark":
+        page[781:786, 743:756] = (217, 226, 234)
+    elif case == "parallel_stock":
+        page[798:800, 128:700] = (225, 233, 240)
+    elif case == "oblique_stock":
+        cv2.line(page, (132, 789), (686, 809), (225, 233, 240), 2)
+    if case in {"parallel_stock", "oblique_stock"}:
+        assert _interposed_stock_seam(page, _rect(125, 125, 760, 820)[2:], quad[2:])
+    evidence = refine_print_boundary(page, quad)[1]
+    evidence["top"]["review_pale_stock_extension"] = {"side": "top"}
+    claims = [_rect(290, 805, 330, 840)] if case == "claimed_strip" else []
+    assert marked_paper_margin_comparison(page, quad, evidence, claims) is None
 
 
 def test_disputed_paper_grid_comparison_checks_current_fragment_and_neighbor_claims():
