@@ -12563,3 +12563,57 @@ actual raster hashes, historical album assignments and the complete
 development selection inventory remain unverified. This is lineage
 evidence with zero additional release groups.
 [Publisher dataset configuration](https://github.com/ultralytics/ultralytics/blob/v8.2.100/ultralytics/cfg/datasets/coco.yaml)
+
+## Show a visible album window edge above overlapping claims
+
+An ordinary Rudge 13 upload with the registered `1e95a1a9` checkpoint
+returned five active rows and no deferred proposals. Four separately
+registered development prints each miss a 0.85 overlap, with best IoUs
+of 0.131, 0.140, 0.384, and 0.376. The current rows include two leaf-scale
+outlines, a dark vacant aperture, and two broad overlapping masks over
+much of the right leaf. All ten named crop variants stayed held.
+
+The count review can now show one open 203.46-native-pixel line on the
+right of the upper window. The helper requires two aligned classical
+leaf outlines, a measured gutter on the opposite leaf, and two
+contained model masks scoring below 0.50 that overlap at least 0.55 IoU.
+It probes the upper leaf in two fixed local-darkness passes. A single
+textured component must agree across the two passes at 0.90 IoU or
+better. The outer and lower sides each need at least 85% source fit
+support and signed native lightness support on at least 90% of the
+sampled stations, with at least 80% in each quarter. Both candidate
+fits must agree where a line is displayed.
+
+The lower line and the lower portion of the right line enter an
+overlapping model proposal. The published part clears those proposals
+by 15 native pixels. A newer saved paper claim can retire the line.
+The mark is `mounted_window_review_traces` on the count task. It does
+not create a closed outline or a crop proposal. The separately aligned
+scan, checked only after discovery, places the visible right line
+about 9–11 native pixels inside the physical stock edge. A laboratory
+control with a dark empty aperture fails the texture test. Printed
+decoration and a one-sheet facsimile can reproduce the same optical
+edge. The original crop bytes and count state are preserved in the
+paired native workflow.
+
+An ordinary JPEG75 upload finds the same right rail and displays
+290.67 native pixels. Its overlapping model mask begins farther down,
+so more of the observed line clears the source band. Both modes still
+require review. JPEG55 has only one of the two required weak masks
+on that leaf and abstains from the new guide. The full optional source stage took 481 ms on the
+native upload during concurrent test runs. The synthetic checks cover
+an empty aperture, a credible claim over the opening, clipping at a
+low-confidence claim, and retirement of the stored count hint.
+Desktop and mobile show the line on the source page with no writes.
+Rudge 12 keeps its existing opening, source-strip, and leaf count cues
+without receiving the new page hint. All eight benchmark runs retain
+the previous detection, crop, and review scores.
+
+The Canadian Centre for Architecture documents a single Hazen Sise
+album and the dismount of its 17 prints. The exact removed print
+`ARCH280068` has catalogue stock measurements and a linked negative.
+The mounted leaf, independently measured motif and image-specific
+reuse grant are unresolved. The public exact image request returned
+HTTP 403. This source check adds no release group.
+[Finding aid](https://www.cca.qc.ca/en/archives/237454/fonds-hazen-sise/407902/ciam-iv-cirpac-and-london) ·
+[Print catalogue](https://www.cca.qc.ca/en/search/details/collection/object/489589)

@@ -212,7 +212,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     setMeasuredEdge(null);
   }, [item.page_id]);
   const measuredTraces = measuredEdge?.pageId === item.page_id ? measuredEdge?.traces : null;
-  const { traces: missingTraces, hint: missingPrintEdgeHint, sceneTransition } = missingPrintReview;
+  const { traces: missingTraces, hint: missingPrintEdgeHint, sceneTransition, mountedWindow } = missingPrintReview;
   const visibleTraces = showMissingEdges ? [...missingTraces, ...(measuredTraces || [])] : measuredTraces;
   const sourceBox = item.payload?.bounding_box;
   const detections = sourceBox ? [{ bounding_box: sourceBox, photo_id: item.payload?.photo_id }] : (item.payload?.detections || []);
@@ -795,7 +795,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         {missingTraces.length > 0 && (
           <button className="magnifier-toggle" type="button" aria-pressed={showMissingEdges}
             onClick={() => setShowMissingEdges(!showMissingEdges)}>
-            {sceneTransition ? "Farbübergang am Original prüfen" : "Möglichen weiteren Abzug prüfen"}
+            {mountedWindow ? "Mögliches Albumfenster prüfen" : sceneTransition ? "Farbübergang am Original prüfen" : "Möglichen weiteren Abzug prüfen"}
           </button>
         )}
         {Boolean(measuredTraces?.length) && <button className="magnifier-toggle" type="button"
@@ -804,7 +804,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     )}
     {showMissingEdges && missingTraces.length > 0 && (
       <p className="quad-hint">{missingPrintEdgeHint}
-        {!sceneTransition && !deferredProposals.length && " Einen eigenen Abzug kannst du im Desktop-Editor ergänzen."}
+        {!mountedWindow && !sceneTransition && !deferredProposals.length && " Einen eigenen Abzug kannst du im Desktop-Editor ergänzen."}
       </p>
     )}
     {countOutlines.length > 0 && <p className="quad-hint" id="mobile-fragment-count-review-hint">{fragmentCountHint}</p>}

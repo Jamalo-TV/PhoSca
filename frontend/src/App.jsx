@@ -1426,7 +1426,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const pageId = page?.id;
   const measuredTraces = measuredEdge?.pageId === pageId ? measuredEdge?.traces : null;
   const segmentation = page?.processing_metadata?.steps?.segmentation;
-  const { traces: missingTraces, hint: missingPrintEdgeHint, sceneTransition } = useMemo(() => getMissingPrintEdgeReview(segmentation), [segmentation]);
+  const { traces: missingTraces, hint: missingPrintEdgeHint, sceneTransition, mountedWindow } = useMemo(() => getMissingPrintEdgeReview(segmentation), [segmentation]);
   const pendingProposals = page?.processing_metadata?.steps?.segmentation?.fusion?.deferred_print_proposals;
   const deferredProposals = useMemo(() => getDeferredPrintProposals(pendingProposals), [pendingProposals]);
   const activePage = useRef(pageId);
@@ -2368,7 +2368,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             {missingTraces.length > 0 && (
               <button className="text-button compact" type="button" aria-pressed={showMissingEdges}
                 onClick={() => setShowMissingEdges(!showMissingEdges)}>
-                {sceneTransition ? "Farbübergang am Original prüfen" : "Möglichen weiteren Abzug prüfen"}
+                {mountedWindow ? "Mögliches Albumfenster prüfen" : sceneTransition ? "Farbübergang am Original prüfen" : "Möglichen weiteren Abzug prüfen"}
               </button>
             )}
             {Boolean(measuredTraces?.length) && <button className="text-button compact" type="button"

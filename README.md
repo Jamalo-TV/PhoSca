@@ -1588,6 +1588,18 @@ PhoSca die zusätzlichen Linien. Die Hinweise führen zu keiner
 geschlossenen Motivkontur und können keinen Export freigeben.
 [Beispiel U075](data/evaluation/README.md#measure-a-held-motif-side-beyond-the-rectified-preview)
 
+Bei einer gebundenen Doppelseite kann «Mögliches Albumfenster prüfen»
+einen sichtbaren Kantenabschnitt im Original zeigen. PhoSca braucht
+dafür eine gemessene Buchfalz und zwei überlappende, schwache
+Fotovorschläge auf einer der beiden Albumseiten. Die Öffnung muss in
+zwei Kontrastmessungen übereinstimmen und Bildstruktur enthalten. Die
+App zeigt nur den Teil der Kante mit Abstand zu bestehenden
+Vorschlägen. Der Papierrand kann unter der Albumseite liegen. Die
+Markierung wirkt deshalb nur in der Zählprüfung. Sie liefert keinen
+neuen Abzug oder Zuschnitt. Eine gespeicherte Kontur im Messbereich
+entfernt den Hinweis.
+[Beispiel Rudge 13](data/evaluation/README.md#show-a-visible-album-window-edge-above-overlapping-claims)
+
 Eine manuelle Geometriekorrektur löscht die automatische
 `segmentation_confidence`. Die Geometrie-, Zuordnungs- und
 Samplingprüfungen gelten weiterhin. Bei einem Hinweis auf eine

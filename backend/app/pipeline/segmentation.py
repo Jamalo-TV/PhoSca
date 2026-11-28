@@ -63,6 +63,7 @@ from app.pipeline.merged_print_review import (
     measured_merged_print_pair, measured_merged_print_with_one_tile,
 )
 from app.pipeline.mounted_prints import mounted_print_evidence
+from app.pipeline.mounted_window_review import MOUNTED_WINDOW_REVIEW_TRACES, mounted_window_traces
 from app.pipeline.multipanel_prints import (
     FILM_GRID_REVIEW, GRID_OUTLINE_REVIEW_SOURCE, MULTIPANEL_PRINT_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW,
     RECOVERED_STOCK_SOURCE,
@@ -4120,6 +4121,60 @@ def _flag_album_leaf_count_review(image: np.ndarray, result: SegmentationResult)
     return SegmentationResult(updated, result.metadata)
 
 
+def _offer_mounted_window_review(source: np.ndarray, result: SegmentationResult) -> SegmentationResult:
+    if not result.metadata.get("fallback_used") or not 4 <= len(result.detections) <= 8:
+        return result
+    leaves = []
+    for item in result.detections:
+        fusion = item.mask.get("fusion") or {}
+        if (not item.geometry_valid or item.review_reasons or item.mask.get("warp_quad")
+                or item.mask.get("source") != "classical_border_quad" or item.mask.get("detector_source") != "edge_contour"
+                or "classical" not in fusion.get("proposal_families", ()) or fusion.get("proposal_count") not in (1, 2)):
+            continue
+        outline = _detection_polygon(item)
+        if len(outline) == 4 and cv2.isContourConvex(outline) and .18 <= cv2.contourArea(outline) <= .48:
+            leaves.append((item, order_quad_cyclic(outline)))
+    if len(leaves) != 2:
+        return result
+    leaves.sort(key=lambda leaf: leaf[1][:, 0].mean())
+    (_, left), (_, right) = leaves
+    gap = right[[0, 3]] - left[[1, 2]]
+    if np.any(gap[:, 0] < 0) or np.any(gap[:, 0] > .16) or np.any(np.abs(gap[:, 1]) > .15):
+        return result
+
+    candidates = []
+    for index, (leaf, outline) in enumerate(leaves):
+        overlapping = []
+        for item in result.detections:
+            if item.mask.get("detector_source") != "yolo_onnx" or not item.geometry_valid or not .25 <= item.confidence < .50:
+                continue
+            polygon = _detection_polygon(item)
+            if (normalized_polygon_overlap(outline, polygon, raster_size=512).second_containment >= .97
+                    and np.ptp(polygon[:, 0]) >= .72 * np.ptp(outline[:, 0])):
+                overlapping.append(item)
+        if len(overlapping) == 2 and normalized_polygon_overlap(*map(_detection_polygon, overlapping), raster_size=512).iou >= .55:
+            candidates.append((index, leaf, outline, overlapping))
+    if len(candidates) != 1:
+        return result
+    (index, leaf, outline, overlapping), = candidates
+    height, width = source.shape[:2]
+    binding_side = leaves[1 - index][1]
+    try:
+        if not album_leaf_review_traces(source, normalized_vertices_to_pixels(binding_side, width, height)):
+            return result
+        peers = [item for item in result.detections if item is not leaf and all(item is not peer for peer in overlapping)]
+        claims = _tiled_review_claims(SegmentationResult(peers, result.metadata))
+        traces = mounted_window_traces(source, normalized_vertices_to_pixels(outline, width, height),
+                                       1 if index else 3, claims, [item.mask for item in overlapping])
+    except (ValueError, cv2.error, np.linalg.LinAlgError):
+        return result
+    if not traces:
+        return result
+    return SegmentationResult(result.detections, {**result.metadata, MOUNTED_WINDOW_REVIEW_TRACES: [
+        _normalized_polygon(trace, width, height) for trace in traces
+    ]})
+
+
 def _offer_projective_print_review(image: np.ndarray, result: SegmentationResult) -> SegmentationResult:
     metadata = result.metadata
     fusion = metadata.get("fusion") or {}
@@ -4766,6 +4821,8 @@ def segment_album_page(
         if source is not None and tile_review_search:
             result = _record_contested_tile_followup(source, image, result, tile_review_search[0])
             result = _offer_contested_scene_edge(source, image, result, tile_review_search[0], settings.yolo_confidence_threshold)
+        if source is not None:
+            result = _offer_mounted_window_review(source, result)
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership

@@ -57,6 +57,7 @@ from app.pipeline.faint_paper_review import (
     ADJACENT_FAINT_PAPER_STEPS, FAINT_PAPER_REVIEW_REQUIRES_CONFIRMATION, FAINT_PAPER_WITNESS_MARGIN,
 )
 from app.pipeline.motif_margin import HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE
+from app.pipeline.mounted_window_review import MOUNTED_WINDOW_REVIEW_TRACES, MOUNTED_WINDOW_SOURCE_MARGIN
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
 from app.pipeline.neighboring_print_review import FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_PRINT_EDGE_TRACES
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
@@ -361,6 +362,11 @@ def _claim_missing_print_trace(
         outline, scene_traces, width, height,
     ):
         segmentation.pop(CONTESTED_SCENE_EDGE_TRACES)
+        changed = True
+    if (window_traces := segmentation.get(MOUNTED_WINDOW_REVIEW_TRACES)) and review_traces_intersect_claim(
+        window_traces, {"polygon": outline}, width, height, margin_px=MOUNTED_WINDOW_SOURCE_MARGIN,
+    ):
+        segmentation.pop(MOUNTED_WINDOW_REVIEW_TRACES)
         changed = True
     guide = segmentation.get(FOLLOWUP_PRINT_EDGE_GUIDE) or {}
     if guide and (

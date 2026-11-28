@@ -240,6 +240,7 @@ export const possiblePrintRegionsHint = "Die hellblau gepunkteten Umrisse markie
 const possiblePrintRegionsReason = "POSSIBLE_PRINT_REGIONS_REVIEW";
 const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
 const contestedSceneEdgeHint = "Prüfe die markierten Übergänge am Original. Ein Farbwechsel kann auch innerhalb eines einzigen Druckbogens liegen.";
+const mountedWindowHint = "Prüfe den markierten Übergang zwischen Bild und Umgebung am Original. Der Papierrand kann verdeckt sein.";
 const nearCapturePrintEdgeHint = "Die blauen Abschnitte markieren sichtbare Kanten eines möglichen Abzugs am Aufnahmerand. Die Ecke am Rand bleibt offen. Prüfe am Original, ob dort ein eigener Abzug liegt.";
 const curvedMotifReviewReason = "IMAGE_BOUNDARY_CURVED";
 const curvedMotifReviewHint = "Die Motivkante verläuft unregelmässig. Prüfe am Original, welche Bildfelder und Beschriftungen zum Motiv gehören.";
@@ -282,12 +283,14 @@ export function getSourceEdgeTraces(traces) {
 export function getMissingPrintEdgeReview(metadata) {
   const nearCaptureTraces = getSourceEdgeTraces(metadata?.near_capture_print_edge_traces);
   const sceneTraces = getSourceEdgeTraces(metadata?.contested_scene_edge_traces).filter((trace) => trace.length === 2);
+  const windowTraces = getSourceEdgeTraces(metadata?.mounted_window_review_traces).filter((trace) => trace.length === 2);
   const otherTraces = [...getSourceEdgeTraces(metadata?.missing_print_edge_traces),
     ...getSourceEdgeTraces(metadata?.neighboring_print_edge_traces).filter((trace) => trace.length === 2),
     ...getSourceEdgeTraces(metadata?.followup_print_edge_guide?.traces).filter((trace) => trace.length === 2)];
   const sceneTransition = sceneTraces.length > 0;
-  return { traces: [...otherTraces, ...nearCaptureTraces, ...sceneTraces], sceneTransition,
-    hint: sceneTransition ? contestedSceneEdgeHint
+  const mountedWindow = windowTraces.length > 0;
+  return { traces: [...otherTraces, ...nearCaptureTraces, ...sceneTraces, ...windowTraces], sceneTransition, mountedWindow,
+    hint: mountedWindow ? mountedWindowHint : sceneTransition ? contestedSceneEdgeHint
       : nearCaptureTraces.length > 0 && !otherTraces.length ? nearCapturePrintEdgeHint : missingPrintEdgeHint };
 }
 
