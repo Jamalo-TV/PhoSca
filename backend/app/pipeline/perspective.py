@@ -2160,6 +2160,7 @@ def correct_photo_crop(
                                for side in boundary_refinement.values())
     owned_sampling = dual_mode and (
         set(full_reasons) <= _CROP_PREVIEW_REASONS
+        or (manual and protection["passed"] and full_reasons == ["PRINT_ASPECT_UNCERTAIN"])
         or checked_contrast_outline
         or mask.get("capture_edge_clipped") is True
         or ((stock_suggestion or ribbed_side_fit or pale_stock_extension)

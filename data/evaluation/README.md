@@ -13230,3 +13230,24 @@ selection as before and matched both earlier JPEG digests. An older
 already saved decision can remove the line by reprocessing its
 preview. The replay receipts are local under
 `/tmp/phosca-stevekm-workflow-current/`.
+
+### Keep confirmed paper pixels in the unmeasured preview
+
+The exact Desktop geometry edit on that JPEG75 confirms a four-point
+paper outline and leaves the dimensions empty. Both named exports
+stay held for `PRINT_ASPECT_UNCERTAIN`. The saved 609 × 781 review
+image formerly used ordinary bilinear interpolation, which can take
+samples from outside the confirmed outline.
+
+Precise manual correction now uses owned bilinear interpolation
+when the protection checks pass and only the aspect needs review.
+The rule also applies when reprocessing that saved geometry. On the
+same native source, an independent raster measured 470,058 source
+centres inside the confirmed quad. Replacing every pixel outside
+that quad with black and then white changed 2,749 output pixels with
+ordinary bilinear interpolation and zero with owned interpolation.
+The quad, homography and review reasons reproduced their earlier
+values. The two later manual exports and their reprocessed copies
+stayed byte-identical. The comparison PNG also stayed identical.
+The revised working JPEG and the source audit are recorded under
+`/tmp/phosca-stevekm-workflow-current/ui-scope-owned/`.

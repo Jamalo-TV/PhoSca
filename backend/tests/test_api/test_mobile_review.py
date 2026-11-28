@@ -3994,6 +3994,7 @@ async def test_measured_print_size_recovers_both_oblique_crops_and_survives_repr
     assert unmeasured.status_code == 200, unmeasured.text
     correction = unmeasured.json()["enhancement_applied"]["correction"]
     assert correction["crop_modes"]["full_print"]["reason_codes"] == ["PRINT_ASPECT_UNCERTAIN"]
+    assert correction["crop_modes"]["full_print"]["sampling"] == "owned_bilinear"
     saved_review = unmeasured.json()["saved_full_print_review_url"]
     assert saved_review == f'{url}/image?variant=saved_full_print_review&v={correction["untrimmed_asset_id"]}'
     image_review = await client.get(saved_review)
