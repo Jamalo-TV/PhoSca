@@ -13374,3 +13374,86 @@ available metadata provides no independent paper and motif
 geometry for the same physical print. Neither catalog record
 establishes an eligible release group. No reserved release images
 were opened or scored.
+
+## Test a bounded continuation of the authored detector
+
+A single 12-epoch warm start reused the documented architecture-only
+detector. Its exact parent ONNX is `7eb23be8…` and its parent
+PyTorch checkpoint SHA-256 is
+`3621b71815d38a6fc04019427e14620fb08faaaf77b459915a1b41a9a0fed334`.
+The pinned inventory SHA-256 is
+`1161305191b4a9f407b99a571c108a09d0ae0a7148d15fb374fc05242e4e5bd9`.
+The preflight rechecked all 265 encoded images, decoded rasters and
+labels in the unchanged 200 training and 65 selection split. The
+source index carries 151 and 47 authored source groups respectively.
+It contains source files and sample hashes, seeds and split
+assignments. The inputs are authored pages with four CC0 surface
+textures. Calibration and release data were outside the experiment.
+[Tracked source index](detector-authored-union-training-sources.csv)
+
+The run reset AdamW, used seed 0 with deterministic operations,
+512 × 512 input, batch 8 and cosine decay from a learning rate of
+0.00035. The existing selection split chose the epoch 12
+checkpoint. Authored selection mask mAP50–95 improved from 0.78258
+to 0.83563. The exported ONNX SHA-256 is
+`f487a3ab648c513c05e4b4445b37995f1b2600655243c15ac9c53b4e5335e37b`.
+Training took about 26 minutes on the shared CPU worker.
+
+Paired development runs used `f296103`, the same decoded rasters
+and reference digests, 0.25 and 0.70 detection thresholds, 0.85
+instance matching IoU and the same classical fallback.
+The frozen synthetic detection run retained 18 of 18 matches
+and dropped all six extras from the parent. Automatic proposal
+geometry passed 4 of 11 recoverable whole prints in both runs
+and 4 to 5 of 12 recoverable motifs. The white-margin print and
+the second touching-print example lost both previous geometry
+passes. Other examples account for the net gain in motif passes.
+Mean whole-print cutoff decreased from 3.55% to 1.74% while mean
+foreign source weight increased from 1.27% to 1.82%.
+
+On the ten Golden development views, both models matched 14 of
+29 prints. False proposals increased from 30 to 46. The split
+diagnostic rose from four to six and one combined print appeared.
+The earlier detection and final instance scores agree within each arm.
+The current mixed development comparator previously matched
+29 of 29 there. The authored warm start fails the paired
+comparison and remains a development artifact.
+
+On the seven real development views, matches fell from 22 of 24
+to 21 of 24 and false proposals rose from 10 to 37. These views
+include derivatives of the same flatbed source. The additional
+miss is on its JPEG75 blur derivative. The unmodified original
+still matches all four prints and adds seven false proposals.
+The differences are present at the first scored detection stage.
+The pinned Domoritz original localizes those seven additions.
+The parent emits zero ONNX proposals at the fixed floor and
+classical fallback supplies all four matches. The continuation
+emits seven additional ONNX masks on the same source raster.
+Their best draft-mask IoUs range from 0.161 to 0.396. Fusion
+retains all seven and the same four classical matches. The
+extra proposals therefore precede perspective correction.
+On the 38-print Spiral development set both runs have zero
+matches. The number of false proposals rises from 10 to 89.
+
+The matched 24-view ownership controls use the same twelve
+source configurations as one joined multipanel print and as
+two separate neighboring prints. On the joined controls,
+matches rise from 3 to 5 of 12 and extra proposals rise from
+56 to 83. On the adjacent separate prints, matches fall from
+1 of 24 to zero and extras rise from 60 to 84. Both modes are
+held across all proposals in both runs. This check rules out
+using the joined-only gain to justify adoption.
+
+The ordinary upload and export replay on native Scan 63 measured
+the candidate against the mixed development comparator with one
+model change. The two ONNX masks became 1.528 and 1.456 times
+their previous areas. Against the provisional visible-scene
+outlines, upper and lower mask IoU fell from 0.825 and 0.623 to
+0.543 and 0.441. The corresponding whole-print footprint IoU
+fell from 0.838 and 0.633 to 0.550 and 0.455. The two broad classical
+proposals were present in both runs. All named crop downloads
+returned HTTP 404. No encoded or decoded Scan 63 match was found
+in the 265 fitted and selection inputs.
+
+Reproduction commands, checksums and per-page measurements are
+recorded locally under `runs/crop-quality/authored-warm12/`.
