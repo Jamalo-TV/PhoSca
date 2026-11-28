@@ -31,7 +31,7 @@ from app.pipeline.manual_paper_boundary import (
     PAPER_CLAIM_OVERLAP_CHECKS, contrast_outline_check_pending, manual_paper_grid_count_review, paper_claims_need_overlap_check,
     measured_print_outline_needs_review,
 )
-from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
+from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
 from app.pipeline.mounted_window_review import MOUNTED_LOWER_WINDOW_REVIEW, MOUNTED_WINDOW_REVIEW_TRACES
 from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES
 from app.pipeline.neighboring_print_review import FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_PRINT_EDGE_TRACES, NEIGHBORING_SOURCE_GUIDE
@@ -398,7 +398,7 @@ def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[Extrac
     return selected
 
 
-def _confirmed_paper_grid_fragments(payload: MobileReviewAnswer, context: dict) -> list[ExtractedPhoto]:
+def _confirmed_paper_grid(payload: MobileReviewAnswer, context: dict) -> tuple[ExtractedPhoto, list[ExtractedPhoto]]:
     if payload.reason_code != "same_physical_print":
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="paper_grid_confirmation_required")
     parent_id = payload.metadata.get("paper_grid_parent_id")
@@ -438,7 +438,19 @@ def _confirmed_paper_grid_fragments(payload: MobileReviewAnswer, context: dict) 
                 or (photo_id == parent_id and len((modes.get("full_print") or {}).get("suggested_warp_quad") or []) != 4)
                 or any((modes.get(mode) or {}).get("status") != "review_needed" for mode in ("full_print", "image_only"))):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="paper_grid_review_group_stale")
-    return [active[photo_id] for photo_id in fragment_ids]
+    return active[parent_id], [active[photo_id] for photo_id in fragment_ids]
+
+
+def _retire_confirmed_paper_grid_cuts(parent: ExtractedPhoto) -> None:
+    metadata = parent.enhancement_applied or {}
+    full_mode = ((metadata.get("correction") or {}).get("crop_modes") or {}).get("full_print") or {}
+    preview = full_mode.get("outline_preview")
+    if (not isinstance(preview, dict) or preview.get("source") != DISPUTED_GRID_PREVIEW_SOURCE
+            or "projected_grid_cuts" not in preview):
+        return
+    updated = deepcopy(metadata)
+    updated["correction"]["crop_modes"]["full_print"]["outline_preview"].pop("projected_grid_cuts")
+    parent.enhancement_applied = updated
 
 
 def _record_rejected_detection(photo: ExtractedPhoto, metadata: dict) -> None:
@@ -499,6 +511,8 @@ def _apply_review_decision(event: ReviewEvent, payload: MobileReviewAnswer, cont
                 metadata["review_reasons"] = list(dict.fromkeys([*reasons, "GEOMETRY_REVIEW_WRONG_OBJECT"]))
                 photo.enhancement_applied = metadata
                 photo.status = PhotoStatus.review_needed
+            if payload.answer == CONFIRM_SHARED_PAPER_GRID:
+                _retire_confirmed_paper_grid_cuts(context["paper_grid_parent"])
             page.processing_metadata = {**(page.processing_metadata or {}), "photo_count_revision": str(event.id)}
             return
         state = (
@@ -620,7 +634,7 @@ async def add_review_event(
         if payload.answer in GROUP_EXCLUSIONS:
             context["excluded_group"] = _group_for_review(payload, context)
         elif payload.answer == CONFIRM_SHARED_PAPER_GRID:
-            context["excluded_group"] = _confirmed_paper_grid_fragments(payload, context)
+            context["paper_grid_parent"], context["excluded_group"] = _confirmed_paper_grid(payload, context)
 
     if payload.task_type == "geometry" and payload.answer == "correct":
         photo = context["photo"]

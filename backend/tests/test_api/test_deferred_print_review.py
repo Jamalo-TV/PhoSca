@@ -518,9 +518,9 @@ def _paper_grid_bounds(quad):
     return {"x1": quad[0]["x"], "y1": quad[0]["y"], "x2": quad[2]["x"], "y2": quad[2]["y"]}
 
 
-async def _upload_disputed_paper_grid(client, monkeypatch):
+async def _upload_disputed_paper_grid(client, monkeypatch, *, include_film=False):
     from app.config import get_settings
-    from app.pipeline.multipanel_prints import PAPER_GRID_REVIEW
+    from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW
     from app.pipeline.segmentation import SegmentationDetection, SegmentationResult
     from app.services import pipeline
 
@@ -536,17 +536,24 @@ async def _upload_disputed_paper_grid(client, monkeypatch):
     outer = _paper_grid_vertices(196, 21, 374, 234)
     parent = _paper_grid_vertices(208, 31, 366, 233)
     fragments = [_paper_grid_vertices(211, 111, 360, 226), _paper_grid_vertices(211, 151, 360, 226)]
-    neighbor = _paper_grid_vertices(24, 32, 192, 228)
+    neighbors = [_paper_grid_vertices(24, 32, 192, 228)]
+    if include_film:
+        fragments = fragments[:1]
+        neighbors = [_paper_grid_vertices(24, top, 192, bottom)
+                     for top, bottom in [(32, 91), (98, 154), (161, 228)]]
     detections = []
-    for index, polygon in enumerate([parent, *fragments, neighbor]):
+    for index, polygon in enumerate([parent, *fragments, *neighbors]):
         mask = {"source": "classical_border_quad" if index == 0 else "yolo_seg_mask", "polygon": polygon}
         mask["detector_source"] = "contrast_region" if index == 0 else "yolo_onnx"
         reasons = []
-        if polygon != neighbor:
+        if index <= len(fragments):
             mask["paper_grid_review"] = {"outline": outer}
             if polygon in fragments:
                 mask["paper_grid_review"]["cut"] = polygon[:2]
             reasons.append(PAPER_GRID_REVIEW)
+        elif include_film:
+            mask["film_grid_review_seam"] = _paper_grid_vertices(193, 32, 193, 228)[::2]
+            reasons.append(FILM_GRID_REVIEW)
         detections.append(SegmentationDetection(_paper_grid_bounds(polygon), mask, .81, 1.0, True, reasons))
     monkeypatch.setattr(pipeline, "segment_album_page", lambda *_, **__: SegmentationResult(detections, {}))
 
@@ -562,6 +569,74 @@ async def _upload_disputed_paper_grid(client, monkeypatch):
     uploaded = await client.post(f"{album_url}/pages/upload", files={"files": ("page.png", png.tobytes(), "image/png")})
     assert uploaded.status_code == 201, uploaded.text
     return f"/api/v1/review/queue?album_id={album_id}&type=segmentation", outer
+
+
+async def test_confirmed_paper_grid_clears_overlay_without_reprocess(client, monkeypatch):
+    from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE
+
+    queue_url, _ = await _upload_disputed_paper_grid(client, monkeypatch, include_film=True)
+    task, = (await client.get(queue_url)).json()
+    initial = task["payload"]
+    assert initial["detection_count"] == 5
+    parent, = [row for row in initial["detections"] if row["segmentation_mask"].get("paper_grid_review")
+               and not row["segmentation_mask"]["paper_grid_review"].get("cut")]
+    fragment, = [row for row in initial["detections"] if row["segmentation_mask"].get("paper_grid_review", {}).get("cut")]
+    film = [row["photo_id"] for row in initial["detections"] if row["segmentation_mask"].get("film_grid_review_seam")]
+    parent_id = parent["photo_id"]
+    parent_url = f"/api/v1/photos/{parent_id}"
+    geometry_url = queue_url.replace("type=segmentation", f"type=geometry&photo_id={parent_id}")
+    geometry_before, = (await client.get(geometry_url)).json()
+    saved = (await client.get(parent_url)).json()
+    modes = deepcopy(parent["crop_modes"])
+    preview = modes["full_print"]["outline_preview"]
+    assert preview["source"] == DISPUTED_GRID_PREVIEW_SOURCE
+    assert len(preview.pop("projected_grid_cuts")) == 1
+    comparison_url = saved["urls"]["full_print_preview"]
+    comparison = await client.get(comparison_url)
+    untrimmed_url = f"{parent_url}/image?variant=source_corrected_untrimmed"
+    untrimmed = await client.get(untrimmed_url)
+    assert comparison.status_code == untrimmed.status_code == 200
+
+    async def assert_comparison_survives():
+        detail = (await client.get(parent_url)).json()
+        assert detail["segmentation_mask"] == saved["segmentation_mask"]
+        assert detail["enhancement_applied"]["correction"]["crop_modes"] == modes
+        geometry, = (await client.get(geometry_url)).json()
+        assert geometry["payload"]["crop_modes"] == modes
+        assert geometry["payload"]["geometry_review_revision"] != geometry_before["payload"]["geometry_review_revision"]
+        assert (await client.get(comparison_url)).content == comparison.content
+        assert (await client.get(untrimmed_url)).content == untrimmed.content
+        for variant in ("full_print", "image_only", "source_corrected_trimmed"):
+            assert (await client.get(f"{parent_url}/image?variant={variant}")).status_code == 404
+
+    async def confirm(task, answer, reason, selection):
+        response = await client.post("/api/v1/review/events", json={
+            "task_type": "segmentation", "task_id": task["id"], "answer": answer,
+            "reason_code": reason, "idempotency_key": uuid4().hex,
+            "metadata": {"photo_count_revision": task["payload"]["photo_count_revision"], **selection},
+        })
+        assert response.status_code == 201, response.text
+        current, = (await client.get(queue_url)).json()
+        return current
+
+    task = await confirm(task, "confirm_shared_paper_grid", "same_physical_print", {
+        "paper_grid_parent_id": parent_id, "paper_grid_fragment_ids": [fragment["photo_id"]],
+    })
+    assert task["payload"]["detection_count"] == 4
+    await assert_comparison_survives()
+    obsolete = await client.post("/api/v1/review/events", json={
+        "task_type": "geometry", "task_id": parent_id, "answer": "correct", "idempotency_key": uuid4().hex,
+        "metadata": {"geometry_review_revision": geometry_before["payload"]["geometry_review_revision"]},
+    })
+    assert obsolete.status_code == 409 and obsolete.json()["detail"] == "geometry_review_stale"
+
+    task = await confirm(task, "exclude_film_group", "film_carrier", {"film_group_photo_ids": film})
+    assert task["payload"]["detection_count"] == 1
+    remaining, = task["payload"]["detections"]
+    assert remaining["photo_id"] == parent_id and remaining["crop_modes"] == modes
+    gallery, = (await client.get(f"/api/v1/albums/{task['album_id']}/photos")).json()
+    assert gallery["enhancement_applied"]["correction"]["crop_modes"] == modes
+    await assert_comparison_survives()
 
 
 async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for_review(submit_geometry_review, client, monkeypatch):
@@ -634,8 +709,14 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
     current, = (await client.get(queue_url)).json()
     after = current["payload"]
     assert after["detection_count"] == 2 and after["photo_count_revision"] == event_id
+    current_parent, = [row for row in after["detections"] if row["photo_id"] == parent_id]
+    assert current_parent["geometry_review_revision"] != parent_row["geometry_review_revision"]
+    retired_parent = deepcopy(parent_row)
+    retired_parent["crop_modes"]["full_print"]["outline_preview"].pop("projected_grid_cuts")
+    retired_parent["correction"]["crop_modes"]["full_print"]["outline_preview"].pop("projected_grid_cuts")
+    retired_parent["geometry_review_revision"] = current_parent["geometry_review_revision"]
     assert {row["photo_id"]: row for row in after["detections"]} == {
-        parent_id: parent_row, neighbor_row["photo_id"]: neighbor_row,
+        parent_id: retired_parent, neighbor_row["photo_id"]: neighbor_row,
     }
     assert (await client.get(preview_url)).content == preview.content
     assert (await client.get(comparison_url)).content == comparison.content
@@ -649,7 +730,10 @@ async def test_shared_paper_grid_count_confirmation_preserves_the_outer_crop_for
     async with get_session_factory()() as session:
         event = await session.get(ReviewEvent, UUID(event_id))
         assert event.event_metadata["client"] == answer["metadata"]
-        assert len(event.event_metadata["snapshot"]["photos"]) == 4
+        snapshots = event.event_metadata["snapshot"]["photos"]
+        assert len(snapshots) == 4
+        original_parent, = [row for row in snapshots if row["photo_id"] == parent_id]
+        assert original_parent["current_correction"]["crop_modes"]["full_print"]["outline_preview"] == alternative
 
     approve = await submit_geometry_review(event_url, json={"task_type": "geometry", "task_id": parent_id,
                                 "answer": "correct", "idempotency_key": uuid4().hex})

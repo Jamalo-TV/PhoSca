@@ -13200,3 +13200,33 @@ motif transitions compete with the outer paper. Pale sections on
 instance 0 and two lower intervals on instance 3 stay explicitly
 uncertain in the draft. Source preflight pins all four new drafts;
 independent review and physical-group eligibility remain open.
+
+## Retire confirmed contact print splits immediately
+
+On the exact 1,346 × 1,014 SteveKM JPEG75, the mixed development
+checkpoint produces five active proposals. The right contact print
+and its nested fragment share a separate rectified review PNG. Its
+yellow line shows where the fragment proposal could divide the
+paper. The earlier count decision rejected the fragment and removed
+the count action. The yellow line remained until the photo was
+processed again.
+
+Confirmation of the shared paper now removes the projected
+fragment lines from that parent's comparison in the same
+transaction as the count decision. The image and its proposed
+outline stay available for geometry review. The changed review
+record also gets a new geometry revision. Submissions tied to the
+earlier display return HTTP 409. The regression inspects the album
+list, photo detail and geometry queue immediately after confirmation.
+
+An ordinary upload, count and manual correction on the exact JPEG75
+reproduced the original 5-to-4-to-1 decision sequence. Excluding the
+left sleeve left the right comparison line visible while its fragment
+was still active. Confirming the right sheet removed that line
+immediately. The PNG stayed byte-identical and kept a footprint IoU
+of 0.9870154 against the development draft. The two eventual manual
+exports used the same diagnostic dimensions and explicit motif
+selection as before and matched both earlier JPEG digests. An older
+already saved decision can remove the line by reprocessing its
+preview. The replay receipts are local under
+`/tmp/phosca-stevekm-workflow-current/`.
