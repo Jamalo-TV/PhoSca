@@ -12385,6 +12385,17 @@ The locked synthetic control retains 18/18 detected prints, and the
 seeded geometry control retains 23/23 recoverable passing crops. Wall
 times varied with concurrent CPU checks.
 
+The editor checks unsaved changes as well. A mobile orientation change
+or moved source corner can change the live preview before there is a
+server revision. Desktop can similarly show a locally loaded alternate
+outline. Geometry decisions use the saved view, so the controls ask
+the reviewer to save or discard such changes first.
+The mobile browser control verified no event while a changed orientation
+or corner remained unsaved. Discard restored the preceding preview, while
+saving the 180° edit produced two changed JPEGs and one fresh confirmation.
+On desktop, U039 kept all four active detections after saving the alternate
+outline, with the two named modes still held.
+
 ## U040 upper-left print source check
 
 The ordinary detector already nominated this position in its 70% tile
@@ -12399,6 +12410,17 @@ the transition, so the evidence does not distinguish a physical paper
 boundary on its own. The ordinary run remained at four active detections
 and three pending suggestions. This probe supplies no new crop or count
 decision.
+
+The adjacent oversized claim has a separate correction conflict. The
+proposed replacement perimeter lies at least 12.67 native pixels outside
+the raw protected-region box. The box padding still covers 7,997 native
+pixel centres within the replacement outline. Visible target content sits
+inside that padding close to the measured paper edge. A trusted source
+box over an arm passes on the measured contour and rejects a 10-pixel
+pullback with `protected_region_removed`. A separate box on an actual
+head in the neighboring print passes on both. A future review preview
+can use the measured outline with both modes held. These observations
+leave the saved crop and protection rules unchanged.
 
 McCord Stewart Museum catalogues two further distinct public-domain
 physical albums. The Dawson catalogue indexes individually numbered

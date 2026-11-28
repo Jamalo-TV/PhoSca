@@ -1,5 +1,5 @@
 import { Camera, Check, ChevronLeft, CircleHelp, CloudOff, Images, ListChecks, RefreshCw, Save, Upload, WandSparkles, ZoomIn } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { addManualPhoto, confirmSharedPaperGrid, createAlbum, excludeCountReviewGroup, getPhoto, getReviewProgress, getReviewQueue, hasPhotoCrop, listAlbums, listPages, listPhotos, patchBoundingBox, reprocessPhoto, submitReviewEvent, uploadFileChunked, uploadFiles } from "./api.js";
 import { captureCameraImage } from "./cameraCapture.js";
 import { motifUsesPaperAxes, projectedCropAspect, resizeMotifInPaperPlane, resamplePerspective, samplePreviewSource } from "./cropPreview.js";
@@ -44,7 +44,7 @@ import {
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
   getMeasuredMotifComparison, isMeasuredMotifComparison,
   protectedCutFeedback,
-  sameReviewQuad, savedFullPrintReviewUrl,
+  sameCropDraft, sameReviewQuad, savedFullPrintReviewUrl, unsavedCropReviewHint,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 import { listQueuedUploads, queueUpload, removeQueuedUpload, retryQueuedUploads } from "./offlineQueue.js";
@@ -197,7 +197,8 @@ function heldDeferredParentCropHints(fullPrint, reviewReasons) {
 }
 
 function DetectionOverlay({ item, editable = false, openPaperOutline, countOutlines, captureSplitGroups, mergedPairs, filmGridGroups,
-  selectedCountGroup, paperGridGroups, paperJoinGroups, missingPrintReview, onSaved, onReprocess, onProtectionBlocked, deferredDraft, onDeferredDraftClose }) {
+  selectedCountGroup, paperGridGroups, paperJoinGroups, missingPrintReview, onSaved, onReprocess, onProtectionBlocked,
+  onReviewDraftChange, deferredDraft, onDeferredDraftClose }) {
   const sourceFragmentDraft = deferredDraft?.reason === sourceFragmentProposal;
   const darkBackingDraft = deferredDraft?.reason === darkBackingProposal;
   const standaloneDraft = standalonePrintNeedsConfirmation(deferredDraft?.reason);
@@ -336,7 +337,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const cutFeedbackId = deferredDraft ? "mobile-print-addition-protection-error" : "mobile-crop-protection-error";
   const [magnifierEnabled, setMagnifierEnabled] = useState(true);
   const [magnifier, setMagnifier] = useState({ visible: false, x: 0, y: 0 });
-  useEffect(() => {
+  function resetDraft() {
     setQuad(initialOuter());
     setEditMode("full_print");
     setMotifQuad(storedMotif);
@@ -351,7 +352,15 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     setDraftTouched(false);
     setConfirmMergedPrintAsOne(false);
     setConfirmedContrastOutline(null);
-  }, [item.id]);
+  }
+  useEffect(resetDraft, [item.id]);
+  const geometryDraft = editable && !deferredDraft && draftTouched && ((usingOutlineSuggestion && !initialPaperOutline)
+    || !sameCropDraft({ warpQuad: initialOuter(), imageQuad: storedMotif, orientationDegrees: storedOrientation,
+      printSizeFields: printSizeInputs(storedMeasurement) }, { warpQuad: quad, imageQuad: motifQuad,
+      orientationDegrees: orientation, printSizeFields: measurementFields }));
+  useLayoutEffect(() => {
+    onReviewDraftChange?.(geometryDraft ? item.id : null);
+  }, [geometryDraft, item.id, onReviewDraftChange]);
   const box = quadToBox(quad);
   const validQuad = !editable || isValidQuad(displayedQuad);
   const motifOutside = editingMotif && !motifFitsPaper(displayedQuad, savedQuad);
@@ -450,8 +459,13 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       const savedDegrees = saved.segmentation_mask?.orientation_degrees ?? null;
       setOrientation(savedDegrees);
       setSavedOrientation(savedDegrees);
-      if (!editingMotif && saved.saved_full_print_review_url) {
-        setQuad(initialQuad(saved.segmentation_mask.warp_quad, saved.segmentation_mask.visible_polygon, saved.bounding_box));
+      if (!editingMotif) {
+        const savedMask = saved.segmentation_mask;
+        const outline = sanitizeReviewPolygon(savedMask.warp_quad);
+        setQuad(savedMask.print_size_mm && isValidQuad(outline) ? outline
+          : initialQuad(outline, savedMask.visible_polygon, saved.bounding_box));
+        setMeasurementFields(printSizeInputs(savedMask.print_size_mm));
+        setUsingOutlineSuggestion(false);
       }
       const cropModes = getCropModes(saved);
       setMotifQuad(cyclicReviewQuad(sanitizeReviewPolygon(getStoredMotifQuad(saved, cropModes?.image_only))));
@@ -949,6 +963,11 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
       </button>
       {deferredDraft && <button type="button" className="magnifier-toggle" disabled={saving}
         onClick={() => onDeferredDraftClose(false)}>Zurück zur Printanzahl</button>}
+      {geometryDraft && <button type="button" className="magnifier-toggle" disabled={saving} onClick={() => {
+        albumMarkReview.reset();
+        onProtectionBlocked?.(null);
+        resetDraft();
+      }}>Änderungen verwerfen</button>}
       {cutFeedback && <p className="crop-save-error" id={cutFeedbackId} role="alert">{cutFeedback.message}</p>}
       {saveError && <p className="crop-save-error" role="alert">{saveError}</p>}
       {displayedQuad && !motifOutside && (comparePaperEdge && !editingPreview && !visibleSavedCropUrl
@@ -1092,6 +1111,7 @@ function CropReview({ albumId, goHome }) {
   const [queue, setQueue] = useState(null);
   const [focusedPhotoId, setFocusedPhotoId] = useState(null);
   const [blockedCropTaskId, setBlockedCropTaskId] = useState(null);
+  const [draftItemId, setDraftItemId] = useState(null);
   const [answerError, setAnswerError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [groupSelection, setGroupSelection] = useState(null);
@@ -1125,6 +1145,7 @@ function CropReview({ albumId, goHome }) {
   const loading = queue?.key !== queueKey;
   const items = loading ? [] : queue.rows;
   const item = items[index];
+  const currentHasDraft = type === "geometry" && draftItemId === item?.id;
   const missingPrintReview = getMissingPrintEdgeReview(item?.payload);
   const fullPrint = item?.payload?.crop_modes?.full_print;
   const fullPrintHeld = type === "geometry" && wholePrintApprovalHeld(item?.payload?.crop_modes, item?.payload?.variant_urls);
@@ -1237,7 +1258,7 @@ function CropReview({ albumId, goHome }) {
     }
   }
   async function record(value) {
-    if (!item || submitting || (value === "correct" && approvalBlocked)) return;
+    if (!item || submitting || currentHasDraft || (value === "correct" && approvalBlocked)) return;
     setSubmitting(true);
     setAnswerError("");
     const metadata = { page_id: item.page_id, ui: "mobile-v2" };
@@ -1318,7 +1339,7 @@ function CropReview({ albumId, goHome }) {
         paperJoinGroups={paperJoinGroups} missingPrintReview={missingPrintReview} onSaved={updateSavedCropModes}
         onReprocess={type === "geometry" ? reprocessHeldPhoto : undefined}
         deferredDraft={activeDeferredDraft} onDeferredDraftClose={closeDeferredDraft}
-        onProtectionBlocked={setBlockedCropTaskId} />
+        onProtectionBlocked={setBlockedCropTaskId} onReviewDraftChange={setDraftItemId} />
       {!activeDeferredDraft && <>
       {!selectedCountGroup && captureBackgroundReviews.map(({ photo_id: photoId }, index) => (
         <button key={photoId} className="magnifier-toggle" type="button" disabled={submitting}
@@ -1359,11 +1380,12 @@ function CropReview({ albumId, goHome }) {
           {`Aussenumriss prüfen${paperGridOutlineParents.length > 1 ? ` (${index + 1})` : ""}`}
         </button>
       ))}
+      {currentHasDraft && <p className="quad-hint" id="mobile-unsaved-crop">{unsavedCropReviewHint}</p>}
       <section className="answer-grid">
         {cropAnswers[type].map(([value,label]) => (
           <button key={value} className={value === "correct" ? "good" : ""}
-            disabled={submitting || (value === "correct" && approvalBlocked)}
-            aria-describedby={value === "correct" ? approvalHint : undefined}
+            disabled={submitting || currentHasDraft || (value === "correct" && approvalBlocked)}
+            aria-describedby={currentHasDraft ? "mobile-unsaved-crop" : value === "correct" ? approvalHint : undefined}
             onClick={() => record(value)}>
             {value === "correct" && type === "segmentation" && (item.payload?.detection_count === 0
               || deferredProposals.length || missingPrintReview.traces.length

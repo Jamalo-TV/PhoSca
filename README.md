@@ -1544,6 +1544,14 @@ Wiederholungsaufruf zu einem bereits gespeicherten Entscheid liefert
 dessen ursprüngliche Kennung, auch wenn sich der Zuschnitt inzwischen
 geändert hat.
 
+Im mobilen Editor sind Geometrieantworten gesperrt, solange ein
+lokaler Entwurf von der gespeicherten Ansicht abweicht. Der
+Desktop-Editor sperrt in diesem Zustand «Falsches Objekt». Betroffen
+sind Änderungen an Papier- und Motivecken, Ausrichtung und Papiermassen
+und ein in den Editor geladener Umriss. «Änderungen verwerfen» zeigt
+die gespeicherte Geometrie wieder. Nach dem Speichern verwendet die
+Prüfung die vom Server bestätigte Geometrie und neue Revision.
+
 Eine manuelle Geometriekorrektur löscht die automatische
 `segmentation_confidence`. Die Geometrie-, Zuordnungs- und
 Samplingprüfungen gelten weiterhin. Bei einem Hinweis auf eine

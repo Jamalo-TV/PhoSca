@@ -8,7 +8,7 @@ import {
   getFilmGridReviewSeams, getFilmNeighborEdgeIndex, getFragmentReviewOutlines, getMergedPrintPairs,
   getPaperGridOutlineParents, getPaperGridReviewGroups,
   getPaperJoinReviewGroups, getPossiblePrintRegions, getPrintedIllustrationReviewGroups, getStoredMotifQuad, motifFitsPaper, paperGridSourceWindows,
-  savedFullPrintReviewUrl,
+  sameCropDraft, savedFullPrintReviewUrl,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource,
   getMeasuredMotifComparison, isMeasuredMotifComparison, measuredMotifComparisonSource,
   protectedCutFeedback,
@@ -16,6 +16,17 @@ import {
 
 const quad = [{ x: .1, y: .2 }, { x: .7, y: .2 }, { x: .7, y: .8 }, { x: .1, y: .8 }];
 const mask = { fragment_outline_suggestion: { quad, uncertain_edge: 1 } };
+
+test("a review draft must match both saved outlines, the orientation and the dimensions", () => {
+  const saved = { warpQuad: quad, imageQuad: null, orientationDegrees: null, printSizeFields: { width: "", height: "" } };
+  const edited = structuredClone(saved);
+  assert.equal(sameCropDraft(saved, edited), true);
+  assert.equal(sameCropDraft(saved, { ...edited, orientationDegrees: 90 }), false);
+  assert.equal(sameCropDraft(saved, { ...edited, imageQuad: quad }), false);
+  assert.equal(sameCropDraft(saved, { ...edited, printSizeFields: { width: "150", height: "" } }), false);
+  edited.warpQuad[0].y += .01;
+  assert.equal(sameCropDraft(saved, edited), false);
+});
 
 test("a rejected manual crop explains only validated original bounds and keeps padding uncertain", () => {
   const box = { x1: .2, y1: .3, x2: .5, y2: .6, padding_only: true };

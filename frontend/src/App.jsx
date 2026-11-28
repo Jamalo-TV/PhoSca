@@ -89,7 +89,7 @@ import {
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
   getMeasuredMotifComparison, isMeasuredMotifComparison, measuredMotifOutlineStyle, measuredMotifPaperStyle, measuredMotifSeamStyle,
   protectedCutFeedback,
-  sameReviewQuad, savedFullPrintReviewUrl,
+  sameCropDraft, sameReviewQuad, savedFullPrintReviewUrl, unsavedCropReviewHint,
 } from "./cropReviewOutlines.js";
 import { PrintSizeFields, parsePrintSize, printSizeInputs } from "./PrintSizeFields.jsx";
 
@@ -1530,6 +1530,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const crossingOutline = useMemo(() => cyclicQuad(sanitizePolygon(crossingPolygon)), [crossingPolygon]);
   const savedShape = useMemo(() => selected && draftShapeFromPhoto(selected), [selected]);
   const selectedShape = selected && (draftShapes[selected.id] || savedShape);
+  const selectedHasDraft = selected && (selectedShape.usingOutlineSuggestion || !sameCropDraft(savedShape, selectedShape));
   const activeBlockedCrop = !newPrint && blockedCrop?.mode === editMode && blockedCrop.photoId === selectedPhotoId
     ? blockedCrop : null;
   const cutFeedback = activeBlockedCrop?.message && activeBlockedCrop.draft === selectedShape ? activeBlockedCrop : null;
@@ -2264,6 +2265,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   }
 
   async function rejectSelected() {
+    if (!selected || selectedHasDraft) return;
     const target = { pageId, photoId: selected.id, mode: editMode };
     setSaveState({ ...target, saving: true, rejecting: true });
     try {
@@ -2553,9 +2555,20 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       {!newPrint && detectionReviewHint && !rejectedDetection && (
         <div className="manual-print-actions">
           <p className="crop-editor-hint">{detectionReviewHint}</p>
-          <button className="text-button compact" type="button" onClick={rejectSelected} disabled={saveState?.saving}>
+          <button className="text-button compact" type="button" onClick={rejectSelected}
+            disabled={saveState?.saving || selectedHasDraft} aria-describedby={selectedHasDraft ? "desktop-unsaved-crop" : undefined}>
             {currentSave?.rejecting ? "Vorschlag wird geprüft …" : "Falsches Objekt"}
           </button>
+          {selectedHasDraft && <>
+            <p className="crop-editor-hint" id="desktop-unsaved-crop">{unsavedCropReviewHint}</p>
+            <button className="text-button compact" type="button" disabled={saveState?.saving} onClick={() => {
+              setDraftShapes(current => ({ ...current, [selected.id]: savedShape }));
+              albumMarkReview.reset();
+              setConfirmedContrastOutline(null);
+              setBlockedCrop(null);
+              setSaveState(null);
+            }}>Änderungen verwerfen</button>
+          </>}
         </div>
       )}
       {newPrint && (

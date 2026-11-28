@@ -162,6 +162,16 @@ export function sameReviewQuad(saved, edited) {
     && saved.every(({ x, y }, index) => x === edited[index].x && y === edited[index].y);
 }
 
+export const unsavedCropReviewHint = "Speichere oder verwirf die Änderungen, bevor du den Zuschnitt beurteilst.";
+
+export function sameCropDraft(saved, draft) {
+  const sameQuad = (a, b) => a === b || sameReviewQuad(a, b);
+  return sameQuad(saved.warpQuad, draft.warpQuad) && sameQuad(saved.imageQuad, draft.imageQuad)
+    && saved.orientationDegrees === draft.orientationDegrees
+    && saved.printSizeFields.width === draft.printSizeFields.width
+    && saved.printSizeFields.height === draft.printSizeFields.height;
+}
+
 export function savedFullPrintReviewUrl(photo, savedQuad, editedQuad, sizeFields, orientation) {
   if (!photo?.saved_full_print_review_url || photo.reviewed_non_print || !sameReviewQuad(savedQuad, editedQuad)
       || sizeFields?.width?.trim() || sizeFields?.height?.trim()
