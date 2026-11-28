@@ -109,7 +109,7 @@ from app.pipeline.print_outline_suggestion import (
     suggest_outer_print_outline, suggest_overextended_print_outline, suggest_slanted_print_edge_comparison,
     verify_print_edge_at_claim, visible_gap_at_unchanged_claim,
 )
-from app.pipeline.print_stock import find_outer_stock_candidate
+from app.pipeline.print_stock import find_outer_stock_candidate, recover_pale_stock_preview
 from app.pipeline.projective_prints import PROJECTIVE_PRINT_OUTLINE_REVIEW
 from app.pipeline.protected_regions import (
     OFF_PRINT_ADVISORY, ProtectedRegionCut, ProtectedRegionRemoval, detect_protected_regions, is_advisory_page_face,
@@ -1218,6 +1218,7 @@ def _render_disputed_grid_preview(
 
 def _keeps_protected_preview_content(
     page: np.ndarray, original: np.ndarray, alternative: np.ndarray, regions: list[dict], protection: dict,
+    *, area_tolerance: float = 1.,
 ) -> bool:
     height, width = page.shape[:2]
     advisory = (protection.get("violations") or []) if protection.get("review_untrimmed") else []
@@ -1234,7 +1235,7 @@ def _keeps_protected_preview_content(
                              [x2 + pad, y2 + pad], [x1 - pad, y2 + pad]])
         before = cv2.intersectConvexConvex(original, padded)[0]
         after = cv2.intersectConvexConvex(alternative, padded)[0]
-        if before - after > 1:
+        if before - after > area_tolerance:
             return False
     return True
 
@@ -1669,6 +1670,7 @@ def _inspect_print(
     corner_mount = False
     edge_confirmation = False
     manual_neighbor = None
+    stock_seed = None
     if dual_mode and not manual and mask.get("warp_quad") is None:
         refined, boundary, reasons = refine_print_boundary(page, quad, collect_curve_segments=collect_curve_segments)
         if refined is not None and mask.get("detector_source") == CONTRAST_COMPONENT_SOURCE:
@@ -1713,6 +1715,21 @@ def _inspect_print(
                 if (validate_protected_regions(candidate, regions, width=width, height=height)["passed"]
                         and _keeps_protected_preview_content(page, refined, candidate, regions, {})):
                     refined, boundary = candidate, evidence
+        if (render_claims is not None and enable_classical_retry and reasons == ["PRINT_OUTER_RIM_UNCERTAIN"]
+                and mask.get("source") == "yolo_seg_mask" and mask.get("detector_source") == "yolo_onnx"
+                and not any(mask.get(name) for name in _STOCK_REVIEW_CONFLICTS)):
+            try:
+                recovered_stock = recover_pale_stock_preview(page, quad, boundary, [*neighbors, *render_claims])
+            except (ValueError, cv2.error, np.linalg.LinAlgError):
+                recovered_stock = None
+            if recovered_stock is not None:
+                candidate, evidence = recovered_stock
+                if (validate_protected_regions(candidate, regions, width=width, height=height)["passed"]
+                        and _keeps_protected_preview_content(page, quad, candidate, regions, {}, area_tolerance=.001)):
+                    stock_seed = quad
+                    quad = candidate
+                    metrics = _validate_quad(quad, width, height)
+                    boundary[evidence["side"]]["review_pale_stock_extension"] = evidence
         if refined is not None and "PRINT_OUTER_RIM_UNCERTAIN" not in reasons:
             refined_protection = validate_protected_regions(refined, regions, width=width, height=height)
             if not refined_protection["passed"] and not _advisory_face_overlap(refined_protection, regions, allow_page_face_overlap):
@@ -1781,8 +1798,12 @@ def _inspect_print(
             and (evidence.get("corner_support") or 0) >= 0.8
             and "observed_rim_lab" in evidence and index not in inferred
         }
+        # The added stock already cleared all neighbor claims. Keep tests of
+        # overlaps and clipped corners in the previous model footprint anchored
+        # to that footprint so the new rail cannot reclassify an old fragment.
+        visibility_quad = stock_seed if stock_seed is not None else quad
         occluding_neighbor = _occluding_neighbor(
-            page, quad, None if manual or manual_outline else visible, neighbors,
+            page, visibility_quad, None if manual or manual_outline else visible, neighbors,
             inferred_sides=inferred, observed_sides=observed,
         )
         occluded = occluding_neighbor is not None
@@ -1795,7 +1816,7 @@ def _inspect_print(
                 occluded = True
                 if manual:
                     manual_neighbor = _explicit_quad({"warp_quad": mark}, "warp_quad", width, height)
-        if (not scalloped and _clipped_visible_corner(quad, visible)) or occluded:
+        if (not scalloped and _clipped_visible_corner(visibility_quad, visible)) or occluded:
             reasons.append("PRINT_POSSIBLY_OCCLUDED")
         if manual_neighbor is not None:
             reasons.append(MANUAL_NEIGHBOR_OVERLAP)
@@ -2134,11 +2155,14 @@ def correct_photo_crop(
     )
     ribbed_side_fit = any(isinstance(side, dict) and side.get("review_ribbed_side_fit")
                           for side in boundary_refinement.values())
+    pale_stock_extension = any(isinstance(side, dict) and side.get("review_pale_stock_extension")
+                               for side in boundary_refinement.values())
     owned_sampling = dual_mode and (
         set(full_reasons) <= _CROP_PREVIEW_REASONS
         or checked_contrast_outline
         or mask.get("capture_edge_clipped") is True
-        or ((stock_suggestion or ribbed_side_fit) and not set(full_reasons) & {CAPTURE_EDGE_HOLD, "PRINT_POSSIBLY_OCCLUDED"})
+        or ((stock_suggestion or ribbed_side_fit or pale_stock_extension)
+            and not set(full_reasons) & {CAPTURE_EDGE_HOLD, "PRINT_POSSIBLY_OCCLUDED"})
     )
     if owned_sampling:
         analysis, supported = warp_owned_crop(page_image, matrix, (target_width, target_height))

@@ -861,6 +861,19 @@ interpoliert nur mit Quellpixeln innerhalb der korrigierten Kontur.
 Beide Zuschnittmodi bleiben zur Prüfung vorgelegt.
 [Arbeitszuschnitt auf U039](data/evaluation/README.md#recover-an-unsupported-side-on-ribbed-album-stock)
 
+Beginnt ein Modellzuschnitt innerhalb eines hellen Papierrands, kann
+PhoSca den Arbeitszuschnitt nach aussen erweitern. Zwei Suchtiefen
+müssen denselben Übergang finden. PhoSca kontrolliert im Original den
+hellen Streifen auf durchgehende Fugen und kurze Unterbrechungen und
+verfolgt eine angrenzende Seite durch die ganze neu erfasste Ecke.
+Diese zweite Messung stützt die Erweiterung. Die bisherige Kontur an
+den anderen Seiten bleibt erhalten. Die zusätzliche Fläche muss die
+Konturen anderer Abzüge freihalten. Die neue Perspektivansicht zeigt
+mehr Rand, während beide Modi in Prüfung bleiben. Prüfe die sichtbaren
+Ecken und das Seitenverhältnis im Original. Falls der Rand verdeckt
+bleibt, hilft eine Aufnahme mit rundum sichtbarem Papierrand.
+[Arbeitszuschnitt auf Scan 83](data/evaluation/README.md#recover-a-pale-paper-margin-without-cutting-prior-content)
+
 Ragt eine Ecke weit über den Abzug hinaus, prüft PhoSca, wo die
 beiden angrenzenden Papierkanten im Original enden. Eine gestützte
 innere Kante kann in der Geometrieprüfung eine zweite Vorschau geben.

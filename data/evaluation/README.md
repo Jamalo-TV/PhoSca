@@ -12864,3 +12864,101 @@ physical album groups. The locked draft pins two leaves and six
 prints with twelve unverified mode references. The separate local
 calibration draft pins six leaves and 26 outlines with physical-group
 and count review still pending.
+
+## Recover a pale paper margin without cutting prior content
+
+On the upper-right print of the native 4,960 × 7,014 Scan 83, the
+registered mixed detector puts the top edge at y300. Two outward
+searches find the visible paper transition near y202. The original
+whole-print fallback retains the seed because a four-side fit also
+follows an unrelated lower line. The top candidate extends the
+working outline by 97.05–97.62 native pixels. The right edge verifies
+where the additional strip ends. Applying its fit along the existing
+side crosses previously included native pixels with paper-like
+colour. The working outline therefore extends only the top side.
+[Native JPEG extraction and source hashes](#trace-scene-detail-across-a-nested-flatbed-proposal)
+
+The retry is limited to otherwise held ONNX proposals with an
+unresolved outer rim after the existing contour retry. Two outward
+rails must agree within 0.90 native pixels. The proposed new band
+must show a strong exterior transition, a continuous pale interior
+and no supported transverse seam or short exterior-connected notch.
+One adjacent rail must continue through the new part of the corner,
+show a matching interior colour and terminate at the new edge.
+Other active, deferred and alternative claims veto newly shared
+area. The previous outline stays inside the new one and the normal
+protected-content check still applies. The renderer recomputes the
+homography and uses only interpolation taps owned by the working
+outline. The outer-rim and aspect warnings remain active on this
+example. The scan and draft remain in development.
+
+The first integration also changed the classification of an existing
+classical fragment. Before the expansion its upper edge was four
+native pixels from the working outline. Afterwards it was far enough
+inside to meet the enclosed-claim threshold, although the added strip
+shared zero area with it. The prior overlap and clipped-corner checks
+now use the original model footprint for this retry. The exact claims
+still guard the added area. An already enclosed claimant still raises
+the occlusion reason. All 37 protected-region checks agree in this
+paired replay.
+
+| Metric against the local development draft | Earlier working raster | Expanded working raster |
+| --- | ---: | ---: |
+| Source footprint IoU | 0.900364 | 0.939821 |
+| Visible paper omissions beyond one native pixel | 555,569 | 332,280 |
+| Output pixels with taps outside the draft beyond one native pixel | 3,338 | 3,931 |
+| Output pixels with taps outside the working outline | 6,831 | 0 |
+| Largest draft corner difference | 126.79 px | 113.73 px |
+| Upper-right draft corner difference | 98.39 px | 6.81 px |
+
+The new footprint includes 225,299 additional centres within the
+paper draft and 680 beyond it. It retains every prior source centre.
+Both working rasters include the entire draft motif footprint. The
+physical aspect and the lower and left paper boundaries remain
+unverified. The output aspect changes from 1.0365 to 0.9945. The count
+outside the draft increases because the working outline still contains
+some disputed material. Only the working outline was used to restrict
+the interpolation taps. The earlier boundary interpolation also used
+6,664 distinct centres beyond the new footprint. Of these, 5,400 are
+within the paper draft and zero are in the motif draft. Every sampled
+centre inside the previous footprint still contributes. The draft was
+used solely to measure results.
+
+Synthetic regressions cover retaining prior source centres, a claim
+inside the old outline, a claim in the proposed addition and short
+dark and pale backing interruptions. Four authored interruptions in
+the real strip are rejected in native and JPEG75 versions. Very similar
+paper backing can still produce the same evidence as the original
+margin. The draft labels omit independent paper dimensions, motif
+extent and landmarks. This correction therefore supplies a working
+raster for review and leaves both crop exports held on this source.
+
+The normal multipart JPEG upload retains seven active proposals and
+one deferred proposal. The selected untrimmed JPEG changes from
+2,329 × 2,247 to 2,332 × 2,345. All six other working rasters, masks
+and crop records match. Both named and the legacy trimmed exports
+return HTTP 404. An approval request for the current revision returns
+HTTP 409. Normal reprocessing reproduces the untrimmed raster and
+holds. The two full page uploads took 97.7 and 102.8 seconds while
+other jobs were running. The five targeted regression tests exercise
+the native footprint and both held crop modes. The isolated side
+search took 335 ms median and 391 ms at p95 across nine warm calls
+with one OpenCV thread while the other regressions were running.
+Four fixed-geometry quarter-turn controls recover the same side.
+The print-boundary profile moves to revision 15. All eight paired
+benchmark reports retain their prior scores and review counts. The
+frozen detector matches all 18 prints and the seeded geometry checks
+pass all 11 recoverable whole-print and 12 recoverable motif crops.
+
+The separate source-only calibration review counted the six local
+reserved pages before inspecting the draft outlines. Five complete
+rasters support 23 visible prints. U014 supports the three draft
+outlines on the main leaf and has an indeterminate strip on the
+facing leaf, so the count for the full raster stays open. Native
+inspection confirmed a 2–6 pixel backing gap between two close
+prints on U057. On U024 one print edge coincides with the album bar
+and still needs mask review. The source review establishes neither
+physical group identity nor training disjointness. No model was run
+on those pages during this review, no calibration was fitted and the
+final split was untouched. The release inventory still has zero
+shared verified physical album groups.

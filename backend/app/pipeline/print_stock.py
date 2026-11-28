@@ -5,6 +5,8 @@ from collections.abc import Iterator
 import cv2
 import numpy as np
 
+from app.pipeline.print_edges import _edge_band, _line_endpoints, _replace_quad_side, _side_line
+
 
 _RECTANGLE = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
 _SIDE_NAMES = ("top", "right", "bottom", "left")
@@ -142,3 +144,164 @@ def find_outer_stock_candidate(
                 continue
             return quad, name, {"depth_px": depth, "luminance_step": step, "flanks_confirmed": False}
     return None
+
+
+def _pale_stock_shoulder(image: np.ndarray, side: np.ndarray, minimum_step: int) -> np.ndarray | None:
+    band = _edge_band(image, *side, [-14, -11, -8, -5, -3, 3, 5, 8, 11, 14])
+    if band is None:
+        return None
+    exterior, interior = (np.median(part, axis=1) for part in np.split(band, 2, axis=1))
+    supported = ((interior[:, 0] >= 212) & (interior[:, 0] - exterior[:, 0] >= minimum_step)
+                 & (np.linalg.norm(interior[:, 1:] - 128, axis=1) <= 28))
+    if supported.mean() < .90 or min(part.mean() for part in np.array_split(supported, 4)) < .78:
+        return None
+    return np.median(interior, axis=0)
+
+
+def _continuous_pale_extension(image: np.ndarray, side: np.ndarray, depth: float, palette: np.ndarray) -> bool:
+    length = float(np.linalg.norm(side[1] - side[0]))
+    stations = np.linspace(.025, .975, round(.95 * length), dtype=np.float32)
+    band = _edge_band(image, *side, range(5, int(depth) - 4), fractions=stations)
+    if band is None:
+        return False
+    sparse = band[::max(1, len(band) // 160)]
+    paper = (sparse[..., 0] >= 213) & (np.linalg.norm(sparse[..., 1:] - palette[1:], axis=2) <= 8)
+    if paper.mean(axis=0).min() < .91 or min(part.mean() for part in np.array_split(paper, 8)) < .90:
+        return False
+
+    # Look for a coherent transverse gap or second material edge in the new strip.
+    count = sparse.shape[1] - 8
+    before = np.median([sparse[:, start:start + count] for start in (0, 1, 2)], axis=0)
+    after = np.median([sparse[:, start:start + count] for start in (5, 6, 7)], axis=0)
+    change = after - before
+    typical = np.median(change, axis=0)
+    signed = (change * typical[None]).sum(axis=2) / np.maximum(1., np.linalg.norm(typical, axis=1))
+    quarters = np.min([part.mean(axis=0) for part in np.array_split(signed >= 3.5, 4)], axis=0)
+    if np.any((np.median(np.linalg.norm(change, axis=2), axis=0) >= 3.5) & (quarters >= .50)):
+        return False
+
+    # A short notch can escape the width-wide test. Compare each native station
+    # with several separated locations at the same depth on the same stock.
+    rows = np.arange(len(band))
+    shifts = [round(length * offset) for offset in (-.129, -.107, -.090, .090, .107, .129)]
+    surrounding = np.median([band[np.clip(rows + shift, 0, len(band) - 1)] for shift in shifts], axis=0)
+    delta = cv2.GaussianBlur(surrounding, (5, 7), 0) - cv2.GaussianBlur(band, (5, 7), 0)
+    interruption = (np.linalg.norm(delta, axis=2) >= 7) | (delta[..., 0] >= 5)
+    components = cv2.connectedComponentsWithStats(cv2.morphologyEx(np.uint8(interruption), cv2.MORPH_OPEN,
+                                                                  np.ones((3, 3), dtype=np.uint8)))[2][1:]
+    return not any(x <= 2 and w >= 8 and h >= 14 and area >= 80 for x, _, w, h, area in components)
+
+
+def _pale_stock_corner(image: np.ndarray, side: np.ndarray, *, at_end: bool, extension: float = 0.) -> bool:
+    length = float(np.linalg.norm(side[1] - side[0]))
+    distances = np.float32([12, 20, 30, 42]) / length
+    fractions = np.r_[1 - distances, 1 + distances] if at_end else np.r_[distances, -distances]
+    offsets = [-10, -8, -6, -4, 4, 6, 8, 10]
+    around = _edge_band(image, *side, offsets, fractions=fractions)
+    if around is None:
+        return False
+    change = around[:, 4:, 0].mean(axis=1) - around[:, :4, 0].mean(axis=1)
+    if change[:4].min() < 13 or np.abs(change[4:]).max() > 18:
+        return False
+    if extension == 0:
+        return True
+    # Confirm the neighboring edge across the whole added cap, not just beyond
+    # the old corner or over the next few samples beside the new corner.
+    along = np.linspace(14., extension + 12., round(extension) - 1, dtype=np.float32) / length
+    cap = _edge_band(image, *side, offsets, fractions=1 - along if at_end else along)
+    if cap is None:
+        return False
+    outer, inner = (np.median(samples, axis=1) for samples in np.split(cap, 2, axis=1))
+    supported = (inner[:, 0] >= 212) & (inner[:, 0] - outer[:, 0] >= 13)
+    return supported.mean() >= .92 and min(part.mean() for part in np.array_split(supported, 4)) >= .85
+
+
+def _claimed_stock_addition(quad: np.ndarray, candidate: np.ndarray, claims: list[np.ndarray]) -> bool:
+    for claim in claims:
+        amount, intersection = cv2.intersectConvexConvex(candidate, cv2.convexHull(claim))
+        if amount > 1. and amount - cv2.intersectConvexConvex(intersection, quad)[0] > 1.:
+            return True
+    return False
+
+
+def _expand_stock_side(
+    quad: np.ndarray, index: int, line: np.ndarray, radius: int, shape: tuple[int, ...],
+) -> np.ndarray | None:
+    expanded = _replace_quad_side(quad, index, line, radius, shape)
+    if expanded is None:
+        return None
+    next_index = (index + 1) % 4
+    opposite = [(index + 2) % 4, (index + 3) % 4]
+    expanded[opposite] = quad[opposite]
+    # Float32 corner intersections can move an unchanged half-plane inward.
+    # Round the two new corners outward from those neighboring lines.
+    for corner, neighbor in ((index, (index - 1) % 4), (next_index, next_index)):
+        edge = quad[(neighbor + 1) % 4] - quad[neighbor]
+        outward = np.array([edge[1], -edge[0]], dtype=np.float32)
+        direction = np.copysign(np.full_like(outward, np.inf), outward)
+        direction[outward == 0] = expanded[corner, outward == 0]
+        expanded[corner] = np.nextafter(np.nextafter(expanded[corner], direction), direction)
+    precise = expanded.astype(np.float64)
+    edges = np.roll(precise, -1, axis=0) - precise
+    delta = quad[None].astype(np.float64) - precise[:, None]
+    containment = edges[:, 0, None] * delta[..., 1] - edges[:, 1, None] * delta[..., 0]
+    if np.any(containment < -1e-8) or np.any((expanded < 0) | (expanded > np.array(shape[1::-1]) - 1)):
+        return None
+    return expanded
+
+
+def recover_pale_stock_preview(
+    image: np.ndarray, quad: np.ndarray, boundary: dict, claims: list[np.ndarray],
+) -> tuple[np.ndarray, dict] | None:
+    """Restore a partly omitted pale margin in a held working crop."""
+    shortest = float(np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min())
+    if shortest < 512:
+        return None
+    candidates = []
+    for index, name in enumerate(_SIDE_NAMES):
+        outward = (boundary.get(name) or {}).get("outward_search") or {}
+        if not outward.get("print_rim_supported"):
+            continue
+        next_index = (index + 1) % 4
+        original = quad[[index, next_index]]
+        reach = outward["search_radius_px"]
+        fits = [_side_line(image, *original, radius, outward_only=True) for radius in (reach, max(8, reach - 18))]
+        if any(line is None or edge["ambiguous"] or edge["support"] < .92 or edge["corner_support"] < .85
+               for line, edge in fits):
+            continue
+        line, _ = fits[0]
+        rail = np.float32(_line_endpoints(*original, line))
+        edge = original[1] - original[0]
+        length = np.linalg.norm(edge)
+        outward_depth = (original - rail) @ (np.float32([-edge[1], edge[0]]) / length)
+        if (outward_depth.min() < max(36., .025 * shortest) or outward_depth.max() > .075 * shortest
+                or np.ptp(outward_depth) > .008 * length
+                or np.max(np.abs(rail @ fits[1][0][:2] + fits[1][0][2])) > .90):
+            continue
+        palette = _pale_stock_shoulder(image, rail, 44)
+        if palette is None or not _continuous_pale_extension(image, rail, outward_depth.min(), palette):
+            continue
+        expanded = _expand_stock_side(quad, index, line, reach, image.shape)
+        if expanded is None or _claimed_stock_addition(quad, expanded, claims):
+            continue
+        for companion in ((index - 1) % 4, next_index):
+            indices = [companion, (companion + 1) % 4]
+            support = boundary[_SIDE_NAMES[companion]]
+            other, evidence = _side_line(image, *quad[indices], support["search_radius_px"])
+            if other is None or evidence["ambiguous"] or evidence["support"] < .93 or evidence["corner_support"] < .80:
+                continue
+            candidate = _replace_quad_side(expanded, companion, other, support["search_radius_px"], image.shape)
+            if candidate is None or np.linalg.norm(candidate[indices] - expanded[indices], axis=1).max() > 12:
+                continue
+            adjoining = _pale_stock_shoulder(image, candidate[indices], 14)
+            if adjoining is None or np.linalg.norm(adjoining - palette) > 9:
+                continue
+            at_end = companion == next_index
+            if not (_pale_stock_corner(image, candidate[[index, next_index]], at_end=at_end)
+                    and _pale_stock_corner(image, candidate[indices], at_end=not at_end, extension=float(outward_depth.max()))):
+                continue
+            # The companion proves the cap exists. Its fitted rail can still
+            # cross prior content along the old side, so retain that side.
+            candidates.append((expanded, {"side": name, "companion": _SIDE_NAMES[companion],
+                                           "depth_px": np.round(outward_depth, 3).tolist()}))
+    return candidates[0] if len(candidates) == 1 else None

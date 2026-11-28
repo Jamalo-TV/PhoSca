@@ -8,6 +8,8 @@ from app.pipeline.crop_sampling import OWNED_BILINEAR
 from app.pipeline.decisions import MOTIF_MARGIN_MARKS_REVIEW
 from app.pipeline.geometry import normalized_vertices_to_pixels
 from app.pipeline.perspective import correct_photo_crop, validate_review_quads
+from app.pipeline.print_edges import refine_print_boundary
+from app.pipeline.print_stock import recover_pale_stock_preview
 
 
 def _vertices(points, image):
@@ -26,6 +28,68 @@ def _rect(x1, y1, x2, y2):
 
 def _crop(image, box, mask=None, **kwargs):
     return correct_photo_crop(image, box, mask, auto_orient=False, protect_regions=False, **kwargs)
+
+
+@pytest.fixture
+def partly_omitted_pale_stock():
+    page = np.full((900, 900, 3), (84, 72, 53), np.uint8)
+    page[125:783, 100:761] = (226, 235, 243)
+    page[190:725, 166:728] = (150, 116, 94)
+    return page, _rect(125, 166, 760, 782)
+
+
+def test_held_pale_stock_expands_one_edge_and_keeps_prior_native_content(partly_omitted_pale_stock):
+    from app.pipeline.crop_sampling import _outline_mask
+
+    page, seed = partly_omitted_pale_stock
+    evidence = refine_print_boundary(page, seed)[1]
+    old_claim = _rect(290, 174, 330, 193)
+    expanded, details = recover_pale_stock_preview(page, seed, evidence, [old_claim])
+
+    assert details == {"side": "top", "companion": "right", "depth_px": [41., 41.]}
+    np.testing.assert_array_equal(expanded[2:], seed[2:])
+    np.testing.assert_allclose(expanded[:2], _rect(125, 125, 760, 782)[:2], atol=.001)
+    original = _outline_mask(seed.astype(np.float64), page.shape[:2]) > 0
+    revised = _outline_mask(expanded.astype(np.float64), page.shape[:2]) > 0
+    assert (revised & ~original).sum() > 26_000
+    assert not (original & ~revised).any()
+
+    covering_new_strip = _rect(290, 140, 330, 193)
+    assert recover_pale_stock_preview(page, seed, evidence, [covering_new_strip]) is None
+
+
+@pytest.mark.parametrize("color", [(83, 74, 61), (217, 225, 234)])
+def test_held_pale_stock_abstains_when_backing_breaks_the_added_strip(partly_omitted_pale_stock, color):
+    page, seed = partly_omitted_pale_stock
+    cv2.fillPoly(page, [np.int32([[330, 125], [408, 125], [398, 145], [374, 156], [340, 144]])], color)
+    evidence = refine_print_boundary(page, seed)[1]
+    assert evidence["top"]["outward_search"]["print_rim_supported"]
+    assert recover_pale_stock_preview(page, seed, evidence, []) is None
+
+
+@pytest.mark.parametrize(("neighbor_top", "occluded"), [(170, False), (205, True)])
+def test_pale_stock_working_raster_does_not_reclassify_a_neighbor(
+    partly_omitted_pale_stock, monkeypatch, neighbor_top, occluded,
+):
+    from app.pipeline import perspective
+
+    page, seed = partly_omitted_pale_stock
+    refined, evidence, _ = refine_print_boundary(page, seed)
+    reasons = ["PRINT_OUTER_RIM_UNCERTAIN"]
+    monkeypatch.setattr(perspective, "refine_print_boundary", lambda *_args, **_kwargs: (refined, evidence, reasons.copy()))
+    monkeypatch.setattr(perspective, "_outer_contour_hypothesis", lambda *_args: None)
+    mask = {"source": "yolo_seg_mask", "detector_source": "yolo_onnx", "polygon": _vertices(seed, page)}
+    neighbor = {"polygon": _vertices(_rect(200, neighbor_top, 700, 610), page)}
+    result = _crop(page, _box(125, 166, 760, 782, page), mask, dual_mode=True, enable_classical_retry=True,
+                   neighbor_masks=[neighbor])
+    full, motif = (result.metadata["crop_modes"][mode] for mode in ("full_print", "image_only"))
+
+    assert result.rectified_untrimmed.shape == (658, 636, 3)
+    assert full["status"] == motif["status"] == "review_needed"
+    expected = reasons + (["PRINT_POSSIBLY_OCCLUDED"] if occluded else [])
+    assert full["reason_codes"] == motif["reason_codes"] == expected
+    assert full.get("sampling") == (None if occluded else OWNED_BILINEAR)
+    assert result.image_only is None and result.image_only_preview is None
 
 
 def test_disputed_paper_grid_comparison_checks_current_fragment_and_neighbor_claims():
