@@ -57,7 +57,7 @@ from app.pipeline.faint_paper_review import (
 )
 from app.pipeline.motif_margin import HELD_PRINT_MOTIF_MARGIN_SOURCE, PAPER_STOCK_MOTIF_SOURCE
 from app.pipeline.multipanel_prints import DISPUTED_GRID_PREVIEW_SOURCE, GRID_OUTLINE_REVIEW_SOURCE
-from app.pipeline.neighboring_print_review import NEIGHBORING_PRINT_EDGE_TRACES
+from app.pipeline.neighboring_print_review import FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_PRINT_EDGE_TRACES
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_TRACES
 from app.pipeline.perspective import (
@@ -252,6 +252,12 @@ def _offer_contested_tile_followup(
     segmentation.setdefault("fusion", {})["deferred_print_proposals"] = [
         *pending, {"id": next_id, "reason": TILED_PRINT_PROPOSAL, "source": CONTESTED_TILE_FOLLOWUP, "polygon": deepcopy(outline)},
     ]
+    guide = previous.get(FOLLOWUP_PRINT_EDGE_GUIDE) or {}
+    if guide.get("traces") and guide.get("witnesses") and not segmentation.get(FOLLOWUP_PRINT_EDGE_GUIDE) and not any(
+        tiled_outline_conflicts(witness, [*claims, {"polygon": outline}], width, height)
+        for witness in guide["witnesses"]
+    ):
+        segmentation[FOLLOWUP_PRINT_EDGE_GUIDE] = deepcopy(guide)
     page.processing_metadata = {**metadata, "photo_count_revision": str(uuid4())}
 
 
@@ -350,6 +356,13 @@ def _claim_missing_print_trace(
         if reviewed_outline_covers_traces(outline, open_edges) or near_capture_guide_conflicts(outline, open_edges, width, height):
             segmentation.pop(key)
             changed = True
+    guide = segmentation.get(FOLLOWUP_PRINT_EDGE_GUIDE) or {}
+    if guide and (
+        reviewed_outline_covers_traces(outline, guide.get("traces", []))
+        or any(tiled_outline_conflicts(witness, [{"polygon": outline}], width, height) for witness in guide.get("witnesses", []))
+    ):
+        segmentation.pop(FOLLOWUP_PRINT_EDGE_GUIDE)
+        changed = True
     if changed:
         page.processing_metadata = metadata
 

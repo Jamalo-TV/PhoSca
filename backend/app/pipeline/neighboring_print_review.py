@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 
 from app.pipeline.album_backing import _backing_reference, _repeating_profile
+from app.pipeline.edge_prints import _photo_texture
 from app.pipeline.geometry import normalized_polygon_overlap, normalized_vertices_to_pixels, order_quad_cyclic, quad_from_polygon
 from app.pipeline.near_capture_review import _Rail, _claimed_contours, _signed_stations, _trace_intervals
 from app.pipeline.print_edges import _edge_band, _line_endpoints, _quad_from_lines, _side_line, refine_print_boundary
@@ -15,6 +16,7 @@ from app.pipeline.visible_scene_edge import has_enclosing_perimeter
 
 
 NEIGHBORING_PRINT_EDGE_TRACES = "neighboring_print_edge_traces"
+FOLLOWUP_PRINT_EDGE_GUIDE = "followup_print_edge_guide"
 
 
 def _vertices(points):
@@ -251,6 +253,129 @@ def neighboring_layout_traces(
            for envelope in envelopes):
         return []
     return traces
+
+
+def followup_print_position(
+    previous: np.ndarray, upper: np.ndarray, active: list[np.ndarray], held: list[np.ndarray],
+) -> np.ndarray | None:
+    """Translate an upper outline using a measured row and a matching lower neighbor."""
+    vertices = np.roll(previous, -1, axis=0) - previous
+    lengths = np.linalg.norm(vertices, axis=1)
+    if lengths.min() < 180 or lengths.max() > 1.35 * lengths.min():
+        return None
+    axes = vertices[:2] / lengths[:2, None]
+    center = previous.mean(axis=0)
+    upwards = upper.mean(axis=0) - center
+    directions = np.abs(axes @ upwards)
+    vertical = int(directions.argmax())
+    if (directions[vertical] < .97 * np.linalg.norm(upwards)
+            or not .88 <= np.linalg.norm(upwards) / lengths[vertical] <= 1.30):
+        return None
+    row = 1 - vertical
+    candidates = []
+    for peer in active:
+        if np.max(np.abs(np.linalg.norm(np.roll(peer, -1, axis=0) - peer, axis=1) / lengths - 1)) > .25:
+            continue
+        offset = peer.mean(axis=0) - center
+        pitch = np.linalg.norm(offset)
+        if not .95 <= pitch / lengths[row] <= 1.35 or abs(offset @ axes[row]) < .97 * pitch:
+            continue
+        lower_neighbors = [quad for quad in held if np.linalg.norm(
+            quad.mean(axis=0) - (peer.mean(axis=0) - upwards),
+        ) <= .19 * lengths[vertical]]
+        if len(lower_neighbors) == 1:
+            candidates.append(upper + offset)
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _open_rail_witness(start: np.ndarray, stop: np.ndarray, exterior: int) -> np.ndarray:
+    delta = stop - start
+    normal = np.float32([-delta[1], delta[0]]) / np.linalg.norm(delta)
+    return np.float32([start - exterior * normal, stop - exterior * normal,
+                      stop + 10 * normal, start + 10 * normal])
+
+
+def followup_print_edge_guide(
+    image: np.ndarray, projected: np.ndarray, peer: np.ndarray, claims: list[dict],
+) -> dict | None:
+    """Search a nearby position for three independently supported open source sides."""
+    height, width = image.shape[:2]
+    scale = np.float32([width - 1, height - 1])
+    if (not cv2.isContourConvex(projected) or np.min(np.minimum(projected, scale - projected)) < 24
+            or not _photo_texture(image, projected)):
+        return None
+    rails = []
+    for a, b in zip(projected, np.roll(projected, -1, axis=0), strict=True):
+        start, stop = a + np.float32([[.08], [.92]]) * (b - a)
+        fits = [_side_line(image, start, stop, radius) for radius in (14, 17, 20)]
+        if any(line is None or facts["ambiguous"] or facts["support"] < .94 for line, facts in fits):
+            continue
+        line, _ = fits[1]
+        span = np.float32(_line_endpoints(start, stop, line))
+        if any(np.abs(span @ rival[:2] + rival[2]).max() > 1.5 for rival, _ in fits):
+            continue
+        rails.append(span)
+    if len(rails) != 3:
+        return None
+    phases = [bool(_ribs_end_at_edge(image, *span)) for span in rails]
+    if phases.count(True) != 1:
+        return None
+    phase_rail = rails[phases.index(True)]
+    phase_witness = _open_rail_witness(*phase_rail, 15)
+    phase_scope = _normalized(phase_witness / scale)
+    if np.min(np.minimum(phase_witness, scale - phase_witness)) < 1 or tiled_outline_conflicts(
+        phase_scope, claims, width, height,
+    ):
+        return None
+    backing = _edge_band(image, *phase_rail, [-14, -12, -10])
+    if backing is None or np.median(backing[..., 0]) < 145:
+        return None
+    palette = np.median(backing[..., 1:].reshape(-1, 2), axis=0)
+    if not 123 <= palette[0] <= 139 or palette[1] < 135:
+        return None
+    contours = _claimed_contours(claims, width, height, 0)
+    spans, witnesses = [], [phase_scope]
+    for phase, span in zip(phases, rails, strict=True):
+        stations, signed = _signed_stations(image, span, palette)
+        if signed.mean() < .85:
+            return None
+        exterior = 15 if phase else 10
+        # Clip the sampled strip to claim-free intervals on the measured line.
+        delta = span[1] - span[0]
+        normal = np.float32([-delta[1], delta[0]]) / np.linalg.norm(delta)
+        corridor = _open_rail_witness(*span, exterior)
+        low, high = corridor.min(axis=0) - 1, corridor.max(axis=0) + 1
+        for contour in contours:
+            vertices = contour[:, 0]
+            if np.any(vertices.max(axis=0) < low) or np.any(vertices.min(axis=0) > high):
+                continue
+            for offset in range(-exterior, 11):
+                signed &= [cv2.pointPolygonTest(contour, tuple(point), True) < -.5
+                           for point in stations + offset * normal]
+        indices = np.flatnonzero(signed)
+        runs = np.split(indices, np.flatnonzero(np.diff(indices) > 1) + 1)
+        observed = []
+        for run in runs:
+            if len(run) < 14:
+                continue
+            trace = stations[run[[0, -1]]]
+            region = _open_rail_witness(*trace, exterior)
+            if np.min(np.minimum(region, scale - region)) < 1:
+                continue
+            witness = _normalized(region / scale)
+            if not tiled_outline_conflicts(witness, claims, width, height):
+                observed.append(trace)
+                witnesses.append(witness)
+        if sum(np.linalg.norm(stop - start) for start, stop in observed) < .15 * np.linalg.norm(delta):
+            return None
+        spans.extend(observed)
+    shortest = np.linalg.norm(np.roll(projected, -1, axis=0) - projected, axis=1).min()
+    envelope = cv2.convexHull(np.vstack([projected, peer]))[:, 0]
+    inside = cv2.convexHull(np.vstack(spans))[:, 0]
+    if any(has_enclosing_perimeter(image, shape, context, shortest, search_margin=.65, maximum_area_ratio=3.8)
+           for shape, context in ((projected, inside), (envelope, envelope))):
+        return None
+    return {"traces": [_normalized(span / scale) for span in spans], "witnesses": witnesses}
 
 
 def _native_outline(image: np.ndarray, polygon: np.ndarray, direction: np.ndarray, claims: list[dict]) -> np.ndarray | None:

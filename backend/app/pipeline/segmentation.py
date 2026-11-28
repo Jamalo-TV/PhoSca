@@ -72,7 +72,8 @@ from app.pipeline.near_capture_review import (
     NEAR_CAPTURE_PRINT_TRACES, near_capture_candidate_turn, near_capture_print_traces, quarter_turn,
 )
 from app.pipeline.neighboring_print_review import (
-    NEIGHBORING_PRINT_EDGE_TRACES, neighboring_layout_traces, neighboring_print_outline, next_print_position,
+    FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_PRINT_EDGE_TRACES, followup_print_edge_guide, followup_print_position,
+    neighboring_layout_traces, neighboring_print_outline, next_print_position,
 )
 from app.pipeline.page_deskew import album_rotation, deskewed_view
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_REVIEW, PARTIAL_PRINT_EXTENT_TRACES, partial_print_extent_traces
@@ -4960,8 +4961,25 @@ def _record_contested_tile_followup(
             return result
     except Exception:  # A failed optional view must preserve the earlier proposals.
         return result
+    mask = {**item.mask, CONTESTED_TILE_FOLLOWUP: polygon}
+    try:
+        scale = np.float32([width - 1, height - 1])
+        active = [quad_from_polygon(_detection_polygon(other) * scale)[0] for other in peers
+                  if other.geometry_valid and other.mask.get("detector_source") == "yolo_onnx"
+                  and not any(other.mask.get(key) for key in (POSSIBLE_PRINT_REGIONS, MERGED_PRINT_PAIR))]
+        pending = (result.metadata.get("fusion") or {}).get("deferred_print_proposals") or []
+        held = [order_quad_cyclic(np.float32([(p["x"], p["y"]) for p in row["polygon"]]) * scale)
+                for row in pending if row.get("reason") == TILED_PRINT_PROPOSAL and len(row.get("polygon") or []) == 4]
+        source_peer = order_quad_cyclic(outline)
+        projected = followup_print_position(order_quad_cyclic(replacement_points * scale), source_peer, active, held)
+        if projected is not None and (guide := followup_print_edge_guide(
+            source, projected, source_peer, [*claims, {"polygon": polygon}],
+        )):
+            mask[FOLLOWUP_PRINT_EDGE_GUIDE] = guide
+    except (cv2.error, ValueError, KeyError, TypeError, np.linalg.LinAlgError):
+        pass  # The measured follow-up offer remains available independently of the open guide.
     detections = result.detections.copy()
-    detections[index] = replace(item, mask={**item.mask, CONTESTED_TILE_FOLLOWUP: polygon})
+    detections[index] = replace(item, mask=mask)
     return SegmentationResult(detections, result.metadata)
 
 

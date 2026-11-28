@@ -4,7 +4,9 @@ import pytest
 
 from app.pipeline.geometry import order_quad_cyclic
 from app.pipeline.near_capture_review import quarter_turn
-from app.pipeline.neighboring_print_review import neighboring_layout_traces, neighboring_print_outline, next_print_position
+from app.pipeline.neighboring_print_review import (
+    followup_print_edge_guide, followup_print_position, neighboring_layout_traces, neighboring_print_outline, next_print_position,
+)
 from app.pipeline.tile_print_review import TILED_PRINT_PROPOSAL
 
 
@@ -14,6 +16,52 @@ def _outline(points):
 
 def _rect(left, top, right, bottom):
     return np.float32([[left, top], [right, top], [right, bottom], [left, bottom]])
+
+
+def test_followup_position_requires_one_aligned_known_row_and_a_lower_neighbor():
+    previous = _rect(100, 395, 360, 645)
+    upper = _rect(102, 111, 366, 369)
+    active = _rect(406, 390, 663, 643)
+    lower = _rect(410, 670, 670, 922)
+
+    expected = upper + (active.mean(axis=0) - previous.mean(axis=0))
+    np.testing.assert_allclose(followup_print_position(previous, upper, [active], [lower]), expected)
+    assert followup_print_position(previous, upper, [active], [lower + [60, 0]]) is None
+    assert followup_print_position(previous, upper, [active, active + [5, 0]], [lower]) is None
+
+
+@pytest.mark.parametrize("condition", ["three_edges", "phase_claim", "blank"])
+def test_followup_guide_keeps_only_three_open_sides_with_unclaimed_witnesses(condition):
+    height, width = 660, 770
+    lab = np.empty((height, width, 3), dtype=np.uint8)
+    lab[:] = [207, 127, 137]
+    lab[..., 0] = 207 + 29 * np.cos(2 * np.pi * np.arange(height)[:, None] / 11)
+    lab[:, 528:, 0] = 207
+    if condition != "blank":
+        scene = lab[42:431, 250:528]
+        scene[:] = [85, 138, 120]
+        scene[..., 0] = 85 + np.random.default_rng(33).integers(-32, 33, size=scene.shape[:2])
+    image = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+    scale = np.float32([width - 1, height - 1])
+    projected = _rect(243, 149, 536, 440)
+    peer = _rect(254, 452, 520, 632)
+    claims = [{"polygon": _outline(peer / scale)}]
+    if condition == "phase_claim":
+        claims.append({"polygon": _outline(_rect(235, 169, 241, 193) / scale)})
+
+    proposal = followup_print_edge_guide(image, projected, peer, claims)
+
+    if condition != "three_edges":
+        assert proposal is None
+        return
+    assert len(proposal["traces"]) == 3
+    assert len(proposal["witnesses"]) == 4
+    endpoints = [np.float32([(p["x"], p["y"]) for p in trace]) * scale for trace in proposal["traces"]]
+    for trace in endpoints:
+        assert np.all(trace[:, 1] > 160)
+    np.testing.assert_allclose(endpoints[0][:, 0], 527, atol=1.)
+    np.testing.assert_allclose(endpoints[1][:, 1], 430, atol=1.)
+    np.testing.assert_allclose(endpoints[2][:, 0], 250, atol=1.)
 
 
 @pytest.mark.parametrize("case", ["vacant", "claimed", "wrong_pitch", "two_positions"])

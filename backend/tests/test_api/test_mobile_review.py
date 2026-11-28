@@ -118,7 +118,7 @@ async def test_neighboring_source_guide_is_retired_only_by_a_material_manual_cla
     from app.database import get_session_factory
     from app.models import Page
     from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES
-    from app.pipeline.neighboring_print_review import NEIGHBORING_PRINT_EDGE_TRACES
+    from app.pipeline.neighboring_print_review import FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_PRINT_EDGE_TRACES
 
     monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
     monkeypatch.setenv("ENABLE_PHOTO_ORIENTATION_CORRECTION", "false")
@@ -131,10 +131,12 @@ async def test_neighboring_source_guide_is_retired_only_by_a_material_manual_cla
     detected = quad(.80, .25, .96, .75)
     traces = [detected[:2], detected[1:3], detected[2:]]
     other_traces = [quad(.02, .45, .08, .63)[::3]]
+    followup_guide = {"traces": [quad(.310, .06, .315, .14)[::3]], "witnesses": [quad(.28, .06, .33, .14)]}
     async with get_session_factory()() as session:
         page = await session.get(Page, page_id)
         page.processing_metadata = {"steps": {"segmentation": {
             NEIGHBORING_PRINT_EDGE_TRACES: traces, NEAR_CAPTURE_PRINT_TRACES: other_traces,
+            FOLLOWUP_PRINT_EDGE_GUIDE: followup_guide,
         }}}
         await session.commit()
 
@@ -147,11 +149,13 @@ async def test_neighboring_source_guide_is_retired_only_by_a_material_manual_cla
     initial = await review_payload()
     assert initial[NEIGHBORING_PRINT_EDGE_TRACES] == traces
     assert initial[NEAR_CAPTURE_PRINT_TRACES] == other_traces
+    assert initial[FOLLOWUP_PRINT_EDGE_GUIDE] == followup_guide
     assert initial["detection_count"] == 1 and initial["deferred_print_proposals"] == []
     manual_url = f"/api/v1/pages/{page_id}/manual-photos"
     separate = await client.post(manual_url, json={"request_id": str(uuid4()), "warp_quad": quad(.08, .03, .29, .15)})
     assert separate.status_code == 201, separate.text
     assert (await review_payload())[NEIGHBORING_PRINT_EDGE_TRACES] == traces
+    assert FOLLOWUP_PRINT_EDGE_GUIDE not in (await review_payload())
 
     # Only this part of the saved quad intersects a measured span: no inferred
     # corner or automatic photo is created from the open trace.
@@ -2889,12 +2893,15 @@ async def test_contested_tile_cannot_be_added_separately_or_saved_over_a_new_cla
         assert len((await client.get(f"/api/v1/albums/{album}/photos")).json()) == 1
 
 
-@pytest.mark.parametrize("outcome", ["released_for_review", "occupied", "rejected_save", "different_outline", "refined_claim"])
+@pytest.mark.parametrize("outcome", [
+    "released_for_review", "occupied", "rejected_save", "different_outline", "refined_claim", "guide_claimed",
+])
 async def test_contested_tile_followup_requires_a_committed_matching_correction(client, monkeypatch, outcome):
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import ExtractedPhoto, Page
     from app.pipeline.crossing_prints import CONTESTED_TILE_OUTLINE
+    from app.pipeline.neighboring_print_review import FOLLOWUP_PRINT_EDGE_GUIDE
     from app.pipeline.tile_print_review import CONTESTED_TILE_FOLLOWUP, TILED_PRINT_PROPOSAL
     from app.routers import photos
 
@@ -2909,6 +2916,8 @@ async def test_contested_tile_followup_requires_a_committed_matching_correction(
     followup = rect(.14, .09, .59, .42)
     revision = str(uuid4())
     pending = [{"id": 2, "reason": TILED_PRINT_PROPOSAL, "polygon": rect(.16 if outcome == "occupied" else .70, .20, .92, .34)}]
+    scope = rect(.75, .23, .85, .30) if outcome == "guide_claimed" else rect(.92, .48, .98, .65)
+    guide = {"traces": [scope[:2]], "witnesses": [scope]}
     async with get_session_factory()() as session:
         page = await session.get(Page, page_id)
         page.processing_metadata = {"steps": {"segmentation": {"fusion": {"deferred_print_proposals": pending}}},
@@ -2917,7 +2926,7 @@ async def test_contested_tile_followup_requires_a_committed_matching_correction(
         photo.segmentation_mask = {"polygon": rect(.12, .07, .67, .84), "source": "classical_min_area_rect",
                                    "crossing_print_suggestion": alternative,
                                    "crossing_print_suggestion_source": CONTESTED_TILE_OUTLINE,
-                                   CONTESTED_TILE_FOLLOWUP: followup}
+                                   CONTESTED_TILE_FOLLOWUP: followup, FOLLOWUP_PRINT_EDGE_GUIDE: guide}
         await session.commit()
 
     queue = f"/api/v1/review/queue?album_id={album}&type=segmentation"
@@ -2930,6 +2939,7 @@ async def test_contested_tile_followup_requires_a_committed_matching_correction(
 
     before = await payload()
     assert before["deferred_print_proposals"] == pending
+    assert FOLLOWUP_PRINT_EDGE_GUIDE not in before
     if outcome == "rejected_save":
         async def reject(*args, **kwargs):
             raise ValueError("test_render_rejection")
@@ -2950,9 +2960,10 @@ async def test_contested_tile_followup_requires_a_committed_matching_correction(
     assert saved.status_code == (422 if outcome == "rejected_save" else 200), saved.text
     after = await payload()
     assert after["detection_count"] == before["detection_count"] == 1
-    if outcome != "released_for_review":
+    if outcome not in {"released_for_review", "guide_claimed"}:
         assert after["photo_count_revision"] == revision
         assert after["deferred_print_proposals"] == pending
+        assert FOLLOWUP_PRINT_EDGE_GUIDE not in after
         if outcome == "rejected_save":
             async with get_session_factory()() as session:
                 photo = await session.get(ExtractedPhoto, photo_id)
@@ -2964,6 +2975,10 @@ async def test_contested_tile_followup_requires_a_committed_matching_correction(
         *pending, {"id": 3, "reason": TILED_PRINT_PROPOSAL, "source": CONTESTED_TILE_FOLLOWUP, "polygon": followup},
     ]
     assert CONTESTED_TILE_FOLLOWUP not in saved.json()["segmentation_mask"]
+    if outcome == "guide_claimed":
+        assert FOLLOWUP_PRINT_EDGE_GUIDE not in after
+    else:
+        assert after[FOLLOWUP_PRINT_EDGE_GUIDE] == guide
     retry = await client.patch(url, json=body)
     assert retry.status_code == 200, retry.text
     assert (await payload())["deferred_print_proposals"] == after["deferred_print_proposals"]

@@ -2834,6 +2834,62 @@ over eleven fixed-geometry runs under shared test load.
 The upload and review receipts, images and source controls are under
 `runs/crop-quality/u039-ribbed-scene-edge/`.
 
+#### Show open sides after resolving the competing print
+
+U039 development print 1 remains missing from normal detection. Two
+tighter development views nominate it, but the ordinary top-side fit
+is ambiguous. A signed measurement can distinguish parts of the
+scene transition from the brighter album rib. A gap between those
+observations leaves the paper boundary unresolved. The ordinary
+path keeps the top open.
+
+The upper follow-up outline and the measured replacement for the
+old broad proposal supply a vertical pitch. A comparable active
+print in the same row and one compatible held outline below it
+must identify a unique neighboring position. The position only
+places original-pixel searches. Its projected rectangle can
+intersect a current lower neighbor. Only the measured, unclaimed
+witness strips are used. This additional guide makes no model call.
+
+Three sides must agree at search radii of 14, 17 and 20 native
+pixels. Each fit needs at least 0.94 support and agreement within
+1.5 pixels across the search radii. One flank must show a repeating
+album texture that stops at the measured edge, with its full
+witness strip free of other claims. Its palette corroborates the
+signed transitions on all three sides. Displayed intervals have
+at least 14 consecutive supported samples and a clear witness
+including a native pixel of margin for bilinear measurement.
+A visible enclosing perimeter or an unverified witness suppresses
+the guide.
+
+On the original U039 page this yields four still-open intervals
+covering 219.4, 36.4, 67.8 and 88.7 native pixels. The lower interval
+stops before the existing print's claim. At upload these data stay
+with the old unresolved row. The ordinary correction of that row
+publishes this group together with the already measured upper-left
+pending outline. The transaction checks all witness strips against
+the saved contour and current claims. The group appears in the
+count review while the active count is still four and remains
+through acceptance of the separate pending print. A later explicit
+manual claim retires only this group. The five earlier traces on
+the right remain independent. The guide supplies no source crop
+warp, output raster or automatic count change.
+
+All four native quarter-turn controls with fixed transformed anchors
+reproduce the same intervals. Three of four JPEG75 versions with
+fixed anchors produce comparable open intervals. Opaque and tested
+faint common carriers, replaced album texture, the old broad
+claim and local interfering witnesses abstain. A physical sheet
+reproducing the same source image can still show the same optical
+lines. A manual addition from the independently drawn draft yields
+a 269 × 264 review image while both named exports and the legacy
+trimmed alias stay held. Source-only checks took 153–245 ms over
+the four one-thread native runs. All eight regression comparisons
+reproduce the previous detection, geometry and review scores,
+including 18/18 locked detections and 23/23 seeded crop passes.
+Upload, review and optical
+receipts are under `runs/crop-quality/u039-open-followup/`.
+
 #### Recover a held outline from a proposal covering an existing print
 
 On native U040, an invalid full-page mask covers the middle and
@@ -12287,3 +12343,18 @@ private pages with six proposed prints, twelve unverified mode
 references and two missing independent motif aspects. The reviewed
 training inventory for the registered historical checkpoint remains
 outstanding. These checks contribute zero verified shared release groups.
+
+The Reg Panton album publication documents 1200 dpi scans of double
+leaves and rescans of some originals removed from their corner mounts.
+It includes cropped or cleaned enlargements. Per-print acquisition
+records, the native master files and the terms for those files are
+still needed. The inspected route did not provide verified native
+pairs. [Album and stated digitization method](https://vandwdestroyerassociation.org.uk/HMS_Wivern/Reg_Panton.html)
+
+A separate byte audit checked the authored checkpoint's 200 training
+and 65 validation pairs and 24 unique real-development images named
+by five existing reports. The image, label and checkpoint hashes all
+matched and the known real-development files had zero exact overlap
+with the authored fitting corpus. Physical album assignments for all
+development uses still need review, and the checkpoint remains below
+the development quality baseline. This audit adds no release group.

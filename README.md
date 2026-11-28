@@ -226,6 +226,15 @@ Ecke verschiebst oder ein anderer Abzug einen Messbereich belegt,
 blendet PhoSca den Hinweis aus. Papierformat und Motivgrenze bleiben
 separate Prüfschritte. [Beispiel mit offenen Bildkanten](data/evaluation/README.md#show-an-open-scene-transition-inside-a-held-follow-up-print)
 
+Nach der Korrektur einer zu grossen Kontrastkontur kann PhoSca in der
+Abzugsprüfung auch offene Kanten eines weiteren möglichen Abzugs zeigen.
+Ein passender Abzug in derselben Zeile und eine Kontur in der nächsten
+Zeile begrenzen die Suche. Die blauen Abschnitte stammen aus Messungen
+am Original. Prüfe die Papierzuordnung und die offenen Seiten. Setze
+beim Ergänzen alle vier Ecken selbst. Wenn ein gespeicherter Umriss einen
+Messbereich belegt, verschwindet der zugehörige Hinweis.
+[Beispiel mit drei messbaren Seiten](data/evaluation/README.md#show-open-sides-after-resolving-the-competing-print)
+
 Ein zu hoher oder zu breiter Modellvorschlag kann einen fehlenden und
 einen bereits erkannten Abzug umfassen. Zwei starke Kachelmasken müssen
 die Teilflächen einzeln finden. PhoSca prüft am Original die vier Kanten

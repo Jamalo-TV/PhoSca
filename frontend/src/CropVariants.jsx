@@ -280,7 +280,8 @@ export function getSourceEdgeTraces(traces) {
 export function getMissingPrintEdgeReview(metadata) {
   const nearCaptureTraces = getSourceEdgeTraces(metadata?.near_capture_print_edge_traces);
   const otherTraces = [...getSourceEdgeTraces(metadata?.missing_print_edge_traces),
-    ...getSourceEdgeTraces(metadata?.neighboring_print_edge_traces).filter((trace) => trace.length === 2)];
+    ...getSourceEdgeTraces(metadata?.neighboring_print_edge_traces).filter((trace) => trace.length === 2),
+    ...getSourceEdgeTraces(metadata?.followup_print_edge_guide?.traces).filter((trace) => trace.length === 2)];
   return { traces: [...otherTraces, ...nearCaptureTraces],
     hint: nearCaptureTraces.length > 0 && !otherTraces.length ? nearCapturePrintEdgeHint : missingPrintEdgeHint };
 }
