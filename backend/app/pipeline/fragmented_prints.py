@@ -12,7 +12,7 @@ from app.pipeline.print_edges import (
 )
 
 
-FRAGMENTED_PRINT_REVISION = 5
+FRAGMENTED_PRINT_REVISION = 6
 SOURCE_FRAGMENT_PROPOSAL = "possible_source_fragmented_print"
 SOURCE_FRAGMENT_GROUP_REVIEW = "SOURCE_FRAGMENT_GROUP_REVIEW"
 FRAGMENTED_PRINT_REVIEW = "FRAGMENTED_PRINT_REVIEW"
@@ -125,6 +125,7 @@ def nested_scene_fragment_continuities(
 
 def _shared_fragment_rail(
     image: np.ndarray, outer: np.ndarray, first: np.ndarray, last: np.ndarray, line: np.ndarray,
+    *, extensions: tuple[tuple[float, float], ...] = ((-.48, -.10), (1.10, 1.48)),
 ) -> np.ndarray | None:
     start, stop = np.float32(_line_endpoints(first, last, line))
     direction = stop - start
@@ -139,7 +140,7 @@ def _shared_fragment_rail(
     strength = np.linalg.norm(signed)
     if strength < 30 or np.mean(delta @ signed >= 18 * strength) < .88:
         return None
-    for begin, end in ((-.48, -.10), (1.10, 1.48)):
+    for begin, end in extensions:
         stations = np.linspace(begin, end, 64, dtype=np.float32)
         path = start + stations[:, None] * direction
         if min(cv2.pointPolygonTest(outer, tuple(p + 12 * inward), True) for p in path[::4]) < -3:
@@ -152,6 +153,129 @@ def _shared_fragment_rail(
         if valid.mean() >= .86 and min(part.mean() for part in np.array_split(valid, 4)) >= .72:
             return path[[0, -1]]
     return None
+
+
+def _aligned_layer_step(band: np.ndarray) -> bool:
+    center = len(band) // 2
+    for reach in (3, 5, 7):
+        for row in range(2 * reach, len(band) - 2 * reach):
+            if abs(row - center) > 12:
+                continue
+            near = band[row + reach] - band[row - reach]
+            far = band[row + 2 * reach] - band[row - 2 * reach]
+            transition = near - .5 * far
+            direction = np.median(transition, axis=0)
+            strength = np.linalg.norm(direction)
+            if strength <= .55:
+                continue
+            signed = transition @ direction / strength
+            if np.quantile([np.median(piece) for piece in np.array_split(signed, 7)], .25) > .55:
+                return True
+    return False
+
+
+def _signed_track_strength(band: np.ndarray, reach: int) -> np.ndarray:
+    height, width = band.shape[:2]
+    ordinate = np.arange(height, dtype=np.float32)[:, None]
+    stations = np.arange(width, dtype=np.float32)[None]
+    sample_rows = np.broadcast_to(ordinate, (height, width)).copy()
+    changes = np.roll(band, -reach, axis=1) - np.roll(band, reach, axis=1)
+    strength = np.zeros(width, dtype=np.float32)
+    for slope in np.arange(-3., 3.01, .5, dtype=np.float32):
+        sample_columns = stations + slope * (ordinate - height // 2)
+        along = cv2.remap(changes, sample_columns, sample_rows, cv2.INTER_LINEAR)
+        direction = np.median(along, axis=0)
+        direction /= np.maximum(.1, np.linalg.norm(direction, axis=1, keepdims=True))
+        signed = (along * direction).sum(axis=2)
+        supported = np.min([np.quantile(part, .25, axis=0) for part in np.array_split(signed, 4)], axis=0)
+        np.maximum(strength, supported, out=strength)
+    # Keep the shifted gradient taps inside the sampled band.
+    strength[:64] = strength[-64:] = 0
+    return strength
+
+
+def _localized_fragment_cut(image: np.ndarray, outer: np.ndarray, start: np.ndarray, stop: np.ndarray) -> np.ndarray | None:
+    edge = stop - start
+    length = float(np.linalg.norm(edge))
+    tangent = edge / length
+    normal = np.float32([-tangent[1], tangent[0]])
+    stations = start + np.arange(round(.055 * length), round(.945 * length), dtype=np.float32)[:, None] * tangent
+    offsets = np.arange(-17, 18, dtype=np.float32)
+    points = stations[None] + offsets[:, None, None] * normal
+    if any(cv2.pointPolygonTest(outer, tuple(point), True) < 3 for point in points[[0, -1]][:, [0, -1]].reshape(-1, 2)):
+        return None
+    if np.any((points < 0) | (points > np.array(image.shape[1::-1]) - 1)):
+        return None
+    pixels = cv2.remap(image, points[..., 0].copy(), points[..., 1].copy(), cv2.INTER_LINEAR)
+    band = cv2.cvtColor(cv2.GaussianBlur(pixels, (0, 0), 1.1).astype(np.float32) / 255., cv2.COLOR_BGR2LAB)
+    if _aligned_layer_step(band):
+        return None
+    narrow, wide = (_signed_track_strength(band, reach) for reach in (6, 9))
+    crossings = np.flatnonzero((narrow >= 5.8) & (wide >= 8.3))
+    groups = np.split(crossings, np.flatnonzero(np.diff(crossings) >= 32) + 1)
+    supported = [group[np.argmax(narrow[group])] for group in groups if len(group) >= 3]
+    if len(supported) < 2 or supported[-1] - supported[0] < 80:
+        return None
+    return stations[[supported[0], supported[-1]]]
+
+
+def _refit_continued_rail(image: np.ndarray, span: np.ndarray, line: np.ndarray) -> bool:
+    fits = [_side_line(image, *span, radius) for radius in (8, 12)]
+    if any(fit is None or evidence["ambiguous"] or evidence["support"] < .92 or evidence["corner_support"] < .70
+           for fit, evidence in fits):
+        return False
+    first, second = (np.float32(_line_endpoints(*span, fit)) for fit, _ in fits)
+    return bool(np.max(np.abs(np.vstack((first, second)) @ line[:2] + line[2])) <= 1.5
+                and np.linalg.norm(first - second, axis=1).max() <= .75)
+
+
+def nested_scene_fragment_with_local_tracks(image: np.ndarray, outer: np.ndarray, fragment: np.ndarray) -> list[np.ndarray]:
+    """Retain bounded evidence for a count decision when scene contrast is local."""
+    sides = list(zip(fragment, np.roll(fragment, -1, axis=0), strict=True))
+    lengths = [float(np.linalg.norm(last - first)) for first, last in sides]
+    shortest = min(lengths)
+    if (shortest < 650 or max(lengths) > 8192 or max(image.shape[:2]) >= 32767
+            or not cv2.isContourConvex(outer)):
+        return []
+    radius = int(np.clip(round(.014 * shortest), 12, 24))
+    strong = {}
+    weak = []
+    for index, (first, last) in enumerate(sides):
+        line, side = _side_line(image, first, last, radius)
+        if side["ambiguous"]:
+            return []
+        if line is not None and side["support"] >= .95 and (side["corner_support"] or 0) >= .88:
+            strong[index] = line
+        elif line is None and side["support"] <= .24:
+            weak.append(index)
+        else:
+            return []
+    if len(weak) != 2 or weak[1] - weak[0] == 2:
+        return []
+    shared = 0
+    for index, line in strong.items():
+        # Only test extensions through the weak cut at that end.
+        spans = []
+        if (index - 1) % 4 in weak:
+            spans.append((-.13, -.025))
+        if (index + 1) % 4 in weak:
+            spans.append((1.025, 1.13))
+        extension = _shared_fragment_rail(image, outer, *sides[index], line, extensions=tuple(spans))
+        if extension is None:
+            continue
+        # Fit the part beyond the junction independently. Stock can match
+        # on both sides even when a separate print has a displaced motif.
+        start, end = extension
+        near = sides[index][0] if (index - 1) % 4 in weak else sides[index][1]
+        if np.linalg.norm(start - near) < np.linalg.norm(end - near):
+            start = start + (end - start) / 3
+        else:
+            end = end + (start - end) / 3
+        shared += _refit_continued_rail(image, np.float32([start, end]), line)
+    if shared != 1:
+        return []
+    traces = [_localized_fragment_cut(image, outer, *sides[index]) for index in weak]
+    return traces if all(trace is not None for trace in traces) else []
 
 
 def _contour_has_material_step(image: np.ndarray, first: np.ndarray, last: np.ndarray) -> bool:

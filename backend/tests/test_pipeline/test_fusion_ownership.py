@@ -100,6 +100,73 @@ def test_nested_scene_fragment_is_deferred_only_when_the_scene_crosses_both_cuts
     assert len(offer["interior_edge_traces"]) == 2
 
 
+@pytest.mark.parametrize(("case", "turned"), [
+    ("scene", False), ("scene", True), ("different_print", False), ("same_scene_with_step", True),
+    ("short_rail", False), ("one_track", False), ("competing_pending", False), ("indistinguishable", False),
+])
+def test_localized_color_crossings_supply_a_reversible_count_offer(case, turned):
+    image = np.full((1080, 1250, 3), (204, 212, 227), np.uint8)
+    image[199:979, 160:1140] = (110, 142, 167)
+    objects = [((521, 871), (24, 37), -15), ((217, 604), (30, 22), 15), ((222, 734), (32, 23), -15)]
+    if case != "one_track":
+        objects.append(((629, 876), (23, 39), 22))
+    for center, axes, angle in objects:
+        cv2.ellipse(image, center, axes, angle, 0, 360, (90, 139, 197), -1, cv2.LINE_AA)
+    child_pixels = image[200:874, 220:1140]
+    if case == "different_print":
+        child_pixels[:] = (168, 92, 116)
+    elif case == "same_scene_with_step":
+        child_pixels[:] = np.clip(child_pixels.astype(np.int16) + 3, 0, 255)
+    elif case == "indistinguishable":
+        child_pixels[:] = np.clip(child_pixels.astype(np.int16) + 1, 0, 255)
+    elif case == "short_rail":
+        image[876:979, 1110:1140] = (204, 212, 227)
+    if turned:
+        image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+    height, width = image.shape[:2]
+    settings = Settings(DATABASE_URL="sqlite://", REDIS_URL="redis://")
+
+    def proposal(outline, confidence, source, detector, family, cluster):
+        points = np.float32(outline)
+        if turned:
+            points = order_quad_cyclic(np.column_stack((width - 1 - points[:, 1], points[:, 0])))
+        item = _make_detection(box={}, points=points, confidence=confidence, image_width=width, image_height=height,
+                               settings=settings, source=source, detector_source=detector)
+        assert item is not None and item.geometry_valid and not item.review_reasons
+        return replace(item, mask={**item.mask, "fusion": {
+            "cluster_id": cluster, "proposal_families": [family], "proposal_count": 1,
+        }})
+
+    parent = proposal([(110, 165), (1199, 165), (1199, 1000), (110, 1000)],
+                      .93, "yolo_seg_mask", "yolo_onnx", "model", 0)
+    child = proposal([(220, 200), (1139, 200), (1139, 873), (220, 873)],
+                     .68, "classical_border_quad", "contrast_region", "classical", 1)
+    metadata = {"fallback_used": True}
+    if case == "competing_pending":
+        small = [{"x": x / (width - 1), "y": y / (height - 1)} for x, y in (
+            (600, 500), (675, 500), (675, 570), (600, 570),
+        )]
+        metadata["fusion"] = {"deferred_print_proposals": [{"id": 0, "source_mask": {"visible_polygon": small}}]}
+    baseline = SegmentationResult([parent, child], metadata)
+    result = _defer_nested_scene_fragments(image, baseline)
+    if case not in {"scene", "indistinguishable"}:
+        assert result is baseline
+        return
+
+    assert result.detections == [replace(parent, review_reasons=[NESTED_FALLBACK_CONTOUR_REVIEW])]
+    offer, = result.metadata["fusion"]["deferred_print_proposals"]
+    assert offer["reason"] == NESTED_FALLBACK_CONTOUR
+    assert offer["parent_cluster_id"] == 0
+    assert offer["polygon"] == child.mask["polygon"]
+    assert offer["fusion_cluster_id"] == 1
+    assert offer["source_mask"]["polygon"] == child.mask["polygon"]
+    assert deferred_neighbor_masks(result.metadata) == [offer["source_mask"]]
+    assert len(offer["interior_edge_traces"]) == 2
+    for trace in offer["interior_edge_traces"]:
+        points = np.float64([(p["x"] * (width - 1), p["y"] * (height - 1)) for p in trace])
+        assert 80 < np.linalg.norm(points[0] - points[1]) < 200
+
+
 @pytest.mark.parametrize("case", ["scene", "separate_stock", "short_rail", "small_pending_claim"])
 def test_nested_edge_proposal_requires_two_continued_paper_rails_and_no_other_owner(case):
     image = np.full((1000, 1050, 3), 135, np.uint8)

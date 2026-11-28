@@ -12962,3 +12962,73 @@ physical group identity nor training disjointness. No model was run
 on those pages during this review, no calibration was fitted and the
 final split was untouched. The release inventory still has zero
 shared verified physical album groups.
+
+## Review local colour tracks across a large inner contour
+
+Scan 83 contains six visible prints. After the earlier wide scene
+continuity check, the ordinary native upload retained seven active
+rows and one deferred proposal. The remaining extra was a singleton
+classical contrast-region quad at
+`(2363,304) (4557,304) (4556,1996) (2438,1993)`. It lies wholly
+inside the upper-right model polygon, with IoU 0.7034 and no other
+claim on the region. The top and right are strong motif transitions.
+The lower cut crosses a green table and the rim of a glass. The left
+cut crosses several objects against softer areas of the scene. The
+wide grayscale search found no qualifying continuity on either cut.
+[Native input, hashes and first count comparison](#trace-scene-detail-across-a-nested-flatbed-proposal)
+
+The narrower retry runs after that wide check abstains. It requires
+two adjacent supported lines, two weak sides, and the same containment
+and claimant checks. An existing deferred outline can veto the retry
+even when only the smaller proposal lies wholly inside the fragment.
+One strong line must continue beyond the adjacent cut into the larger
+model outline. Two fits in that extended area must agree to 0.75 native
+pixels and stay within 1.5 pixels of the strong line. The retry then
+measures tangential CIELAB changes on the two weak sides. It compares
+two sampling widths and requires at least two separated groups of
+tracks to pass through each cut. The four quarters of each crossing
+must support the same signed change. A separate check rejects a
+consistent, narrow layer transition along a cut after subtracting its
+broad illumination trend.
+
+The normal Scan 83 replay shows two open evidence spans. The lower
+one is about 342 pixels long, from x3074 to x2732 near y1994. The left
+one is about 113 pixels long between y1808 and y1695. The lower span
+crosses the rim of the glass. The continuing right motif line can be
+measured over a separate 118-pixel span outside the classical quad.
+The native, JPEG95 and JPEG75 fixed-outline replays show the two
+review spans. JPEG55 abstains. The independent Scan 66 photograph
+placed across the scene cuts and a three-pixel registered copy retain
+their separate claim in native and JPEG75 controls. A nearly exact
+copy can show the same evidence. The contour is kept as a reversible
+count offer with its original mask and cluster identity. The crop
+inspection continues to use that underlying claim until review.
+
+At IoU 0.85 against the source author's six coarse scene outlines,
+active precision changes from 6/7 to 6/6 and recall stays at 6/6. These
+outlines support a count comparison. The normal upload has six active
+rows and two offers. All six masks, transforms, per-mode records,
+working raster hashes and JPEG bytes agree with the prior revision.
+Both named crop exports and the legacy export return HTTP 404. Direct
+crop approval returns HTTP 409. Laptop and mobile count review show the
+measured spans. Opening and cancelling an offer sends no writes.
+Confirming the complete count clears both offers, and a stale reopen is
+rejected. Normal reprocessing before and after count confirmation
+reproduces the same six rows and held working pixels. The native upload
+took 93.2 seconds under concurrent tests. Four fixed-outline quarter
+turns give the same lengths, with isolated search times of 388–517 ms.
+All eight paired software benchmark reports keep their scores and
+review counts. The frozen detector matches 18/18 prints. The seeded
+geometry benchmark passes all 11 recoverable whole-print and 12
+recoverable motif crops. The fragmented-print validation profile
+moves from revision 5 to 6.
+
+The two modes still require their own review. On the upper-right
+print, a source-only lower-edge comparison would recover all 1,004
+centres of a visible dark paper mark near x4622 and y2518. The working
+crop covers 400. An authored slanted, nearly same-colour gap shows
+that the apparent lower edge can belong to a second piece of paper.
+The earlier local left-side draft also followed the neighboring print
+for part of its length. Neither that draft nor the lower comparison
+provides an independently measured full paper aspect or motif reference.
+This source remains in development.

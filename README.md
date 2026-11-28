@@ -634,6 +634,24 @@ Bestätigung der Anzahl diese Vorschläge. Beide Zuschnittmodi des
 übergeordneten Abzugs brauchen weiterhin die eigene Zuschnittprüfung.
 [Gedrehte Golden-Seite 26 und Gegenproben](data/evaluation/README.md#review-two-fallback-contours-inside-a-detected-print)
 
+Bei einem grossen klassischen Einzelvorschlag innerhalb eines
+Modellabzugs können die Bilddetails nur an kurzen Stellen über die
+vermeintliche Trennkante weiterlaufen. PhoSca verfolgt an beiden
+schwachen Seiten getrennte Farb- und Helligkeitsübergänge in den
+Originalpixeln. Eine starke Kante muss über den kleinen Vorschlag
+hinaus weiterlaufen. Zwei lokale Messungen müssen ihren Verlauf
+bestätigen. Eine durchgehende Materialkante oder eine weitere
+plausible Kontur hält den Vorschlag in der aktiven Liste.
+
+Sind die Messungen vereinbar, erscheint die Innenkontur zusammen mit
+den zwei gemessenen Abschnitten in der **Anzahlprüfung**. Ihre
+ursprüngliche Maske fliesst weiter in die Zuschnittprüfung ein. Prüfe
+am Original, ob ein eigener Papierabzug aufliegt. Wenn ein zweiter
+Abzug erkennbar ist, kannst du ihn mit seinen Papierecken erfassen.
+Beide Zuschnittmodi des grösseren Abzugs brauchen weiterhin eine
+eigene Prüfung.
+[Grosser Teilvorschlag auf Scan 83](data/evaluation/README.md#review-local-colour-tracks-across-a-large-inner-contour)
+
 Liegt eine kleine Kantenkontur fast vollständig im erkannten Abzug,
 prüft PhoSca zusätzlich die Papierkanten ausserhalb dieser Kontur.
 Die Anzahlprüfung zeigt in Türkis zwei Abschnitte, über die
@@ -1796,7 +1814,7 @@ einer Stufe zuordnen. [Instanzdiagnostik und Renderprüfung](data/evaluation/REA
 | Lokale Maskenverfeinerung nachtrainieren | Auf 166 dichten Validierungsausschnitten stieg der mittlere IoU von 0,562 auf 0,907. Auf dem Met-Entwicklungsscan sank die Trefferzahl von 44 auf 42. Zusätzlich fiel die eingefrorene Erkennungsprüfung aus. Der Verfeinerer wurde nicht übernommen. [Dense-Gutters-Auswertung](data/evaluation/README.md#precise-crop-validation) |
 | Reale Entwicklungsansichten getrennt auswerten | Klassisch ergaben sich 22/24 Treffer und acht Fehlvorschläge, gemischt 23/24 und drei. Der Gesamtwert verdeckt einen Rückschritt beim angeschnittenen NerdScan-Abzug mit 35,3 % Verlust der Entwurfsfläche. Dieser Vergleich zeigt, warum ein Gewinn der Gesamterkennung und ein sicherer Zuschnitt getrennt bewertet werden. [Realer Entwicklungsvergleich](data/evaluation/README.md#replay-the-available-real-image-development-views) |
 | Schwache Zusatzvorschläge am Original überprüfen | Zwei zusätzliche klassische Golden-Vorschläge wanderten nach nativer Grenzprüfung in die Zählprüfung. Die aktive Zählung erreichte damit 29/29 ohne zusätzlich gezählte Objekte. Beide Vorschläge blieben für den Reviewer sichtbar. [Prüfung von Fallback-Konturen](data/evaluation/README.md#review-unsupported-fallback-outlines-before-counting-a-print) |
-| Szene innerhalb eines vorgeschlagenen Abzugs verfolgen | Auf einem 35-Megapixel-Albumscan lieferte die Fusion zu sechs sichtbaren Abzügen zwei falsche Zusatzkonturen. Beim mittleren rechten Foto laufen Bilddetails über zwei vermeintliche Kanten hinweg. Der Teilvorschlag liegt jetzt in der Anzahlprüfung. Ein zweiter Teilvorschlag im Original und fehlender Papierrand an den grösseren Konturen bleiben offen. In der Halbbreitenansicht bleiben sechs aktive Vorschläge und dieselbe Anzahlprüfung. [Original, Messwerte und Gegenproben](data/evaluation/README.md#trace-scene-detail-across-a-nested-flatbed-proposal) |
+| Szene innerhalb eines vorgeschlagenen Abzugs verfolgen | Auf einem 35-Megapixel-Albumscan lieferte die Fusion zu sechs sichtbaren Abzügen zwei zusätzliche Innenkonturen. Beim mittleren rechten Foto laufen Bilddetails breit über zwei vermeintliche Kanten hinweg. Beim oberen rechten Foto sind die Farbspuren auf kürzere Strecken begrenzt. Beide Innenkonturen liegen in der Anzahlprüfung. Die Papierränder der grösseren Abzüge brauchen weiterhin eine eigene Prüfung. In der Halbbreitenansicht erkennt PhoSca sechs aktive Konturen und einen offenen Teilvorschlag. [Messwerte und Gegenproben](data/evaluation/README.md#review-local-colour-tracks-across-a-large-inner-contour) |
 | Einen fehlenden oder angeschnittenen Abzug an Fotoecken und Papierkanten lokalisieren | Auf Willett 95 findet das Modell den oberen linken Abzug weder im Original noch in zwei kleineren Ansichten. In den kleineren Ansichten stützen vier rote Halter und sieben gemessene Papierabschnitte einen Vorschlag zur Anzahlprüfung. Im Original zeigt PhoSca beim bestehenden Abzug gemessene Kanten ausserhalb des angeschnittenen Zuschnitts. Die Fotoecken verdecken die Papierspitzen und beide Modi brauchen Prüfung. [Fund in den kleineren Ansichten](data/evaluation/README.md#recover-a-count-offer-from-red-photo-corners-and-open-paper-edges) · [Korrekturhilfe in Originalauflösung](data/evaluation/README.md#show-the-visible-paper-edges-of-an-already-counted-mounted-print) |
 | Gemessene Teile der Brücke in der Prüfvorschau ergänzen | Auf Willett 95 kommen rund 280’000 sichtbare Originalpixel hinzu. Unsichere Randabschnitte bleiben transparent. Der vollständige Papierrand und die Motivgrenze brauchen weiterhin Prüfung. [Messvergleich und Gegenproben](data/evaluation/README.md#compare-only-measured-strips-beside-a-mounted-print) |
 

@@ -41,7 +41,7 @@ from app.pipeline.fragmented_prints import (
     COMPACT_SCENE_CROSSING_TRACE, EXTENDED_PRINT_OUTLINE_REVIEW, FRAGMENT_OUTLINE_REVIEW, FRAGMENTED_PRINT_REVIEW,
     SOURCE_FRAGMENT_GROUP_REVIEW, SOURCE_FRAGMENT_PROPOSAL,
     compact_scene_crossing_trace, measure_extended_print_outline, measure_fragmented_print, nested_scene_fragment_continuities,
-    nested_scene_fragment_with_shared_edges,
+    nested_scene_fragment_with_local_tracks, nested_scene_fragment_with_shared_edges,
     suggest_dark_mounted_outline, suggest_fragmented_outline,
 )
 from app.pipeline.fusion_ownership import (
@@ -4344,6 +4344,7 @@ def _defer_nested_scene_fragments(
         quad = order_quad_cyclic(normalized_vertices_to_pixels(fragment, width, height))
         outline = normalized_vertices_to_pixels(polygons[parent], width, height)
         extra = {}
+        retain_source_claim = edge_contours
         if edge_contours:
             alternate = [records for index, item in enumerate(detections) if index not in (parent, child)
                          for records in (item.mask.get("polygon"), item.mask.get("visible_polygon"))
@@ -4353,17 +4354,25 @@ def _defer_nested_scene_fragments(
             if any(max(hit.first_containment, hit.second_containment) >= .08 for hit in overlaps):
                 continue
             traces, shared = nested_scene_fragment_with_shared_edges(image, outline, quad)
-            mask = detections[child].mask
-            extra = {
-                "shared_paper_edge_traces": [_normalized_polygon(trace, width, height) for trace in shared],
-                "source_mask": {key: mask[key] for key in ("source", "detector_source", "polygon", "visible_polygon",
-                                "visible_polygon_source", "proposal_visible_polygon") if key in mask},
-                "fusion_cluster_id": mask["fusion"]["cluster_id"],
-            }
+            extra["shared_paper_edge_traces"] = [_normalized_polygon(trace, width, height) for trace in shared]
         else:
             traces = nested_scene_fragment_continuities(image, outline, quad)
+            if not traces:
+                alternate_overlaps = (normalized_polygon_overlap(
+                    [(p["x"], p["y"]) for p in other], fragment,
+                ) for other in pending_masks)
+                if not any(max(hit.first_containment, hit.second_containment) >= .08 for hit in alternate_overlaps):
+                    traces = nested_scene_fragment_with_local_tracks(image, outline, quad)
+                    retain_source_claim = bool(traces)
         if not traces:
             continue
+        if retain_source_claim:
+            mask = detections[child].mask
+            extra.update(
+                source_mask={key: mask[key] for key in ("source", "detector_source", "polygon", "visible_polygon",
+                             "visible_polygon_source", "proposal_visible_polygon") if key in mask},
+                fusion_cluster_id=mask["fusion"]["cluster_id"],
+            )
 
         pending.append({
             "id": next_id,
