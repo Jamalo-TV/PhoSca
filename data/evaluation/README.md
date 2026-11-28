@@ -12418,9 +12418,22 @@ pixel centres within the replacement outline. Visible target content sits
 inside that padding close to the measured paper edge. A trusted source
 box over an arm passes on the measured contour and rejects a 10-pixel
 pullback with `protected_region_removed`. A separate box on an actual
-head in the neighboring print passes on both. A future review preview
-can use the measured outline with both modes held. These observations
-leave the saved crop and protection rules unchanged.
+head in the neighboring print passes on both.
+
+On the ordinary U040 upload the rejected PATCH of the exact alternative
+returns a 272 × 286 PNG of the measured outline. Both named modes and
+the legacy trimmed variant remain held. The current geometry, four
+active detections, three deferred suggestions and neighboring JPEGs
+retain their previous bytes or values. The PNG is returned as part of
+the structured HTTP `422` response,
+without a persisted photo artifact or image route. Replacing all native
+source centres outside this quad changes zero output pixels. Tests
+cover a cut through the raw region, a contained raw box, clearance
+below two pixels, a verified mark and an altered outline.
+Desktop and mobile also verify that the measured crop disappears when
+the local draft changes. The median preview PATCH was 158 ms across
+seven requests during concurrent test runs. All eight benchmark reports
+matched the prior detection and crop results aside from timings.
 
 McCord Stewart Museum catalogues two further distinct public-domain
 physical albums. The Dawson catalogue indexes individually numbered
@@ -12433,3 +12446,12 @@ item-specific measurement tolerance. These records add no verified
 release group. [Dawson album](https://collections.musee-mccord-stewart.ca/en/objects/111339/album-du-capitaine-dawson-18601875) ·
 [Red Molson album](https://collections.musee-mccord-stewart.ca/en/objects/106649/red-molson-album-photographs-18781879) ·
 [Watson album acquisition](https://nga.gov.au/media/dd/documents/annualreport_07-08.6625245.pdf)
+
+The Missouri State Archives identifies `MS506_01.tif` as the Phelps
+cabinet card on page 1, box 278, folder 68. The archive labels its
+published rendition public domain. Its finding aid documents the two
+acquisition series. The public image could not be retrieved at original
+resolution, and its shared catalogue name does not identify a particular
+acquisition series. Both master files and the mode references remain
+unverified. [Published item](https://www.flickr.com/photos/missouristatearchives/52976630969/in/album-72177720309071161) ·
+[Finding aid](https://www.sos.mo.gov/CMSImages/Archives/manuscripts/RG998_MS506.pdf)

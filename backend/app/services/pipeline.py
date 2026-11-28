@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+from base64 import b64encode
 from copy import deepcopy
 from pathlib import Path
 from time import perf_counter
@@ -82,13 +83,13 @@ from app.pipeline.ocr import classify_ocr_blocks, run_paddle_ocr, run_sidecar_oc
 from app.pipeline.off_print_advisory import MANUAL_MARGIN_CONTEXT
 from app.pipeline.page_plane import MeasuredPrintReference, PrintPagePlane
 from app.pipeline.partial_print_review import PARTIAL_PRINT_EXTENT_TRACES
-from app.pipeline.perspective import apply_refined_visibility, correct_photo_crop, page_plane_from_prints
+from app.pipeline.perspective import apply_refined_visibility, correct_photo_crop, page_plane_from_prints, protected_margin_review_preview
 from app.pipeline.presets import get_enhancement_config
 from app.pipeline.print_edges import COMPETING_PRINT_EDGES, PRINT_EDGE_CONFIRMATION
 from app.pipeline.scalloped_prints import SCALLOPED_PRINT_REVISION
 from app.pipeline.print_outline_suggestion import POSSIBLE_OVEREXTENDED_PRINT_EDGE
 from app.pipeline.protected_regions import (
-    OFF_PRINT_ADVISORY, album_mark_correction_matches, album_mark_matches_quad, album_mark_source_matches,
+    OFF_PRINT_ADVISORY, ProtectedRegionCut, album_mark_correction_matches, album_mark_matches_quad, album_mark_source_matches,
     detect_protected_regions, is_advisory_page_face,
     protected_region_digest, protected_region_key, region_box_in_pixels,
 )
@@ -540,6 +541,7 @@ async def perspective_correction_task_logic(
     commit: bool = True,
     output_directories: set[Path] | None = None,
     previous_manual_crop: dict | None = None,
+    show_protected_margin_preview: bool = False,
 ) -> dict:
     photo = await session.scalar(
         select(ExtractedPhoto)
@@ -769,6 +771,23 @@ async def perspective_correction_task_logic(
     except (ValueError, cv2.error) as exc:
         reason = str(exc) if isinstance(exc, ValueError) else "perspective_opencv_error"
         if reject_invalid_edit:
+            if (show_protected_margin_preview and isinstance(exc, ProtectedRegionCut) and protected_regions):
+                preview = await asyncio.to_thread(
+                    protected_margin_review_preview, page_image, mask, [*neighbor_masks, *pending_neighbors],
+                    protected_regions, exc, page_camera.matrix if page_camera is not None else None, manual_aspect,
+                )
+                if preview is not None:
+                    pixels, estimated_aspect = preview
+                    scale = 640 / max(pixels.shape[:2])
+                    if scale < 1:
+                        height, width = pixels.shape[:2]
+                        pixels = cv2.resize(pixels, (max(2, round(width * scale)), max(2, round(height * scale))),
+                                            interpolation=cv2.INTER_AREA)
+                    ok, png = cv2.imencode(".png", pixels)
+                    if ok:
+                        exc.detail["protected_margin_preview"] = {
+                            "png_base64": b64encode(png).decode("ascii"), "estimated_aspect": estimated_aspect,
+                        }
             if isinstance(exc, ValueError):
                 raise
             raise ValueError(reason) from exc

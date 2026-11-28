@@ -502,6 +502,15 @@ export function SavedPrintReview({ url }) {
   </figure>;
 }
 
+export function ProtectedMarginReview({ preview }) {
+  const title = "Entzerrte Vorschau zur Prüfung";
+  return <figure className="saved-full-print-review">
+    <img className="review-crop-preview" src={preview.url} alt={title} />
+    <figcaption><strong>{title}</strong><p>Prüfe den Papierrand am Original. Beide Zuschnitte sind gesperrt.
+      {preview.estimatedAspect && " Das Seitenverhältnis ist geschätzt."}</p></figcaption>
+  </figure>;
+}
+
 function CaptureSplitSourceDetail({ source, group, photos, detail }) {
   const windowClip = useId();
   const [showProposals, setShowProposals] = useState(false);

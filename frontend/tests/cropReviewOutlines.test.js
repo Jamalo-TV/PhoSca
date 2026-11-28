@@ -44,6 +44,14 @@ test("a rejected manual crop explains only validated original bounds and keeps p
   assert.doesNotMatch(blocked.message, /Schutzrand/);
   assert.match(protectedCutFeedback({ message: "protected_region_cut" }).message, /Prüfe den Bereich am Original/);
   assert.equal(protectedCutFeedback({ ...error, message: "protected_region_removed" }), null);
+
+  const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jR1sAAAAASUVORK5CYII=";
+  const preview = { png_base64: png, estimated_aspect: true };
+  const withPreview = { ...error, detail: { ...error.detail, protected_margin_preview: preview } };
+  assert.deepEqual(protectedCutFeedback(withPreview).preview, { url: `data:image/png;base64,${png}`, estimatedAspect: true });
+  assert.equal(protectedCutFeedback({ ...withPreview, detail: { ...withPreview.detail, regions: mixed } }).preview, undefined);
+  withPreview.detail.protected_margin_preview = { png_base64: "https://example.test/original.png" };
+  assert.equal(protectedCutFeedback(withPreview).preview, undefined);
 });
 
 test("a measured motif comparison follows the held source without changing its geometry", () => {

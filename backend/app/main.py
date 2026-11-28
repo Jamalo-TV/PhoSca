@@ -15,11 +15,14 @@ from app.models import AuditLog
 from app.routers import albums, authentication, health, jobs, pages, photos, review, runs, search, training
 
 
-def error_response(request: Request, status_code: int, error: str, detail: str | dict) -> JSONResponse:
+def error_response(
+    request: Request, status_code: int, error: str, detail: str | dict, *, headers: dict[str, str] | None = None,
+) -> JSONResponse:
     request_id = getattr(request.state, "request_id", str(uuid4()))
     return JSONResponse(
         status_code=status_code,
         content={"error": error, "detail": detail, "request_id": request_id},
+        headers=headers,
     )
 
 
@@ -91,6 +94,7 @@ def create_app() -> FastAPI:
             exc.status_code,
             "http_error",
             exc.detail if isinstance(exc.detail, dict) else str(exc.detail),
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)

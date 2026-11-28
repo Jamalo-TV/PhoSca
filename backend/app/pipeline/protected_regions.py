@@ -36,6 +36,7 @@ class ProtectedRegionCut(ValueError):
 
     def __init__(self, quad: np.ndarray, violations: list[dict], width: int, height: int) -> None:
         super().__init__("protected_region_cut")
+        self.violations = violations
         contour = quad.astype(np.float32)
         convex = cv2.isContourConvex(contour)
         regions = []

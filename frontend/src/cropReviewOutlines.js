@@ -193,7 +193,13 @@ export function protectedCutFeedback(error) {
   const reason = paddingOnly ? "Der Zuschnitt reicht in den Schutzrand um den erkannten Bildbereich."
     : "Der Zuschnitt würde einen geschützten Bereich abschneiden.";
   const inspect = regions.length ? "Prüfe die roten Markierungen am Original." : "Prüfe den Bereich am Original.";
-  return { regions, message: `${reason} ${inspect} Liegt die Kontur bereits am tatsächlichen Papierrand, fotografiere den Abzug einzeln mit sichtbarem Rand.` };
+  const preview = error.detail?.protected_margin_preview;
+  const data = preview?.png_base64;
+  const result = { regions, message: `${reason} ${inspect} Liegt die Kontur bereits am tatsächlichen Papierrand, fotografiere den Abzug einzeln mit sichtbarem Rand.` };
+  if (paddingOnly && typeof data === "string" && data.length <= 2_400_000 && /^iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$/.test(data)) {
+    result.preview = { url: `data:image/png;base64,${data}`, estimatedAspect: preview.estimated_aspect === true };
+  }
+  return result;
 }
 
 export function getCaptureBackgroundReviewTraces(photo) {

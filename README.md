@@ -1552,6 +1552,18 @@ und ein in den Editor geladener Umriss. «Änderungen verwerfen» zeigt
 die gespeicherte Geometrie wieder. Nach dem Speichern verwendet die
 Prüfung die vom Server bestätigte Geometrie und neue Revision.
 
+Trifft ein exakt gemessener Alternativumriss nur den Schutzabstand
+einer benachbarten automatischen Markierung, kann die Antwort auf
+den abgewiesenen Speicherversuch eine entzerrte PNG-Prüfvorschau
+enthalten. Dafür müssen beide Modi bereits in Prüfung sein. PhoSca
+prüft die Originalkoordinaten der Markierung mit Abstand für das
+Sampling und vergleicht die Kontur mit den bestehenden und offenen
+Nachbaransprüchen. Ein Schnitt durch die Rohmarkierung oder ein
+Konflikt mit verifizierten Schutzbereichen verhindert die Vorschau.
+Das PNG ist Teil der `422`-Antwort mit `Cache-Control: private, no-store`.
+Die App zeigt es für die aktuelle Geometrierevision und den konkreten
+Entwurf an. Ein geschätztes Seitenverhältnis wird gekennzeichnet.
+
 Eine manuelle Geometriekorrektur löscht die automatische
 `segmentation_confidence`. Die Geometrie-, Zuordnungs- und
 Samplingprüfungen gelten weiterhin. Bei einem Hinweis auf eine

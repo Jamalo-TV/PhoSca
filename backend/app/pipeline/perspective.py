@@ -1035,6 +1035,52 @@ def _render_review_quad_preview(
     }
 
 
+def protected_margin_review_preview(
+    page: np.ndarray, mask: dict, neighbors: list[dict], regions: list[dict], cut: ProtectedRegionCut,
+    camera_matrix: np.ndarray | None, print_aspect_ratio: float | None,
+) -> tuple[np.ndarray, bool] | None:
+    """Render only the exact review outline outside every conflicting raw box."""
+    height, width = page.shape[:2]
+    try:
+        quad = _explicit_quad(mask, "warp_quad", width, height, preserve_width_edge=print_aspect_ratio is not None)
+    except ValueError:
+        return None
+    if quad is None:
+        return None
+    protection = validate_protected_regions(quad, regions, width=width, height=height)
+    if protection["passed"] or protection["violations"] != cut.violations:
+        return None
+    conflicting = [region for region in regions if protected_region_key(region) in cut.violations]
+    if not conflicting or not all(is_advisory_page_face(region) for region in conflicting):
+        return None
+    for region in conflicting:
+        box = region_box_in_pixels(region, width, height)
+        if box is None or not np.isfinite(box).all():
+            return None
+        x1, y1, x2, y2 = box
+        # The guard remains active on the raw detector evidence, with room for the sampling footprint.
+        expanded = np.float32([[x1 - 2, y1 - 2], [x2 + 2, y1 - 2], [x2 + 2, y2 + 2], [x1 - 2, y2 + 2]])
+        if cv2.intersectConvexConvex(quad, expanded)[0] > 1.e-3:
+            return None
+    outlines = [outline for neighbor in neighbors if (outline := _proposal_polygon(neighbor, width, height)) is not None]
+    try:
+        outlines.extend(outline for neighbor in neighbors
+                        if (outline := _explicit_quad(neighbor, "warp_quad", width, height)) is not None)
+    except ValueError:
+        return None
+    if any(cv2.intersectConvexConvex(quad, cv2.convexHull(outline))[0] > 1. for outline in outlines):
+        return None
+    preview = _render_review_quad_preview(
+        page, quad, mask.get("orientation_degrees") or 0, outlines, regions, camera_matrix, None,
+        source="protected_margin_review", prior_protection={**protection, "review_untrimmed": True},
+        print_aspect_ratio=print_aspect_ratio,
+    )
+    if preview is None:
+        return None
+    pixels, metadata = preview
+    return pixels, metadata["aspect_ratio_estimation"]["method"] != "known_print_aspect"
+
+
 def _neighbors_for_edge_comparison(
     page: np.ndarray, previous: np.ndarray, candidate: np.ndarray, neighbor_masks: list[dict],
 ) -> list[np.ndarray]:

@@ -75,7 +75,7 @@ import {
   embossedAlbumAction, embossedPocketReviewErrors,
   getSourceStripReview, SourceStripReview, sourceStripColor, sourceStripContrastColor,
   offPrintAdvisorySource, useAlbumPageMarkReview,
-  SavedPrintReview,
+  ProtectedMarginReview, SavedPrintReview,
 } from "./CropVariants.jsx";
 import {
   competingPhotoRegionPaths, competingPhotoRegionStyles, getCompetingPhotoReviewOutlines, sharedMotifGuideStyle,
@@ -1533,7 +1533,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const selectedHasDraft = selected && (selectedShape.usingOutlineSuggestion || !sameCropDraft(savedShape, selectedShape));
   const activeBlockedCrop = !newPrint && blockedCrop?.mode === editMode && blockedCrop.photoId === selectedPhotoId
     ? blockedCrop : null;
-  const cutFeedback = activeBlockedCrop?.message && activeBlockedCrop.draft === selectedShape ? activeBlockedCrop : null;
+  const cutFeedback = activeBlockedCrop?.message && activeBlockedCrop.draft === selectedShape
+    && activeBlockedCrop.geometryRevision === selected?.geometry_review_revision ? activeBlockedCrop : null;
   const blockedRegions = activeBlockedCrop?.message ? cutFeedback?.regions : activeBlockedCrop?.regions;
   const possiblePrintRegions = useMemo(() => {
     if (newPrint || editingImage || selectedCountGroup) return [];
@@ -2238,7 +2239,8 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
     } catch (error) {
       const protection = protectedCutFeedback(error);
       if (protection) {
-        setBlockedCrop({ ...protection, photoId: selected.id, mode: editMode, draft: selectedShape });
+        setBlockedCrop({ ...protection, photoId: selected.id, mode: editMode, draft: selectedShape,
+          geometryRevision: selected.geometry_review_revision });
         setSaveState(null);
         return;
       }
@@ -2674,6 +2676,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
         {currentSave?.saving && !currentSave.rejecting && !currentSave.checkingEdges ? "Ausschnitt wird berechnet …" : "Zuschnitt speichern"}
       </button>}
       {cutFeedback && <p id="crop-protection-error" role="alert">{cutFeedback.message}</p>}
+      {cutFeedback?.preview && !saveState?.saving && <ProtectedMarginReview preview={cutFeedback.preview} />}
       {currentSave?.error && <p role="alert">{currentSave.error}</p>}
       {(rejectedDetection || (saveState?.rejected && saveState.pageId === pageId))
         && <p role="status">Vorschlag als falsches Objekt markiert.</p>}
@@ -2686,7 +2689,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
             <p className="crop-mode-status" id="held-motif-preview-hint">{motifBoundaryReviewHint}</p>}
         </>
       )}
-      {!editingImage && !newPrint && fullPrintPreview && !currentSave?.url && (
+      {!editingImage && !newPrint && fullPrintPreview && !currentSave?.url && !cutFeedback?.preview && (
         comparePaperEdge ? <PaperEdgePreviewComparison currentUrl={untrimmedPrint} possibleUrl={fullPrintPreview}
           hint={outlinePreviewHint} outlinePreview={fullPrintMode?.outline_preview} /> : <>
           <img className="review-crop-preview" src={fullPrintPreview} alt="Abzugsvorschau zur Prüfung" />

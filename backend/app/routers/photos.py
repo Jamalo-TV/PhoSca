@@ -372,6 +372,7 @@ async def _render_photo_edit(
     reject_invalid_edit: bool = True, preset: str | None = "auto",
     previous_manual_crop: dict | None = None,
     explain_protected_cut: bool = False,
+    show_protected_margin_preview: bool = False,
     after_render: Callable[[], None] | None = None,
 ) -> ExtractedPhoto:
     output_directories: set[Path] = set()
@@ -381,6 +382,7 @@ async def _render_photo_edit(
                 session, photo_id, settings, reject_invalid_edit=reject_invalid_edit,
                 commit=False, output_directories=output_directories,
                 **({"previous_manual_crop": previous_manual_crop} if previous_manual_crop is not None else {}),
+                **({"show_protected_margin_preview": True} if show_protected_margin_preview else {}),
             )
         except ProtectedRegionRemoval as exc:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.detail) from exc
@@ -388,7 +390,8 @@ async def _render_photo_edit(
             if not reject_invalid_edit:
                 raise
             detail = exc.detail if explain_protected_cut else str(exc)
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail) from exc
+            headers = {"Cache-Control": "private, no-store"} if "protected_margin_preview" in exc.detail else None
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail, headers=headers) from exc
         except ValueError as exc:
             if not reject_invalid_edit:
                 raise
@@ -1444,8 +1447,17 @@ async def update_photo_bounding_box(
             or edited_claim or edited_polygon):
         await _review_overlapping_crops(session, photo, width, height, neighbors=active_neighbors)
     await session.flush()
+    modes = (correction.get("crop_modes") or {})
+    show_protected_margin_preview = (
+        explain_protected_cut and settings.enable_protected_region_guard and explicit and not was_non_print
+        and before["segmentation_confidence"] is not None
+        and all((modes.get(mode) or {}).get("status") == "review_needed" for mode in ("full_print", "image_only"))
+        and original_mask.get("crossing_print_suggestion_source") == CONTESTED_TILE_OUTLINE
+        and outer is not None and _same_visible_outline(original_mask.get("crossing_print_suggestion"), outer)
+    )
     return await _render_photo_edit(
         session, photo.id, settings, previous_manual_crop=previous_crop, explain_protected_cut=explain_protected_cut,
+        show_protected_margin_preview=show_protected_margin_preview,
         after_render=(lambda: _offer_contested_tile_followup(page, original_mask, photo, active_neighbors, width, height))
         if original_mask.get(CONTESTED_TILE_FOLLOWUP) else None,
     )

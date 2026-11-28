@@ -938,6 +938,69 @@ async def test_manual_draft_can_explain_a_protected_cut_without_changing_the_pag
         assert await session.scalar(select(AuditLog.id).where(AuditLog.entity_id == photo_id)) is None
 
 
+@pytest.mark.parametrize("case", ["disjoint", "raw_cut", "raw_contained", "near_raw", "verified", "different_outline"])
+async def test_only_exact_contested_outline_outside_advisory_core_gets_ephemeral_preview(client, monkeypatch, case):
+    from base64 import b64decode
+
+    from app.config import get_settings
+    from app.database import get_session_factory
+    from app.models import ExtractedPhoto, Page
+    from app.pipeline.crossing_prints import CONTESTED_TILE_OUTLINE
+
+    monkeypatch.setenv("ENABLE_PRECISE_PHOTO_CROPS", "true")
+    monkeypatch.setenv("ENABLE_PROTECTED_REGION_GUARD", "true")
+    get_settings.cache_clear()
+    width, height = 800, 600
+    album_id, page_id, photo_id = await _seed_review_data(np.full((height, width, 3), 150, np.uint8))
+
+    def rect(left, top, right, bottom):
+        return [{"x": x / (width - 1), "y": y / (height - 1)}
+                for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
+
+    old = rect(710, 60, 785, 560)
+    guide = rect(100, 250, 700, 480)
+    y1, y2 = {"raw_cut": (235, 400), "raw_contained": (260, 400), "near_raw": (481, 570)}.get(case, (490, 570))
+    region = {"type": "face", "source": "opencv_haarcascade_frontalface_default", "margin_ratio": .18,
+              "verified": case == "verified", "box": {"x1": 280, "y1": y1, "x2": 400, "y2": y2}}
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        page.processing_metadata = {"photo_count_revision": str(uuid4()), "steps": {"protected_regions": {"regions": [region]}}}
+        photo = await session.get(ExtractedPhoto, photo_id)
+        photo.segmentation_mask = {"source": "yolo_seg_mask", "polygon": old, "warp_quad": old,
+                                   "crossing_print_suggestion": guide, "crossing_print_suggestion_source": CONTESTED_TILE_OUTLINE}
+        photo.enhancement_applied = {"correction": {"crop_modes": {
+            mode: {"status": "review_needed"} for mode in ("full_print", "image_only")
+        }}}
+        await session.commit()
+
+    url = f"/api/v1/photos/{photo_id}"
+    queue = "/api/v1/review/queue"
+    params = {"album_id": str(album_id), "type": "segmentation"}
+    initial = (await client.get(url)).json()
+    count = (await client.get(queue, params=params)).json()
+    entered = rect(100, 250, 695, 480) if case == "different_outline" else guide
+    edit = await client.patch(f"{url}/bounding-box", params={"explain_protected_cut": "true"}, json={
+        "bounding_box": dict(x1=entered[0]["x"], y1=entered[0]["y"], x2=entered[2]["x"], y2=entered[2]["y"]),
+        "segmentation_mask": {"source": "manual_quad", "polygon": entered, "warp_quad": entered},
+    })
+    assert edit.status_code == 422, edit.text[:300]
+    feedback = edit.json()["detail"]
+    assert feedback["code"] == "protected_region_cut"
+    if case == "disjoint":
+        assert edit.headers["cache-control"] == "private, no-store"
+        preview = feedback["protected_margin_preview"]
+        assert preview["estimated_aspect"] is True
+        pixels = cv2.imdecode(np.frombuffer(b64decode(preview["png_base64"], validate=True), dtype=np.uint8), cv2.IMREAD_COLOR)
+        assert pixels.shape == (231, 601, 3)
+        assert np.all(pixels == 150)
+    else:
+        assert "protected_margin_preview" not in feedback
+    assert (await client.get(url)).json() == initial
+    assert (await client.get(queue, params=params)).json() == count
+    for variant in ("full_print", "image_only", "source_corrected_trimmed", "protected_margin_review"):
+        assert (await client.get(f"{url}/image", params={"variant": variant})).status_code == 404
+
+
 async def test_manual_print_margin_review_keeps_core_and_binds_confirmation(submit_geometry_review, client, monkeypatch):
     from app.config import get_settings
     from app.database import get_session_factory

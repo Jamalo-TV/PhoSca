@@ -21,7 +21,8 @@ import {
   getDeferredParentCropHints, getDeferredPrintEvidence, getDeferredPrintProposals, getMissingPrintEdgeReview, getSourceEdgeTraces,
   getMotifBoundaryReviewHint, getMotifMarginMarks, getPrintEdgeReviewHint, getPrintOutlinePreviewHint, heldPrintMotifMargin,
   MeasuredMotifReview, MeasuredMotifReviewOverlay, mergedPrintAsOneLabel, mergedPrintPairHint, possiblePrintRegionsHint,
-  paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint, ribbedSceneEdge,
+  paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, ProtectedMarginReview,
+  showsPaperEdgeComparison, printOutlineSaveHint, ribbedSceneEdge,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
   paperJoinReason, paperOutlineRequiresReview, partialMotifSeams, printedIllustrationFrameStyle,
   isNestedFallbackProposal, requiresStandalonePrintFlag, projectivePrintProposal, standalonePrintReviewErrors, tiledPrintProposal,
@@ -333,6 +334,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
   const [blockedCrop, setBlockedCrop] = useState(null);
   const activeBlockedCrop = blockedCrop?.mode === editMode ? blockedCrop : null;
   const cutFeedback = activeBlockedCrop?.message && activeBlockedCrop.quad === displayedQuad ? activeBlockedCrop : null;
+  const marginPreview = !saving && cutFeedback?.measurementFields === measurementFields && cutFeedback.orientation === orientation
+    && cutFeedback.geometryRevision === item.payload.geometry_review_revision ? cutFeedback.preview : null;
   const blockedRegions = activeBlockedCrop?.message ? cutFeedback?.regions : activeBlockedCrop?.regions;
   const cutFeedbackId = deferredDraft ? "mobile-print-addition-protection-error" : "mobile-crop-protection-error";
   const [magnifierEnabled, setMagnifierEnabled] = useState(true);
@@ -480,7 +483,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     } catch (error) {
       const protection = protectedCutFeedback(error);
       if (protection) {
-        setBlockedCrop({ ...protection, mode: editMode, quad: displayedQuad });
+        setBlockedCrop({ ...protection, mode: editMode, quad: displayedQuad, measurementFields, orientation,
+          geometryRevision: item.payload.geometry_review_revision });
         if (!deferredDraft) onProtectionBlocked?.(item.id);
         return;
       }
@@ -969,8 +973,9 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
         resetDraft();
       }}>Änderungen verwerfen</button>}
       {cutFeedback && <p className="crop-save-error" id={cutFeedbackId} role="alert">{cutFeedback.message}</p>}
+      {marginPreview && <ProtectedMarginReview preview={marginPreview} />}
       {saveError && <p className="crop-save-error" role="alert">{saveError}</p>}
-      {displayedQuad && !motifOutside && (comparePaperEdge && !editingPreview && !visibleSavedCropUrl
+      {!marginPreview && displayedQuad && !motifOutside && (comparePaperEdge && !editingPreview && !visibleSavedCropUrl
         ? <PaperEdgePreviewComparison currentUrl={item.payload.untrimmed_url} possibleUrl={comparePaperEdge}
             hint={outlinePreviewHint} outlinePreview={fullPrintMode?.outline_preview} />
         : <LiveCropPreview src={item.preview_url} quad={displayedQuad} savedCropUrl={visibleSavedCropUrl}
