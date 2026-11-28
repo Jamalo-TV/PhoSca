@@ -12455,3 +12455,54 @@ resolution, and its shared catalogue name does not identify a particular
 acquisition series. Both master files and the mode references remain
 unverified. [Published item](https://www.flickr.com/photos/missouristatearchives/52976630969/in/album-72177720309071161) ·
 [Finding aid](https://www.sos.mo.gov/CMSImages/Archives/manuscripts/RG998_MS506.pdf)
+
+## Show a disputed source transition as open spans
+
+The native U040 count review can display two open spans at the upper-left
+scene transition. Their common native length is 197.73 pixels. The normal
+detector retains four active detections and three deferred suggestions.
+The guide is page metadata exposed in the count queue as
+`contested_scene_edge_traces`. It is independent of the photo rows,
+crop modes, and deferred suggestions. The desktop and mobile label
+identifies a color transition and explains that it can occur within one
+printed sheet.
+
+The scout must be a valid weak proposal from the ordinary tiled pass.
+It can overlap up to 5% of its area with the single detection that
+already has a measured `contested_tile` alternative. The raw scout
+must clear the other active and pending claims and that alternative.
+The two closer views use 56 × 60% and 52 × 50% of a landscape page,
+with transposed windows for portrait. Each view must meet 0.80 model
+and prepared boundary scores and 0.90 mask IoU against the scout.
+Their mutual IoU must also be at least 0.90. The source fit uses a
+warm exterior to cooler image transition in Lab b, holds at at least
+80% of the fitted stations and at least 65% of each quarter, and
+keeps only common spans agreeing within 1.25 native pixels. The
+native 8-pixel band around each shared span must clear the active,
+alternate and pending claims. A saved claim entering any of these
+bands retires the guide.
+
+The independent development sweep measured 244 sides from five native
+Spiral captures and JPEG75 derivatives. Thirty passed the color test,
+including two lines on the U036 cover illustration. The distinct
+geometry and ownership checks suppress those positives. Full product
+runs emit no new guide on U008, U039, U075, the native or JPEG75 cover,
+or the JPEG75 and JPEG55 versions of U040. The genuine JPEG75 and
+the authored single-sheet JPEG75 both pass the isolated color test
+and lack the live measured alternate. The same-sheet control proves
+that the measured transition cannot certify a physical paper boundary.
+The ordinary U040 desktop and mobile checks verified opening and
+closing the guide with no write and reproduced the existing protected
+margin preview. Two local measurements of the complete advisory step
+took 468 and 620 ms on the native input. The API tests cover retirement
+by a new or edited claim. Failure of a local inference preserves the
+existing results. All eight repeated benchmark reports retain their
+detection, crop, and review scores.
+
+The Harry Ransom Center documents pre-removal album photography and
+identifies three prints from García Márquez's Nobel Prize album.
+The published item has restricted image reuse. No exact linked native
+mounted leaf was verified and the public original-resolution request
+returned HTTP 403. This source check adds no release group.
+[Finding aid](https://research.hrc.utexas.edu/fasearch/pdf/01083.pdf) ·
+[Catalogue item](https://hrc.contentdm.oclc.org/digital/collection/p15878coll51/id/33004)

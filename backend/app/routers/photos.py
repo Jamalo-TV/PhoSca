@@ -26,6 +26,7 @@ from app.pipeline.bowed_edge_review import MEASURED_PRINT_PREVIEW_SOURCES
 from app.pipeline.bowed_scene_preview import BOWED_SCENE_PREVIEW
 from app.pipeline.capture_fabric_review import CAPTURE_FABRIC_PROPOSAL
 from app.pipeline.contact_print_review import CONTACT_PRINT_EDGE_CHECK, CONTACT_PRINT_EDGE_SCOPE
+from app.pipeline.contested_scene_edge import CONTESTED_SCENE_EDGE_TRACES, contested_scene_guide_conflicts
 from app.pipeline.film_neighbor_edge import FILM_NEIGHBOR_EDGE
 from app.pipeline.inward_scene_edge import INWARD_SCENE_EDGE_SCOPE
 from app.pipeline.crop_validation import route_ready_crop_modes_to_review
@@ -356,6 +357,11 @@ def _claim_missing_print_trace(
         if reviewed_outline_covers_traces(outline, open_edges) or near_capture_guide_conflicts(outline, open_edges, width, height):
             segmentation.pop(key)
             changed = True
+    if (scene_traces := segmentation.get(CONTESTED_SCENE_EDGE_TRACES)) and contested_scene_guide_conflicts(
+        outline, scene_traces, width, height,
+    ):
+        segmentation.pop(CONTESTED_SCENE_EDGE_TRACES)
+        changed = True
     guide = segmentation.get(FOLLOWUP_PRINT_EDGE_GUIDE) or {}
     if guide and (
         reviewed_outline_covers_traces(outline, guide.get("traces", []))

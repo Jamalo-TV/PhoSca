@@ -117,6 +117,7 @@ async def test_neighboring_source_guide_is_retired_only_by_a_material_manual_cla
     from app.config import get_settings
     from app.database import get_session_factory
     from app.models import Page
+    from app.pipeline.contested_scene_edge import CONTESTED_SCENE_EDGE_TRACES
     from app.pipeline.near_capture_review import NEAR_CAPTURE_PRINT_TRACES
     from app.pipeline.neighboring_print_review import FOLLOWUP_PRINT_EDGE_GUIDE, NEIGHBORING_PRINT_EDGE_TRACES
 
@@ -131,12 +132,14 @@ async def test_neighboring_source_guide_is_retired_only_by_a_material_manual_cla
     detected = quad(.80, .25, .96, .75)
     traces = [detected[:2], detected[1:3], detected[2:]]
     other_traces = [quad(.02, .45, .08, .63)[::3]]
+    scene_traces = [quad(.910, .34, .915, .65)[::3]]
     followup_guide = {"traces": [quad(.310, .06, .315, .14)[::3]], "witnesses": [quad(.28, .06, .33, .14)]}
     async with get_session_factory()() as session:
         page = await session.get(Page, page_id)
         page.processing_metadata = {"steps": {"segmentation": {
             NEIGHBORING_PRINT_EDGE_TRACES: traces, NEAR_CAPTURE_PRINT_TRACES: other_traces,
             FOLLOWUP_PRINT_EDGE_GUIDE: followup_guide,
+            CONTESTED_SCENE_EDGE_TRACES: scene_traces,
         }}}
         await session.commit()
 
@@ -150,12 +153,14 @@ async def test_neighboring_source_guide_is_retired_only_by_a_material_manual_cla
     assert initial[NEIGHBORING_PRINT_EDGE_TRACES] == traces
     assert initial[NEAR_CAPTURE_PRINT_TRACES] == other_traces
     assert initial[FOLLOWUP_PRINT_EDGE_GUIDE] == followup_guide
+    assert initial[CONTESTED_SCENE_EDGE_TRACES] == scene_traces
     assert initial["detection_count"] == 1 and initial["deferred_print_proposals"] == []
     manual_url = f"/api/v1/pages/{page_id}/manual-photos"
     separate = await client.post(manual_url, json={"request_id": str(uuid4()), "warp_quad": quad(.08, .03, .29, .15)})
     assert separate.status_code == 201, separate.text
     assert (await review_payload())[NEIGHBORING_PRINT_EDGE_TRACES] == traces
     assert FOLLOWUP_PRINT_EDGE_GUIDE not in (await review_payload())
+    assert (await review_payload())[CONTESTED_SCENE_EDGE_TRACES] == scene_traces
 
     # Only this part of the saved quad intersects a measured span: no inferred
     # corner or automatic photo is created from the open trace.
@@ -172,6 +177,7 @@ async def test_neighboring_source_guide_is_retired_only_by_a_material_manual_cla
     assert "paper_trace_review" not in review_provenance
     final = await review_payload()
     assert NEIGHBORING_PRINT_EDGE_TRACES not in final
+    assert CONTESTED_SCENE_EDGE_TRACES not in final
     assert final[NEAR_CAPTURE_PRINT_TRACES] == other_traces
     assert final["detection_count"] == (2 if edit_existing else 3)
 

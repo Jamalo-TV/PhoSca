@@ -239,6 +239,7 @@ export const mergedPrintAsOneLabel = "Beide Motive liegen auf einem gemeinsamen 
 export const possiblePrintRegionsHint = "Die hellblau gepunkteten Umrisse markieren zwei Bildbereiche in einem Vorschlag. Prüfe am Original, ob sie zusammen auf einem Papierabzug liegen oder ob getrennte Papierkanten sichtbar sind.";
 const possiblePrintRegionsReason = "POSSIBLE_PRINT_REGIONS_REVIEW";
 const missingPrintEdgeHint = "Die blauen Abschnitte zeigen sichtbare Kanten. Prüfe am Original, ob dort ein eigener Papierabzug liegt.";
+const contestedSceneEdgeHint = "Prüfe die markierten Übergänge am Original. Ein Farbwechsel kann auch innerhalb eines einzigen Druckbogens liegen.";
 const nearCapturePrintEdgeHint = "Die blauen Abschnitte markieren sichtbare Kanten eines möglichen Abzugs am Aufnahmerand. Die Ecke am Rand bleibt offen. Prüfe am Original, ob dort ein eigener Abzug liegt.";
 const curvedMotifReviewReason = "IMAGE_BOUNDARY_CURVED";
 const curvedMotifReviewHint = "Die Motivkante verläuft unregelmässig. Prüfe am Original, welche Bildfelder und Beschriftungen zum Motiv gehören.";
@@ -280,11 +281,14 @@ export function getSourceEdgeTraces(traces) {
 
 export function getMissingPrintEdgeReview(metadata) {
   const nearCaptureTraces = getSourceEdgeTraces(metadata?.near_capture_print_edge_traces);
+  const sceneTraces = getSourceEdgeTraces(metadata?.contested_scene_edge_traces).filter((trace) => trace.length === 2);
   const otherTraces = [...getSourceEdgeTraces(metadata?.missing_print_edge_traces),
     ...getSourceEdgeTraces(metadata?.neighboring_print_edge_traces).filter((trace) => trace.length === 2),
     ...getSourceEdgeTraces(metadata?.followup_print_edge_guide?.traces).filter((trace) => trace.length === 2)];
-  return { traces: [...otherTraces, ...nearCaptureTraces],
-    hint: nearCaptureTraces.length > 0 && !otherTraces.length ? nearCapturePrintEdgeHint : missingPrintEdgeHint };
+  const sceneTransition = sceneTraces.length > 0;
+  return { traces: [...otherTraces, ...nearCaptureTraces, ...sceneTraces], sceneTransition,
+    hint: sceneTransition ? contestedSceneEdgeHint
+      : nearCaptureTraces.length > 0 && !otherTraces.length ? nearCapturePrintEdgeHint : missingPrintEdgeHint };
 }
 
 export function getDeferredPrintEvidence(proposal) {

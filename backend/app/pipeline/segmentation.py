@@ -17,6 +17,7 @@ from app.pipeline.album_leaf_review import (
 from app.pipeline.album_windows import ALBUM_WINDOW_OCCLUDED, ALBUM_WINDOW_SOURCE, ALBUM_WINDOW_STOCK_UNCERTAIN, album_window_leaves
 from app.pipeline.capture_background_review import ALBUM_BOUNDARY_TRACES, CAPTURE_BACKGROUND_COUNT_REVIEW, album_binding_traces
 from app.pipeline.capture_fabric_review import CAPTURE_FABRIC_PROPOSAL, capture_fabric_traces
+from app.pipeline.contested_scene_edge import CONTESTED_SCENE_EDGE_TRACES, contested_scene_edge_traces
 from app.pipeline.contrast_crossing_review import CONTRAST_CROSSING_TRACES, contrast_crossing_traces, contrast_review_windows
 from app.pipeline.crossing_prints import (
     CONTESTED_TILE_OUTLINE, CROSSING_PRINT_REVIEW, crossing_print_outlines, near_leaf_edge_traces, staggered_print_source_traces,
@@ -139,6 +140,7 @@ class _TileReviewSearch:
     infer: Callable[[np.ndarray], list[SegmentationDetection]]
     initial_claims: list[dict]
     unfitted_seed: np.ndarray | None
+    contested_scene_scouts: list[SegmentationDetection]
 
 
 @dataclass(frozen=True)
@@ -4763,6 +4765,7 @@ def segment_album_page(
             result = _offer_neighboring_layout_traces(source, result)
         if source is not None and tile_review_search:
             result = _record_contested_tile_followup(source, image, result, tile_review_search[0])
+            result = _offer_contested_scene_edge(source, image, result, tile_review_search[0], settings.yolo_confidence_threshold)
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership
@@ -4900,6 +4903,45 @@ def _tiled_review_claims(result: SegmentationResult) -> list[dict]:
         for outline in (item.mask.get(MERGED_PRINT_PAIR) or {}).get("outlines", ()):
             claims.append({"polygon": outline})
     return claims
+
+
+def _offer_contested_scene_edge(
+    source: np.ndarray, image: np.ndarray, result: SegmentationResult, search: _TileReviewSearch, acceptance: float,
+) -> SegmentationResult:
+    owners = [index for index, item in enumerate(result.detections)
+              if item.mask.get("crossing_print_suggestion_source") == CONTESTED_TILE_OUTLINE
+              and item.mask.get("crossing_print_suggestion")]
+    if len(owners) != 1 or not search.contested_scene_scouts:
+        return result
+    index, = owners
+    owner = result.detections[index]
+    height, width = source.shape[:2]
+    peers = result.detections[:index] + result.detections[index + 1:]
+    if any(item.mask.get(POSSIBLE_PRINT_REGIONS) for item in result.detections):
+        return result
+    claims = _tiled_review_claims(SegmentationResult(peers, result.metadata))
+    claims.append({"polygon": owner.mask["crossing_print_suggestion"]})
+    seeds = [_detection_polygon(item) for item in search.contested_scene_scouts
+             if item.confidence < acceptance and not tiled_outline_conflicts(item.mask["polygon"], claims, width, height)
+             and 0 < normalized_polygon_overlap(_detection_polygon(item), _detection_polygon(owner),
+                                                raster_size=512).first_containment <= .05]
+    if len(seeds) != 1:
+        return result
+    seed, = seeds
+    try:
+        inputs = _boundary_inputs(image)
+        windows = ((.56, .60), (.52, .50)) if width >= height else ((.60, .56), (.50, .52))
+        views = [_centered_tile_print_mask(image, seed, [], search.infer, inputs, window=window) for window in windows]
+        if any(view is None for view in views):
+            return result
+        traces = contested_scene_edge_traces(source, views, [*claims, owner.mask])
+    except Exception:  # Optional source advice must preserve the ordinary detections if a local view fails.
+        return result
+    if not traces:
+        return result
+    return SegmentationResult(result.detections, {**result.metadata, CONTESTED_SCENE_EDGE_TRACES: [
+        _normalized_polygon(trace, width, height) for trace in traces
+    ]})
 
 
 def _offer_neighboring_layout_traces(source: np.ndarray, result: SegmentationResult) -> SegmentationResult:
@@ -5581,6 +5623,7 @@ def _collect_tiled_print_offers(
     grid_scouts: list[SegmentationDetection] | None = None,
     near_capture_scouts: list[tuple[np.ndarray, int]] | None = None,
     contained_tile_pairs: list[tuple[np.ndarray, list[np.ndarray]]] | None = None,
+    contested_scene_scouts: list[SegmentationDetection] | None = None,
 ) -> tuple[
     list[list[dict]], tuple[SegmentationDetection, np.ndarray] | None,
     SegmentationDetection | None, SegmentationDetection | None,
@@ -5625,6 +5668,8 @@ def _collect_tiled_print_offers(
         conflicted = tiled_outline_conflicts(candidate.mask["polygon"], claims, width, height)
         polygon = _detection_polygon(candidate)
         if conflicted:
+            if contested_scene_scouts is not None and not strong and candidate.geometry_valid:
+                contested_scene_scouts.append(candidate)
             if not strong or partial_tile_seeds is None or partial_tile_seeds:
                 continue
             # A small brush against one raw neighbor can seed a review aid.
@@ -5915,9 +5960,11 @@ def _segment_album_page(
                         grid_scouts = []
                         rotated_scouts = []
                         near_capture_scouts = []
+                        contested_scene_scouts = []
                         direct, retry_seed, unfitted_seed, ribbed_seed = _collect_tiled_print_offers(
                             source, image, detections, model_evidence, lambda frame: infer(frame)[0], inputs,
                             partial_tile_seeds, merged_tile_pairs, grid_scouts, near_capture_scouts, contained_tile_pairs,
+                            contested_scene_scouts,
                         )
                         tile_offers.extend(direct)
                         if tile_offers:
@@ -5979,10 +6026,11 @@ def _segment_album_page(
                         **tile_review, "candidates": len(tile_offers),
                         "runtime_ms": round((perf_counter() - review_started) * 1000, 2),
                     }
-                    if tile_review_search is not None and (grid_view_pairs or unfitted_seed is not None):
+                    if tile_review_search is not None and (grid_view_pairs or unfitted_seed is not None or contested_scene_scouts):
                         tile_review_search.append(_TileReviewSearch(
                             lambda frame: infer(frame, record_rejections=False)[0], _tiled_paper_claims(detections),
                             _detection_polygon(unfitted_seed) if unfitted_seed is not None else None,
+                            contested_scene_scouts,
                         ))
                     if possible_region_inference is not None and merged_tile_pairs:
                         possible_region_inference.append(lambda frame: infer(frame, record_rejections=False)[0])

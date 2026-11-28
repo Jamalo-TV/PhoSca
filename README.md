@@ -1564,6 +1564,18 @@ Das PNG ist Teil der `422`-Antwort mit `Cache-Control: private, no-store`.
 Die App zeigt es für die aktuelle Geometrierevision und den konkreten
 Entwurf an. Ein geschätztes Seitenverhältnis wird gekennzeichnet.
 
+In der Zählprüfung kann «Farbübergang am Original prüfen» offene
+Linienabschnitte zeigen. PhoSca prüft dafür einen schwachen
+Kachelvorschlag, der einen einzigen strittigen Abzug streift. Für
+diesen Abzug muss bereits eine separat gemessene Alternativkontur
+vorliegen. Zwei enger gesetzte Kacheln müssen übereinstimmen und
+denselben Farbübergang in den Originalpixeln stützen. Gezeigt werden
+nur die gemeinsamen Messabschnitte mit freiem Abstand zu bestehenden
+Konturen. Ein Farbwechsel kann auch auf einem einzigen Druckbogen
+liegen. Der Hinweis erzeugt weder einen Abzugsvorschlag noch einen
+Zuschnitt. Sobald eine gespeicherte Kontur den Messbereich berührt,
+verschwindet der Hinweis.
+
 Eine manuelle Geometriekorrektur löscht die automatische
 `segmentation_confidence`. Die Geometrie-, Zuordnungs- und
 Samplingprüfungen gelten weiterhin. Bei einem Hinweis auf eine

@@ -24,6 +24,7 @@ from app.models import (
     StageRun,
 )
 from app.pipeline.album_leaf_review import ALBUM_LEAF_COUNT_REVIEW, ALBUM_LEAF_REVIEW_CHILD, ALBUM_LEAF_REVIEW_TRACES
+from app.pipeline.contested_scene_edge import CONTESTED_SCENE_EDGE_TRACES
 from app.pipeline.crossing_fallback_review import CROSSING_FALLBACK_COUNT_REVIEW, CROSSING_FALLBACK_TRACES
 from app.pipeline.decisions import is_reviewed_non_print, motif_geometry_requires_review
 from app.pipeline.manual_paper_boundary import (
@@ -883,6 +884,7 @@ async def get_review_queue(
                         "missing_print_edge_traces": segmentation.get("missing_print_edge_traces", []),
                         **{key: segmentation[key] for key in (
                             NEAR_CAPTURE_PRINT_TRACES, NEIGHBORING_PRINT_EDGE_TRACES, FOLLOWUP_PRINT_EDGE_GUIDE,
+                            CONTESTED_SCENE_EDGE_TRACES,
                         )
                            if segmentation.get(key)},
                         "deferred_print_proposals": page_fusion_evidence(page.processing_metadata).get("deferred_print_proposals", []),
