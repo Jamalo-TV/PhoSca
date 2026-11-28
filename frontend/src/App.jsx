@@ -70,7 +70,7 @@ import {
   MeasuredMotifReview, mergedPrintAsOneLabel, mergedPrintPairHint, possiblePrintRegionsHint,
   paperOutlineNeedsConfirmation, NeighborContentReview, nestedPrintHint, PaperEdgePreviewComparison, showsPaperEdgeComparison, printOutlineSaveHint, ribbedSceneEdge,
   paperGridCountHint, paperGridCountSaved, paperGridFragmentHint, paperGridOuterHint, paperGridReason, paperJoinCountHint, paperJoinHint,
-  paperJoinReason, printedIllustrationFrameStyle, printedIllustrationReviewHint, scannerBackingHint, scannerBackingReason,
+  paperJoinReason, printedIllustrationFrameStyle, printedIllustrationReviewHint, scannerBackingHint, scannerBackingReason, stackedPocketEvidence,
   isNestedFallbackProposal, requiresStandalonePrintFlag, standalonePrintReviewErrors,
   sourceFragmentCountHint, sourceFragmentProposal, sourceFragmentReviewErrors,
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
@@ -87,7 +87,7 @@ import {
   getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
-  getMergedPrintPairs, getPaperJoinReviewGroups, getPossiblePrintRegions, getPrintedIllustrationReviewGroups, getStoredMotifQuad,
+  getMergedPrintPairs, getPaperJoinReviewGroups, getPossiblePrintRegions, getPrintedIllustrationReviewGroups, getStackedPocketReviewGroups, getStoredMotifQuad,
   possiblePrintRegionStyle,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
   getMeasuredMotifComparison, isMeasuredMotifComparison, measuredMotifOutlineStyle, measuredMotifPaperStyle, measuredMotifSeamStyle,
@@ -1485,8 +1485,9 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
   const countGroups = useMemo(() => actionableCountGroups(getActionableFilmGridReviewGroups(filmGridGroups, photos), paperJoinGroups,
     getActionablePaperGridReviewGroups(paperGridGroups, photos),
     reviewingCount && !newPrint && !editingImage ? [...getCrossingFallbackReviewGroups(photos), ...getAlbumLeafReviewGroups(photos),
-      ...(!deferredProposals.length ? getPrintedIllustrationReviewGroups(photos) : [])] : []),
-  [filmGridGroups, paperJoinGroups, paperGridGroups, photos, reviewingCount, newPrint, editingImage, deferredProposals.length]);
+      ...(!deferredProposals.length ? getPrintedIllustrationReviewGroups(photos) : []),
+      ...(countPending ? getStackedPocketReviewGroups(photos, pendingProposals?.length ?? 0) : [])] : []),
+  [filmGridGroups, paperJoinGroups, paperGridGroups, photos, reviewingCount, newPrint, editingImage, deferredProposals.length, countPending, pendingProposals]);
   const selectedCountGroup = groupSelection?.pageId === pageId
     ? countGroups.find(({ key }) => key === groupSelection?.key) : null;
   const competingPhotoOutlines = useMemo(() => {
@@ -1670,6 +1671,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
     }
     photos.forEach((photo) => {
+      if (selectedCountGroup?.kind === "stacked_pocket" && selectedCountGroup.childIds.includes(photo.id)) return;
       const inCountGroup = selectedCountGroup?.photoIds.has(photo.id);
       const shape = (!inCountGroup && draftShapes[photo.id]) || draftShapeFromPhoto(photo);
       const visiblePoints = shape.visiblePolygon.map((point) => ({ x: point.x * canvas.width, y: point.y * canvas.height }));
@@ -1919,9 +1921,10 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
       }
       context.restore();
     }
-    if (["crossing", "album_leaf", "printed_illustration"].includes(selectedCountGroup?.kind)) {
+    if (["crossing", "album_leaf", "printed_illustration", "stacked_pocket"].includes(selectedCountGroup?.kind)) {
       const isAlbumLeaf = selectedCountGroup.kind === "album_leaf";
-      const evidence = selectedCountGroup.kind === "printed_illustration"
+      const evidence = selectedCountGroup.kind === "stacked_pocket" ? stackedPocketEvidence(selectedCountGroup)
+        : selectedCountGroup.kind === "printed_illustration"
         ? [{ points: selectedCountGroup.frame, closed: true, ...printedIllustrationFrameStyle }]
         : selectedCountGroup.traces.map((points, index) => ({
         points, ...(isAlbumLeaf ? albumLeafTraceStyle : crossingFallbackTraceStyles[index]),
@@ -2422,7 +2425,7 @@ function ReviewCanvas({ page, photos, onSaveBox, onAddPhoto, onRejectPhoto, onCo
           ))}
           <button className="text-button compact" type="button" onClick={confirmCount}
             disabled={!canAddPhoto || saveState?.saving || currentCountReview?.saving
-              || ["paper-grid", "crossing", "album_leaf", "printed_illustration"].includes(selectedCountGroup?.kind)}>
+              || ["paper-grid", "crossing", "album_leaf", "printed_illustration", "stacked_pocket"].includes(selectedCountGroup?.kind)}>
             {currentCountReview?.saving ? "Anzahl wird gespeichert …" : "Anzahl bestätigen"}
           </button>
         </div>

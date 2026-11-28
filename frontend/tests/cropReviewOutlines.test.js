@@ -7,7 +7,8 @@ import {
   filmSourceWindow, getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups,
   getFilmGridReviewSeams, getFilmNeighborEdgeIndex, getFragmentReviewOutlines, getMergedPrintPairs,
   getPaperGridOutlineParents, getPaperGridReviewGroups,
-  getPaperJoinReviewGroups, getPossiblePrintRegions, getPrintedIllustrationReviewGroups, getStoredMotifQuad, motifFitsPaper, paperGridSourceWindows,
+  getPaperJoinReviewGroups, getPossiblePrintRegions, getPrintedIllustrationReviewGroups, getStackedPocketReviewGroups, getStoredMotifQuad,
+  motifFitsPaper, paperGridSourceWindows,
   sameCropDraft, savedFullPrintReviewUrl,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource,
   getMeasuredMotifComparison, isMeasuredMotifComparison, measuredMotifComparisonSource,
@@ -152,6 +153,48 @@ test("a printed illustration group requires all four current automatic held prop
     { segmentation_mask: { ...segmentation_mask, printed_illustration_review_frame: [frame.slice(1)] } },
     { photo_id: "1" },
   ]) assert.deepEqual(getPrintedIllustrationReviewGroups([{ ...first, ...override }, ...others]), []);
+});
+
+test("stacked pocket review links only the two current held carrier proposals and their exact model children", () => {
+  const held = { status: "review_needed" };
+  const modes = { full_print: held, image_only: held };
+  const reason = "STACKED_POCKET_COUNT_REVIEW";
+  const children = [quad, quad.map(({ x, y }) => ({ x: x * .8, y: y * .2 + .81 }))];
+  const traces = [.15, .425, .76].map(y => [{ x: .08, y }, { x: .85, y }]);
+  const [upper, lower] = children.map((polygon, index) => ({
+    photo_id: `model-${index}`, confidence: .81, segmentation_mask: { source: "yolo_seg_mask", polygon },
+  }));
+  const mask = { stacked_pocket_review_traces: traces, stacked_pocket_review_children: children };
+  const desktop = { id: "carrier-a", segmentation_confidence: .76, segmentation_mask: mask,
+    enhancement_applied: { segmentation_review_reasons: [reason], correction: { crop_modes: modes } } };
+  const mobile = { photo_id: "carrier-b", confidence: .7, crop_modes: modes, review_reasons: [reason],
+    segmentation_mask: structuredClone(mask) };
+  const rows = [upper, desktop, lower, mobile];
+  const [group] = getStackedPocketReviewGroups(rows, 0);
+  assert.equal(group.kind, "stacked_pocket");
+  assert.deepEqual(group.photoIds, new Set(["carrier-a", "carrier-b"]));
+  assert.deepEqual(group.childIds, ["model-0", "model-1"]);
+  assert.deepEqual(group.children, children);
+  assert.deepEqual(group.traces, traces);
+  assert.equal(getStackedPocketReviewGroups([...rows].reverse(), 0)[0].key, group.key);
+  assert.notEqual(getStackedPocketReviewGroups([{ ...upper, photo_id: "replacement" }, ...rows.slice(1)], 0)[0].key, group.key);
+  assert.deepEqual(getStackedPocketReviewGroups(rows, 1), []);
+  assert.deepEqual(getStackedPocketReviewGroups(rows), []);
+  assert.deepEqual(getStackedPocketReviewGroups(rows.slice(0, 3), 0), []);
+  assert.deepEqual(getStackedPocketReviewGroups([...rows, { ...upper, photo_id: "new" }], 0), []);
+
+  for (const changes of [
+    { reviewed_non_print: true }, { photo_id: "carrier-a" }, { confidence: null }, { review_reasons: [] },
+    { crop_modes: { ...modes, image_only: { status: "ready" } } },
+    { segmentation_mask: { ...mask, stacked_pocket_review_traces: traces.slice(0, 2) } },
+    { segmentation_mask: { ...mask, stacked_pocket_review_traces: [traces[0], traces[1], [traces[2][0], traces[2][0]]] } },
+    { segmentation_mask: { ...mask, stacked_pocket_review_children: [...children].reverse() } },
+  ]) assert.deepEqual(getStackedPocketReviewGroups([upper, desktop, lower, { ...mobile, ...changes }], 0), []);
+  for (const changes of [
+    { confidence: null },
+    { segmentation_mask: { ...upper.segmentation_mask, source: "classical_border_quad" } },
+    { segmentation_mask: { ...upper.segmentation_mask, polygon: [...quad].reverse() } },
+  ]) assert.deepEqual(getStackedPocketReviewGroups([{ ...upper, ...changes }, desktop, lower, mobile], 0), []);
 });
 
 test("a film-neighbor distinction only applies to its two active held lines", () => {

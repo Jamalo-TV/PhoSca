@@ -359,6 +359,53 @@ export function getPrintedIllustrationReviewGroups(photos) {
     frame: frames[0], photoIds }];
 }
 
+export function getStackedPocketReviewGroups(photos, pendingCount) {
+  const active = photos.filter(photo => !photo.reviewed_non_print
+    && !photo.review_reasons?.includes("GEOMETRY_REVIEW_WRONG_OBJECT"));
+  if (pendingCount !== 0 || active.length !== 4) return [];
+  const idOf = photo => photo.photo_id ?? photo.id;
+  const confidenceOf = photo => photo.segmentation_confidence ?? photo.confidence;
+  const pointKey = ({ x, y }) => `${x},${y}`;
+  const coordinateKey = points => points.map(pointKey).join(";");
+  const validOutline = points => Array.isArray(points) && points.every(isNormalizedPoint)
+    && new Set(points.map(pointKey)).size >= 4;
+  const ids = active.map(idOf);
+  if (ids.some(id => typeof id !== "string" || !id) || new Set(ids).size !== active.length) return [];
+
+  const carriers = active.filter(photo => photo.segmentation_mask?.stacked_pocket_review_traces != null);
+  if (carriers.length !== 2 || !carriers.every(photo => {
+    const reasons = photo.enhancement_applied?.segmentation_review_reasons ?? photo.review_reasons;
+    return Number.isFinite(confidenceOf(photo)) && bothModesHeld(cropModes(photo))
+      && reasons?.includes("STACKED_POCKET_COUNT_REVIEW");
+  })) return [];
+  const [first, second] = carriers.map(photo => photo.segmentation_mask);
+  const validTraces = traces => Array.isArray(traces) && traces.length === 3 && traces.every(line =>
+    sourceReviewLine(line) && pointKey(line[0]) !== pointKey(line[1]));
+  const traces = first.stacked_pocket_review_traces;
+  const children = first.stacked_pocket_review_children;
+  const secondTraces = second.stacked_pocket_review_traces;
+  const secondChildren = second.stacked_pocket_review_children;
+  if (!validTraces(traces) || !validTraces(secondTraces)
+    || !Array.isArray(children) || children.length !== 2 || !children.every(validOutline)
+    || !Array.isArray(secondChildren) || secondChildren.length !== 2 || !secondChildren.every(validOutline)) return [];
+  const traceKeys = traces.map(coordinateKey);
+  const childKeys = children.map(coordinateKey);
+  if (new Set(traces.map(line => line.map(pointKey).sort().join(";"))).size !== 3
+    || childKeys[0] === childKeys[1]
+    || !traceKeys.every((key, index) => key === coordinateKey(secondTraces[index]))
+    || !childKeys.every((key, index) => key === coordinateKey(secondChildren[index]))) return [];
+
+  const photoIds = new Set(carriers.map(idOf).sort());
+  const modelRows = active.filter(photo => !photoIds.has(idOf(photo)));
+  if (!modelRows.every(photo => Number.isFinite(confidenceOf(photo))
+    && photo.segmentation_mask?.source === "yolo_seg_mask" && validOutline(photo.segmentation_mask.polygon))) return [];
+  const childrenByOutline = new Map(modelRows.map(photo => [coordinateKey(photo.segmentation_mask.polygon), idOf(photo)]));
+  if (!childKeys.every(key => childrenByOutline.has(key))) return [];
+  const childIds = childKeys.map(key => childrenByOutline.get(key));
+  return [{ kind: "stacked_pocket", key: JSON.stringify(["stacked_pocket", [...photoIds], childIds, traceKeys, childKeys]),
+    traces, children, childIds, photoIds }];
+}
+
 export function getCrossingFallbackReviewGroups(photos) {
   return photos.flatMap(photo => {
     const id = photo.photo_id ?? photo.id;

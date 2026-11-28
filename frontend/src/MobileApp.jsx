@@ -33,7 +33,7 @@ import {
   standalonePrintConfirmation, standalonePrintNeedsConfirmation, DarkBackingEvidenceLegend, darkBackingProposal, darkBackingReviewErrors,
   embossedAlbumAction, embossedPocketReviewErrors,
   getSourceStripReview, SourceStripOutline, SourceStripReview, offPrintAdvisorySource, useAlbumPageMarkReview,
-  savedPrintReviewHint, savedPrintReviewTitle,
+  savedPrintReviewHint, savedPrintReviewTitle, stackedPocketEvidence,
 } from "./CropVariants.jsx";
 import {
   getCompetingPhotoOutline, getCompetingPhotoReviewOutlines,
@@ -43,7 +43,8 @@ import {
   getContrastCrossingTraces, getFilmNeighborEdgeIndex,
   getAlbumLeafReviewGroups, getCaptureSplitReviewGroups, getCrossingFallbackReviewGroups, getFilmGridReviewSeams, getFilmGridSeam, getFragmentOutline, getFragmentReviewOutlines,
   getActionableFilmGridReviewGroups, getActionablePaperGridReviewGroups, getPaperGridOutlineParents, getPaperGridReview, getPaperGridReviewGroups,
-  getMergedPrintPairs, getPaperJoinReviewGroups, getPossiblePrintRegions, getPrintedIllustrationReviewGroups, getStoredMotifQuad, motifFitsPaper,
+  getMergedPrintPairs, getPaperJoinReviewGroups, getPossiblePrintRegions, getPrintedIllustrationReviewGroups,
+  getStackedPocketReviewGroups, getStoredMotifQuad, motifFitsPaper,
   possiblePrintRegionStyle,
   getRibbedPrintReviewOutline, measuredRibbedPrintOutlineSource, ribbedPrintOutlineHint, ribbedPrintOutlineStyle,
   getMeasuredMotifComparison, isMeasuredMotifComparison,
@@ -607,6 +608,7 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
     <g aria-label={selectedCountGroup.kind === "film" ? "Vorschläge zur Prüfung der Negativhülle"
       : selectedCountGroup.kind === "album_leaf" ? "Mögliche Albumseite zur Anzahlprüfung"
       : selectedCountGroup.kind === "printed_illustration" ? "Mögliche gemeinsame Abbildung zur Anzahlprüfung"
+      : selectedCountGroup.kind === "stacked_pocket" ? "Mögliche Albumtaschen zur Anzahlprüfung"
       : selectedCountGroup.kind === "crossing" ? "Schräger Vorschlag zur Anzahlprüfung" : "Vorschläge zur Prüfung der Papierkante"}
       fill="#0e7490" fillOpacity="0.11"
       stroke="#0e7490" strokeWidth="6" pointerEvents="none">
@@ -621,10 +623,10 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
           strokeDasharray={dash.map(value => value * 2).join(" ")}
           points={line.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ")} />;
       })}
-      {selectedCountGroup.kind === "album_leaf" && [
+      {(selectedCountGroup.kind === "stacked_pocket" ? stackedPocketEvidence(selectedCountGroup) : selectedCountGroup.kind === "album_leaf" ? [
         ...selectedCountGroup.traces.map(points => ({ points, ...albumLeafTraceStyle })),
         { points: selectedCountGroup.child, closed: true, ...albumLeafChildStyle },
-      ].map(({ points, closed, color, contrast, dash, label }, index) => {
+      ] : []).map(({ points, closed, color, contrast, dash, label }, index) => {
         const Shape = closed ? "polygon" : "polyline";
         const positions = points.map(({ x, y }) => `${x * 1000},${y * 1000}`).join(" ");
         return <g key={index} fill="none" aria-label={label}>
@@ -748,8 +750,8 @@ function DetectionOverlay({ item, editable = false, openPaperOutline, countOutli
             <text className="corner-label" x={point.x * 1000 + 28} y={point.y * 1000 - 22}>{index + 1}</text>
           </g>)}
         </g> : shown.map(({ bounding_box: box, photo_id: photoId }, index) => <g key={photoId || index}>
-          {!selectedCountGroup?.photoIds.has(photoId)
-            && (selectedCountGroup?.kind !== "album_leaf" || selectedCountGroup.childId !== photoId) && (
+          {(!selectedCountGroup || (!selectedCountGroup.photoIds.has(photoId)
+            && selectedCountGroup.childId !== photoId && !selectedCountGroup.childIds?.includes(photoId))) && (
             <rect x={box.x1 * 1000} y={box.y1 * 1000} width={(box.x2 - box.x1) * 1000} height={(box.y2 - box.y1) * 1000} />
           )}
           <text x={box.x1 * 1000 + 12} y={box.y1 * 1000 + 38}>{index + 1}</text>
@@ -1192,9 +1194,11 @@ function CropReview({ albumId, goHome }) {
   const paperGridOutlineParents = getPaperGridOutlineParents(countDetections).filter(parent =>
     cyclicReviewQuad(sanitizeReviewPolygon(parent.crop_modes?.full_print?.suggested_warp_quad)));
   const albumLeafGroups = getAlbumLeafReviewGroups(countDetections);
+  const stackedPocketGroups = type === "segmentation" && item?.payload?.detection_count === 4
+    ? getStackedPocketReviewGroups(countDetections, item.payload.deferred_print_proposals?.length ?? 0) : [];
   const countGroups = actionableCountGroups(getActionableFilmGridReviewGroups(filmGridGroups, countDetections), paperJoinGroups,
     getActionablePaperGridReviewGroups(paperGridGroups, countDetections), [...getCrossingFallbackReviewGroups(countDetections), ...albumLeafGroups,
-      ...(!deferredProposals.length ? getPrintedIllustrationReviewGroups(countDetections) : [])]);
+      ...(!deferredProposals.length ? getPrintedIllustrationReviewGroups(countDetections) : []), ...stackedPocketGroups]);
   const selectedCountGroup = groupSelection?.pageId === item?.id
     ? countGroups.find(({ key }) => key === groupSelection?.key) : null;
   const approvalBlocked = fullPrintHeld || captureReviewPending || paperOutlinePending || deferredParentReviewPending
@@ -1411,7 +1415,7 @@ function CropReview({ albumId, goHome }) {
             {value === "correct" && type === "segmentation" && (item.payload?.detection_count === 0
               || deferredProposals.length || missingPrintReview.traces.length
               || countOutlines.length || captureSplitGroups.length || filmGridGroups.length || paperGridGroups.length || paperJoinGroups.length
-              || albumLeafGroups.length || mergedPairs.length)
+              || albumLeafGroups.length || stackedPocketGroups.length || mergedPairs.length)
               ? "Anzahl bestätigen" : label}
           </button>
         ))}

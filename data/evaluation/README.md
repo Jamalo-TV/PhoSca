@@ -13457,3 +13457,111 @@ in the 265 fitted and selection inputs.
 
 Reproduction commands, checksums and per-page measurements are
 recorded locally under `runs/crop-quality/authored-warm12/`.
+
+## Review two overlapping carriers on a stack of pockets
+
+The native Scan 63 model supplies two disjoint scene masks, with
+confidences 0.841 and 0.748. Classical fallback contributes the
+two broad carrier proposals at 0.593 and 0.645. Their mask IoU is
+0.7138. Both were present through the final detection result. The
+new count review starts from the same four polygons. It requires
+one contrast-region carrier and one edge-contour carrier below
+the configured acceptance score. Both must be convex classical
+quadrilaterals. Their IoU must be between 0.49 and 0.98 and the model
+mask IoU must be at most 0.015. Each carrier must cover at least 58%
+of each model mask. Each intersection accounts for 12–45% of the
+carrier. The two intersections account for 44–84% together.
+Each model mask must meet the configured acceptance score. A
+further active or deferred claim prevents the group action.
+
+The original-pixel test checks a signed scope outside the two
+model masks. A strong, continuous material change on the four
+sides of either outer quad prevents the group. The other source
+evidence must be unique to one end of the photos. PhoSca samples
+the shared span across the proposals and tests repeatable warm
+stock bands with at least two contrasting intervals. A finer
+sample of these intervals needs distributed luminance texture in
+at least ten of twelve lateral sectors in each of two intervals.
+Only measured parts of three light bands are shown. The lines
+run inside the bands and serve as source markers. Each marks a
+contiguous run at least 40% of the sampled width.
+
+The automatic detection list still has four rows. The two
+classical proposals gain a count-review reason and share the
+three observed spans and the exact two child outlines. The two
+model photos retain their own outlines and crop reviews. Desktop
+and Mobile show the two carrier proposals, three source spans
+and the two individually retained image masks. A confirmation
+records both exclusions under one count revision. Cancel keeps
+all four rows. A stale revision, a changed child, a pending
+proposal or an exportable carrier rejects the group action.
+
+The final optical helper returns three marks on all 13 fixed-mask
+source variants covering quarter turns, resizing and JPEG encoding.
+It abstains on all 12 close real-photo controls from Scan 83, on
+all 15 smooth paint and stain controls and on six plain stock,
+isolated photo or strong outer perimeter controls. The 39 source
+marks stay within both broad carrier masks and outside both photo
+masks. On native Scan 63 the nearest marked point is about 246
+original pixels from either visible model photo. The source
+marks run approximately from (1054,656) to (3731,735), from
+(1033,1009) to (3747,1089) and from (1013,1404) to (3765,1485).
+
+Native upload preserves the masks, working crop geometry and
+all four working JPEG digests from the previous version. Both
+browser layouts show three original detail crops. Opening or
+cancelling the group issues no writes and keeps individual
+rejection available. One explicit group decision returns
+HTTP 201 and changes the count from four to two. Retrying that
+same decision returns the recorded event. A new request with
+the earlier revision returns HTTP 409. The two retained photos
+preserve their working JPEG and mode states. Both named downloads
+and the trimmed alias remain unavailable. Reprocessing the candle
+photo then reproduces its existing shorter PNG comparison with
+the two export holds. The native page upload took 98.7 seconds
+in the paired test under concurrent validation load. On the loaded
+native source, the optical check took 96 ms median and 228 ms p95
+over 15 measurements with one OpenCV thread.
+Local receipts and screenshots are under
+`runs/crop-quality/scan-63/stacked-pocket-count/`.
+
+Eight paired evaluation reports reproduce the detection, geometry,
+quality metrics and crop availability of the previous revision.
+The validation and detector calibration profiles record stacked
+pocket review revision 1. Frozen detection retains all 18 matches.
+Fixed starting geometry passes all 11 recoverable whole crops and
+all 12 recoverable motif crops. The new group is offered on the
+already held real carrier candidates.
+
+The image is the registered mixed-model development source
+described in the [Scan 63 crop comparison](#compare-a-held-crop-above-a-second-image-strip).
+An opaque reproduction with the same interior source pixels
+can satisfy the optical test. This is a count-review action.
+The broad carrier geometry alone supplies no physical print
+decision or automatic export.
+
+### Separate source verification
+
+The U053 calibration draft binds the submitted WebP, decoded
+raster, ZIP member and annotation hashes. The source-only audit
+measures 1,198 stations around three disjoint prints. The closest
+draft separation is 96 native pixels. A broad step search at
+white print rims can move 17–23 pixels onto the motif. The
+alternating texture of the album backing supports the outer
+paper on parts of the two pale prints. Several low-contrast
+sections stay open in the draft. A three-pixel interruption near
+the top of the left print could be a nick or surface material.
+The draft retains source pixels there. The physical album ID
+and independent confirmation remain open. This page supplied no
+model input, fit or release result.
+
+The University of Illinois Gwendolyn Brooks red album provides
+a separate acquisition lead. Its workflow describes images of
+physical spreads before handling and camera views of individual
+items. Spread 10–11 has the Omeka identifier 2385. The collection
+and individual item API requests returned HTTP 403 before origin
+delivery. The available metadata leaves two physical red album
+inventory entries and insufficient information to bind the
+published spread to an exact separate print and reuse rights.
+The collection remains a source lead. The intake confirms zero
+release groups. [Digitization workflow](https://omeka-s.library.illinois.edu/s/illinois-digitization/page/digitizing-brooks-DS)

@@ -391,6 +391,11 @@ const groupReviewLabels = {
     confirm: "Grossen Vorschlag aus der Abzugsliste nehmen",
     prompt: "Entferne den grossen Vorschlag nur, wenn er das Albumblatt zeigt. Prüfe den kleineren Fotoabzug separat. Türkis markiert gemessene Linien am möglichen Albumfalz, Violett den kleineren Vorschlag.",
   },
+  stacked_pocket: {
+    open: "Albumtaschen prüfen",
+    confirm: "Beide Vorschläge aus der Abzugsliste nehmen",
+    prompt: "Die türkis gestrichelten Linien markieren drei helle Streifen. Violett umrandet die beiden Bildvorschläge, die in der Liste bleiben. Entferne die beiden grossen Vorschläge nur, wenn sie Albumtaschen oder Unterlage zeigen. Bei einem eigenen Papierabzug oder bei Unsicherheit wähle «Abbrechen».",
+  },
   printed_illustration: {
     open: "Gemeinsame Abbildung prüfen",
     confirm: "Alle vier Vorschläge aus der Abzugsliste nehmen",
@@ -462,18 +467,22 @@ function CountGroupSourceDetails({ sourceUrl, group }) {
   const { width, height } = source;
   const albumLeaf = group.kind === "album_leaf";
   const paperGrid = group.kind === "paper-grid";
+  const stackedPocket = group.kind === "stacked_pocket";
   const details = (paperGrid ? [...group.cuts.values()].flatMap((line, index, cuts) =>
     paperGridSourceWindows(line, width, height).map((window, position) => {
       const label = ["Erstes Ende", "Mitte", "Zweites Ende"][position];
       return [cuts.length === 1 ? label : `Trennlinie ${index + 1} · ${label}`, window];
     })) : albumLeaf ? [
     ["Möglicher Albumfalz im Original", albumLeafSourceWindow(group.traces, width, height)],
-  ] : [
+  ] : stackedPocket ? group.traces.map((line, index) => [
+    `Heller Streifen ${index + 1} im Original`, filmSourceWindow(line, width, height),
+  ]) : [
     ["Zwischenraum im Raster", filmSourceWindow(group.line, width, height)],
     ["Möglicher durchsichtiger Saum", filmSourceWindow(group.rim, width, height)],
   ]).filter(([, detail]) => detail);
   if (!details.length) return null;
-  const sourceClass = paperGrid ? "paper-grid-source-details" : albumLeaf ? "album-leaf-source-details" : "film-source-details";
+  const sourceClass = paperGrid ? "paper-grid-source-details" : albumLeaf ? "album-leaf-source-details"
+    : stackedPocket ? "stacked-pocket-source-details" : "film-source-details";
   const figures = <section className={`count-group-source-details ${sourceClass}`}
     aria-label="Vergrösserte Originalausschnitte">
     {details.map(([label, { view, ticks }]) => <figure key={label}>
@@ -489,6 +498,10 @@ function CountGroupSourceDetails({ sourceUrl, group }) {
       <figcaption>{label}</figcaption>
     </figure>)}
   </section>;
+  if (stackedPocket) return <details className="paper-grid-source-review">
+    <summary>Helle Streifen im Original vergrössern</summary>
+    {figures}
+  </details>;
   if (!paperGrid) return figures;
   return <details className="paper-grid-source-review">
     <summary>{group.cuts.size === 1 ? "Trennlinie im Original vergrössern" : "Trennlinien im Original vergrössern"}</summary>
@@ -569,13 +582,13 @@ export function CountGroupReview({ groups, selected, busy, sourceUrl, onSelect, 
   const promptId = useId();
   if (!groups.length) return null;
   const labels = selected && groupReviewLabels[selected.kind];
-  const exclusions = groups.filter(({ kind }) => !["paper-grid", "album_leaf", "printed_illustration"].includes(kind));
+  const exclusions = groups.filter(({ kind }) => !["paper-grid", "album_leaf", "printed_illustration", "stacked_pocket"].includes(kind));
   const sharedPaper = groups.filter(({ kind }) => kind === "paper-grid");
   const albumLeaves = groups.filter(({ kind }) => kind === "album_leaf");
   return <div className="count-group-review">
     {selected ? <>
       <p id={promptId} className="crop-editor-hint" role="status">{labels.prompt}</p>
-      {sourceUrl && (selected.kind === "film" || selected.kind === "album_leaf" || selected.kind === "paper-grid")
+      {sourceUrl && ["film", "album_leaf", "paper-grid", "stacked_pocket"].includes(selected.kind)
         && <CountGroupSourceDetails sourceUrl={sourceUrl} group={selected} />}
       <button type="button" className="primary-button" disabled={busy} aria-describedby={promptId}
         onClick={() => onConfirm(selected)}>
@@ -585,7 +598,7 @@ export function CountGroupReview({ groups, selected, busy, sourceUrl, onSelect, 
     </> : groups.map((group) => {
       const { key, kind } = group;
       const peers = kind === "paper-grid" ? sharedPaper : kind === "album_leaf" ? albumLeaves
-        : kind === "printed_illustration" ? [group] : exclusions;
+        : ["printed_illustration", "stacked_pocket"].includes(kind) ? [group] : exclusions;
       return <button key={key} type="button" className="text-button" disabled={busy} onClick={() => onSelect(key)}>
         {`${groupReviewLabels[kind].open}${peers.length > 1 ? ` (${peers.indexOf(group) + 1})` : ""}`}
       </button>;
@@ -623,6 +636,14 @@ export const printedIllustrationFrameStyle = {
 export const albumLeafChildStyle = {
   color: "#7e22ce", contrast: "#f3e8ff", dash: [4, 4], label: "Kleinerer Fotoabzug zur Einzelprüfung",
 };
+
+export function stackedPocketEvidence(group) {
+  return [
+    ...group.traces.map((points, index) => ({ points, ...albumLeafTraceStyle, label: `Heller Streifen ${index + 1}` })),
+    ...group.children.map((points, index) => ({ points, closed: true, ...albumLeafChildStyle,
+      label: `Erhaltener Bildvorschlag ${index + 1}` })),
+  ];
+}
 
 export function getDeferredPrintProposals(proposals) {
   return Array.isArray(proposals) ? proposals.filter((proposal) => Number.isInteger(proposal?.id) && proposal.id >= 0

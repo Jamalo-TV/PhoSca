@@ -107,6 +107,9 @@ from app.pipeline.shared_motif_review import (
     SHARED_MOTIF_REVIEW, measure_shared_motif, motif_review_id, near_nested_model_masks,
 )
 from app.pipeline.source_fragment_review import source_fragment_role, suggest_source_fragment_group
+from app.pipeline.stacked_pocket_review import (
+    STACKED_POCKET_COUNT_REVIEW, STACKED_POCKET_REVIEW_CHILDREN, STACKED_POCKET_REVIEW_TRACES, stacked_pocket_review_traces,
+)
 from app.pipeline.tile_print_review import (
     CONTESTED_TILE_FOLLOWUP, TILED_PRINT_PROPOSAL, contested_tile_followup_outline,
     measured_adjacent_tile_outline, measured_grid_tile_outline, measured_recentered_ribbed_outline,
@@ -4122,6 +4125,57 @@ def _flag_album_leaf_count_review(image: np.ndarray, result: SegmentationResult)
     return SegmentationResult(updated, result.metadata)
 
 
+def _flag_stacked_pocket_count_review(
+    image: np.ndarray, result: SegmentationResult, acceptance: float,
+) -> SegmentationResult:
+    detections = result.detections
+    if (not result.metadata.get("fallback_used") or len(detections) != 4
+            or (result.metadata.get("fusion") or {}).get("deferred_print_proposals")):
+        return result
+    if any(not item.geometry_valid or item.review_reasons or item.mask.get("warp_quad")
+           or item.mask.get("visible_polygon") for item in detections):
+        return result
+    carriers, photos = [], []
+    for index, item in enumerate(detections):
+        mask = item.mask
+        fusion = mask.get("fusion") or {}
+        polygon = mask.get("polygon") or []
+        family = fusion.get("proposal_families")
+        detector = mask.get("detector_source")
+        if fusion.get("proposal_count") != 1:
+            return result
+        if (len(polygon) == 4 and family == ["classical"] and detector in {"contrast_region", "edge_contour"}
+                and mask.get("source") == "classical_border_quad" and .55 <= item.confidence < acceptance):
+            carriers.append(index)
+        elif (len(polygon) >= 4 and family == ["model"] and detector == "yolo_onnx"
+              and mask.get("source") == "yolo_seg_mask" and item.confidence >= acceptance):
+            photos.append(index)
+        else:
+            return result
+    if (len(carriers) != 2 or len(photos) != 2
+            or {detections[index].mask["detector_source"] for index in carriers} != {"contrast_region", "edge_contour"}):
+        return result
+    height, width = image.shape[:2]
+    outlines = [normalized_vertices_to_pixels(_detection_polygon(item), width, height) for item in detections]
+    if not all(cv2.isContourConvex(outlines[index]) for index in carriers):
+        return result
+    try:
+        traces = stacked_pocket_review_traces(image, [outlines[i] for i in carriers], [outlines[i] for i in photos])
+    except (ValueError, cv2.error):
+        return result
+    if not traces:
+        return result
+    evidence = {
+        STACKED_POCKET_REVIEW_TRACES: [_normalized_polygon(line, width, height) for line in traces],
+        STACKED_POCKET_REVIEW_CHILDREN: [detections[i].mask["polygon"] for i in photos],
+    }
+    updated = detections.copy()
+    for index in carriers:
+        item = updated[index]
+        updated[index] = replace(item, mask={**item.mask, **evidence}, review_reasons=[STACKED_POCKET_COUNT_REVIEW])
+    return SegmentationResult(updated, result.metadata)
+
+
 def _offer_mounted_window_review(source: np.ndarray, result: SegmentationResult) -> SegmentationResult:
     if not result.metadata.get("fallback_used") or not 4 <= len(result.detections) <= 8:
         return result
@@ -4836,6 +4890,8 @@ def segment_album_page(
             result = _offer_contested_scene_edge(source, image, result, tile_review_search[0], settings.yolo_confidence_threshold)
         if source is not None:
             result = _offer_mounted_window_review(source, result)
+            if settings.enable_classical_segmentation_fallback:
+                result = _flag_stacked_pocket_count_review(source, result, settings.yolo_confidence_threshold)
         return result
 
     from app.pipeline.visible_mask_refinement import UnresolvedMaskOwnership, refine_visible_masks, resolve_mask_ownership

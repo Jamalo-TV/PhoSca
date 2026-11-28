@@ -964,13 +964,13 @@ async def test_shared_rim_requires_a_paper_edit_before_manual_export(submit_geom
         assert (await client.get(f"{url}/image?variant={variant}")).status_code == 200
 
 
-@pytest.mark.parametrize("kind", ["film", "paper", "crossing", "printed_illustration"])
+@pytest.mark.parametrize("kind", ["film", "paper", "crossing", "printed_illustration", "stacked_pocket"])
 async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kind):
     from copy import deepcopy
 
     from app.config import get_settings
     from app.database import get_session_factory
-    from app.models import ExtractedPhoto, ReviewEvent
+    from app.models import ExtractedPhoto, Page, ReviewEvent
     from app.pipeline.crossing_fallback_review import CROSSING_FALLBACK_COUNT_REVIEW, CROSSING_FALLBACK_TRACES
     from app.pipeline.multipanel_prints import FILM_GRID_REVIEW, PAPER_GRID_REVIEW, PAPER_JOIN_REVIEW
     from app.pipeline.printed_illustration_review import (
@@ -978,6 +978,9 @@ async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kin
         PRINTED_ILLUSTRATION_REVIEW_ID, illustration_evidence_id,
     )
     from app.pipeline.segmentation import SegmentationDetection, SegmentationResult
+    from app.pipeline.stacked_pocket_review import (
+        STACKED_POCKET_COUNT_REVIEW, STACKED_POCKET_REVIEW_CHILDREN, STACKED_POCKET_REVIEW_TRACES,
+    )
     from app.services import pipeline
 
     monkeypatch.setenv("AUTO_ANALYZE_UPLOADS", "true")
@@ -1001,6 +1004,9 @@ async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kin
     if kind == "printed_illustration":
         linked = [vertices(25 + i, 30 + i, 179 - i, 228 - i) for i in range(4)]
         paper = []
+    if kind == "stacked_pocket":
+        linked = [vertices(20, 24, 375, 234), vertices(23, 27, 372, 231)]
+        paper = [vertices(55, 36, 345, 117), vertices(55, 134, 345, 216)]
     seam = [{"x": 0.08, "y": 0.48}, {"x": 0.45, "y": 0.49}]
     traces = [[{"x": x, "y": .49}, {"x": x, "y": .54}] for x in (.05, .46)]
     frame = [{"x": .25 + .2 * np.cos(angle), "y": .5 + .43 * np.sin(angle)}
@@ -1010,6 +1016,7 @@ async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kin
         "paper": ("paper_join_review_traces", PAPER_JOIN_REVIEW, traces),
         "crossing": (CROSSING_FALLBACK_TRACES, CROSSING_FALLBACK_COUNT_REVIEW, [*traces, seam, seam[::-1]]),
         "printed_illustration": (PRINTED_ILLUSTRATION_REVIEW_FRAME, PRINTED_ILLUSTRATION_COUNT_REVIEW, [frame]),
+        "stacked_pocket": (STACKED_POCKET_REVIEW_TRACES, STACKED_POCKET_COUNT_REVIEW, [*traces, seam]),
     }[kind]
     detections = []
     for polygon in [*linked, *paper]:
@@ -1019,6 +1026,9 @@ async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kin
             mask[mask_key] = evidence
             if kind == "printed_illustration":
                 mask[PRINTED_ILLUSTRATION_REVIEW_ID] = illustration_evidence_id(frame, linked)
+            elif kind == "stacked_pocket":
+                mask.update(source="classical_border_quad")
+                mask[STACKED_POCKET_REVIEW_CHILDREN] = paper
         detections.append(SegmentationDetection(
             bounds, mask, 0.81, 1.0, False, [reason if polygon in linked else PAPER_GRID_REVIEW],
         ))
@@ -1060,7 +1070,7 @@ async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kin
     for selection in wrong_selections:
         wrong = await client.post(event_url, json={**answer, "metadata": {**metadata, ids_key: selection}})
         assert wrong.status_code == 409 and wrong.json()["detail"] == f"{kind}_review_group_stale"
-    if kind in {"crossing", "film", "printed_illustration"}:
+    if kind in {"crossing", "film", "printed_illustration", "stacked_pocket"}:
         for reason_code in (None, "other"):
             unconfirmed = await client.post(event_url, json={**answer, "reason_code": reason_code})
             assert unconfirmed.status_code == 422 and unconfirmed.json()["detail"] == f"{kind}_confirmation_required"
@@ -1072,7 +1082,54 @@ async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kin
             assert stale_evidence.status_code == 409
             assert stale_evidence.json()["detail"] == "printed_illustration_review_group_stale"
 
-    if kind in {"film", "printed_illustration"}:
+    if kind == "stacked_pocket":
+        # Deliberately keep the page revision unchanged. Each independently
+        # revised crop, optical record, or deferred claim must still fail closed.
+        async def stale_after(model, row_ids, attr, replacement):
+            ids = [UUID(row_id) for row_id in row_ids]
+            async with get_session_factory()() as session:
+                before_changes = []
+                for row_id in ids:
+                    row = await session.get(model, row_id)
+                    old = deepcopy(getattr(row, attr))
+                    before_changes.append(old)
+                    setattr(row, attr, replacement(deepcopy(old)))
+                await session.commit()
+            stale = await client.post(event_url, json=answer)
+            assert stale.status_code == 409 and stale.json()["detail"] == "stacked_pocket_review_group_stale"
+            async with get_session_factory()() as session:
+                for row_id, old in zip(ids, before_changes, strict=True):
+                    row = await session.get(model, row_id)
+                    setattr(row, attr, old)
+                await session.commit()
+
+        child_ids = [paper_before[0]["photo_id"]]
+        await stale_after(ExtractedPhoto, child_ids, "segmentation_confidence", lambda _: None)
+        await stale_after(ExtractedPhoto, child_ids, "segmentation_mask", lambda mask: {
+            **mask, "polygon": [{**mask["polygon"][0], "x": .19}, *mask["polygon"][1:]],
+        })
+        await stale_after(ExtractedPhoto, group_ids[1:], "segmentation_mask", lambda mask: {
+            **mask, STACKED_POCKET_REVIEW_TRACES: [*traces, seam[::-1]],
+        })
+        await stale_after(ExtractedPhoto, group_ids, "segmentation_mask", lambda mask: {
+            **mask, STACKED_POCKET_REVIEW_TRACES: [traces[0], seam, seam[::-1]],
+        })
+        await stale_after(ExtractedPhoto, group_ids[1:], "segmentation_mask", lambda mask: {
+            **mask, STACKED_POCKET_REVIEW_CHILDREN: [*paper[:1], linked[0]],
+        })
+        await stale_after(ExtractedPhoto, group_ids, "segmentation_mask", lambda mask: {
+            **mask, STACKED_POCKET_REVIEW_CHILDREN: [paper[0], paper[0]],
+        })
+
+        def deferred_claim(metadata):
+            metadata["steps"]["segmentation"]["fusion"]["deferred_print_proposals"] = [
+                {"id": 4, "reason": "unclear_overlap", "polygon": linked[0]},
+            ]
+            return metadata
+
+        await stale_after(Page, [task["id"]], "processing_metadata", deferred_claim)
+
+    if kind in {"film", "printed_illustration", "stacked_pocket"}:
         # A row can have geometry marked ready while release policy withholds its
         # download. This is no longer the held automatic group in the dialog.
         async with get_session_factory()() as session:
@@ -1098,6 +1155,19 @@ async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kin
         assert (await client.post(event_url, json=reopened)).status_code == 201
     assert (await client.get(queue_url)).json() == [task]
 
+    async def scene_images():
+        output = []
+        for row in paper_before:
+            base = f"/api/v1/photos/{row['photo_id']}/image"
+            for variant in ("full_print", "image_only", "source_corrected_untrimmed", "source_corrected_trimmed"):
+                response = await client.get(base, params={"variant": variant})
+                output.append((response.status_code, response.content if response.status_code == 200 else None))
+        return output
+
+    if kind == "stacked_pocket":
+        scene_before = await scene_images()
+        assert [code for code, _ in scene_before] == [404, 404, 200, 404] * 2
+
     confirmed = await client.post(event_url, json=answer)
     assert confirmed.status_code == 201, confirmed.text
     event_id = confirmed.json()["id"]
@@ -1111,6 +1181,13 @@ async def test_review_excludes_only_the_confirmed_group(client, monkeypatch, kin
     assert after["detection_count"] == len(paper) and after["photo_count_revision"] == event_id
     assert after["detections"] == paper_before
     assert after["deferred_print_proposals"] == pending
+    if kind == "stacked_pocket":
+        assert await scene_images() == scene_before
+        stale_group = await client.post(event_url, json={
+            **answer, "idempotency_key": uuid4().hex,
+            "metadata": {**metadata, "photo_count_revision": event_id},
+        })
+        assert stale_group.status_code == 409 and stale_group.json()["detail"] == "stacked_pocket_review_group_stale"
     rows = (await client.get(f"{album_url}/photos")).json()
     assert {row["id"] for row in rows} == {row["photo_id"] for row in paper_before}
     for photo_id in group_ids:

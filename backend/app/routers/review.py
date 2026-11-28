@@ -42,6 +42,9 @@ from app.pipeline.printed_illustration_review import (
 )
 from app.pipeline.protected_regions import album_mark_source_matches
 from app.pipeline.rounded_corner_review import ROUNDED_CORNER_REVIEW
+from app.pipeline.stacked_pocket_review import (
+    STACKED_POCKET_COUNT_REVIEW, STACKED_POCKET_REVIEW_CHILDREN, STACKED_POCKET_REVIEW_TRACES,
+)
 from app.pipeline.variants import (
     geometry_review_revision, saved_full_print_review_image_url, variant_path_from_photo, variant_urls,
     variants_from_metadata,
@@ -77,6 +80,9 @@ GROUP_EXCLUSIONS = {
     "exclude_printed_illustration_group": (
         PRINTED_ILLUSTRATION_REVIEW_SIZE, 1, PRINTED_ILLUSTRATION_REVIEW_FRAME,
         "printed_illustration_group_photo_ids", PRINTED_ILLUSTRATION_COUNT_REVIEW, "printed_illustration",
+    ),
+    "exclude_stacked_pocket_group": (
+        2, 3, STACKED_POCKET_REVIEW_TRACES, "stacked_pocket_group_photo_ids", STACKED_POCKET_COUNT_REVIEW, "stacked_pocket",
     ),
 }
 CONFIRM_SHARED_PAPER_GRID = "confirm_shared_paper_grid"
@@ -346,10 +352,39 @@ def _validate_enhancement_decision(payload: MobileReviewAnswer, context: dict) -
         )
 
 
+def _normalized_review_points(points: object, minimum: int) -> bool:
+    return isinstance(points, list) and len(points) >= minimum and all(
+        isinstance(point, dict)
+        and all(type(value := point.get(axis)) in (float, int) and 0 <= value <= 1 for axis in ("x", "y"))
+        for point in points
+    ) and len({(point["x"], point["y"]) for point in points}) >= minimum
+
+
+def _stacked_pocket_evidence_matches(selected: list[ExtractedPhoto], traces: list, context: dict) -> bool:
+    photos = context["photos"]
+    if (len(photos) != 4 or page_fusion_evidence(context["page"].processing_metadata).get("deferred_print_proposals")
+            or not all(_normalized_review_points(trace, 2) and len(trace) == 2 for trace in traces)):
+        return False
+    if len({frozenset((point["x"], point["y"]) for point in trace) for trace in traces}) != len(traces):
+        return False
+    first, second = selected
+    children = (first.segmentation_mask or {}).get(STACKED_POCKET_REVIEW_CHILDREN)
+    if (not isinstance(children, list) or len(children) != 2 or children[0] == children[1]
+            or not all(_normalized_review_points(child, 4) for child in children)
+            or (second.segmentation_mask or {}).get(STACKED_POCKET_REVIEW_CHILDREN) != children):
+        return False
+    selected_ids = {first.id, second.id}
+    model_polygons = [
+        mask.get("polygon") for photo in photos if photo.id not in selected_ids and photo.segmentation_confidence is not None
+        and (mask := photo.segmentation_mask or {}).get("source") == "yolo_seg_mask"
+    ]
+    return len(model_polygons) == 2 and all(model_polygons.count(child) == 1 for child in children)
+
+
 def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[ExtractedPhoto]:
     size, trace_count, mask_key, request_key, review_reason, name = GROUP_EXCLUSIONS[payload.answer]
     required_reason = {"film": "film_carrier", "crossing": "non_photo_object", "album_leaf": "non_photo_object",
-                       "printed_illustration": "non_photo_object"}.get(name)
+                       "printed_illustration": "non_photo_object", "stacked_pocket": "non_photo_object"}.get(name)
     if required_reason and payload.reason_code != required_reason:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{name}_confirmation_required")
     submitted = payload.metadata.get(request_key)
@@ -373,7 +408,7 @@ def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[Extrac
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{name}_review_group_stale")
     if name in ("crossing", "album_leaf") and any(not isinstance(trace, list) or len(trace) != 2 for trace in evidence):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{name}_review_group_stale")
-    if name in ("film", "crossing", "album_leaf", "printed_illustration"):
+    if name in ("film", "crossing", "album_leaf", "printed_illustration", "stacked_pocket"):
         for photo in selected:
             modes = ((photo.enhancement_applied or {}).get("correction") or {}).get("crop_modes") or {}
             if any((modes.get(mode) or {}).get("status") != "review_needed" for mode in ("full_print", "image_only")):
@@ -395,6 +430,8 @@ def _group_for_review(payload: MobileReviewAnswer, context: dict) -> list[Extrac
         if (payload.metadata.get("printed_illustration_evidence_id") != expected
                 or any(mask.get(PRINTED_ILLUSTRATION_REVIEW_ID) != expected for mask in masks)):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="printed_illustration_review_group_stale")
+    if name == "stacked_pocket" and not _stacked_pocket_evidence_matches(selected, evidence, context):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="stacked_pocket_review_group_stale")
     return selected
 
 
@@ -624,6 +661,7 @@ async def add_review_event(
             )
         count_review_kind = {"exclude_film_group": "film", "exclude_album_leaf_group": "album_leaf",
                              "exclude_printed_illustration_group": "printed_illustration",
+                             "exclude_stacked_pocket_group": "stacked_pocket",
                              CONFIRM_SHARED_PAPER_GRID: "paper_grid"}.get(payload.answer)
         if count_review_kind:
             count_confirmed = await session.scalar(select(_completed_review_exists("segmentation", Page.id)).where(

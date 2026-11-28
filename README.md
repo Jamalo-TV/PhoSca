@@ -719,6 +719,23 @@ sichtbar ist. Du kannst diesen mit seiner tatsächlichen Papierkontur
 ergänzen. Die grössere offene Kontur fliesst bis zum Anzahlentscheid
 weiter in die Zuschnittprüfung ein. [Kontur um den Abzug auf Scan 67](data/evaluation/README.md#review-an-embossed-carrier-around-a-detected-print)
 
+**Albumtaschen prüfen** erscheint bei zwei grossen klassischen
+Vorschlägen, die dieselben zwei getrennten Bildmasken umgeben.
+PhoSca sucht ausserhalb der Bildmasken nach wiederkehrenden hellen
+Streifen mit feiner Struktur dazwischen. Im Original markieren
+drei türkise Linien beobachtete Streifen. Violett zeigt die beiden
+einzelnen Bildvorschläge. Ein klarer umschliessender Papierrand
+oder eine weitere offene Kontur lässt den gemeinsamen Hinweis
+entfallen.
+
+Die beiden grossen Vorschläge können nach Sichtprüfung gemeinsam
+aus der Abzugsliste genommen werden. Die beiden Bildvorschläge
+brauchen ihre eigene Geometrieprüfung in beiden Zuschnittmodi.
+Ein Papierabzug kann eine ähnliche Streifenfolge zeigen. Bei
+einem eigenen Papierrand oder bei Unsicherheit kannst du abbrechen
+und die Konturen einzeln prüfen.
+[Anzahlprüfung auf Scan 63](data/evaluation/README.md#review-two-overlapping-carriers-on-a-stack-of-pockets)
+
 Wenn der Abzug selbst in einer geprägten Albumhülle liegt, kann ein
 zu weit gefasster Zuschnitt sichtbare Folie enthalten. Bei deutlich
 verschobenen Kanten sucht PhoSca im Original nach einer möglichen
